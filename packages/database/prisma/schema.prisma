@@ -82,8 +82,9 @@ model Organization {
   updatedAt DateTime @updatedAt
   metadata  String?
 
-  members     Member[]
-  invitations Invitation[]
+  members        Member[]
+  invitations    Invitation[]
+  systemSettings SystemSettings?
 
   @@map("organization")
 }
@@ -196,6 +197,33 @@ model Branding {
   updatedAt      DateTime @updatedAt
 
   @@map("branding")
+}
+
+model SystemSettings {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Email settings
+  emailProvider  String?  // "resend" | "smtp" | null (disabled)
+  emailFrom      String?  // sender address
+  resendApiKey   String?  // encrypted
+  smtpHost       String?
+  smtpPort       Int?
+  smtpUser       String?
+  smtpPass       String?  // encrypted
+  smtpSecure     Boolean  @default(true)
+
+  // File settings
+  maxFileSizeMb  Int      @default(50)
+
+  // General
+  setupCompleted Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("system_settings")
 }
 
 model ProjectStatus {

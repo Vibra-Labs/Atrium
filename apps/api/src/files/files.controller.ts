@@ -23,7 +23,7 @@ export class FilesController {
 
   @Post("upload")
   @Roles("owner", "admin")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 500 * 1024 * 1024 } }))
   upload(
     @UploadedFile() file: UploadedFileType,
     @Query("projectId") projectId: string,

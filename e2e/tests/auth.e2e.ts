@@ -54,9 +54,11 @@ test.describe("Auth", () => {
     await page.getByLabel(/password/i).fill(password);
     await page.getByRole("button", { name: /create account/i }).click();
 
-    // Should redirect to dashboard after signup
-    await expect(page).toHaveURL(/dashboard/, { timeout: 10000 });
-    await expect(page.getByRole("heading", { name: /dashboard/i })).toBeVisible();
+    // Should redirect to verify-email page after signup
+    await expect(page).toHaveURL(/verify-email/, { timeout: 10000 });
+    await expect(
+      page.getByRole("heading", { name: /check your email/i }),
+    ).toBeVisible();
 
     // Log out by clearing cookies and verify redirect
     await context.clearCookies();

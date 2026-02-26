@@ -7,7 +7,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
 import { render } from "@react-email/render";
-import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail } from "@atrium/email";
+import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
 
 @Injectable()
 export class AuthService {
@@ -35,6 +35,19 @@ export class AuthService {
           await this.mail.send(
             user.email,
             "Reset your password",
+            html,
+          );
+        },
+      },
+      emailVerification: {
+        sendOnSignUp: true,
+        autoSignInAfterVerification: true,
+        callbackURL: `${webUrl}/verify-email?verified=true`,
+        sendVerificationEmail: async ({ user, url }) => {
+          const html = await render(VerifyEmail({ url }));
+          await this.mail.send(
+            user.email,
+            "Verify your email address",
             html,
           );
         },

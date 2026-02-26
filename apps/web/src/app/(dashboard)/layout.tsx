@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
+import { EmailVerificationBanner } from "./email-verification-banner";
 
 async function getSessionWithRole() {
   try {
@@ -56,7 +57,12 @@ export default async function DashboardLayout({
         <SidebarNav />
         <SignOutButton />
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1 p-8">
+        {!session.user?.emailVerified && (
+          <EmailVerificationBanner email={session.user?.email} />
+        )}
+        {children}
+      </main>
     </div>
   );
 }

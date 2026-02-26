@@ -10,35 +10,26 @@ import {
 } from "@react-email/components";
 import * as React from "react";
 
-interface InvitationEmailProps {
-  inviteUrl: string;
-  organizationName: string;
-  inviterName?: string;
+interface VerifyEmailProps {
+  url: string;
 }
 
-export function InvitationEmail({
-  inviteUrl,
-  organizationName,
-  inviterName,
-}: InvitationEmailProps) {
+export function VerifyEmail({ url }: VerifyEmailProps) {
   return (
     <Html>
       <Head />
-      <Preview>You&apos;ve been invited to {organizationName}</Preview>
+      <Preview>Verify your email address</Preview>
       <Body style={{ fontFamily: "sans-serif", padding: "40px 0" }}>
         <Container style={{ maxWidth: "480px", margin: "0 auto" }}>
           <Heading style={{ fontSize: "24px", marginBottom: "24px" }}>
-            You&apos;re invited to {organizationName}
+            Verify your email address
           </Heading>
           <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
-            {inviterName
-              ? `${inviterName} has invited you to join`
-              : "You have been invited to join"}{" "}
-            {organizationName}&apos;s client portal. Click below to accept the
-            invitation and access your projects.
+            Click the link below to verify your email address and complete your
+            account setup. This link expires in 1 hour.
           </Text>
           <Link
-            href={inviteUrl}
+            href={url}
             style={{
               display: "inline-block",
               padding: "12px 24px",
@@ -50,13 +41,13 @@ export function InvitationEmail({
               marginTop: "16px",
             }}
           >
-            Accept Invitation
+            Verify Email
           </Link>
           <Text
             style={{ fontSize: "14px", color: "#6b7280", marginTop: "24px" }}
           >
-            If you didn&apos;t expect this invitation, you can safely ignore
-            this email.
+            If you didn&apos;t create an account, you can safely ignore this
+            email.
           </Text>
         </Container>
       </Body>

@@ -42,6 +42,8 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      - run: bun run db:generate
+
       - run: bun run build
 
       - run: bun run test

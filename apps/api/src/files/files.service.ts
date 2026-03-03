@@ -13,9 +13,7 @@ import type { StorageProvider } from "./storage/storage.interface";
 import { STORAGE_PROVIDER } from "./storage/storage.interface";
 import { randomUUID } from "crypto";
 import { extname } from "path";
-import { paginationArgs, paginatedResponse, sanitizeFilename } from "../common";
-
-const PRIVILEGED_ROLES = new Set(["owner", "admin"]);
+import { paginationArgs, paginatedResponse, sanitizeFilename, assertProjectAccess } from "../common";
 
 export interface UploadedFile {
   originalname: string;
@@ -117,9 +115,13 @@ export class FilesService {
   async findByProject(
     projectId: string,
     organizationId: string,
+    userId: string,
+    role: string,
     page = 1,
     limit = 20,
   ) {
+    await assertProjectAccess(this.prisma,projectId, userId, role);
+
     const where = { projectId, organizationId };
     const [data, total] = await Promise.all([
       this.prisma.file.findMany({
@@ -138,7 +140,7 @@ export class FilesService {
     });
     if (!file) throw new NotFoundException("File not found");
 
-    await this.assertProjectAccess(file.projectId, userId, role);
+    await assertProjectAccess(this.prisma,file.projectId, userId, role);
 
     const { body, contentType } = await this.storage.download(file.storageKey);
     return { body, contentType, filename: file.filename };
@@ -150,28 +152,9 @@ export class FilesService {
     });
     if (!file) throw new NotFoundException("File not found");
 
-    await this.assertProjectAccess(file.projectId, userId, role);
+    await assertProjectAccess(this.prisma,file.projectId, userId, role);
 
     return { url: `/api/files/${id}/download` };
-  }
-
-  /**
-   * Verifies that a user has access to a project's files.
-   * Owners and admins can access all files in the org.
-   * Members (clients) must be explicitly assigned to the project.
-   */
-  private async assertProjectAccess(projectId: string, userId: string, role: string) {
-    if (PRIVILEGED_ROLES.has(role)) {
-      return;
-    }
-
-    const assignment = await this.prisma.projectClient.findFirst({
-      where: { projectId, userId },
-    });
-
-    if (!assignment) {
-      throw new ForbiddenException("You do not have access to this file");
-    }
   }
 
   async remove(id: string, organizationId: string) {

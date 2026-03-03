@@ -47,7 +47,15 @@ interface ProjectStatus {
 interface ClientMember {
   id: string;
   userId: string;
+  role: string;
   user: { id: string; name: string; email: string };
+}
+
+interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 const tabs = [
@@ -134,10 +142,10 @@ export default function ProjectDetailPage() {
     apiFetch<ProjectStatus[]>("/projects/statuses")
       .then(setStatuses)
       .catch(console.error);
-    apiFetch<ClientMember[]>("/clients")
+    apiFetch<ClientMember[] | PaginatedResponse<ClientMember>>("/clients")
       .then((res) => {
-        const data = Array.isArray(res) ? res : (res as any).data;
-        setClients(data.filter((m: any) => m.role === "member"));
+        const data = Array.isArray(res) ? res : res.data;
+        setClients(data.filter((m: ClientMember) => m.role === "member"));
       })
       .catch(console.error);
     apiFetch<{ role: string }>("/auth/organization/get-active-member")

@@ -14,7 +14,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { FilesService, UploadedFile as UploadedFileType } from "./files.service";
-import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto } from "../common";
+import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto, contentDisposition } from "../common";
 
 @Controller("files")
 @UseGuards(AuthGuard, RolesGuard)
@@ -50,11 +50,15 @@ export class FilesController {
   findByProject(
     @Param("projectId") projectId: string,
     @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentMember("role") role: string,
     @Query() pagination: PaginationQueryDto,
   ) {
     return this.filesService.findByProject(
       projectId,
       orgId,
+      userId,
+      role,
       pagination.page,
       pagination.limit,
     );
@@ -74,16 +78,8 @@ export class FilesController {
       userId,
       role,
     );
-    // Sanitize filename for Content-Disposition: strip control chars and quotes
-    const safeAscii = filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
-    // RFC 5987 encoded filename for non-ASCII support
-    const encodedFilename = encodeURIComponent(filename).replace(/['()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-
     res.setHeader("Content-Type", contentType);
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodedFilename}`,
-    );
+    res.setHeader("Content-Disposition", contentDisposition(filename));
     body.pipe(res);
   }
 

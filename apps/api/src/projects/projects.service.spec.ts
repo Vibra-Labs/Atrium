@@ -1,23 +1,29 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { ProjectsService } from "./projects.service";
 import { NotFoundException } from "@nestjs/common";
+import type { PrismaService } from "../prisma/prisma.service";
+
+interface PrismaArgs {
+  where?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+}
 
 const mockPrisma = {
   project: {
     findMany: mock(() => Promise.resolve([])),
     findFirst: mock(() => Promise.resolve(null)),
     count: mock(() => Promise.resolve(0)),
-    findUnique: mock((args: any) =>
-      Promise.resolve({ id: args.where.id, name: "Test", organizationId: "org-1", clients: [] }),
+    findUnique: mock((args: PrismaArgs) =>
+      Promise.resolve({ id: args.where?.id, name: "Test", organizationId: "org-1", clients: [] }),
     ),
-    create: mock((args: any) =>
+    create: mock((args: PrismaArgs) =>
       Promise.resolve({ id: "new-id", ...args.data, clients: [] }),
     ),
-    update: mock((args: any) =>
-      Promise.resolve({ id: args.where.id, ...args.data, clients: [] }),
+    update: mock((args: PrismaArgs) =>
+      Promise.resolve({ id: args.where?.id, ...args.data, clients: [] }),
     ),
     updateMany: mock(() => Promise.resolve({ count: 1 })),
-    delete: mock((args: any) => Promise.resolve({ id: args.where.id })),
+    delete: mock((args: PrismaArgs) => Promise.resolve({ id: args.where?.id })),
     deleteMany: mock(() => Promise.resolve({ count: 1 })),
   },
   projectClient: {
@@ -27,18 +33,23 @@ const mockPrisma = {
     findMany: mock(() => Promise.resolve([])),
     findFirst: mock(() => Promise.resolve(null)),
   },
-  $transaction: mock((args: any[]) => Promise.all(args)),
+  member: {
+    count: mock(() => Promise.resolve(2)),
+  },
+  $transaction: mock((args: Promise<unknown>[]) => Promise.all(args)),
 };
 
 describe("ProjectsService", () => {
   let service: ProjectsService;
 
   beforeEach(() => {
-    service = new ProjectsService(mockPrisma as any);
+    service = new ProjectsService(mockPrisma as unknown as PrismaService);
     // Reset mocks
-    Object.values(mockPrisma.project).forEach((m) =>
-      (m as any).mockClear?.(),
-    );
+    Object.values(mockPrisma.project).forEach((m) => {
+      if (typeof m === "function" && "mockClear" in m) {
+        (m as ReturnType<typeof mock>).mockClear?.();
+      }
+    });
     mockPrisma.projectClient.deleteMany.mockClear();
     mockPrisma.$transaction.mockClear();
   });

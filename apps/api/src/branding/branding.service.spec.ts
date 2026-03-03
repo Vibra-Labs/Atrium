@@ -1,11 +1,12 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { BrandingService } from "./branding.service";
 import { NotFoundException } from "@nestjs/common";
+import type { PrismaService } from "../prisma/prisma.service";
 
 const mockPrisma = {
   branding: {
     findUnique: mock(() => Promise.resolve(null)),
-    upsert: mock((args: any) =>
+    upsert: mock((args: { create: Record<string, unknown>; update: Record<string, unknown> }) =>
       Promise.resolve({ id: "b1", ...args.create, ...args.update }),
     ),
   },
@@ -15,7 +16,7 @@ describe("BrandingService", () => {
   let service: BrandingService;
 
   beforeEach(() => {
-    service = new BrandingService(mockPrisma as any);
+    service = new BrandingService(mockPrisma as unknown as PrismaService);
   });
 
   it("findByOrg throws when not found", async () => {

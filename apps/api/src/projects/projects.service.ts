@@ -3,6 +3,19 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto, UpdateProjectDto } from "./projects.dto";
 import { paginationArgs, paginatedResponse } from "../common";
 
+interface ProjectWhereInput {
+  organizationId?: string;
+  archivedAt?: null | Date;
+  name?: { contains: string; mode: "default" | "insensitive" };
+  status?: string;
+  clients?: { some: { userId: string } };
+}
+
+interface ProjectUpdateInput {
+  startDate?: Date | null;
+  endDate?: Date | null;
+}
+
 @Injectable()
 export class ProjectsService {
   constructor(private prisma: PrismaService) {}
@@ -18,7 +31,7 @@ export class ProjectsService {
     },
   ) {
     const { page = 1, limit = 20, search, status, archived } = query;
-    const where: any = { organizationId };
+    const where: ProjectWhereInput = { organizationId };
 
     if (archived !== "true") {
       where.archivedAt = null;
@@ -77,7 +90,7 @@ export class ProjectsService {
     query: { page?: number; limit?: number; search?: string },
   ) {
     const { page = 1, limit = 20, search } = query;
-    const where: any = {
+    const where: ProjectWhereInput = {
       organizationId,
       archivedAt: null,
       clients: { some: { userId: clientUserId } },
@@ -101,6 +114,16 @@ export class ProjectsService {
 
   async create(data: CreateProjectDto, organizationId: string) {
     const { clientUserIds, startDate, endDate, ...rest } = data;
+
+    if (clientUserIds?.length) {
+      const validMembers = await this.prisma.member.count({
+        where: { organizationId, userId: { in: clientUserIds } },
+      });
+      if (validMembers !== clientUserIds.length) {
+        throw new BadRequestException("One or more client user IDs are not members of this organization");
+      }
+    }
+
     return this.prisma.project.create({
       data: {
         ...rest,
@@ -129,7 +152,7 @@ export class ProjectsService {
     }
 
     const { clientUserIds, startDate, endDate, ...rest } = data;
-    const dateFields: any = {};
+    const dateFields: ProjectUpdateInput = {};
     if (startDate !== undefined) dateFields.startDate = startDate ? new Date(startDate) : null;
     if (endDate !== undefined) dateFields.endDate = endDate ? new Date(endDate) : null;
 
@@ -143,11 +166,19 @@ export class ProjectsService {
     }
 
     if (clientUserIds !== undefined) {
-      // Use a transaction to update project fields + replace client assignments
+      if (clientUserIds.length) {
+        const validMembers = await this.prisma.member.count({
+          where: { organizationId, userId: { in: clientUserIds } },
+        });
+        if (validMembers !== clientUserIds.length) {
+          throw new BadRequestException("One or more client user IDs are not members of this organization");
+        }
+      }
+
       const [, project] = await this.prisma.$transaction([
         this.prisma.projectClient.deleteMany({ where: { projectId: id } }),
         this.prisma.project.update({
-          where: { id },
+          where: { id, organizationId },
           data: {
             ...rest,
             ...dateFields,

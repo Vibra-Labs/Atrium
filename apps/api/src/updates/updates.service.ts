@@ -12,7 +12,7 @@ import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import type { UploadedFile } from "../files/files.service";
 import { randomUUID } from "crypto";
 import type { Response } from "express";
-import { paginationArgs, paginatedResponse, sanitizeFilename } from "../common";
+import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess } from "../common";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -181,7 +181,7 @@ export class UpdatesService {
     }
   }
 
-  async getAttachment(id: string, organizationId: string, res: Response) {
+  async getAttachment(id: string, organizationId: string, userId: string, role: string, res: Response) {
     const update = await this.prisma.projectUpdate.findFirst({
       where: { id, organizationId },
     });
@@ -189,13 +189,12 @@ export class UpdatesService {
       throw new NotFoundException("Attachment not found");
     }
 
+    await assertProjectAccess(this.prisma, update.projectId, userId, role);
+
     const { body, contentType } = await this.storage.download(update.attachmentKey);
     res.setHeader("Content-Type", contentType);
     if (update.attachmentName) {
-      res.setHeader(
-        "Content-Disposition",
-        `inline; filename="${update.attachmentName}"`,
-      );
+      res.setHeader("Content-Disposition", contentDisposition(update.attachmentName, "inline"));
     }
     body.pipe(res);
   }

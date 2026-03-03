@@ -1,5 +1,7 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { SetupController } from "./setup.controller";
+import type { SetupService } from "./setup.service";
+import type { SettingsService } from "../settings/settings.service";
 
 // --- Mock services ---
 
@@ -30,8 +32,8 @@ describe("SetupController", () => {
     setupService = makeSetupService();
     settingsService = makeSettingsService();
     controller = new SetupController(
-      setupService as any,
-      settingsService as any,
+      setupService as unknown as SetupService,
+      settingsService as unknown as SettingsService,
     );
   });
 

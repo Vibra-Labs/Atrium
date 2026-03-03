@@ -13,7 +13,7 @@ function createMockContext(
   cookies: Record<string, string> = {},
   headers: Record<string, string> = {},
   url = "/api/projects",
-): { context: ExecutionContext; response: any } {
+): { context: ExecutionContext; response: { cookie: () => void } } {
   const response = {
     cookie: () => {},
   };

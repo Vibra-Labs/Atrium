@@ -93,7 +93,7 @@ export class TasksService {
       data: {
         title: dto.title,
         description: dto.description,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : dto.dueDate,
+        dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : undefined,
         completed: dto.completed,
       },
     });

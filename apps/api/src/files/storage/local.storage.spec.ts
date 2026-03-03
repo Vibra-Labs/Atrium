@@ -3,6 +3,7 @@ import { LocalStorage } from "./local.storage";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { tmpdir } from "os";
+import type { ConfigService } from "@nestjs/config";
 
 describe("LocalStorage", () => {
   let storage: LocalStorage;
@@ -18,7 +19,7 @@ describe("LocalStorage", () => {
         return fallback;
       },
     };
-    storage = new LocalStorage(mockConfig as any);
+    storage = new LocalStorage(mockConfig as unknown as ConfigService);
   });
 
   afterEach(async () => {

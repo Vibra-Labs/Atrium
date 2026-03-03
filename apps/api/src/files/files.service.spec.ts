@@ -7,6 +7,21 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { Readable } from "stream";
+import type { PrismaService } from "../prisma/prisma.service";
+import type { ConfigService } from "@nestjs/config";
+import type { StorageProvider } from "./storage/storage.provider";
+import type { SettingsService } from "../settings/settings.service";
+
+interface PrismaArgs {
+  data?: Record<string, unknown>;
+}
+
+interface MockFile {
+  originalname: string;
+  buffer: Buffer;
+  mimetype: string;
+  size: number;
+}
 
 const mockStorage = {
   upload: mock(() => Promise.resolve()),
@@ -27,7 +42,7 @@ const mockPrisma = {
     ),
   },
   file: {
-    create: mock((args: any) =>
+    create: mock((args: PrismaArgs) =>
       Promise.resolve({ id: "file-1", ...args.data }),
     ),
     findMany: mock(() => Promise.resolve([])),
@@ -39,7 +54,7 @@ const mockPrisma = {
   projectClient: {
     findFirst: mock(() => Promise.resolve(null)),
   },
-  $transaction: mock((fn: any) => fn(mockPrisma)),
+  $transaction: mock((fn: (prisma: typeof mockPrisma) => unknown) => fn(mockPrisma)),
 };
 
 const mockConfig = {
@@ -59,10 +74,10 @@ describe("FilesService", () => {
 
   beforeEach(() => {
     service = new FilesService(
-      mockPrisma as any,
-      mockConfig as any,
-      mockSettingsService as any,
-      mockStorage as any,
+      mockPrisma as unknown as PrismaService,
+      mockConfig as unknown as ConfigService,
+      mockSettingsService as unknown as SettingsService,
+      mockStorage as unknown as StorageProvider,
     );
     // Reset the max file size to the default between tests
     mockSettingsService.getEffectiveMaxFileSize.mockImplementation(() =>
@@ -78,7 +93,7 @@ describe("FilesService", () => {
       buffer: Buffer.alloc(0),
       mimetype: "application/zip",
       size: 100 * 1024 * 1024, // 100 MB — exceeds default 50 MB
-    } as any;
+    } as MockFile;
 
     try {
       await service.upload(file, "proj-1", "org-1", "user-1");
@@ -99,7 +114,7 @@ describe("FilesService", () => {
       buffer: Buffer.alloc(0),
       mimetype: "application/zip",
       size: 25 * 1024 * 1024, // 25 MB
-    } as any;
+    } as MockFile;
 
     try {
       await service.upload(file, "proj-1", "org-1", "user-1");
@@ -128,7 +143,7 @@ describe("FilesService", () => {
       buffer: Buffer.alloc(0),
       mimetype: "application/pdf",
       size: 10 * 1024 * 1024, // exactly 10 MB
-    } as any;
+    } as MockFile;
 
     // Should NOT throw — exactly at the limit is allowed
     const result = await service.upload(file, "proj-1", "org-1", "user-1");
@@ -141,7 +156,7 @@ describe("FilesService", () => {
       buffer: Buffer.alloc(0),
       mimetype: "application/octet-stream",
       size: 1024,
-    } as any;
+    } as MockFile;
 
     try {
       await service.upload(file, "proj-1", "org-1", "user-1");
@@ -161,7 +176,7 @@ describe("FilesService", () => {
       buffer: Buffer.from("pdf content"),
       mimetype: "application/pdf",
       size: 1024,
-    } as any;
+    } as MockFile;
 
     const result = await service.upload(file, "proj-1", "org-1", "user-1");
     expect(result.filename).toBe("doc.pdf");
@@ -290,7 +305,7 @@ describe("FilesService", () => {
     };
     mockPrisma.file.findFirst.mockReturnValue(Promise.resolve(file));
     // $transaction executes the callback synchronously in this mock
-    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => unknown) => {
       return fn({
         file: {
           findFirst: mock(() => Promise.resolve(file)),
@@ -311,7 +326,7 @@ describe("FilesService", () => {
       buffer: Buffer.from("pdf content"),
       mimetype: "application/pdf",
       size: 1024,
-    } as any;
+    } as MockFile;
 
     it("throws ForbiddenException when client is not assigned to the project", async () => {
       mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
@@ -370,9 +385,9 @@ describe("FilesService", () => {
       await service.uploadAsClient(clientFile, "proj-1", "org-1", "user-client");
 
       // Second findFirst call is the project lookup inside uploadAsClient
-      const projectFindCalls = (mockPrisma.project.findFirst as any).mock.calls;
+      const projectFindCalls = mockPrisma.project.findFirst.mock.calls;
       const uploadAsClientCall = projectFindCalls.find(
-        (c: any[]) => c[0]?.where?.archivedAt === null,
+        (c: unknown[]) => (c[0] as Record<string, Record<string, unknown>> | undefined)?.where?.archivedAt === null,
       );
       expect(uploadAsClientCall).toBeDefined();
     });
@@ -428,7 +443,7 @@ describe("FilesService", () => {
 
       await service.uploadAsClient(clientFile, "proj-2", "org-2", "user-client");
 
-      const createCall = (mockPrisma.file.create as any).mock.calls.at(-1)[0];
+      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaArgs;
       expect(createCall.data.projectId).toBe("proj-2");
       expect(createCall.data.organizationId).toBe("org-2");
     });
@@ -443,7 +458,7 @@ describe("FilesService", () => {
 
       await service.uploadAsClient(clientFile, "proj-1", "org-1", "user-client");
 
-      const createCall = (mockPrisma.file.create as any).mock.calls.at(-1)[0];
+      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaArgs;
       expect(createCall.data.uploadedById).toBe("user-client");
     });
 
@@ -460,7 +475,7 @@ describe("FilesService", () => {
         buffer: Buffer.alloc(0),
         mimetype: "application/octet-stream",
         size: 512,
-      } as any;
+      } as MockFile;
 
       try {
         await service.uploadAsClient(exeFile, "proj-1", "org-1", "user-client");
@@ -486,7 +501,7 @@ describe("FilesService", () => {
         buffer: Buffer.alloc(0),
         mimetype: "application/pdf",
         size: 20 * 1024 * 1024, // 20 MB > 5 MB limit
-      } as any;
+      } as MockFile;
 
       try {
         await service.uploadAsClient(bigFile, "proj-1", "org-1", "user-client");

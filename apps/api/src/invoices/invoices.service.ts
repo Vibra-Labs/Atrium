@@ -2,11 +2,19 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from "@nestjs/common";
+import type { Invoice, InvoiceLineItem } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { paginationArgs, paginatedResponse } from "../common";
 import { CreateInvoiceDto, UpdateInvoiceDto, InvoiceListQueryDto } from "./invoices.dto";
+
+interface InvoiceWhereInput {
+  organizationId?: string;
+  projectId?: string;
+  status?: string;
+}
 
 @Injectable()
 export class InvoicesService {
@@ -15,7 +23,16 @@ export class InvoicesService {
     private notifications: NotificationsService,
   ) {}
 
-  async create(dto: CreateInvoiceDto, orgId: string, retries = 0): Promise<any> {
+  async create(dto: CreateInvoiceDto, orgId: string, retries = 0): Promise<Invoice & { lineItems: InvoiceLineItem[] }> {
+    if (dto.projectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: dto.projectId, organizationId: orgId },
+      });
+      if (!project) {
+        throw new ForbiddenException("Project does not belong to this organization");
+      }
+    }
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const lastInvoice = await tx.invoice.findFirst({
@@ -50,8 +67,8 @@ export class InvoicesService {
           include: { lineItems: true },
         });
       }, { isolationLevel: 'Serializable' });
-    } catch (err: any) {
-      if (err?.code === "P2002" && retries < 3) {
+    } catch (err) {
+      if (err instanceof Error && "code" in err && (err as { code: string }).code === "P2002" && retries < 3) {
         return this.create(dto, orgId, retries + 1);
       }
       throw err;
@@ -60,7 +77,7 @@ export class InvoicesService {
 
   async findAll(orgId: string, query: InvoiceListQueryDto) {
     const { page = 1, limit = 20, projectId, status } = query;
-    const where: any = { organizationId: orgId };
+    const where: InvoiceWhereInput = { organizationId: orgId };
     if (projectId) where.projectId = projectId;
     if (status) where.status = status;
 
@@ -148,6 +165,22 @@ export class InvoicesService {
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
 
+    if (dto.status && dto.status !== invoice.status) {
+      const allowedTransitions: Record<string, string[]> = {
+        draft: ["sent"],
+        sent: ["paid", "overdue", "cancelled"],
+        overdue: ["paid", "cancelled"],
+        paid: [],
+        cancelled: [],
+      };
+      const allowed = allowedTransitions[invoice.status] ?? [];
+      if (!allowed.includes(dto.status)) {
+        throw new BadRequestException(
+          `Cannot transition from '${invoice.status}' to '${dto.status}'`,
+        );
+      }
+    }
+
     const isTransitionToSent =
       dto.status === "sent" && invoice.status !== "sent";
 
@@ -209,7 +242,7 @@ export class InvoicesService {
   }
 
   async getStats(orgId: string, projectId?: string) {
-    const where: any = { organizationId: orgId };
+    const where: InvoiceWhereInput = { organizationId: orgId };
     if (projectId) where.projectId = projectId;
 
     const [counts, totals] = await Promise.all([

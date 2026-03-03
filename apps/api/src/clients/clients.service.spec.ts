@@ -1,6 +1,12 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { ClientsService } from "./clients.service";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
+import type { PrismaService } from "../prisma/prisma.service";
+
+interface PrismaArgs {
+  where?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+}
 
 // ---------------------------------------------------------------------------
 // Mock Prisma client
@@ -9,9 +15,9 @@ const mockPrisma = {
   member: {
     findFirst: mock(() => Promise.resolve(null)),
     count: mock(() => Promise.resolve(0)),
-    delete: mock((args: any) => Promise.resolve({ id: args.where.id })),
-    update: mock((args: any) =>
-      Promise.resolve({ id: args.where.id, ...args.data }),
+    delete: mock((args: PrismaArgs) => Promise.resolve({ id: args.where?.id })),
+    update: mock((args: PrismaArgs) =>
+      Promise.resolve({ id: args.where?.id, ...args.data }),
     ),
   },
   project: {
@@ -20,7 +26,7 @@ const mockPrisma = {
   projectClient: {
     deleteMany: mock(() => Promise.resolve({ count: 0 })),
   },
-  $transaction: mock((ops: any[]) => Promise.all(ops)),
+  $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
 // ---------------------------------------------------------------------------
@@ -48,7 +54,7 @@ describe("ClientsService", () => {
   let service: ClientsService;
 
   beforeEach(() => {
-    service = new ClientsService(mockPrisma as any);
+    service = new ClientsService(mockPrisma as unknown as PrismaService);
     // Reset all mocks before each test so state does not leak
     mockPrisma.member.findFirst.mockClear();
     mockPrisma.member.count.mockClear();

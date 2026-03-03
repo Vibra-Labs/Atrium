@@ -14,8 +14,8 @@ function createMockContext(user: unknown, organization?: unknown): ExecutionCont
     getHandler: () => ({}),
     getArgs: () => [],
     getArgByIndex: () => ({}),
-    switchToRpc: () => ({} as any),
-    switchToWs: () => ({} as any),
+    switchToRpc: () => ({} as unknown as ReturnType<ExecutionContext["switchToRpc"]>),
+    switchToWs: () => ({} as unknown as ReturnType<ExecutionContext["switchToWs"]>),
     getType: () => "http" as const,
   } as unknown as ExecutionContext;
 }

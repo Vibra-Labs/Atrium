@@ -1,11 +1,12 @@
 import { describe, expect, it, mock } from "bun:test";
 import { HttpException } from "@nestjs/common";
 import { HealthController } from "./health.controller";
+import type { PrismaService } from "./prisma/prisma.service";
 
 describe("HealthController", () => {
   it("returns ok status when DB is connected", async () => {
     const mockPrisma = { $queryRaw: mock(() => Promise.resolve([1])) };
-    const controller = new HealthController(mockPrisma as any);
+    const controller = new HealthController(mockPrisma as unknown as PrismaService);
 
     const result = await controller.check();
 
@@ -18,7 +19,7 @@ describe("HealthController", () => {
     const mockPrisma = {
       $queryRaw: mock(() => Promise.reject(new Error("Connection refused"))),
     };
-    const controller = new HealthController(mockPrisma as any);
+    const controller = new HealthController(mockPrisma as unknown as PrismaService);
 
     try {
       await controller.check();

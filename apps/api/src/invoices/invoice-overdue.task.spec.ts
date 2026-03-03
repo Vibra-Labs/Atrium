@@ -1,5 +1,11 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { InvoiceOverdueTask } from "./invoice-overdue.task";
+import type { PrismaService } from "../prisma/prisma.service";
+
+interface UpdateManyArgs {
+  where: { status: string; dueDate: { lt: Date } };
+  data: { status: string };
+}
 
 // ---------------------------------------------------------------------------
 // Mock Prisma
@@ -21,7 +27,7 @@ describe("InvoiceOverdueTask", () => {
 
   beforeEach(() => {
     prisma = makeBasePrisma();
-    task = new InvoiceOverdueTask(prisma as any);
+    task = new InvoiceOverdueTask(prisma as unknown as PrismaService);
   });
 
   // --- Query correctness ---
@@ -43,7 +49,7 @@ describe("InvoiceOverdueTask", () => {
 
     const after = new Date();
 
-    const callArgs = (prisma.invoice.updateMany as any).mock.calls[0][0];
+    const callArgs = prisma.invoice.updateMany.mock.calls[0][0] as UpdateManyArgs;
     const dueDateFilter = callArgs.where.dueDate.lt as Date;
 
     // The timestamp passed to Prisma must fall within the test window
@@ -117,7 +123,7 @@ describe("InvoiceOverdueTask", () => {
   test("markOverdueInvoices sends a single updateMany with all required fields", async () => {
     await task.markOverdueInvoices();
 
-    const callArgs = (prisma.invoice.updateMany as any).mock.calls[0][0];
+    const callArgs = prisma.invoice.updateMany.mock.calls[0][0] as UpdateManyArgs;
 
     // The where clause must include both the status filter and the dueDate filter
     expect(callArgs.where).toHaveProperty("status", "sent");
@@ -131,7 +137,7 @@ describe("InvoiceOverdueTask", () => {
   test("markOverdueInvoices does not update invoices in 'draft' status", async () => {
     await task.markOverdueInvoices();
 
-    const callArgs = (prisma.invoice.updateMany as any).mock.calls[0][0];
+    const callArgs = prisma.invoice.updateMany.mock.calls[0][0] as UpdateManyArgs;
 
     // Confirm the where clause only targets 'sent' — not a broader set
     expect(callArgs.where.status).toBe("sent");
@@ -145,7 +151,7 @@ describe("InvoiceOverdueTask", () => {
     // requires status === 'sent'. This test verifies that constraint is present.
     await task.markOverdueInvoices();
 
-    const callArgs = (prisma.invoice.updateMany as any).mock.calls[0][0];
+    const callArgs = prisma.invoice.updateMany.mock.calls[0][0] as UpdateManyArgs;
     expect(callArgs.where.status).toBe("sent");
   });
 });

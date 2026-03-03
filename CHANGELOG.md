@@ -2,6 +2,22 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.0.2] — 2026-03-02
+
+### Security
+- Fix IDOR in invoice creation and project client assignment
+- Remove SVG uploads, sanitize Content-Disposition headers
+- Add access control to update attachment and file list endpoints
+
+### Fixed
+- Invoice status transition validation, PDF page breaks, dueDate clearing
+- Linkify regex `/g` flag bug, SMTP cache scoping and TTL eviction
+- Notification emails now receive organizationId for SMTP routing
+
+### Changed
+- Deduplicate `assertProjectAccess`, `contentDisposition`, and `linkify` into shared helpers
+- Replace all `any` types with proper type definitions
+
 ## [1.0.1] — 1.0.1
 
 ### Added

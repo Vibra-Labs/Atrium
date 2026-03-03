@@ -27,7 +27,6 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
   "image/jpeg",
   "image/gif",
-  "image/svg+xml",
   "image/webp",
 ]);
 
@@ -63,7 +62,7 @@ export class BrandingController {
 
     if (!ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
       throw new BadRequestException(
-        "Invalid file type. Allowed: PNG, JPEG, GIF, SVG, WebP",
+        "Invalid file type. Allowed: PNG, JPEG, GIF, WebP",
       );
     }
 

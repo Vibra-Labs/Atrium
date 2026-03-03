@@ -1,15 +1,23 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { MailService } from "./mail.service";
+import type { ConfigService } from "@nestjs/config";
+import type { SettingsService } from "../settings/settings.service";
+import type { PinoLogger } from "nestjs-pino";
 
 // --- Module mocks ---
 
+interface MockTransporter {
+  _config: Record<string, unknown>;
+  sendMail: ReturnType<typeof mock>;
+}
+
 // Track transporter instances created by nodemailer
-const createdTransporters: any[] = [];
+const createdTransporters: MockTransporter[] = [];
 const mockSendMail = mock(() => Promise.resolve({ messageId: "test-id" }));
 
 mock.module("nodemailer", () => ({
-  createTransport: mock((config: any) => {
-    const transporter = {
+  createTransport: mock((config: Record<string, unknown>) => {
+    const transporter: MockTransporter = {
       _config: config,
       sendMail: mockSendMail,
     };
@@ -40,7 +48,14 @@ function makeConfig(env: Record<string, string | undefined> = {}) {
   };
 }
 
-function makeSettingsService(emailConfig: any = null) {
+interface EmailConfig {
+  provider: string | null;
+  from?: string;
+  apiKey?: string | null;
+  smtp?: Record<string, unknown> | null;
+}
+
+function makeSettingsService(emailConfig: EmailConfig | null = null) {
   return {
     getEffectiveEmailConfig: mock(() => Promise.resolve(emailConfig)),
   };
@@ -71,7 +86,11 @@ describe("MailService", () => {
     });
 
     const config = makeConfig();
-    const service = new MailService(config as any, settings as any, mockLogger as any);
+    const service = new MailService(
+      config as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
 
     await service.send("a@test.com", "Subject 1", "<p>First</p>", "org-1");
     await service.send("b@test.com", "Subject 2", "<p>Second</p>", "org-1");
@@ -100,9 +119,9 @@ describe("MailService", () => {
     });
 
     const service = new MailService(
-      makeConfig() as any,
-      settings as any,
-      mockLogger as any,
+      makeConfig() as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
     );
 
     await service.send("a@test.com", "S1", "<p>1</p>", "org-1");
@@ -123,9 +142,9 @@ describe("MailService", () => {
     });
 
     const service = new MailService(
-      makeConfig() as any,
-      settings as any,
-      mockLogger as any,
+      makeConfig() as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
     );
 
     await service.send("client@test.com", "Hello", "<p>Hi</p>", "org-1");
@@ -138,7 +157,11 @@ describe("MailService", () => {
     const settings = makeSettingsService(null);
     const config = makeConfig({ RESEND_API_KEY: "re_env_key" });
 
-    const service = new MailService(config as any, settings as any, mockLogger as any);
+    const service = new MailService(
+      config as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
 
     // No organizationId — uses the env-var Resend initialized in the constructor
     await service.send("client@test.com", "Subject", "<p>Body</p>");
@@ -153,7 +176,11 @@ describe("MailService", () => {
     // No RESEND_API_KEY in env — this means this.resend is null
     const config = makeConfig({ RESEND_API_KEY: undefined });
 
-    const service = new MailService(config as any, settings as any, mockLogger as any);
+    const service = new MailService(
+      config as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
 
     // Should not throw
     await service.send("someone@test.com", "Test", "<p>Body</p>");
@@ -170,7 +197,11 @@ describe("MailService", () => {
     );
     const config = makeConfig({ RESEND_API_KEY: "re_fallback_key" });
 
-    const service = new MailService(config as any, settings as any, mockLogger as any);
+    const service = new MailService(
+      config as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
 
     await service.send("someone@test.com", "Test", "<p>Body</p>", "org-1");
 
@@ -188,7 +219,11 @@ describe("MailService", () => {
     });
     const config = makeConfig({ RESEND_API_KEY: undefined });
 
-    const service = new MailService(config as any, settings as any, mockLogger as any);
+    const service = new MailService(
+      config as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
 
     await service.send("someone@test.com", "Test", "<p>Body</p>", "org-1");
 

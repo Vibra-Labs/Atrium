@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { LoggerModule } from "nestjs-pino";
+import { IncomingMessage, ServerResponse } from "http";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./auth/auth.module";
 import { ProjectsModule } from "./projects/projects.module";
@@ -33,14 +34,14 @@ import { CsrfGuard } from "./common/guards/csrf.guard";
             : undefined,
         level: process.env.LOG_LEVEL || "info",
         autoLogging: {
-          ignore: (req: any) => req.url === "/api/health",
+          ignore: (req: IncomingMessage) => req.url === "/api/health",
         },
         serializers: {
-          req: (req: any) => ({
+          req: (req: IncomingMessage) => ({
             method: req.method,
             url: req.url,
           }),
-          res: (res: any) => ({
+          res: (res: ServerResponse) => ({
             statusCode: res.statusCode,
           }),
         },

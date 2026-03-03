@@ -73,7 +73,7 @@ export class NotificationsService {
   ): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { name: true },
+      select: { name: true, organizationId: true },
     });
     if (!project) return;
 
@@ -97,6 +97,7 @@ export class NotificationsService {
             client.email,
             `New update on ${project.name}`,
             html,
+            project.organizationId,
           );
         } catch (err) {
           this.logger.warn(
@@ -115,7 +116,7 @@ export class NotificationsService {
   ): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { name: true },
+      select: { name: true, organizationId: true },
     });
     if (!project) return;
 
@@ -147,6 +148,7 @@ export class NotificationsService {
             client.email,
             `New task on ${project.name}: ${taskTitle}`,
             html,
+            project.organizationId,
           );
         } catch (err) {
           this.logger.warn(
@@ -201,6 +203,7 @@ export class NotificationsService {
             client.email,
             `Invoice ${invoice.invoiceNumber} — ${amount}`,
             html,
+            invoice.organizationId,
           );
         } catch (err) {
           this.logger.warn(

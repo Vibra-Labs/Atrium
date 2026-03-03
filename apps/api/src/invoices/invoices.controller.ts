@@ -25,6 +25,7 @@ import {
   CurrentUser,
   CurrentOrg,
   PaginationQueryDto,
+  sanitizeFilename,
 } from "../common";
 
 @Controller("invoices")
@@ -86,8 +87,9 @@ export class InvoicesController {
     // Verify client access first
     await this.invoicesService.findOneMine(id, userId, orgId);
     const { stream, filename } = await this.invoicePdfService.generate(id, orgId);
+    const safeName = sanitizeFilename(filename);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
     stream.on("error", () => {
       if (!res.headersSent) res.status(500).end();
     });
@@ -111,8 +113,9 @@ export class InvoicesController {
     @Res() res: Response,
   ) {
     const { stream, filename } = await this.invoicePdfService.generate(id, orgId);
+    const safeName = sanitizeFilename(filename);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
     stream.on("error", () => {
       if (!res.headersSent) res.status(500).end();
     });

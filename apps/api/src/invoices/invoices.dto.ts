@@ -9,6 +9,7 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
   ValidateNested,
+  ValidateIf,
   IsIn,
   IsDateString,
   MaxLength,
@@ -55,7 +56,7 @@ export class CreateInvoiceDto {
 export class UpdateInvoiceDto {
   @IsString()
   @IsOptional()
-  @IsIn(["draft", "sent", "paid", "overdue"])
+  @IsIn(["draft", "sent", "paid", "overdue", "cancelled"])
   status?: string;
 
   @IsArray()
@@ -66,6 +67,7 @@ export class UpdateInvoiceDto {
   @IsOptional()
   lineItems?: LineItemDto[];
 
+  @ValidateIf((o) => o.dueDate !== null)
   @IsDateString()
   @IsOptional()
   dueDate?: string | null;
@@ -83,6 +85,6 @@ export class InvoiceListQueryDto extends PaginationQueryDto {
 
   @IsString()
   @IsOptional()
-  @IsIn(["draft", "sent", "paid", "overdue"])
+  @IsIn(["draft", "sent", "paid", "overdue", "cancelled"])
   status?: string;
 }

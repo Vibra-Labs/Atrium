@@ -1,13 +1,17 @@
 import { describe, test, expect, beforeEach, mock, afterEach } from "bun:test";
 import { NotificationsService } from "./notifications.service";
+import type { MailService } from "../mail/mail.service";
+import type { PrismaService } from "../prisma/prisma.service";
+import type { ConfigService } from "@nestjs/config";
+import type { PinoLogger } from "nestjs-pino";
 
 // --- Module mocks ---
 
 // Mock @atrium/email render functions so tests never call React Email
 mock.module("@atrium/email", () => ({
-  ProjectUpdateEmail: (props: any) => props,
-  TaskAssignedEmail: (props: any) => props,
-  InvoiceSentEmail: (props: any) => props,
+  ProjectUpdateEmail: (props: Record<string, unknown>) => props,
+  TaskAssignedEmail: (props: Record<string, unknown>) => props,
+  InvoiceSentEmail: (props: Record<string, unknown>) => props,
 }));
 
 mock.module("@react-email/render", () => ({
@@ -37,7 +41,7 @@ function makeConfig() {
   };
 }
 
-function makePrisma(overrides: Record<string, any> = {}) {
+function makePrisma(overrides: Record<string, unknown> = {}) {
   return {
     project: {
       findUnique: mock(() =>
@@ -79,10 +83,10 @@ describe("NotificationsService", () => {
     mail = makeMailService();
     prisma = makePrisma();
     service = new NotificationsService(
-      mail as any,
-      prisma as any,
-      makeConfig() as any,
-      mockLogger as any,
+      mail as unknown as MailService,
+      prisma as unknown as PrismaService,
+      makeConfig() as unknown as ConfigService,
+      mockLogger as unknown as PinoLogger,
     );
   });
 
@@ -100,8 +104,8 @@ describe("NotificationsService", () => {
 
     expect(mail.send).toHaveBeenCalledTimes(2);
 
-    const calls = (mail.send as any).mock.calls;
-    const recipients = calls.map((c: any[]) => c[0]);
+    const calls = mail.send.mock.calls;
+    const recipients = calls.map((c: unknown[]) => c[0]);
     expect(recipients).toContain("alice@example.com");
     expect(recipients).toContain("bob@example.com");
   });
@@ -154,7 +158,7 @@ describe("NotificationsService", () => {
 
     expect(mail.send).toHaveBeenCalledTimes(2);
 
-    const subjectCall = (mail.send as any).mock.calls[0];
+    const subjectCall = mail.send.mock.calls[0];
     expect(subjectCall[1]).toContain("Design homepage hero section");
   });
 

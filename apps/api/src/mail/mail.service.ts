@@ -17,7 +17,8 @@ interface SmtpConfig {
 export class MailService {
   private resend: Resend | null;
   private from: string;
-  private smtpTransporters = new Map<string, nodemailer.Transporter>();
+  private static readonly SMTP_CACHE_TTL_MS = 5 * 60 * 1000;
+  private smtpTransporters = new Map<string, { transporter: nodemailer.Transporter; createdAt: number }>();
 
   constructor(
     private config: ConfigService,
@@ -30,23 +31,26 @@ export class MailService {
     this.from = this.config.get("EMAIL_FROM", "noreply@atrium.local");
   }
 
-  private getSmtpTransporter(smtp: SmtpConfig): nodemailer.Transporter {
-    const key = `${smtp.host}:${smtp.port}:${smtp.user}`;
-    if (!this.smtpTransporters.has(key)) {
-      this.smtpTransporters.set(
-        key,
-        nodemailer.createTransport({
-          host: smtp.host ?? undefined,
-          port: smtp.port,
-          secure: smtp.secure,
-          auth:
-            smtp.user && smtp.pass
-              ? { user: smtp.user, pass: smtp.pass }
-              : undefined,
-        }),
-      );
+  private getSmtpTransporter(smtp: SmtpConfig, organizationId?: string): nodemailer.Transporter {
+    const key = `${organizationId ?? "default"}:${smtp.host}:${smtp.port}:${smtp.user}`;
+    const cached = this.smtpTransporters.get(key);
+    if (cached && Date.now() - cached.createdAt < MailService.SMTP_CACHE_TTL_MS) {
+      return cached.transporter;
     }
-    return this.smtpTransporters.get(key)!;
+    if (cached) {
+      this.smtpTransporters.delete(key);
+    }
+    const transporter = nodemailer.createTransport({
+      host: smtp.host ?? undefined,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth:
+        smtp.user && smtp.pass
+          ? { user: smtp.user, pass: smtp.pass }
+          : undefined,
+    });
+    this.smtpTransporters.set(key, { transporter, createdAt: Date.now() });
+    return transporter;
   }
 
   async send(to: string, subject: string, html: string, organizationId?: string) {
@@ -68,7 +72,7 @@ export class MailService {
         }
 
         if (emailConfig.provider === "smtp" && emailConfig.smtp) {
-          const transporter = this.getSmtpTransporter(emailConfig.smtp);
+          const transporter = this.getSmtpTransporter(emailConfig.smtp, organizationId);
           await transporter.sendMail({
             from: emailConfig.from,
             to,

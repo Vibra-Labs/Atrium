@@ -1,8 +1,16 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { InvoicesService } from "./invoices.service";
 import { NotFoundException } from "@nestjs/common";
+import type { PrismaService } from "../prisma/prisma.service";
+import type { NotificationsService } from "../notifications/notifications.service";
+import type { CreateInvoiceDto } from "./invoices.dto";
 
 // --- Mock helpers ---
+
+interface PrismaArgs {
+  where?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+}
 
 const mockNotifications = {
   notifyInvoiceSent: mock(() => {}),
@@ -14,11 +22,11 @@ function makeBasePrisma() {
       findFirst: mock(() => Promise.resolve(null)),
       findMany: mock(() => Promise.resolve([])),
       count: mock(() => Promise.resolve(0)),
-      create: mock((args: any) =>
+      create: mock((args: PrismaArgs) =>
         Promise.resolve({ id: "inv-1", ...args.data }),
       ),
-      update: mock((args: any) =>
-        Promise.resolve({ id: args.where.id, ...args.data, lineItems: [] }),
+      update: mock((args: PrismaArgs) =>
+        Promise.resolve({ id: args.where?.id, ...args.data, lineItems: [] }),
       ),
       delete: mock(() => Promise.resolve()),
       groupBy: mock(() => Promise.resolve([])),
@@ -26,21 +34,26 @@ function makeBasePrisma() {
     invoiceLineItem: {
       deleteMany: mock(() => Promise.resolve({ count: 0 })),
     },
+    project: {
+      findFirst: mock(() =>
+        Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
+      ),
+    },
     projectClient: {
       findMany: mock(() => Promise.resolve([])),
       findFirst: mock(() => Promise.resolve(null)),
     },
-    $transaction: mock((fn: any) => {
+    $transaction: mock((fn: (tx: Record<string, unknown>) => unknown) => {
       // Provide a minimal tx that proxies to the outer mock
       return fn({
         invoice: {
           findFirst: mock(() => Promise.resolve(null)),
-          create: mock((args: any) =>
+          create: mock((args: PrismaArgs) =>
             Promise.resolve({ id: "inv-1", ...args.data, lineItems: [] }),
           ),
-          update: mock((args: any) =>
+          update: mock((args: PrismaArgs) =>
             Promise.resolve({
-              id: args.where.id,
+              id: args.where?.id,
               ...args.data,
               lineItems: [],
             }),
@@ -62,7 +75,7 @@ describe("InvoicesService", () => {
   const orgId = "org-1";
 
   const baseLineItem = { description: "Design work", quantity: 1, unitPrice: 5000 };
-  const createDto: any = {
+  const createDto: CreateInvoiceDto = {
     lineItems: [baseLineItem],
     dueDate: undefined,
     notes: undefined,
@@ -71,7 +84,7 @@ describe("InvoicesService", () => {
 
   beforeEach(() => {
     prisma = makeBasePrisma();
-    service = new InvoicesService(prisma as any, mockNotifications as any);
+    service = new InvoicesService(prisma as unknown as PrismaService, mockNotifications as unknown as NotificationsService);
   });
 
   // --- Invoice number format ---
@@ -79,12 +92,12 @@ describe("InvoicesService", () => {
   test("first invoice gets number INV-0001", async () => {
     let capturedInvoiceNumber = "";
 
-    prisma.$transaction.mockImplementation(async (fn: any) => {
+    prisma.$transaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => unknown) => {
       const tx = {
         invoice: {
           findFirst: mock(() => Promise.resolve(null)),
-          create: mock((args: any) => {
-            capturedInvoiceNumber = args.data.invoiceNumber;
+          create: mock((args: PrismaArgs) => {
+            capturedInvoiceNumber = args.data?.invoiceNumber as string;
             return Promise.resolve({ id: "inv-1", ...args.data, lineItems: [] });
           }),
         },
@@ -100,14 +113,14 @@ describe("InvoicesService", () => {
   test("invoice number pads to 4 digits (INV-0042 for the 42nd invoice)", async () => {
     let capturedInvoiceNumber = "";
 
-    prisma.$transaction.mockImplementation(async (fn: any) => {
+    prisma.$transaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => unknown) => {
       const tx = {
         invoice: {
           findFirst: mock(() =>
             Promise.resolve({ invoiceNumber: "INV-0041" }),
           ),
-          create: mock((args: any) => {
-            capturedInvoiceNumber = args.data.invoiceNumber;
+          create: mock((args: PrismaArgs) => {
+            capturedInvoiceNumber = args.data?.invoiceNumber as string;
             return Promise.resolve({ id: "inv-42", ...args.data, lineItems: [] });
           }),
         },
@@ -123,14 +136,14 @@ describe("InvoicesService", () => {
   test("invoice number exceeds 4 digits correctly (INV-10000 for the 10000th)", async () => {
     let capturedInvoiceNumber = "";
 
-    prisma.$transaction.mockImplementation(async (fn: any) => {
+    prisma.$transaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => unknown) => {
       const tx = {
         invoice: {
           findFirst: mock(() =>
             Promise.resolve({ invoiceNumber: "INV-9999" }),
           ),
-          create: mock((args: any) => {
-            capturedInvoiceNumber = args.data.invoiceNumber;
+          create: mock((args: PrismaArgs) => {
+            capturedInvoiceNumber = args.data?.invoiceNumber as string;
             return Promise.resolve({ id: "inv-big", ...args.data, lineItems: [] });
           }),
         },
@@ -148,18 +161,17 @@ describe("InvoicesService", () => {
   test("retries on P2002 conflict and succeeds on second attempt", async () => {
     let callCount = 0;
 
-    prisma.$transaction.mockImplementation(async (fn: any) => {
+    prisma.$transaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => unknown) => {
       callCount += 1;
       if (callCount === 1) {
-        const err: any = new Error("Unique constraint failed");
-        err.code = "P2002";
+        const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
         throw err;
       }
       // Second attempt succeeds
       const tx = {
         invoice: {
           findFirst: mock(() => Promise.resolve(null)),
-          create: mock((args: any) =>
+          create: mock((args: PrismaArgs) =>
             Promise.resolve({ id: "inv-retry", ...args.data, lineItems: [] }),
           ),
         },
@@ -178,32 +190,30 @@ describe("InvoicesService", () => {
 
     prisma.$transaction.mockImplementation(async () => {
       callCount += 1;
-      const err: any = new Error("Some other error");
-      err.code = "P2000";
+      const err = Object.assign(new Error("Some other error"), { code: "P2000" });
       throw err;
     });
 
     try {
       await service.create(createDto, orgId);
       expect(true).toBe(false); // should not reach
-    } catch (err: any) {
-      expect(err.code).toBe("P2000");
+    } catch (err) {
+      expect((err as { code: string }).code).toBe("P2000");
       expect(callCount).toBe(1);
     }
   });
 
   test("gives up after 3 P2002 retries and re-throws", async () => {
     prisma.$transaction.mockImplementation(async () => {
-      const err: any = new Error("Unique constraint failed");
-      err.code = "P2002";
+      const err = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
       throw err;
     });
 
     try {
       await service.create(createDto, orgId);
       expect(true).toBe(false);
-    } catch (err: any) {
-      expect(err.code).toBe("P2002");
+    } catch (err) {
+      expect((err as { code: string }).code).toBe("P2002");
     }
   });
 

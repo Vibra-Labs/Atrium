@@ -56,9 +56,9 @@ export class OnboardingController {
     const signupRes = await this.authService.auth.handler(signupReq);
 
     if (!signupRes.ok) {
-      const err = await signupRes.json().catch(() => ({}));
+      const err: Record<string, unknown> = await signupRes.json().catch(() => ({}));
       throw new BadRequestException(
-        (err as any).message || "Signup failed",
+        (err.message as string) || "Signup failed",
       );
     }
 

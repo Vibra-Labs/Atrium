@@ -16,7 +16,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { UpdatesService } from "./updates.service";
 import { CreateUpdateDto } from "./updates.dto";
-import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, PaginationQueryDto } from "../common";
+import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto } from "../common";
 import type { UploadedFile as UploadedFileType } from "../files/files.service";
 
 @Controller("updates")
@@ -75,9 +75,11 @@ export class UpdatesController {
   getAttachment(
     @Param("id") id: string,
     @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentMember("role") role: string,
     @Res() res: Response,
   ) {
-    return this.updatesService.getAttachment(id, orgId, res);
+    return this.updatesService.getAttachment(id, orgId, userId, role, res);
   }
 
   @Delete(":id")

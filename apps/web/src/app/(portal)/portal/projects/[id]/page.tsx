@@ -18,6 +18,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
+import { linkify } from "@/lib/linkify";
 
 interface FileRecord {
   id: string;
@@ -50,28 +51,6 @@ interface ProjectUpdateRecord {
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
-function linkify(text: string) {
-  const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/g;
-  const parts = text.split(urlRegex);
-  return parts.map((part, i) => {
-    if (urlRegex.test(part)) {
-      const href = part.startsWith("http") ? part : `https://${part}`;
-      return (
-        <a
-          key={i}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[var(--primary)] underline break-all"
-        >
-          {part}
-        </a>
-      );
-    }
-    return part;
-  });
-}
 
 function formatDateDisplay(dateStr: string): string {
   const d = new Date(dateStr);

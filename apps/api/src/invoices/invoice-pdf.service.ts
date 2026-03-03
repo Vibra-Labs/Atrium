@@ -74,8 +74,14 @@ export class InvoicePdfService {
     // Line items
     let y = headerY + 26;
     let grandTotal = 0;
+    const pageBottom = doc.page.height - doc.page.margins.bottom;
 
     for (const item of invoice.lineItems) {
+      if (y + 20 > pageBottom) {
+        doc.addPage();
+        y = doc.page.margins.top;
+      }
+
       const lineTotal = item.quantity * item.unitPrice;
       grandTotal += lineTotal;
 

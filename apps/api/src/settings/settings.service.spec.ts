@@ -1,5 +1,13 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { SettingsService } from "./settings.service";
+import type { PrismaService } from "../prisma/prisma.service";
+import type { ConfigService } from "@nestjs/config";
+import type { PinoLogger } from "nestjs-pino";
+
+interface UpsertArgs {
+  update?: Record<string, unknown>;
+  create?: Record<string, unknown>;
+}
 
 // Minimal logger mock
 const mockLogger = {
@@ -70,7 +78,7 @@ describe("SettingsService", () => {
       },
     };
     config = makeConfig();
-    service = new SettingsService(prisma as any, config as any, mockLogger as any);
+    service = new SettingsService(prisma as unknown as PrismaService, config as unknown as ConfigService, mockLogger as unknown as PinoLogger);
   });
 
   // --- Encryption round-trip ---
@@ -79,8 +87,8 @@ describe("SettingsService", () => {
     let storedResendKey: string | null = null;
 
     // Capture what was stored in the DB
-    prisma.systemSettings.upsert.mockImplementation((args: any) => {
-      const data = args.update ?? args.create;
+    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+      const data = args.update ?? args.create ?? {};
       if (data.resendApiKey !== undefined) storedResendKey = data.resendApiKey;
       return Promise.resolve(
         baseSettings({ resendApiKey: storedResendKey }),
@@ -106,8 +114,8 @@ describe("SettingsService", () => {
   test("smtpPass is encrypted on save and decrypted in getEffectiveEmailConfig", async () => {
     let storedSmtpPass: string | null = null;
 
-    prisma.systemSettings.upsert.mockImplementation((args: any) => {
-      const data = args.update ?? args.create;
+    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+      const data = args.update ?? args.create ?? {};
       if (data.smtpPass !== undefined) storedSmtpPass = data.smtpPass;
       return Promise.resolve(
         baseSettings({
@@ -172,8 +180,8 @@ describe("SettingsService", () => {
   });
 
   test("updateSettings masks resendApiKey in returned value", async () => {
-    prisma.systemSettings.upsert.mockImplementation((args: any) => {
-      const data = args.update ?? args.create;
+    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+      const data = args.update ?? args.create ?? {};
       return Promise.resolve(
         baseSettings({ resendApiKey: data.resendApiKey ?? null }),
       );
@@ -190,7 +198,7 @@ describe("SettingsService", () => {
 
   test("getEffectiveEmailConfig falls back to RESEND_API_KEY env var when no DB settings", async () => {
     config = makeConfig({ RESEND_API_KEY: "re_env_key_456" });
-    service = new SettingsService(prisma as any, config as any, mockLogger as any);
+    service = new SettingsService(prisma as unknown as PrismaService, config as unknown as ConfigService, mockLogger as unknown as PinoLogger);
 
     prisma.systemSettings.findUnique.mockImplementation(() =>
       Promise.resolve(null),
@@ -214,7 +222,7 @@ describe("SettingsService", () => {
 
   test("getEffectiveEmailConfig uses DB emailFrom over env EMAIL_FROM", async () => {
     config = makeConfig({ EMAIL_FROM: "env@example.com" });
-    service = new SettingsService(prisma as any, config as any, mockLogger as any);
+    service = new SettingsService(prisma as unknown as PrismaService, config as unknown as ConfigService, mockLogger as unknown as PinoLogger);
 
     prisma.systemSettings.findUnique.mockImplementation(() =>
       Promise.resolve(baseSettings({ emailFrom: "db@example.com" })),
@@ -227,7 +235,7 @@ describe("SettingsService", () => {
 
   test("getEffectiveEmailConfig falls back to EMAIL_FROM env var", async () => {
     config = makeConfig({ EMAIL_FROM: "fallback@example.com" });
-    service = new SettingsService(prisma as any, config as any, mockLogger as any);
+    service = new SettingsService(prisma as unknown as PrismaService, config as unknown as ConfigService, mockLogger as unknown as PinoLogger);
 
     prisma.systemSettings.findUnique.mockImplementation(() =>
       Promise.resolve(baseSettings({ emailFrom: null })),
@@ -262,7 +270,7 @@ describe("SettingsService", () => {
 
   test("getEffectiveMaxFileSize returns MAX_FILE_SIZE_MB env var when DB not set", async () => {
     config = makeConfig({ MAX_FILE_SIZE_MB: "75" });
-    service = new SettingsService(prisma as any, config as any, mockLogger as any);
+    service = new SettingsService(prisma as unknown as PrismaService, config as unknown as ConfigService, mockLogger as unknown as PinoLogger);
 
     prisma.systemSettings.findUnique.mockImplementation(() =>
       Promise.resolve(baseSettings({ maxFileSizeMb: null })),
@@ -288,8 +296,8 @@ describe("SettingsService", () => {
   test("updateSettings stores null when resendApiKey is cleared", async () => {
     let storedKey: string | null = "previous-value";
 
-    prisma.systemSettings.upsert.mockImplementation((args: any) => {
-      const data = args.update ?? args.create;
+    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+      const data = args.update ?? args.create ?? {};
       if ("resendApiKey" in data) storedKey = data.resendApiKey;
       return Promise.resolve(baseSettings({ resendApiKey: storedKey }));
     });

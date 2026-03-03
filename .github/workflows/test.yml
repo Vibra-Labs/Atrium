@@ -1,14 +1,12 @@
 name: Tests
 
 on:
-  push:
-    branches: ['**']
   pull_request:
     branches: [main]
 
 jobs:
   test:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     services:
       postgres:
@@ -43,6 +41,8 @@ jobs:
           bun-version: latest
 
       - run: bun install --frozen-lockfile
+
+      - run: bun run db:generate
 
       - run: bun run build
 

@@ -46,6 +46,7 @@ export class UpdatesService {
     let attachmentKey: string | undefined;
     let attachmentMimeType: string | undefined;
     let attachmentName: string | undefined;
+    let fileId: string | undefined;
 
     if (attachment) {
       if (attachment.size > MAX_ATTACHMENT_SIZE) {
@@ -58,6 +59,20 @@ export class UpdatesService {
       attachmentName = attachment.originalname;
 
       await this.storage.upload(attachmentKey, attachment.buffer, attachment.mimetype);
+
+      // Create a File record so the attachment appears in the project's Files tab
+      const file = await this.prisma.file.create({
+        data: {
+          filename: safeName,
+          storageKey: attachmentKey,
+          mimeType: attachment.mimetype,
+          sizeBytes: attachment.size,
+          projectId,
+          organizationId,
+          uploadedById: authorId,
+        },
+      });
+      fileId = file.id;
     }
 
     const update = await this.prisma.projectUpdate.create({
@@ -66,6 +81,7 @@ export class UpdatesService {
         attachmentKey,
         attachmentMimeType,
         attachmentName,
+        fileId,
         projectId,
         organizationId,
         authorId,
@@ -88,6 +104,7 @@ export class UpdatesService {
       this.prisma.projectUpdate.findMany({
         where,
         orderBy: { createdAt: "desc" },
+        include: { file: { select: { id: true } } },
         ...paginationArgs(page, limit),
       }),
       this.prisma.projectUpdate.count({ where }),
@@ -101,11 +118,13 @@ export class UpdatesService {
     });
     const authorMap = new Map(authors.map((a) => [a.id, a]));
 
-    // Generate signed URLs for attachments
+    // Generate attachment URLs: prefer file download endpoint, fall back to signed URL for legacy data
     const enriched = await Promise.all(
       updates.map(async (u) => {
         let attachmentUrl: string | undefined;
-        if (u.attachmentKey) {
+        if (u.fileId) {
+          attachmentUrl = `/api/files/${u.fileId}/download`;
+        } else if (u.attachmentKey) {
           attachmentUrl = await this.storage.getSignedUrl(u.attachmentKey);
         }
         const author = authorMap.get(u.authorId);
@@ -115,7 +134,8 @@ export class UpdatesService {
           attachmentUrl,
           attachmentName: u.attachmentName,
           attachmentMimeType: u.attachmentMimeType,
-          hasAttachment: !!u.attachmentKey,
+          hasAttachment: !!u.attachmentKey || !!u.fileId,
+          fileId: u.fileId,
           projectId: u.projectId,
           author: author ?? { id: u.authorId, name: "Unknown" },
           createdAt: u.createdAt,
@@ -154,6 +174,11 @@ export class UpdatesService {
     }
 
     await this.prisma.projectUpdate.delete({ where: { id } });
+
+    // Clean up the linked File record (storage already deleted above)
+    if (update.fileId) {
+      await this.prisma.file.delete({ where: { id: update.fileId } }).catch(() => {});
+    }
   }
 
   async getAttachment(id: string, organizationId: string, res: Response) {

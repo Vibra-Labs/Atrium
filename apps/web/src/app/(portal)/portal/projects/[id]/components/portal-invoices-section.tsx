@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { Receipt, Download } from "lucide-react";
 
@@ -46,6 +47,7 @@ export function PortalInvoicesSection({
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { error: showError } = useToast();
 
   const loadInvoices = useCallback(async () => {
     setLoading(true);
@@ -87,7 +89,7 @@ export function PortalInvoicesSection({
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error(err);
+      showError(err instanceof Error ? err.message : "Failed to download PDF");
     }
   };
 

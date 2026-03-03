@@ -88,6 +88,9 @@ export class InvoicesController {
     const { stream, filename } = await this.invoicePdfService.generate(id, orgId);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    stream.on("error", () => {
+      if (!res.headersSent) res.status(500).end();
+    });
     stream.pipe(res);
   }
 
@@ -110,6 +113,9 @@ export class InvoicesController {
     const { stream, filename } = await this.invoicePdfService.generate(id, orgId);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    stream.on("error", () => {
+      if (!res.headersSent) res.status(500).end();
+    });
     stream.pipe(res);
   }
 

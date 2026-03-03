@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
+const API = "http://localhost:3001/api";
+
 test.describe("Files", () => {
   test("project detail page shows file upload area", async ({ page }) => {
     await page.goto("/dashboard/projects");
@@ -60,5 +62,68 @@ test.describe("Files", () => {
 
     // Should be 401 Unauthorized without a valid session
     expect(response.status()).toBeGreaterThanOrEqual(400);
+  });
+
+  test("posting an update with attachment creates a file record", async ({
+    request,
+  }) => {
+    // 1. Get a project to attach the update to
+    const projectsRes = await request.get(`${API}/projects?limit=1`);
+    expect(projectsRes.ok()).toBeTruthy();
+    const projects = await projectsRes.json();
+    if (!projects.data?.length) return;
+
+    const projectId = projects.data[0].id as string;
+
+    // 2. Get current file count for the project
+    const filesBeforeRes = await request.get(
+      `${API}/files?projectId=${projectId}`,
+    );
+    expect(filesBeforeRes.ok()).toBeTruthy();
+    const filesBefore = await filesBeforeRes.json();
+    const countBefore = filesBefore.meta?.total ?? filesBefore.data?.length ?? 0;
+
+    // 3. Post an update with a small text-file attachment
+    const boundary = "----TestBoundary" + Date.now();
+    const fileContent = "test file content for e2e";
+    const body = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="content"',
+      "",
+      "Update with attachment for file integration test",
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="attachment"; filename="test-attachment.txt"',
+      "Content-Type: text/plain",
+      "",
+      fileContent,
+      `--${boundary}--`,
+    ].join("\r\n");
+
+    const updateRes = await request.post(
+      `${API}/updates?projectId=${projectId}`,
+      {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+      },
+    );
+    expect(updateRes.ok()).toBeTruthy();
+    const update = await updateRes.json();
+    expect(update.fileId).toBeTruthy();
+
+    // 4. Verify the file count increased
+    const filesAfterRes = await request.get(
+      `${API}/files?projectId=${projectId}`,
+    );
+    expect(filesAfterRes.ok()).toBeTruthy();
+    const filesAfter = await filesAfterRes.json();
+    const countAfter = filesAfter.meta?.total ?? filesAfter.data?.length ?? 0;
+    expect(countAfter).toBeGreaterThan(countBefore);
+
+    // 5. Verify the file is downloadable via the files endpoint
+    const fileId = update.fileId as string;
+    const downloadRes = await request.get(`${API}/files/${fileId}/download`);
+    expect(downloadRes.ok()).toBeTruthy();
   });
 });

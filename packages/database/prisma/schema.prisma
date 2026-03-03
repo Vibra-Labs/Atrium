@@ -171,6 +171,7 @@ model File {
   createdAt      DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updates ProjectUpdate[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -183,12 +184,14 @@ model ProjectUpdate {
   attachmentKey      String?  @map("image_key")
   attachmentMimeType String?  @map("image_mime_type")
   attachmentName     String?
+  fileId             String?
   projectId          String
   organizationId     String
   authorId           String
   createdAt          DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  file    File?   @relation(fields: [fileId], references: [id])
 
   @@index([projectId])
   @@index([organizationId])

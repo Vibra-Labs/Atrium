@@ -2,7 +2,7 @@
 
 All notable changes to Atrium will be documented in this file.
 
-## [Unreleased] — VRB-28
+## [1.0.1] — 1.0.1
 
 ### Added
 
@@ -81,6 +81,7 @@ All notable changes to Atrium will be documented in this file.
 - SMTP transporter cached and reused instead of created per email
 - Multer hard limit lowered from 500 MB to 200 MB
 - `sanitizeFilename` deduplicated into shared utility
+- Update attachments now appear in Files tab immediately (file list refreshes after posting/deleting updates)
 
 ### Changed
 

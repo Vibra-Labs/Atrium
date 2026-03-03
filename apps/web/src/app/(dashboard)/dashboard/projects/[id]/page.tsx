@@ -374,7 +374,7 @@ export default function ProjectDetailPage() {
           <TasksSection projectId={id} isArchived={isArchived} />
         )}
         {activeTab === "updates" && (
-          <UpdatesSection projectId={id} isArchived={isArchived} />
+          <UpdatesSection projectId={id} isArchived={isArchived} onFileChange={loadProject} />
         )}
         {activeTab === "files" && (
           <FilesSection

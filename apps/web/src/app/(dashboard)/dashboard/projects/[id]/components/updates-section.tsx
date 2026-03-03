@@ -52,9 +52,11 @@ interface PaginatedResponse<T> {
 export function UpdatesSection({
   projectId,
   isArchived,
+  onFileChange,
 }: {
   projectId: string;
   isArchived: boolean;
+  onFileChange?: () => void;
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -98,6 +100,7 @@ export function UpdatesSection({
       setNewAttachment(null);
       setShowCompose(false);
       loadUpdates();
+      onFileChange?.();
       success("Update posted");
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to post update");
@@ -138,6 +141,7 @@ export function UpdatesSection({
     try {
       await apiFetch(`/updates/${updateId}`, { method: "DELETE" });
       loadUpdates();
+      onFileChange?.();
       success("Update deleted");
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to delete update");

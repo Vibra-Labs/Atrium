@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>AtriumDB</Name>
+  <Repository>postgres:16-alpine</Repository>
+  <Registry>https://hub.docker.com/_/postgres</Registry>
+  <Branch>
+    <Tag>16-alpine</Tag>
+    <TagDescription>PostgreSQL 16 Alpine</TagDescription>
+  </Branch>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Vibra-Labs/Atrium/issues</Support>
+  <Project>https://github.com/Vibra-Labs/Atrium</Project>
+  <Overview>
+    PostgreSQL 16 database for Atrium client portal. Install this container first, then install the Atrium container.
+  </Overview>
+  <Category>Productivity: Tools:</Category>
+  <TemplateURL>https://raw.githubusercontent.com/Vibra-Labs/Atrium/main/unraid/atrium-db.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Vibra-Labs/Atrium/main/public/icon.png</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <Description>
+    PostgreSQL 16 database companion container for Atrium. Install this first, then install Atrium.
+  </Description>
+
+  <!-- Postgres Port (optional external access) -->
+  <Config
+    Name="PostgreSQL Port"
+    Target="5432"
+    Default="5432"
+    Mode="tcp"
+    Description="PostgreSQL port (change if 5432 is already in use)"
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">5432</Config>
+
+  <!-- Database Credentials -->
+  <Config
+    Name="Database User"
+    Target="POSTGRES_USER"
+    Default="atrium"
+    Description="PostgreSQL username"
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false">atrium</Config>
+
+  <Config
+    Name="Database Password"
+    Target="POSTGRES_PASSWORD"
+    Default="atrium"
+    Description="PostgreSQL password (change this for security!)"
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="true">atrium</Config>
+
+  <Config
+    Name="Database Name"
+    Target="POSTGRES_DB"
+    Default="atrium"
+    Description="PostgreSQL database name"
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false">atrium</Config>
+
+  <!-- Data Storage -->
+  <Config
+    Name="Database Storage"
+    Target="/var/lib/postgresql/data"
+    Default="/mnt/user/appdata/atrium/db"
+    Description="Path to store PostgreSQL data"
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/atrium/db</Config>
+</Container>

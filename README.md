@@ -9,11 +9,13 @@ Created by [@edgarjc](https://github.com/edgarjc) -- Built out of frustration wi
 [![License: ELv2](https://img.shields.io/badge/License-ELv2-blue.svg)](https://www.elastic.co/licensing/elastic-license)
 
 
+![Atrium](public/landing.png)
+
 ## Why Atrium?
 
 Most agencies juggle shared drives, spreadsheets, and scattered emails to keep clients in the loop. Atrium replaces all of that with a single branded portal your clients can log into -- no more "can you resend that file?" emails. Unlike managed SaaS platforms, you own the data and host it yourself.
 
-![alt text](public/dashboard.png)
+![Dashboard](public/dashboard.png)
 
 ## Features
 
@@ -87,6 +89,7 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 
 ## Documentation
 
+- [Docker Deployment](docs/docker.md)
 - [Configuration & Environment Variables](docs/configuration.md)
 - [Development Guide & Scripts](docs/development.md)
 - [Security](docs/security.md)
@@ -97,7 +100,7 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 - [x] Setup wizard for new organizations
 - [x] Email notifications (Resend + SMTP)
 - [x] Docker Hub image (`vibralabs/atrium`)
-- [ ] Unraid Community App template
+- [x] Unraid Community App template
 - [ ] Contract signatures
 - [ ] Client-facing invoice payments
 - [ ] Webhooks / Zapier integration

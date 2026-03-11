@@ -1,0 +1,3 @@
+[submodule "unraid"]
+	path = unraid
+	url = https://github.com/Vibra-Labs/unraid-templates.git

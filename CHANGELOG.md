@@ -2,9 +2,23 @@
 
 All notable changes to Atrium will be documented in this file.
 
-## [1.2.0] — 2026-03-10
+## [1.2.0] — 2026-03-11
 
 ### Added
+
+#### Account Deletion
+- Owners can delete their account and cascade-delete their organization (projects, files, invoices, clients)
+- Password re-authentication required before deletion
+- Type-to-confirm dialog requiring `DELETE <org name>`
+- `GET /api/account/deletion-info` preflight endpoint returns org ownership context
+- Non-owners cannot see or access the delete functionality
+- E2E tests for deletion flow, credential invalidation, and non-owner visibility
+
+#### Supabase Row Level Security
+- `enable-rls.sql` enables RLS on all 21 tables and revokes `anon`/`authenticated` access
+- `bun run db:rls` command to apply manually
+- Docker entrypoints apply RLS automatically when `SUPABASE=true`
+- Safe for plain Postgres — gated behind env var, skipped by default
 
 #### Docker
 - Built-in PostgreSQL 16 bundled in the unified Docker image — no separate database container needed
@@ -18,6 +32,19 @@ All notable changes to Atrium will be documented in this file.
 - Unraid Community Applications template with single-container setup
 - Template repo at `Vibra-Labs/unraid-templates` linked as git submodule
 - PR submitted to `selfhosters/unRAID-CA-templates` for CA listing
+
+### Security
+- Comprehensive security audit with findings documented in `SECURITY_AUDIT.md`
+- DTO validation added for project and task inputs (`@IsDateString`, `@MaxLength`)
+- Path traversal protection in local file storage (reject `..` in keys)
+- Branding logo upload restricted to image MIME types
+- Update attachment size validated against system settings before storage
+- Caddyfile hardened with `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` headers
+- PostgreSQL port no longer exposed to host in production `docker-compose.yml`
+- `DELETED_USER_SENTINEL` constant in shared package for anonymized user references
+
+### Changed
+- Deploy workflow now only pushes to Docker Hub (removed Google Cloud Run and Firebase Hosting steps)
 
 ### Fixed
 - Dockerfile missing `ca-certificates` package broke PostgreSQL apt repo setup

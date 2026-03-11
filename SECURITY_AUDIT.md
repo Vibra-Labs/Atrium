@@ -104,10 +104,6 @@ Default PostgreSQL password (`atrium`) and a placeholder `BETTER_AUTH_SECRET` va
 
 **Recommendation:** Reference `.env` files from Docker Compose rather than hardcoding defaults: `${POSTGRES_PASSWORD:-atrium}`.
 
----
-
-### LOW — 7 Findings
-
 #### M6: Updates Endpoint Lacks File Extension Blocking
 
 **File:** `apps/api/src/updates/updates.service.ts:51-54`
@@ -118,7 +114,7 @@ The project updates attachment upload validates file size (10MB) but does **not*
 
 ---
 
-### LOW — 7 Findings
+### LOW — 9 Findings
 
 #### L1: No File Content-Type Validation (Magic Bytes)
 
@@ -172,7 +168,31 @@ The health controller has `@SkipThrottle()` but no `@Public()` decorator. It wor
 
 **Recommendation:** Add `@Public()` decorator for explicitness.
 
-#### L7: No `.dockerignore` for Sensitive Files
+#### L7: Caddyfile Missing Security Headers
+
+**File:** `docker/Caddyfile:1-15`
+
+The reverse proxy Caddyfile does not set standard security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, or `Permissions-Policy`. While the API sets some via Helmet, the Next.js frontend has no security headers configured in `next.config.ts` either.
+
+**Recommendation:** Add security headers in the Caddyfile `header` directive or in `next.config.ts`:
+```
+header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+}
+```
+
+#### L8: PostgreSQL Port Exposed to Host in Production Compose
+
+**File:** `docker-compose.yml:9`
+
+The production Docker Compose file maps PostgreSQL port `5432` to the host. This is unnecessary when only the API container needs DB access over the Docker network, and increases attack surface.
+
+**Recommendation:** Remove the `ports` mapping for postgres in production, or bind to localhost only (`127.0.0.1:5432:5432`).
+
+#### L9: No `.dockerignore` for Sensitive Files
 
 **File:** `docker/api.Dockerfile:17`
 
@@ -219,7 +239,9 @@ The `COPY . .` in the build stage copies the entire project context. Verify a `.
 5. **[MEDIUM]** Restrict `trust proxy` to specific depth
 6. **[MEDIUM]** Rate-limit health endpoint instead of skipping throttle
 7. **[MEDIUM]** Parameterize Docker Compose credentials via env vars
-8. **[LOW]** Add magic byte validation for file uploads
-9. **[LOW]** Derive logo extension from MIME type
-10. **[LOW]** Add `@Public()` to health endpoint for consistency
-11. **[LOW]** Evaluate CSP nonce-based inline styles
+8. **[LOW]** Add security headers to Caddyfile (HSTS, X-Content-Type-Options, etc.)
+9. **[LOW]** Remove PostgreSQL port exposure from production Docker Compose
+10. **[LOW]** Add magic byte validation for file uploads
+11. **[LOW]** Derive logo extension from MIME type
+12. **[LOW]** Add `@Public()` to health endpoint for consistency
+13. **[LOW]** Evaluate CSP nonce-based inline styles

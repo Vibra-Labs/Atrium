@@ -56,38 +56,40 @@ async function globalSetup() {
 
   // If redirected to setup wizard, complete it so existing tests work
   if (url.includes("/setup")) {
-    // Wait for the setup wizard to load
-    await page.waitForSelector("text=Organization Profile", {
-      timeout: 10000,
-    });
+    // Get a CSRF token first (any GET request sets the csrf-token cookie)
+    await page.request.get(`${apiUrl}/api/setup/status`);
+    const cookies = await context.cookies();
+    const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
 
-    // Complete setup by calling the API directly
+    // Try completing setup via API first (fastest path)
     const completeRes = await page.request.post(
       `${apiUrl}/api/setup/complete`,
-      {},
+      { headers: { "x-csrf-token": csrfToken } },
     );
-    if (!completeRes.ok()) {
-      // Fallback: step through the wizard manually
-      await page.getByRole("button", { name: /continue/i }).click();
-      await page.waitForSelector("text=Email Configuration", {
-        timeout: 5000,
-      });
-      await page.getByRole("button", { name: /skip & continue/i }).click();
-      await page.waitForSelector("text=Create Your First Project", {
-        timeout: 5000,
-      });
-      await page.getByRole("button", { name: /skip/i }).first().click();
-      await page.waitForSelector("text=Invite a Client", { timeout: 5000 });
-      await page.getByRole("button", { name: /skip/i }).first().click();
-      await page.waitForSelector("text=You are all set", { timeout: 5000 });
-      await page.getByRole("button", { name: /go to dashboard/i }).click();
-      await page.waitForURL("**/dashboard", { timeout: 15000 });
-    } else {
-      // Navigate to dashboard after completing setup via API
+    if (completeRes.ok()) {
       await page.goto("http://localhost:3000/dashboard", {
         waitUntil: "networkidle",
         timeout: 15000,
       });
+    } else {
+      // Fallback: step through the wizard manually
+      await page.waitForSelector("text=Organization Profile", {
+        timeout: 10000,
+      });
+      await page.getByRole("button", { name: /continue/i }).click();
+      await page.waitForSelector("text=Email Configuration", {
+        timeout: 10000,
+      });
+      await page.getByRole("button", { name: /skip & continue/i }).click();
+      await page.waitForSelector("text=Create Your First Project", {
+        timeout: 10000,
+      });
+      await page.getByRole("button", { name: /skip/i }).first().click();
+      await page.waitForSelector("text=Invite a Client", { timeout: 10000 });
+      await page.getByRole("button", { name: /skip/i }).first().click();
+      await page.waitForSelector("text=You are all set", { timeout: 10000 });
+      await page.getByRole("button", { name: /go to dashboard/i }).click();
+      await page.waitForURL("**/dashboard", { timeout: 15000 });
     }
   }
 

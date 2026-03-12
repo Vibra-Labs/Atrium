@@ -49,7 +49,12 @@ async function createOwnerUser(
   }
 
   if (url.includes("/setup")) {
-    await page.request.post(`${API_URL}/api/setup/complete`, {});
+    await page.request.get(`${API_URL}/api/setup/status`);
+    const cookies = await context.cookies();
+    const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
+    await page.request.post(`${API_URL}/api/setup/complete`, {
+      headers: { "x-csrf-token": csrfToken },
+    });
     await page.goto(`${WEB_URL}/dashboard`, {
       waitUntil: "networkidle",
       timeout: 15000,
@@ -71,6 +76,7 @@ async function inviteClient(
     `${API_URL}/api/auth/organization/invite-member`,
     {
       data: { email: clientEmail, role: "member" },
+      headers: { Origin: WEB_URL },
     },
   );
 
@@ -147,11 +153,17 @@ test.describe("Accept Invite", () => {
       page: ownerPage,
     } = await createOwnerUser(browser, "inv-login");
 
-    // Step 2: Create the client account via API first
+    // Step 2: Invite the client email first (while owner session is active)
     const clientEmail = `inv-existing-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
     const clientPassword = "ExistingClient123!";
 
-    const signupRes = await ownerPage.request.post(
+    const invitationId = await inviteClient(ownerPage, clientEmail);
+    await ownerCtx.close();
+
+    // Step 3: Create the client account in a separate context (so we don't clobber the owner session)
+    const tempCtx = await browser.newContext({ storageState: undefined });
+    const tempPage = await tempCtx.newPage();
+    const signupRes = await tempPage.request.post(
       `${API_URL}/api/auth/sign-up/email`,
       {
         data: {
@@ -159,6 +171,7 @@ test.describe("Accept Invite", () => {
           email: clientEmail,
           password: clientPassword,
         },
+        headers: { Origin: WEB_URL },
       },
     );
 
@@ -168,10 +181,7 @@ test.describe("Accept Invite", () => {
         `Client account creation failed (${signupRes.status()}): ${body}`,
       );
     }
-
-    // Step 3: Invite the existing client email
-    const invitationId = await inviteClient(ownerPage, clientEmail);
-    await ownerCtx.close();
+    await tempCtx.close();
 
     // Step 4: Open accept-invite page in a fresh browser context
     const clientCtx = await browser.newContext({ storageState: undefined });
@@ -185,19 +195,16 @@ test.describe("Accept Invite", () => {
     // Step 5: Switch to login mode
     await clientPage.getByRole("button", { name: /sign in instead/i }).click();
 
-    // Verify the form switched to login mode
     await expect(
       clientPage.getByText(/sign in to accept your invitation/i),
     ).toBeVisible();
 
-    // Step 6: Fill in login credentials
+    // Step 6: Fill in login credentials and submit
     await clientPage.getByLabel(/email/i).fill(clientEmail);
     await clientPage.getByLabel(/password/i).fill(clientPassword);
-
-    // Step 7: Submit the form
     await clientPage.getByRole("button", { name: /sign in & join/i }).click();
 
-    // Step 8: Verify redirect to portal
+    // Step 7: Verify redirect to portal
     await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
 
     await clientCtx.close();

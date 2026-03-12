@@ -50,7 +50,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
         },
       },
     }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: parseInt(process.env.THROTTLE_LIMIT || "100", 10) }]),
     PrismaModule,
     AuthModule,
     ProjectsModule,

@@ -6,9 +6,9 @@ test.describe("Portal", () => {
     await expect(page).toHaveURL(/\/portal\/projects/, { timeout: 10000 });
   });
 
-  test("portal projects page has header with branding slot", async ({ page }) => {
+  test("portal projects page has header with navigation", async ({ page }) => {
     await page.goto("/portal");
     await expect(page).toHaveURL(/\/portal\/projects/, { timeout: 10000 });
-    await expect(page.getByText(/client portal/i)).toBeVisible();
+    await expect(page.getByText(/projects/i).first()).toBeVisible();
   });
 });

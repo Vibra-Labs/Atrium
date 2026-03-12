@@ -47,7 +47,12 @@ async function createTestUser(
   }
 
   if (url.includes("/setup")) {
-    await page.request.post(`${API_URL}/api/setup/complete`, {});
+    await page.request.get(`${API_URL}/api/setup/status`);
+    const cookies = await context.cookies();
+    const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
+    await page.request.post(`${API_URL}/api/setup/complete`, {
+      headers: { "x-csrf-token": csrfToken },
+    });
     await page.goto("http://localhost:3000/dashboard", {
       waitUntil: "networkidle",
       timeout: 15000,
@@ -79,10 +84,10 @@ test.describe("Account Deletion", () => {
 
     // Confirmation dialog should appear with org name
     await expect(page.getByText("This will permanently delete")).toBeVisible();
-    await expect(page.getByText(orgName)).toBeVisible();
+    await expect(page.getByText(orgName, { exact: true }).first()).toBeVisible();
 
-    // Type "DELETE <orgName>" to confirm
-    await page.getByRole("textbox").fill(`DELETE ${orgName}`);
+    // Type "DELETE <orgName>" to confirm (last textbox is the confirm input)
+    await page.getByRole("textbox").last().fill(`DELETE ${orgName}`);
 
     // Click the confirm button in the dialog
     await page.getByRole("button", { name: /delete account/i }).last().click();
@@ -103,7 +108,7 @@ test.describe("Account Deletion", () => {
     await page.getByPlaceholder("Your current password").fill("DeleteTest123!");
     await page.getByRole("button", { name: /delete account/i }).click();
     await expect(page.getByText("This will permanently delete")).toBeVisible();
-    await page.getByRole("textbox").fill(`DELETE ${orgName}`);
+    await page.getByRole("textbox").last().fill(`DELETE ${orgName}`);
     await page.getByRole("button", { name: /delete account/i }).last().click();
     await expect(page).toHaveURL(/login/, { timeout: 10000 });
     await context.close();
@@ -124,7 +129,7 @@ test.describe("Account Deletion", () => {
     await newContext.close();
   });
 
-  test("non-owner does not see the danger zone section", async ({
+  test("non-owner sees danger zone with non-owner messaging", async ({
     browser,
   }) => {
     // Create user A (the owner)
@@ -139,6 +144,7 @@ test.describe("Account Deletion", () => {
       `${API_URL}/api/auth/organization/invite-member`,
       {
         data: { email: inviteeEmail, role: "member" },
+        headers: { Origin: "http://localhost:3000" },
       },
     );
 
@@ -168,11 +174,15 @@ test.describe("Account Deletion", () => {
         email: inviteeEmail,
         password: "InvitedTest123!",
       },
+      headers: { Origin: "http://localhost:3000" },
     });
 
     await pageB.request.post(
       `${API_URL}/api/auth/organization/accept-invitation`,
-      { data: { invitationId } },
+      {
+        data: { invitationId },
+        headers: { Origin: "http://localhost:3000" },
+      },
     );
 
     // Log in as user B
@@ -180,14 +190,15 @@ test.describe("Account Deletion", () => {
     await pageB.getByLabel(/email/i).fill(inviteeEmail);
     await pageB.getByLabel(/password/i).fill("InvitedTest123!");
     await pageB.getByRole("button", { name: /sign in/i }).click();
-    await pageB.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
+    await pageB.waitForURL(/\/(setup|dashboard|portal)/, { timeout: 15000 });
 
-    // Navigate to account settings — non-owner should NOT see Danger Zone
-    await pageB.goto("http://localhost:3000/dashboard/settings/account");
+    // Navigate to portal settings — non-owner should see delete account section
+    await pageB.goto("http://localhost:3000/portal/settings");
     await expect(
       pageB.getByRole("heading", { name: /account settings/i }),
     ).toBeVisible({ timeout: 10000 });
-    await expect(pageB.getByText("Danger Zone")).not.toBeVisible();
+    await expect(pageB.getByRole("heading", { name: "Delete Account" })).toBeVisible();
+    await expect(pageB.getByText("Permanently delete your account and remove your access")).toBeVisible();
 
     await ctxA.close();
     await ctxB.close();

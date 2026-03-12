@@ -30,7 +30,7 @@ export class OnboardingController {
   ) {}
 
   @Post("signup")
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ default: { ttl: 60000, limit: parseInt(process.env.SIGNUP_THROTTLE_LIMIT || "5", 10) } })
   async signup(
     @Body() body: SignupDto,
     @Res({ passthrough: true }) res: Response,

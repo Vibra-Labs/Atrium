@@ -65,6 +65,7 @@ COPY --from=build /app/packages/email ./packages/email
 # Copy Web standalone output
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /app/apps/web/public ./apps/web/public
 
 # Copy Caddy config and entrypoint
 COPY docker/Caddyfile /etc/caddy/Caddyfile

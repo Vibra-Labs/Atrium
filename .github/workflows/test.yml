@@ -26,6 +26,7 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       DATABASE_URL: postgresql://atrium:atrium@localhost:5432/atrium?schema=public
+      DIRECT_URL: postgresql://atrium:atrium@localhost:5432/atrium?schema=public
       BETTER_AUTH_SECRET: ci-test-secret-that-is-at-least-32-chars
       BETTER_AUTH_URL: http://localhost:3001
       API_URL: http://localhost:3001

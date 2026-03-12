@@ -1,6 +1,21 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 
 const API = "http://localhost:3001/api";
+
+// ---------------------------------------------------------------------------
+// Helper: read the CSRF token from the stored auth state.
+// The global-setup writes the session + csrf-token cookie to this file.
+// ---------------------------------------------------------------------------
+function getCsrfToken(): string {
+  const authPath = resolve(__dirname, "../e2e/.auth/user.json");
+  const state = JSON.parse(readFileSync(authPath, "utf-8"));
+  const cookie = state.cookies?.find(
+    (c: { name: string }) => c.name === "csrf-token",
+  );
+  return cookie?.value || "";
+}
 
 // ---------------------------------------------------------------------------
 // Helper: create a minimal invoice via the API and return its id.
@@ -10,6 +25,7 @@ async function createTestInvoice(
   request: Parameters<Parameters<typeof test>[1]>[0]["request"],
   overrides: Record<string, unknown> = {},
 ): Promise<string> {
+  const csrfToken = getCsrfToken();
   const res = await request.post(`${API}/invoices`, {
     data: {
       lineItems: [
@@ -17,6 +33,7 @@ async function createTestInvoice(
       ],
       ...overrides,
     },
+    headers: { "x-csrf-token": csrfToken },
   });
   expect(res.status()).toBe(201);
   const body = await res.json();
@@ -144,12 +161,14 @@ test.describe("Invoices", () => {
 
   test.describe("API", () => {
     test("create invoice via API", async ({ request }) => {
+      const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/invoices`, {
         data: {
           lineItems: [
             { description: "API Test Item", quantity: 1, unitPrice: 5000 },
           ],
         },
+        headers: { "x-csrf-token": csrfToken },
       });
       expect(res.status()).toBe(201);
       const body = await res.json();
@@ -366,9 +385,12 @@ test.describe("Invoices", () => {
       request,
     }) => {
       // Set up: create a project, add the test user as a client, create an invoice.
+      const csrfToken = getCsrfToken();
+
       // 1. Create a project
       const projectRes = await request.post(`${API}/projects`, {
         data: { name: "PDF Client Test Project" },
+        headers: { "x-csrf-token": csrfToken },
       });
 
       if (!projectRes.ok()) {
@@ -390,7 +412,7 @@ test.describe("Invoices", () => {
       // 3. Assign the user as a project client
       const assignRes = await request.post(
         `${API}/projects/${projectId}/clients`,
-        { data: { userId } },
+        { data: { userId }, headers: { "x-csrf-token": csrfToken } },
       );
       if (!assignRes.ok()) return;
 
@@ -400,6 +422,7 @@ test.describe("Invoices", () => {
           projectId,
           lineItems: [{ description: "Client PDF Item", quantity: 1, unitPrice: 5000 }],
         },
+        headers: { "x-csrf-token": csrfToken },
       });
       if (!invoiceRes.ok()) return;
       const invoice = await invoiceRes.json();

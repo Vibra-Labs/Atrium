@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { Mail, HardDrive, Send, Palette } from "lucide-react";
@@ -25,6 +26,7 @@ interface Branding {
   logoUrl?: string;
   logoKey?: string;
   organizationId?: string;
+  hideLogo?: boolean;
 }
 
 const defaultSettings: SystemSettings = {
@@ -50,6 +52,7 @@ export default function SystemSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
+  const router = useRouter();
   const { success, error: showError } = useToast();
 
   // Track which sensitive fields have been edited by the user
@@ -118,6 +121,7 @@ export default function SystemSettingsPage() {
           body: JSON.stringify({
             primaryColor: branding.primaryColor,
             accentColor: branding.accentColor,
+            hideLogo: branding.hideLogo ?? false,
           }),
         }),
         fetch(`${API_URL}/api/auth/organization/update`, {
@@ -134,6 +138,7 @@ export default function SystemSettingsPage() {
       setEditedApiKey(false);
       setEditedSmtpPass(false);
       success("Settings saved");
+      router.refresh();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {

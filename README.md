@@ -1,6 +1,10 @@
-# Atrium
+<p align="center">
+  <img src="./public/icon.png" alt="Atrium" width="120" />
+</p>
 
-**A self-hosted client portal for agencies and freelancers.**
+<h1 align="center">Atrium</h1>
+
+<p align="center"><strong>A self-hosted client portal for agencies and freelancers.</strong></p>
 
 [Website](https://atrium.vibralabs.co) | [Documentation](docs/configuration.md) | [GitHub Issues](https://github.com/Vibra-Labs/Atrium/issues)
 
@@ -9,13 +13,13 @@ Created by [@edgarjc](https://github.com/edgarjc) -- Built out of frustration wi
 [![License: ELv2](https://img.shields.io/badge/License-ELv2-blue.svg)](https://www.elastic.co/licensing/elastic-license)
 
 
-![Atrium](public/landing.png)
+![Atrium](./public/landing.png)
 
 ## Why Atrium?
 
 Most agencies juggle shared drives, spreadsheets, and scattered emails to keep clients in the loop. Atrium replaces all of that with a single branded portal your clients can log into -- no more "can you resend that file?" emails. Unlike managed SaaS platforms, you own the data and host it yourself.
 
-![Dashboard](public/dashboard.png)
+![Dashboard](./public/dashboard.png)
 
 ## Features
 

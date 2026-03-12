@@ -2,6 +2,16 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.2.1] — 2026-03-12
+
+### Added
+- Default Atrium logo on landing page and sidebar (falls back when no custom branding is set)
+- "Hide logo" toggle in branding settings for orgs without a company logo
+- Sidebar and portal header automatically reflect branding changes after save (no refresh needed)
+
+### Fixed
+- README image paths not rendering on GitHub (`public/` → `./public/`)
+
 ## [1.2.0] — 2026-03-11
 
 ### Added

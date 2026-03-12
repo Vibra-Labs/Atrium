@@ -12,6 +12,7 @@ interface Branding {
   logoUrl?: string;
   logoKey?: string;
   organizationId?: string;
+  hideLogo?: boolean;
 }
 
 export function BrandingSection({
@@ -121,6 +122,25 @@ export function BrandingSection({
             />
           </label>
         )}
+      </div>
+
+      {/* Hide Logo Toggle */}
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={branding.hideLogo ?? false}
+            onChange={(e) =>
+              onBrandingChange({ ...branding, hideLogo: e.target.checked })
+            }
+            className="rounded"
+          />
+          <span className="text-sm font-medium">Hide logo in sidebar</span>
+        </label>
+        <p className="text-xs text-[var(--muted-foreground)]">
+          Hide the logo from the sidebar and portal header. Useful if you
+          don&apos;t have a company logo yet.
+        </p>
       </div>
 
       {/* Colors */}

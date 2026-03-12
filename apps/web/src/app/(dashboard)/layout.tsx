@@ -122,11 +122,15 @@ export default async function DashboardLayout({
     <div className="min-h-screen flex">
       <aside className="w-64 border-r border-[var(--border)] p-4 flex flex-col">
         <div className="flex items-center gap-2.5 mb-6">
-          {logoSrc && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoSrc} alt="" className="h-7 w-auto shrink-0" />
+          {!branding?.hideLogo && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={logoSrc || "/icon.png"}
+              alt=""
+              className="h-7 w-7 object-contain shrink-0"
+            />
           )}
-          <span className="font-bold text-lg leading-tight truncate">
+          <span className="font-bold text-lg leading-none truncate">
             {orgName || "Atrium"}
           </span>
         </div>

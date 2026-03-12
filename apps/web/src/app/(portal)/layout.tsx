@@ -78,9 +78,9 @@ export default async function PortalLayout({
       }
     >
       <header className="border-b border-[var(--border)] px-6 py-4 flex items-center gap-3">
-        {logoSrc && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoSrc} alt="Logo" className="h-8" />
+        {!branding?.hideLogo && (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={logoSrc || "/icon.png"} alt="Logo" className="h-8 w-8 object-contain" />
         )}
         <span className="font-semibold flex-1">{orgName || "Atrium"}</span>
         <Link

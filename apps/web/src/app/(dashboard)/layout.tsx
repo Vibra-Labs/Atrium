@@ -40,7 +40,7 @@ async function getBranding() {
     const cookieStore = await cookies();
     const res = await fetch(`${API_URL}/api/branding`, {
       headers: { Cookie: cookieStore.toString() },
-      cache: "no-store",
+      next: { revalidate: 60 },
     });
     if (!res.ok) return null;
     return res.json();
@@ -56,7 +56,7 @@ async function getOrgName() {
       `${API_URL}/api/auth/organization/get-full-organization`,
       {
         headers: { Cookie: cookieStore.toString() },
-        cache: "no-store",
+        next: { revalidate: 60 },
       },
     );
     if (!res.ok) return null;

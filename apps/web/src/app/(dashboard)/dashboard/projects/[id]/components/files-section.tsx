@@ -6,6 +6,7 @@ import { formatBytes } from "@/lib/utils";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Upload, Download, Trash2, FileX } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface FileRecord {
   id: string;
@@ -43,6 +44,7 @@ export function FilesSection({
         method: "POST",
         body: formData,
       });
+      track("file_uploaded", { size: file.size });
       onFileChange();
       success("File uploaded");
     } catch (err) {

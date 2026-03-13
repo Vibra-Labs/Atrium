@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Check, Zap, Crown } from "lucide-react";
+import { track } from "@/lib/track";
 
 const BILLING_ENABLED =
   process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
@@ -267,10 +268,12 @@ export default function SignupPage() {
 
       // Redirect to Stripe Checkout if a checkout URL was returned
       if (data.checkoutUrl) {
+        track("signup_completed", { plan: selectedPlan });
         window.location.href = data.checkoutUrl;
         return;
       }
 
+      track("signup_completed", { plan: selectedPlan });
       window.location.href = "/setup";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");

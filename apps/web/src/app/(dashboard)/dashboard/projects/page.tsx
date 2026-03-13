@@ -7,6 +7,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
 import { ProjectCardSkeleton } from "@/components/skeletons";
 import { Plus, Search, FolderOpen, Archive } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface Project {
   id: string;
@@ -91,6 +92,7 @@ export default function ProjectsPage() {
         method: "POST",
         body: JSON.stringify({ name, description }),
       });
+      track("project_created");
       setName("");
       setDescription("");
       setShowCreate(false);

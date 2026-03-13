@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { setActiveOrgAndRedirect } from "@/lib/api";
+import { track } from "@/lib/track";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -38,6 +39,7 @@ export default function LoginPage() {
       setRedirecting(true);
       window.location.href = await setActiveOrgAndRedirect("/portal/projects");
     } catch (err) {
+      track("login_failed");
       setError(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
     }

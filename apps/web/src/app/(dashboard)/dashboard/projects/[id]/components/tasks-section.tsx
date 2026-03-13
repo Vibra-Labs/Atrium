@@ -6,6 +6,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { Trash2, Pencil, CheckSquare, Square, ListTodo } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface TaskRecord {
   id: string;
@@ -64,6 +65,7 @@ export function TasksSection({
           dueDate: newDueDate || undefined,
         }),
       });
+      track("task_created");
       setNewTitle("");
       setNewDueDate("");
       loadTasks();
@@ -78,6 +80,7 @@ export function TasksSection({
         method: "PUT",
         body: JSON.stringify({ completed: !task.completed }),
       });
+      if (!task.completed) track("task_completed");
       loadTasks();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to update task");

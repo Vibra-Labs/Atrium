@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { CheckCircle, ArrowRight } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface StepCompleteProps {
   onBack: () => void;
@@ -17,6 +18,7 @@ export function StepComplete({ onBack }: StepCompleteProps) {
     setError("");
     try {
       await apiFetch("/setup/complete", { method: "POST" });
+      track("setup_completed");
       window.location.href = "/dashboard";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to complete setup");

@@ -10,7 +10,16 @@ export class BrandingService {
     const branding = await this.prisma.branding.findUnique({
       where: { organizationId },
     });
-    if (!branding) throw new NotFoundException("Branding not found");
+    if (!branding) {
+      return {
+        organizationId,
+        primaryColor: null,
+        accentColor: null,
+        logoKey: null,
+        logoUrl: null,
+        hideLogo: false,
+      };
+    }
     return branding;
   }
 

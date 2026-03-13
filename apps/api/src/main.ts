@@ -70,6 +70,7 @@ import { AppModule } from "./app.module";
 import { ValidationPipe } from "@nestjs/common";
 import { Logger } from "nestjs-pino";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import helmet from "helmet";
 
 async function bootstrap() {
@@ -85,6 +86,7 @@ async function bootstrap() {
   expressApp.set("trust proxy", true);
 
   app.use(cookieParser());
+  app.use(compression());
 
   app.use(
     helmet({

@@ -7,6 +7,7 @@ import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { ClientItemSkeleton } from "@/components/skeletons";
 import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface Invitation {
   id: string;
@@ -101,6 +102,7 @@ export default function ClientsPage() {
         method: "POST",
         body: JSON.stringify({ email, role: "member" }),
       });
+      track("client_invited");
       const submittedEmail = email;
       setEmail("");
       loadInvitations();

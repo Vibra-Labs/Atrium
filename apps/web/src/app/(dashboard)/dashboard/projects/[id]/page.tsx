@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore, Trash2, Calendar } from "lucide-react";
+import { track } from "@/lib/track";
 import { StatusPipeline } from "./components/status-pipeline";
 import { ClientAssignment } from "./components/client-assignment";
 import { TasksSection } from "./components/tasks-section";
@@ -159,6 +160,7 @@ export default function ProjectDetailPage() {
       method: "PUT",
       body: JSON.stringify({ status }),
     });
+    track("project_status_changed", { status });
     loadProject();
   };
 

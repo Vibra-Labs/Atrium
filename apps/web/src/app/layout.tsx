@@ -8,20 +8,35 @@ export const metadata: Metadata = {
   description: "Client portal for agencies and freelancers",
 };
 
+function getTrackers(): Array<Record<string, string>> {
+  const raw = process.env.NEXT_PUBLIC_TRACKERS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const trackers = getTrackers();
+
   return (
     <html lang="en">
       <head>
-        <Script
-          defer
-          src="https://umami.cotto.dev/script.js"
-          data-website-id="2d9c15fc-f099-4f7d-97b5-47c0a924e8c6"
-          strategy="afterInteractive"
-        />
+        {trackers.map((tracker, i) => (
+          <Script
+            key={tracker.src || i}
+            defer
+            strategy="afterInteractive"
+            {...tracker}
+          />
+        ))}
       </head>
       <body>
         <Providers>{children}</Providers>

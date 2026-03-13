@@ -13,7 +13,7 @@ async function getBranding() {
       `${API_URL}/api/branding`,
       {
         headers: { Cookie: cookieStore.toString() },
-        cache: "no-store",
+        next: { revalidate: 60 },
       },
     );
     if (!res.ok) return null;
@@ -30,7 +30,7 @@ async function getOrgName() {
       `${API_URL}/api/auth/organization/get-full-organization`,
       {
         headers: { Cookie: cookieStore.toString() },
-        cache: "no-store",
+        next: { revalidate: 60 },
       },
     );
     if (!res.ok) return null;

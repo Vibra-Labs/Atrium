@@ -1,6 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { BrandingService } from "./branding.service";
-import { NotFoundException } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
 
 const mockPrisma = {
@@ -19,15 +18,18 @@ describe("BrandingService", () => {
     service = new BrandingService(mockPrisma as unknown as PrismaService);
   });
 
-  it("findByOrg throws when not found", async () => {
+  it("findByOrg returns defaults when not found", async () => {
     mockPrisma.branding.findUnique.mockReturnValue(Promise.resolve(null));
 
-    try {
-      await service.findByOrg("org-1");
-      expect(true).toBe(false);
-    } catch (e) {
-      expect(e).toBeInstanceOf(NotFoundException);
-    }
+    const result = await service.findByOrg("org-1");
+    expect(result).toEqual({
+      organizationId: "org-1",
+      primaryColor: null,
+      accentColor: null,
+      logoKey: null,
+      logoUrl: null,
+      hideLogo: false,
+    });
   });
 
   it("findByOrg returns branding", async () => {

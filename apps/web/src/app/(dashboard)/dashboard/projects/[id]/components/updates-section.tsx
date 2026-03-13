@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { Trash2, Plus, MessageSquare, Paperclip, FileText, Download } from "lucide-react";
 import { linkify } from "@/lib/linkify";
+import { track } from "@/lib/track";
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -75,6 +76,7 @@ export function UpdatesSection({
         method: "POST",
         body: formData,
       });
+      track("update_posted", { has_attachment: !!newAttachment });
       setNewContent("");
       setNewAttachment(null);
       setShowCompose(false);

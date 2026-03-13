@@ -7,6 +7,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { Plus, Trash2, Receipt, Download } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface LineItem {
   id?: string;
@@ -130,6 +131,7 @@ export function InvoicesSection({
           lineItems: newLineItems.filter((li) => li.description.trim()),
         }),
       });
+      track("invoice_created", { amount: newTotal });
       setShowCreate(false);
       setNewDueDate("");
       setNewNotes("");

@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { setActiveOrgAndRedirect } from "@/lib/api";
+import { track } from "@/lib/track";
 
 function AcceptInviteContent() {
   const searchParams = useSearchParams();
@@ -94,6 +95,7 @@ function AcceptInviteContent() {
       }
 
       // Step 3: Set active organization and redirect by role
+      track("invite_accepted");
       window.location.href = await setActiveOrgAndRedirect("/portal");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

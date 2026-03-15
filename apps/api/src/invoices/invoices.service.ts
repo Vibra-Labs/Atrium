@@ -8,7 +8,7 @@ import type { Invoice, InvoiceLineItem } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { paginationArgs, paginatedResponse } from "../common";
-import { CreateInvoiceDto, UpdateInvoiceDto, InvoiceListQueryDto } from "./invoices.dto";
+import { CreateInvoiceDto, CreateUploadedInvoiceDto, UpdateInvoiceDto, InvoiceListQueryDto } from "./invoices.dto";
 
 interface InvoiceWhereInput {
   organizationId?: string;
@@ -75,6 +75,54 @@ export class InvoicesService {
     }
   }
 
+  async createUploaded(dto: CreateUploadedInvoiceDto, fileId: string, orgId: string, retries = 0): Promise<Invoice> {
+    if (dto.projectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: dto.projectId, organizationId: orgId },
+      });
+      if (!project) {
+        throw new ForbiddenException("Project does not belong to this organization");
+      }
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const lastInvoice = await tx.invoice.findFirst({
+          where: { organizationId: orgId },
+          orderBy: { invoiceNumber: "desc" },
+          select: { invoiceNumber: true },
+        });
+
+        let nextNumber = 1;
+        if (lastInvoice) {
+          const match = lastInvoice.invoiceNumber.match(/INV-(\d+)/);
+          if (match) nextNumber = parseInt(match[1], 10) + 1;
+        }
+        const invoiceNumber = `INV-${String(nextNumber).padStart(4, "0")}`;
+
+        return tx.invoice.create({
+          data: {
+            invoiceNumber,
+            type: "uploaded",
+            status: "draft",
+            amount: dto.amount,
+            dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+            notes: dto.notes,
+            uploadedFileId: fileId,
+            projectId: dto.projectId,
+            organizationId: orgId,
+          },
+          include: { uploadedFile: true },
+        });
+      }, { isolationLevel: "Serializable" });
+    } catch (err) {
+      if (err instanceof Error && "code" in err && (err as { code: string }).code === "P2002" && retries < 3) {
+        return this.createUploaded(dto, fileId, orgId, retries + 1);
+      }
+      throw err;
+    }
+  }
+
   async findAll(orgId: string, query: InvoiceListQueryDto) {
     const { page = 1, limit = 20, projectId, status } = query;
     const where: InvoiceWhereInput = { organizationId: orgId };
@@ -86,6 +134,7 @@ export class InvoicesService {
         where,
         include: {
           lineItems: true,
+          uploadedFile: true,
           project: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -101,6 +150,7 @@ export class InvoicesService {
       where: { id, organizationId: orgId },
       include: {
         lineItems: true,
+        uploadedFile: true,
         project: { select: { id: true, name: true } },
       },
     });
@@ -126,7 +176,7 @@ export class InvoicesService {
     const [data, total] = await Promise.all([
       this.prisma.invoice.findMany({
         where,
-        include: { lineItems: true },
+        include: { lineItems: true, uploadedFile: true },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
       }),
@@ -140,6 +190,7 @@ export class InvoicesService {
       where: { id, organizationId: orgId },
       include: {
         lineItems: true,
+        uploadedFile: true,
         project: { select: { id: true, name: true } },
       },
     });
@@ -257,7 +308,12 @@ export class InvoicesService {
         ? this.prisma.$queryRaw<
             Array<{ status: string; total: bigint | number }>
           >`
-          SELECT i.status, COALESCE(SUM(li.quantity * li."unitPrice"), 0) as total
+          SELECT i.status,
+            COALESCE(SUM(
+              CASE WHEN i.type = 'uploaded' THEN COALESCE(i.amount, 0)
+                   ELSE COALESCE(li.quantity * li."unitPrice", 0)
+              END
+            ), 0) as total
           FROM "invoice" i
           LEFT JOIN "invoice_line_item" li ON li."invoiceId" = i.id
           WHERE i."organizationId" = ${orgId} AND i."projectId" = ${projectId}
@@ -266,7 +322,12 @@ export class InvoicesService {
         : this.prisma.$queryRaw<
             Array<{ status: string; total: bigint | number }>
           >`
-          SELECT i.status, COALESCE(SUM(li.quantity * li."unitPrice"), 0) as total
+          SELECT i.status,
+            COALESCE(SUM(
+              CASE WHEN i.type = 'uploaded' THEN COALESCE(i.amount, 0)
+                   ELSE COALESCE(li.quantity * li."unitPrice", 0)
+              END
+            ), 0) as total
           FROM "invoice" i
           LEFT JOIN "invoice_line_item" li ON li."invoiceId" = i.id
           WHERE i."organizationId" = ${orgId}
@@ -285,7 +346,7 @@ export class InvoicesService {
       totalAmount += amount;
       if (row.status === "paid") {
         paidAmount += amount;
-      } else {
+      } else if (row.status === "sent" || row.status === "overdue") {
         outstandingAmount += amount;
       }
     }

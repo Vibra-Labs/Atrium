@@ -78,6 +78,26 @@ export class UpdateInvoiceDto {
   notes?: string;
 }
 
+export class CreateUploadedInvoiceDto {
+  @IsString()
+  @IsOptional()
+  projectId?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amount!: number;
+
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2000)
+  notes?: string;
+}
+
 export class InvoiceListQueryDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()

@@ -20,6 +20,7 @@ import { SettingsModule } from "./settings/settings.module";
 import { SetupModule } from "./setup/setup.module";
 import { BillingModule } from "./billing/billing.module";
 import { AccountModule } from "./account/account.module";
+import { DocumentsModule } from "./documents/documents.module";
 import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
 import { AllExceptionsFilter } from "./common";
@@ -67,6 +68,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     SetupModule,
     BillingModule,
     AccountModule,
+    DocumentsModule,
   ],
   controllers: [HealthController],
   providers: [

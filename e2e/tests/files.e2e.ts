@@ -81,7 +81,7 @@ test.describe("Files", () => {
 
     // 2. Get current file count for the project
     const filesBeforeRes = await request.get(
-      `${API}/files?projectId=${projectId}`,
+      `${API}/files/project/${projectId}`,
     );
     expect(filesBeforeRes.ok()).toBeTruthy();
     const filesBefore = await filesBeforeRes.json();
@@ -120,7 +120,7 @@ test.describe("Files", () => {
 
     // 4. Verify the file count increased
     const filesAfterRes = await request.get(
-      `${API}/files?projectId=${projectId}`,
+      `${API}/files/project/${projectId}`,
     );
     expect(filesAfterRes.ok()).toBeTruthy();
     const filesAfter = await filesAfterRes.json();

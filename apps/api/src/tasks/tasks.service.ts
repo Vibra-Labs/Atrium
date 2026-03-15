@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -27,14 +28,38 @@ export class TasksService {
     });
     const order = (maxOrder._max.order ?? -1) + 1;
 
+    const isDecision = dto.type === "decision";
+
+    if (isDecision) {
+      if (!dto.question) throw new BadRequestException("Question is required for decision tasks");
+      if (!dto.options || dto.options.length < 2) {
+        throw new BadRequestException("Decision tasks require at least 2 options");
+      }
+    }
+
     const task = await this.prisma.task.create({
       data: {
         title: dto.title,
         description: dto.description,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         order,
+        type: isDecision ? "decision" : "checkbox",
+        question: isDecision ? dto.question : undefined,
         projectId,
         organizationId: orgId,
+        ...(isDecision && dto.options
+          ? {
+              options: {
+                create: dto.options.map((opt, idx) => ({
+                  label: opt.label,
+                  order: idx,
+                })),
+              },
+            }
+          : {}),
+      },
+      include: {
+        options: isDecision ? { orderBy: { order: "asc" } } : false,
       },
     });
 
@@ -57,6 +82,15 @@ export class TasksService {
     const [data, total] = await Promise.all([
       this.prisma.task.findMany({
         where,
+        include: {
+          options: {
+            orderBy: { order: "asc" },
+            include: {
+              _count: { select: { votes: true } },
+            },
+          },
+          _count: { select: { votes: true } },
+        },
         orderBy: { order: "asc" },
         ...paginationArgs(page, limit),
       }),
@@ -79,7 +113,93 @@ export class TasksService {
       throw new ForbiddenException("Not assigned to this project");
     }
 
-    return this.findByProject(projectId, orgId, page, limit);
+    const where = { projectId, organizationId: orgId };
+    const [data, total] = await Promise.all([
+      this.prisma.task.findMany({
+        where,
+        include: {
+          options: {
+            orderBy: { order: "asc" },
+            include: {
+              _count: { select: { votes: true } },
+            },
+          },
+          votes: {
+            where: { userId },
+            select: { optionId: true },
+          },
+          _count: { select: { votes: true } },
+        },
+        orderBy: { order: "asc" },
+        ...paginationArgs(page, limit),
+      }),
+      this.prisma.task.count({ where }),
+    ]);
+
+    // Hide vote counts from clients until voting is closed
+    const sanitized = data.map((task) => {
+      if (task.type === "decision" && !task.closedAt && task.options) {
+        return {
+          ...task,
+          options: task.options.map((opt) => ({
+            ...opt,
+            _count: { votes: 0 },
+          })),
+          _count: { votes: 0 },
+        };
+      }
+      return task;
+    });
+
+    return paginatedResponse(sanitized, total, page, limit);
+  }
+
+  async vote(taskId: string, optionId: string, userId: string, orgId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, organizationId: orgId, type: "decision" },
+      include: { options: true },
+    });
+    if (!task) throw new NotFoundException("Decision task not found");
+    if (task.closedAt) throw new BadRequestException("Voting is closed");
+
+    // Verify client is assigned to project
+    const assignment = await this.prisma.projectClient.findFirst({
+      where: { projectId: task.projectId, userId },
+    });
+    if (!assignment) {
+      throw new ForbiddenException("Not assigned to this project");
+    }
+
+    // Verify option belongs to this task
+    const option = task.options.find((o) => o.id === optionId);
+    if (!option) throw new BadRequestException("Invalid option");
+
+    return this.prisma.decisionVote.upsert({
+      where: { taskId_userId: { taskId, userId } },
+      create: { optionId, taskId, userId },
+      update: { optionId },
+    });
+  }
+
+  async closeVoting(taskId: string, orgId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, organizationId: orgId, type: "decision" },
+    });
+    if (!task) throw new NotFoundException("Decision task not found");
+    if (task.closedAt) throw new BadRequestException("Voting is already closed");
+
+    return this.prisma.task.update({
+      where: { id: taskId },
+      data: { closedAt: new Date(), completed: true },
+      include: {
+        options: {
+          orderBy: { order: "asc" },
+          include: {
+            _count: { select: { votes: true } },
+          },
+        },
+      },
+    });
   }
 
   async update(id: string, dto: UpdateTaskDto, orgId: string) {

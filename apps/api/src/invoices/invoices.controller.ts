@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,12 +10,17 @@ import {
   Query,
   Res,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { InvoicesService } from "./invoices.service";
 import { InvoicePdfService } from "./invoice-pdf.service";
+import { FilesService, UploadedFile as UploadedFileType, INVOICE_ALLOWED_MIMES } from "../files/files.service";
 import {
   CreateInvoiceDto,
+  CreateUploadedInvoiceDto,
   UpdateInvoiceDto,
   InvoiceListQueryDto,
 } from "./invoices.dto";
@@ -25,6 +31,7 @@ import {
   CurrentUser,
   CurrentOrg,
   PaginationQueryDto,
+  PlanLimit,
   sanitizeFilename,
 } from "../common";
 
@@ -34,6 +41,7 @@ export class InvoicesController {
   constructor(
     private invoicesService: InvoicesService,
     private invoicePdfService: InvoicePdfService,
+    private filesService: FilesService,
   ) {}
 
   @Post()
@@ -43,6 +51,34 @@ export class InvoicesController {
     @CurrentOrg("id") orgId: string,
   ) {
     return this.invoicesService.create(dto, orgId);
+  }
+
+  @Post("upload")
+  @Roles("owner", "admin")
+  @PlanLimit("storage")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
+  async createUploaded(
+    @UploadedFile() file: UploadedFileType,
+    @Body() dto: CreateUploadedInvoiceDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    if (!file) throw new BadRequestException("No file provided");
+    if (!INVOICE_ALLOWED_MIMES.has(file.mimetype)) {
+      throw new BadRequestException(
+        "Only PDF and image files are allowed for invoice uploads",
+      );
+    }
+    if (!dto.projectId) throw new BadRequestException("projectId is required");
+
+    const fileRecord = await this.filesService.upload(
+      file,
+      dto.projectId,
+      orgId,
+      userId,
+    );
+
+    return this.invoicesService.createUploaded(dto, fileRecord.id, orgId);
   }
 
   @Get()

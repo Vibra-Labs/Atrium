@@ -27,19 +27,33 @@ const BLOCKED_EXTENSIONS = new Set([
   ".scr", ".pif", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
 ]);
 
+/** Safe MIME types for document uploads (quotes, contracts, NDAs). */
+export const DOCUMENT_ALLOWED_MIMES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.oasis.opendocument.text",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+/** Safe MIME types for invoice file uploads. */
+export const INVOICE_ALLOWED_MIMES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
 @Injectable()
 export class FilesService {
-  private defaultMaxFileSize: number;
-
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
     private settingsService: SettingsService,
     @Inject(STORAGE_PROVIDER) private storage: StorageProvider,
-  ) {
-    const maxMb = parseInt(this.config.get("MAX_FILE_SIZE_MB", "50"), 10);
-    this.defaultMaxFileSize = maxMb * 1024 * 1024;
-  }
+  ) {}
 
   async upload(
     file: UploadedFile,

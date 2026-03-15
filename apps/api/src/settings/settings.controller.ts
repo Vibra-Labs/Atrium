@@ -30,6 +30,12 @@ export class SettingsController {
     return this.settingsService.updateSettings(orgId, dto);
   }
 
+  // No @Roles — intentionally accessible to all authenticated users including clients
+  @Get("payment-instructions")
+  getPaymentInstructions(@CurrentOrg("id") orgId: string) {
+    return this.settingsService.getPaymentInstructions(orgId);
+  }
+
   @Post("test-email")
   @Roles("owner")
   testEmail(

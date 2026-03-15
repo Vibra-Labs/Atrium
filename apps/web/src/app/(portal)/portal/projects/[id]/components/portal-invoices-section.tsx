@@ -6,6 +6,7 @@ import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { Receipt, Download } from "lucide-react";
+import { downloadFile } from "@/lib/download";
 
 interface LineItem {
   id: string;
@@ -18,9 +19,13 @@ interface InvoiceListItem {
   id: string;
   invoiceNumber: string;
   status: string;
+  type: string;
+  amount?: number | null;
   dueDate?: string | null;
   notes?: string | null;
   projectId?: string | null;
+  uploadedFileId?: string | null;
+  uploadedFile?: { id: string; filename: string; sizeBytes: number } | null;
   lineItems: LineItem[];
   createdAt: string;
 }
@@ -47,7 +52,14 @@ export function PortalInvoicesSection({
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
   const { error: showError } = useToast();
+
+  useEffect(() => {
+    apiFetch<{ paymentInstructions: string | null }>("/settings/payment-instructions")
+      .then((res) => setPaymentInstructions(res.paymentInstructions))
+      .catch(console.error);
+  }, []);
 
   const loadInvoices = useCallback(async () => {
     setLoading(true);
@@ -71,6 +83,14 @@ export function PortalInvoicesSection({
   useEffect(() => {
     loadInvoices();
   }, [loadInvoices]);
+
+  const handleFileDownload = async (fileId: string, filename: string) => {
+    try {
+      await downloadFile(fileId, filename);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to download file");
+    }
+  };
 
   const handleDownloadPdf = async (invoiceId: string, invoiceNumber: string) => {
     try {
@@ -114,10 +134,12 @@ export function PortalInvoicesSection({
         <div className="space-y-2">
           {invoices.map((inv) => {
             const colors = statusColors[inv.status] || statusColors.draft;
-            const total = inv.lineItems.reduce(
-              (s, li) => s + li.quantity * li.unitPrice,
-              0,
-            );
+            const total = inv.type === "uploaded"
+              ? (inv.amount || 0)
+              : inv.lineItems.reduce(
+                  (s, li) => s + li.quantity * li.unitPrice,
+                  0,
+                );
             const isExpanded = expandedId === inv.id;
 
             return (
@@ -153,57 +175,93 @@ export function PortalInvoicesSection({
                           Due: {new Date(inv.dueDate).toLocaleDateString()}
                         </p>
                       ) : <div />}
-                      <button
-                        onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
-                        className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
-                      >
-                        <Download size={14} />
-                        Download PDF
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {inv.type === "uploaded" && inv.uploadedFile && (
+                          <button
+                            onClick={() =>
+                              handleFileDownload(
+                                inv.uploadedFile!.id,
+                                inv.uploadedFile!.filename,
+                              )
+                            }
+                            className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                          >
+                            <Download size={14} />
+                            Download File
+                          </button>
+                        )}
+                        {inv.type !== "uploaded" && (
+                          <button
+                            onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
+                            className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                          >
+                            <Download size={14} />
+                            Download PDF
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-[var(--muted)]">
-                            <th className="text-left px-4 py-2 font-medium">Description</th>
-                            <th className="text-right px-4 py-2 font-medium">Qty</th>
-                            <th className="text-right px-4 py-2 font-medium">Unit Price</th>
-                            <th className="text-right px-4 py-2 font-medium">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {inv.lineItems.map((li) => (
-                            <tr key={li.id} className="border-t border-[var(--border)]">
-                              <td className="px-4 py-2">{li.description}</td>
-                              <td className="px-4 py-2 text-right">{li.quantity}</td>
-                              <td className="px-4 py-2 text-right">
-                                {formatCurrency(li.unitPrice)}
+                    {inv.type === "uploaded" ? (
+                      <div className="border border-[var(--border)] rounded-lg p-4 bg-[var(--muted)]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-[var(--muted-foreground)]">Total Amount</span>
+                          <span className="text-lg font-bold">{formatCurrency(total)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-[var(--muted)]">
+                              <th className="text-left px-4 py-2 font-medium">Description</th>
+                              <th className="text-right px-4 py-2 font-medium">Qty</th>
+                              <th className="text-right px-4 py-2 font-medium">Unit Price</th>
+                              <th className="text-right px-4 py-2 font-medium">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {inv.lineItems.map((li) => (
+                              <tr key={li.id} className="border-t border-[var(--border)]">
+                                <td className="px-4 py-2">{li.description}</td>
+                                <td className="px-4 py-2 text-right">{li.quantity}</td>
+                                <td className="px-4 py-2 text-right">
+                                  {formatCurrency(li.unitPrice)}
+                                </td>
+                                <td className="px-4 py-2 text-right font-medium">
+                                  {formatCurrency(li.quantity * li.unitPrice)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t border-[var(--border)] bg-[var(--muted)]">
+                              <td colSpan={3} className="px-4 py-2 text-right font-medium">
+                                Total
                               </td>
-                              <td className="px-4 py-2 text-right font-medium">
-                                {formatCurrency(li.quantity * li.unitPrice)}
+                              <td className="px-4 py-2 text-right font-bold">
+                                {formatCurrency(total)}
                               </td>
                             </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t border-[var(--border)] bg-[var(--muted)]">
-                            <td colSpan={3} className="px-4 py-2 text-right font-medium">
-                              Total
-                            </td>
-                            <td className="px-4 py-2 text-right font-bold">
-                              {formatCurrency(total)}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
 
                     {inv.notes && (
                       <div>
                         <p className="text-xs font-medium mb-1">Notes</p>
                         <p className="text-sm text-[var(--muted-foreground)] whitespace-pre-wrap">
                           {inv.notes}
+                        </p>
+                      </div>
+                    )}
+
+                    {paymentInstructions && (
+                      <div>
+                        <p className="text-xs font-medium mb-1">Payment Instructions</p>
+                        <p className="text-sm text-[var(--muted-foreground)] whitespace-pre-wrap">
+                          {paymentInstructions}
                         </p>
                       </div>
                     )}

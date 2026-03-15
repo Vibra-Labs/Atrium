@@ -172,11 +172,14 @@ export class NotificationsService {
     const clients = await this.getProjectClients(invoice.projectId);
     if (clients.length === 0) return;
 
-    const totalCents = invoice.lineItems.reduce(
-      (sum: number, item: { quantity: number; unitPrice: number }) =>
-        sum + item.quantity * item.unitPrice,
-      0,
-    );
+    const totalCents =
+      invoice.type === "uploaded" && invoice.amount != null
+        ? invoice.amount
+        : invoice.lineItems.reduce(
+            (sum: number, item: { quantity: number; unitPrice: number }) =>
+              sum + item.quantity * item.unitPrice,
+            0,
+          );
     const amount = `$${(totalCents / 100).toFixed(2)}`;
     const dueDate = invoice.dueDate
       ? invoice.dueDate.toLocaleDateString("en-US", {

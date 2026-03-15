@@ -2,6 +2,53 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.3.0] — 2026-03-14
+
+### Added
+
+#### Documents
+- Upload documents (quotes, contracts, NDAs) to projects with file type restrictions (PDF, Word, ODT, images)
+- Clients can accept, decline, or acknowledge documents from the portal
+- Document status automatically updates based on all client responses
+- Response audit trail with IP address and user agent logging
+- Expandable document list with response details in dashboard
+
+#### Decision Tasks
+- New "decision" task type with configurable options (2–5 choices)
+- Clients vote on decisions from the portal; vote counts hidden until voting is closed
+- Admins/owners can close voting, which marks the task as completed
+- Vote changes allowed (upsert) until voting is closed
+
+#### Invoice Uploads
+- Upload pre-built invoice files (PDF/image) as an alternative to itemized invoices
+- Uploaded invoices store a total amount in cents and link to the uploaded file
+- Invoice stats and notification emails correctly handle both itemized and uploaded types
+- Outstanding amount calculation now only counts "sent" and "overdue" statuses (excludes drafts)
+
+#### Payment Settings
+- Configure payment instructions, method (bank transfer, PayPal, Stripe link, other), and details in system settings
+- Payment details encrypted at rest (AES-256-GCM)
+- `GET /api/settings/payment-instructions` endpoint accessible to all authenticated users (including clients)
+
+#### Other
+- Configurable rate limiting via `THROTTLE_LIMIT` and `SIGNUP_THROTTLE_LIMIT` env vars
+- Shared `downloadFile` utility for client-side file downloads
+
+### Database
+
+- New models: `Document`, `DocumentResponse`, `DecisionOption`, `DecisionVote`
+- New fields on `Task`: `type`, `question`, `closedAt`
+- New fields on `Invoice`: `type`, `amount`, `uploadedFileId`
+- New fields on `SystemSettings`: `paymentInstructions`, `paymentMethod`, `paymentDetails`
+- New relation on `File`: `documents`, `invoices`
+
+### Upgrade Notes
+
+This release includes schema changes that add new tables and columns. All new columns have defaults, so no data migration is needed.
+
+- **Docker deployments**: The entrypoint runs `prisma db push` automatically — no action required.
+- **Manual / `prisma migrate` deployments**: Run `bun run db:push` (or `npx prisma db push`) before starting the new version. If you use `prisma migrate deploy`, generate a migration first with `npx prisma migrate dev` against the updated schema.
+
 ## [1.2.1] — 2026-03-12
 
 ### Added

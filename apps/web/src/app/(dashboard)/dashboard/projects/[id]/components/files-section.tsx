@@ -7,6 +7,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Upload, Download, Trash2, FileX } from "lucide-react";
 import { track } from "@/lib/track";
+import { DocumentsSection } from "./documents-section";
 
 interface FileRecord {
   id: string;
@@ -93,6 +94,7 @@ export function FilesSection({
   };
 
   return (
+    <>
     <div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-medium">Files</h2>
@@ -152,5 +154,7 @@ export function FilesSection({
         )}
       </div>
     </div>
+    <DocumentsSection projectId={projectId} isArchived={isArchived} />
+    </>
   );
 }

@@ -19,10 +19,12 @@ import {
   Vote,
   Lock,
   FileCheck,
+  PenTool,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
 import { downloadFile } from "@/lib/download";
+import { SigningViewer } from "@/components/signing-viewer";
 
 interface FileRecord {
   id: string;
@@ -98,8 +100,12 @@ interface DocumentRecord {
   type: string;
   title: string;
   status: string;
+  requiresSignature: boolean;
+  signedFileId?: string;
+  signedFile?: { id: string; filename: string; sizeBytes: number };
+  signatureFields?: { id: string }[];
   file: { id: string; filename: string; sizeBytes: number };
-  responses: { id: string; action: string; createdAt: string }[];
+  responses: { id: string; action: string; createdAt: string; fieldId?: string }[];
   createdAt: string;
 }
 
@@ -148,6 +154,7 @@ export default function PortalProjectDetailPage() {
   const [activeTab, setActiveTab] = useState<TabId>("updates");
   const [uploading, setUploading] = useState(false);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [signingDocId, setSigningDocId] = useState<string | null>(null);
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -609,6 +616,17 @@ export default function PortalProjectDetailPage() {
                     const lastResponse = hasResponded ? doc.responses[0] : null;
                     const actions = docActions[doc.type] || ["acknowledged"];
 
+                    // Check if this document requires signing and has unsigned fields
+                    const needsSigning = doc.requiresSignature &&
+                      doc.signatureFields &&
+                      doc.signatureFields.length > 0;
+                    const signedFieldIds = doc.responses
+                      .filter((r) => r.action === "signed" && r.fieldId)
+                      .map((r) => r.fieldId);
+                    const allFieldsSigned = needsSigning &&
+                      doc.signatureFields!.every((f) => signedFieldIds.includes(f.id));
+                    const hasUnsignedFields = needsSigning && !allFieldsSigned;
+
                     return (
                       <div
                         key={doc.id}
@@ -634,7 +652,24 @@ export default function PortalProjectDetailPage() {
                           >
                             <Download size={14} />
                           </button>
-                          {hasResponded && lastResponse ? (
+                          {/* Signing flow */}
+                          {hasUnsignedFields ? (
+                            <button
+                              onClick={() => setSigningDocId(doc.id)}
+                              className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
+                              style={{ backgroundColor: "#d97706" }}
+                            >
+                              <PenTool size={12} />
+                              Review & Sign
+                            </button>
+                          ) : allFieldsSigned ? (
+                            <span
+                              className="text-xs px-2 py-1 rounded-full font-medium"
+                              style={{ backgroundColor: "#ccfbf1", color: "#0f766e" }}
+                            >
+                              Signed
+                            </span>
+                          ) : hasResponded && lastResponse ? (
                             <span
                               className="text-xs px-2 py-1 rounded-full font-medium"
                               style={{
@@ -707,6 +742,18 @@ export default function PortalProjectDetailPage() {
           <PortalInvoicesSection projectId={id} />
         )}
       </div>
+
+      {/* Signing Viewer Modal */}
+      {signingDocId && (
+        <SigningViewer
+          documentId={signingDocId}
+          onClose={() => setSigningDocId(null)}
+          onSigned={() => {
+            setSigningDocId(null);
+            loadDocuments();
+          }}
+        />
+      )}
     </div>
   );
 }

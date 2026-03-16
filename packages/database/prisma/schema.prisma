@@ -174,10 +174,11 @@ model File {
   uploadedById   String
   createdAt      DateTime @default(now())
 
-  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  updates   ProjectUpdate[]
-  documents Document[]
-  invoices  Invoice[]        @relation("UploadedInvoiceFile")
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updates         ProjectUpdate[]
+  documents       Document[]
+  signedDocuments Document[]       @relation("SignedDocumentFile")
+  invoices        Invoice[]        @relation("UploadedInvoiceFile")
 
   @@index([projectId])
   @@index([organizationId])
@@ -359,20 +360,24 @@ model ProjectStatus {
 // ─── Documents ───
 
 model Document {
-  id             String   @id @default(cuid())
-  type           String   // "quote", "contract", "nda", "other"
-  title          String
-  fileId         String
-  projectId      String
-  organizationId String
-  uploadedById   String
-  status         String   @default("pending") // "pending", "accepted", "declined", "acknowledged"
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String   @id @default(cuid())
+  type              String   // "quote", "contract", "nda", "other"
+  title             String
+  fileId            String
+  projectId         String
+  organizationId    String
+  uploadedById      String
+  status            String   @default("pending") // "pending", "accepted", "declined", "acknowledged", "signed"
+  requiresSignature Boolean  @default(false)
+  signedFileId      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  file      File               @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  responses DocumentResponse[]
+  file            File               @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  signedFile      File?              @relation("SignedDocumentFile", fields: [signedFileId], references: [id])
+  project         Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responses       DocumentResponse[]
+  signatureFields SignatureField[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -380,19 +385,38 @@ model Document {
 }
 
 model DocumentResponse {
-  id         String   @id @default(cuid())
-  documentId String
-  userId     String
-  action     String   // "accepted", "declined", "acknowledged"
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+  id                String    @id @default(cuid())
+  documentId        String
+  userId            String
+  action            String    // "accepted", "declined", "acknowledged", "signed"
+  ipAddress         String?
+  userAgent         String?
+  signatureImageKey String?   // storage key for raw signature PNG
+  signatureMethod   String?   // "draw" or "type"
+  signedAt          DateTime? // explicit signing timestamp
+  fieldId           String?   // which SignatureField was signed
+  createdAt         DateTime  @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([documentId, userId])
+  @@unique([documentId, userId, fieldId])
   @@map("document_response")
+}
+
+model SignatureField {
+  id         String @id @default(cuid())
+  documentId String
+  pageNumber Int    // 0-indexed page
+  x          Float  // normalized 0-1 (left edge)
+  y          Float  // normalized 0-1 (top edge)
+  width      Float  // normalized 0-1
+  height     Float  // normalized 0-1
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("signature_field")
 }
 
 // ─── Decision Tasks ───

@@ -6,15 +6,19 @@ import { formatBytes } from "@/lib/utils";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Upload, Download, Trash2, FileCheck, ChevronDown, ChevronRight } from "lucide-react";
+import { Upload, Download, Trash2, FileCheck, ChevronDown, ChevronRight, PenTool } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
+import { SignatureFieldPlacer } from "@/components/signature-field-placer";
 
 interface DocumentResponse {
   id: string;
   userId: string;
   action: string;
   createdAt: string;
+  signedAt?: string;
+  signatureMethod?: string;
+  fieldId?: string;
   user: { id: string; name: string };
 }
 
@@ -30,7 +34,11 @@ interface DocumentRecord {
   type: string;
   title: string;
   status: string;
+  requiresSignature: boolean;
+  signedFileId?: string;
+  signedFile?: DocumentFile;
   file: DocumentFile;
+  signatureFields?: { id: string }[];
   responses: DocumentResponse[];
   createdAt: string;
 }
@@ -52,6 +60,7 @@ const statusColors: Record<string, { bg: string; text: string }> = {
   accepted: { bg: "#dcfce7", text: "#15803d" },
   declined: { bg: "#fee2e2", text: "#b91c1c" },
   acknowledged: { bg: "#dbeafe", text: "#1d4ed8" },
+  signed: { bg: "#ccfbf1", text: "#0f766e" },
 };
 
 export function DocumentsSection({
@@ -74,6 +83,10 @@ export function DocumentsSection({
   const [docTitle, setDocTitle] = useState("");
   const [docType, setDocType] = useState("quote");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [requiresSignature, setRequiresSignature] = useState(false);
+
+  // Signature field placer
+  const [placerDocId, setPlacerDocId] = useState<string | null>(null);
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -100,8 +113,11 @@ export function DocumentsSection({
       formData.append("projectId", projectId);
       formData.append("type", docType);
       formData.append("title", docTitle);
+      if (requiresSignature) {
+        formData.append("requiresSignature", "true");
+      }
 
-      await apiFetch("/documents", {
+      const doc = await apiFetch<DocumentRecord>("/documents", {
         method: "POST",
         body: formData,
       });
@@ -110,8 +126,14 @@ export function DocumentsSection({
       setDocTitle("");
       setDocType("quote");
       setDocFile(null);
+      setRequiresSignature(false);
       loadDocuments();
       success("Document uploaded");
+
+      // Auto-open signature field placer for PDF documents that require signing
+      if (requiresSignature && docFile.type === "application/pdf") {
+        setPlacerDocId(doc.id);
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to upload document");
     } finally {
@@ -208,6 +230,18 @@ export function DocumentsSection({
               />
             </div>
 
+            {docFile?.type === "application/pdf" && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={requiresSignature}
+                  onChange={(e) => setRequiresSignature(e.target.checked)}
+                  className="accent-[var(--primary)]"
+                />
+                <span className="text-sm">Requires Signature</span>
+              </label>
+            )}
+
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowUploadModal(false)}
@@ -266,7 +300,7 @@ export function DocumentsSection({
 
               {isExpanded && (
                 <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)]">
-                  <div className="flex items-center gap-2 pt-3">
+                  <div className="flex items-center gap-2 pt-3 flex-wrap">
                     <button
                       onClick={() => handleDownload(doc.file.id, doc.file.filename)}
                       className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
@@ -274,6 +308,26 @@ export function DocumentsSection({
                       <Download size={14} />
                       Download
                     </button>
+                    {doc.signedFileId && doc.signedFile && (
+                      <button
+                        onClick={() => handleDownload(doc.signedFile!.id, doc.signedFile!.filename)}
+                        className="flex items-center gap-1.5 text-sm text-teal-600 hover:underline"
+                      >
+                        <Download size={14} />
+                        Download Signed Copy
+                      </button>
+                    )}
+                    {doc.requiresSignature && !isArchived && (
+                      <button
+                        onClick={() => {
+                          setPlacerDocId(doc.id);
+                        }}
+                        className="flex items-center gap-1.5 text-sm text-amber-600 hover:underline"
+                      >
+                        <PenTool size={14} />
+                        Edit Signature Fields
+                      </button>
+                    )}
                     {!isArchived && (
                       <button
                         onClick={() => handleDelete(doc.id)}
@@ -307,7 +361,9 @@ export function DocumentsSection({
                                 {r.action}
                               </span>
                               <span className="text-[var(--muted-foreground)]">
-                                {new Date(r.createdAt).toLocaleDateString()}
+                                {r.signedAt
+                                  ? new Date(r.signedAt).toLocaleDateString()
+                                  : new Date(r.createdAt).toLocaleDateString()}
                               </span>
                             </div>
                           </div>
@@ -330,6 +386,21 @@ export function DocumentsSection({
         <div className="mt-3">
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
+      )}
+
+      {/* Signature Field Placer Modal */}
+      {placerDocId && (
+        <SignatureFieldPlacer
+          documentId={placerDocId}
+          onClose={() => {
+            setPlacerDocId(null);
+          }}
+          onSaved={() => {
+            setPlacerDocId(null);
+            loadDocuments();
+            success("Signature fields saved");
+          }}
+        />
       )}
     </div>
   );

@@ -19,6 +19,22 @@ function parseChangelog(raw: string) {
   return sections;
 }
 
+function readChangelog(): string {
+  const candidates = [
+    path.join(process.cwd(), "CHANGELOG.md"),
+    path.join(process.cwd(), "../../CHANGELOG.md"),
+    path.join(process.cwd(), "../../../CHANGELOG.md"),
+  ];
+  for (const p of candidates) {
+    try {
+      return fs.readFileSync(p, "utf-8");
+    } catch {
+      // try next
+    }
+  }
+  return "";
+}
+
 function renderLine(line: string, i: number) {
   if (line.startsWith("#### ")) {
     return <h4 key={i} className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mt-3 mb-1.5">{line.replace("#### ", "")}</h4>;
@@ -45,13 +61,8 @@ function renderLine(line: string, i: number) {
 }
 
 export function Changelog() {
-  let sections: { version: string; date: string; content: string }[] = [];
-  try {
-    const raw = fs.readFileSync(path.join(process.cwd(), "../../CHANGELOG.md"), "utf-8");
-    sections = parseChangelog(raw);
-  } catch {
-    // CHANGELOG.md not found
-  }
+  const raw = readChangelog();
+  const sections = parseChangelog(raw);
 
   return (
     <div className="max-w-2xl">

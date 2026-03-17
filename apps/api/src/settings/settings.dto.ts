@@ -7,6 +7,7 @@ import {
   IsIn,
   Min,
   Max,
+  MaxLength,
   ValidateIf,
 } from "class-validator";
 import { Type, Transform } from "class-transformer";
@@ -58,4 +59,21 @@ export class UpdateSettingsDto {
   @Min(1)
   @Max(500)
   maxFileSizeMb?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  paymentInstructions?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(["bank_transfer", "paypal", "stripe_link", "other", null], {
+    message: "paymentMethod must be bank_transfer, paypal, stripe_link, other, or null",
+  })
+  paymentMethod?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  paymentDetails?: string;
 }

@@ -6,6 +6,9 @@ import {
   ProjectUpdateEmail,
   TaskAssignedEmail,
   InvoiceSentEmail,
+  DecisionClosedEmail,
+  DocumentUploadedEmail,
+  DocumentRespondedEmail,
 } from "@atrium/email";
 import { MailService } from "../mail/mail.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -160,6 +163,84 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * Notify all clients assigned to a decision task's project that voting is closed.
+   * Fire-and-forget: errors are logged but never thrown.
+   */
+  notifyDecisionClosed(taskId: string): void {
+    this.sendDecisionClosedEmails(taskId).catch((err) => {
+      this.logger.error(
+        { err, taskId },
+        "Failed to send decision closed notifications",
+      );
+    });
+  }
+
+  private async sendDecisionClosedEmails(taskId: string): Promise<void> {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      select: {
+        question: true,
+        projectId: true,
+        project: { select: { name: true, organizationId: true } },
+        options: {
+          select: {
+            label: true,
+            votes: { select: { id: true } },
+          },
+        },
+      },
+    });
+    if (!task || !task.question) return;
+
+    const clients = await this.getProjectClients(task.projectId);
+    if (clients.length === 0) return;
+
+    const optionsWithCounts = task.options.map((opt) => ({
+      label: opt.label,
+      voteCount: opt.votes.length,
+      isWinner: false,
+    }));
+
+    const maxVotes = optionsWithCounts.length > 0
+      ? Math.max(...optionsWithCounts.map((o) => o.voteCount))
+      : 0;
+    if (maxVotes > 0) {
+      for (const opt of optionsWithCounts) {
+        if (opt.voteCount === maxVotes) opt.isWinner = true;
+      }
+    }
+
+    const portalUrl = `${this.webUrl}/portal/projects/${task.projectId}`;
+
+    await Promise.allSettled(
+      clients.map(async (client) => {
+        try {
+          const html = await render(
+            DecisionClosedEmail({
+              clientName: client.name,
+              projectName: task.project.name,
+              question: task.question!,
+              options: optionsWithCounts,
+              portalUrl,
+            }),
+          );
+          await this.mail.send(
+            client.email,
+            `Decision closed on ${task.project.name}: ${task.question}`,
+            html,
+            task.project.organizationId,
+          );
+        } catch (err) {
+          this.logger.warn(
+            { err, email: client.email, taskId },
+            "Failed to send decision closed email to client",
+          );
+        }
+      }),
+    );
+  }
+
   private async sendInvoiceSentEmails(invoiceId: string): Promise<void> {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
@@ -172,11 +253,14 @@ export class NotificationsService {
     const clients = await this.getProjectClients(invoice.projectId);
     if (clients.length === 0) return;
 
-    const totalCents = invoice.lineItems.reduce(
-      (sum: number, item: { quantity: number; unitPrice: number }) =>
-        sum + item.quantity * item.unitPrice,
-      0,
-    );
+    const totalCents =
+      invoice.type === "uploaded" && invoice.amount != null
+        ? invoice.amount
+        : invoice.lineItems.reduce(
+            (sum: number, item: { quantity: number; unitPrice: number }) =>
+              sum + item.quantity * item.unitPrice,
+            0,
+          );
     const amount = `$${(totalCents / 100).toFixed(2)}`;
     const dueDate = invoice.dueDate
       ? invoice.dueDate.toLocaleDateString("en-US", {
@@ -209,6 +293,164 @@ export class NotificationsService {
           this.logger.warn(
             { err, email: client.email, invoiceId },
             "Failed to send invoice email to client",
+          );
+        }
+      }),
+    );
+  }
+
+  /**
+   * Notify all clients assigned to a document's project that a new document was uploaded.
+   * Fire-and-forget: errors are logged but never thrown.
+   */
+  notifyDocumentUploaded(documentId: string): void {
+    this.sendDocumentUploadedEmails(documentId).catch((err) => {
+      this.logger.error(
+        { err, documentId },
+        "Failed to send document uploaded notifications",
+      );
+    });
+  }
+
+  /**
+   * Notify org owners/admins that a client responded to a document.
+   * Fire-and-forget: errors are logged but never thrown.
+   */
+  notifyDocumentResponded(
+    documentId: string,
+    userId: string,
+    action: string,
+  ): void {
+    this.sendDocumentRespondedEmails(documentId, userId, action).catch(
+      (err) => {
+        this.logger.error(
+          { err, documentId, userId, action },
+          "Failed to send document responded notifications",
+        );
+      },
+    );
+  }
+
+  private async sendDocumentUploadedEmails(
+    documentId: string,
+  ): Promise<void> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      select: {
+        title: true,
+        type: true,
+        projectId: true,
+        organizationId: true,
+      },
+    });
+    if (!doc) return;
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: doc.projectId },
+      select: { name: true },
+    });
+    if (!project) return;
+
+    const clients = await this.getProjectClients(doc.projectId);
+    if (clients.length === 0) return;
+
+    const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
+
+    await Promise.allSettled(
+      clients.map(async (client) => {
+        try {
+          const html = await render(
+            DocumentUploadedEmail({
+              clientName: client.name,
+              projectName: project.name,
+              documentTitle: doc.title,
+              documentType: doc.type,
+              portalUrl,
+            }),
+          );
+          await this.mail.send(
+            client.email,
+            `New ${doc.type} on ${project.name}: ${doc.title}`,
+            html,
+            doc.organizationId,
+          );
+        } catch (err) {
+          this.logger.warn(
+            { err, email: client.email, documentId },
+            "Failed to send document uploaded email to client",
+          );
+        }
+      }),
+    );
+  }
+
+  private async sendDocumentRespondedEmails(
+    documentId: string,
+    userId: string,
+    action: string,
+  ): Promise<void> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      select: {
+        title: true,
+        type: true,
+        projectId: true,
+        organizationId: true,
+      },
+    });
+    if (!doc) return;
+
+    const [project, respondent] = await Promise.all([
+      this.prisma.project.findUnique({
+        where: { id: doc.projectId },
+        select: { name: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      }),
+    ]);
+    if (!project) return;
+
+    const clientName = respondent?.name || "A client";
+
+    const admins = await this.prisma.member.findMany({
+      where: {
+        organizationId: doc.organizationId,
+        role: { in: ["owner", "admin"] },
+      },
+      select: {
+        user: { select: { name: true, email: true } },
+      },
+    });
+    if (admins.length === 0) return;
+
+    const dashboardUrl = `${this.webUrl}/dashboard/projects/${doc.projectId}`;
+
+    await Promise.allSettled(
+      admins.map(async (admin) => {
+        try {
+          const html = await render(
+            DocumentRespondedEmail({
+              recipientName: admin.user.name,
+              clientName,
+              projectName: project.name,
+              documentTitle: doc.title,
+              documentType: doc.type,
+              action,
+              dashboardUrl,
+            }),
+          );
+          await this.mail.send(
+            admin.user.email,
+            `${clientName} ${action} ${doc.type}: ${doc.title}`,
+            html,
+            doc.organizationId,
+          );
+        } catch (err) {
+          this.logger.warn(
+            { err, email: admin.user.email, documentId },
+            "Failed to send document responded email to admin",
           );
         }
       }),

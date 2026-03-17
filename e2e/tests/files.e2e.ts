@@ -19,7 +19,7 @@ test.describe("Files", () => {
     const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
     if (await projectLink.isVisible({ timeout: 3000 }).catch(() => false)) {
       await projectLink.click();
-      await expect(page.getByText(/upload file/i)).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText(/upload/i).first()).toBeVisible({ timeout: 5000 });
       await expect(page.getByText(/files/i)).toBeVisible();
     }
   });
@@ -81,7 +81,7 @@ test.describe("Files", () => {
 
     // 2. Get current file count for the project
     const filesBeforeRes = await request.get(
-      `${API}/files?projectId=${projectId}`,
+      `${API}/files/project/${projectId}`,
     );
     expect(filesBeforeRes.ok()).toBeTruthy();
     const filesBefore = await filesBeforeRes.json();
@@ -120,7 +120,7 @@ test.describe("Files", () => {
 
     // 4. Verify the file count increased
     const filesAfterRes = await request.get(
-      `${API}/files?projectId=${projectId}`,
+      `${API}/files/project/${projectId}`,
     );
     expect(filesAfterRes.ok()).toBeTruthy();
     const filesAfter = await filesAfterRes.json();

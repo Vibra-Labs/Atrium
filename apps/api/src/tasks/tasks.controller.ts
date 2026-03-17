@@ -5,13 +5,14 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import { TasksService } from "./tasks.service";
-import { CreateTaskDto, UpdateTaskDto, ReorderTasksDto } from "./tasks.dto";
+import { CreateTaskDto, UpdateTaskDto, ReorderTasksDto, CastVoteDto } from "./tasks.dto";
 import {
   AuthGuard,
   RolesGuard,
@@ -66,6 +67,26 @@ export class TasksController {
       pagination.page,
       pagination.limit,
     );
+  }
+
+  // No @Roles — authorization is handled in the service via projectClient check
+  @Post(":id/vote")
+  vote(
+    @Param("id") id: string,
+    @Body() dto: CastVoteDto,
+    @CurrentUser("id") userId: string,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.tasksService.vote(id, dto.optionId, userId, orgId);
+  }
+
+  @Post(":id/close")
+  @Roles("owner", "admin")
+  closeVoting(
+    @Param("id") id: string,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.tasksService.closeVoting(id, orgId);
   }
 
   @Put("reorder")

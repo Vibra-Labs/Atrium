@@ -6,8 +6,10 @@ import { formatCurrency } from "@/lib/format";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Plus, Trash2, Receipt, Download } from "lucide-react";
+import { Plus, Trash2, Receipt, Download, Upload } from "lucide-react";
+import { formatBytes } from "@/lib/utils";
 import { track } from "@/lib/track";
+import { downloadFile } from "@/lib/download";
 
 interface LineItem {
   id?: string;
@@ -20,8 +22,12 @@ interface InvoiceListItem {
   id: string;
   invoiceNumber: string;
   status: string;
+  type: string;
+  amount?: number | null;
   dueDate?: string | null;
   notes?: string | null;
+  uploadedFileId?: string | null;
+  uploadedFile?: { id: string; filename: string; sizeBytes: number } | null;
   lineItems: LineItem[];
   createdAt: string;
 }
@@ -69,6 +75,13 @@ export function InvoicesSection({
   ]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Upload state
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadAmount, setUploadAmount] = useState("");
+  const [uploadDueDate, setUploadDueDate] = useState("");
+  const [uploadNotes, setUploadNotes] = useState("");
+
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editItems, setEditItems] = useState<LineItem[]>([]);
@@ -108,7 +121,9 @@ export function InvoicesSection({
     .filter((i) => i.status === "sent" || i.status === "overdue")
     .reduce(
       (sum, inv) =>
-        sum + inv.lineItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0),
+        sum + (inv.type === "uploaded"
+          ? (inv.amount || 0)
+          : inv.lineItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0)),
       0,
     );
 
@@ -142,6 +157,44 @@ export function InvoicesSection({
       showError(err instanceof Error ? err.message : "Failed to create invoice");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUploadInvoice = async () => {
+    if (!uploadFile) return;
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("projectId", projectId);
+      formData.append("amount", String(Math.round(parseFloat(uploadAmount || "0") * 100)));
+      if (uploadDueDate) formData.append("dueDate", uploadDueDate);
+      if (uploadNotes) formData.append("notes", uploadNotes);
+
+      await apiFetch("/invoices/upload", {
+        method: "POST",
+        body: formData,
+      });
+      track("invoice_uploaded");
+      setShowUpload(false);
+      setUploadFile(null);
+      setUploadAmount("");
+      setUploadDueDate("");
+      setUploadNotes("");
+      loadInvoices();
+      success("Invoice uploaded");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to upload invoice");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDownloadFile = async (fileId: string, filename: string) => {
+    try {
+      await downloadFile(fileId, filename);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to download file");
     }
   };
 
@@ -253,13 +306,22 @@ export function InvoicesSection({
           Invoices{invoices.length > 0 && ` (${invoices.length})`}
         </h2>
         {!isArchived && (
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
-          >
-            <Plus size={14} />
-            New Invoice
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowUpload(true)}
+              className="flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+            >
+              <Upload size={14} />
+              Upload Invoice
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+            >
+              <Plus size={14} />
+              New Invoice
+            </button>
+          </div>
         )}
       </div>
 
@@ -401,6 +463,83 @@ export function InvoicesSection({
         </div>
       )}
 
+      {/* Upload modal */}
+      {showUpload && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowUpload(false);
+          }}
+        >
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md mx-4 p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Upload Invoice</h3>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Invoice File</label>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                className="w-full mt-1 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Amount</label>
+              <div className="relative mt-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">$</span>
+                <input
+                  type="number"
+                  value={uploadAmount}
+                  onChange={(e) => setUploadAmount(e.target.value)}
+                  step="0.01"
+                  min={0}
+                  placeholder="0.00"
+                  className="w-full pl-7 pr-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Due Date</label>
+              <input
+                type="date"
+                value={uploadDueDate}
+                onChange={(e) => setUploadDueDate(e.target.value)}
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Notes</label>
+              <textarea
+                value={uploadNotes}
+                onChange={(e) => setUploadNotes(e.target.value)}
+                rows={2}
+                placeholder="Additional notes..."
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowUpload(false)}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUploadInvoice}
+                disabled={submitting || !uploadFile}
+                className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {submitting ? "Uploading..." : "Upload"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Invoice list */}
       {loading ? (
         <div className="space-y-2">
@@ -412,7 +551,10 @@ export function InvoicesSection({
         <div className="space-y-2">
           {invoices.map((inv) => {
             const colors = statusColors[inv.status] || statusColors.draft;
-            const total = inv.lineItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
+            const isUploaded = inv.type === "uploaded";
+            const total = isUploaded
+              ? (inv.amount || 0)
+              : inv.lineItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
             const isExpanded = expandedId === inv.id;
             const isDraft = inv.status === "draft";
             const isEditing = editingId === inv.id;
@@ -582,37 +724,61 @@ export function InvoicesSection({
                       </div>
                     ) : (
                       <>
-                        {/* Line items table */}
-                        <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-[var(--muted)]">
-                                <th className="text-left px-4 py-2 font-medium">Description</th>
-                                <th className="text-right px-4 py-2 font-medium">Qty</th>
-                                <th className="text-right px-4 py-2 font-medium">Unit Price</th>
-                                <th className="text-right px-4 py-2 font-medium">Total</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {inv.lineItems.map((li, idx) => (
-                                <tr key={li.id || idx} className="border-t border-[var(--border)]">
-                                  <td className="px-4 py-2">{li.description}</td>
-                                  <td className="px-4 py-2 text-right">{li.quantity}</td>
-                                  <td className="px-4 py-2 text-right">{formatCurrency(li.unitPrice)}</td>
-                                  <td className="px-4 py-2 text-right font-medium">
-                                    {formatCurrency(li.quantity * li.unitPrice)}
-                                  </td>
+                        {isUploaded && inv.uploadedFile ? (
+                          <div className="border border-[var(--border)] rounded-lg p-4 space-y-2">
+                            <p className="text-xs font-medium text-[var(--muted-foreground)]">Uploaded Invoice</p>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-medium">{inv.uploadedFile.filename}</p>
+                                <p className="text-xs text-[var(--muted-foreground)]">
+                                  {formatBytes(inv.uploadedFile.sizeBytes)}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => handleDownloadFile(inv.uploadedFile!.id, inv.uploadedFile!.filename)}
+                                className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                              >
+                                <Download size={14} />
+                                Download
+                              </button>
+                            </div>
+                            <div className="pt-2 border-t border-[var(--border)]">
+                              <span className="text-sm text-[var(--muted-foreground)]">Amount</span>
+                              <p className="text-xl font-bold">{formatCurrency(total)}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-[var(--muted)]">
+                                  <th className="text-left px-4 py-2 font-medium">Description</th>
+                                  <th className="text-right px-4 py-2 font-medium">Qty</th>
+                                  <th className="text-right px-4 py-2 font-medium">Unit Price</th>
+                                  <th className="text-right px-4 py-2 font-medium">Total</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr className="border-t border-[var(--border)] bg-[var(--muted)]">
-                                <td colSpan={3} className="px-4 py-2 text-right font-medium">Total</td>
-                                <td className="px-4 py-2 text-right font-bold">{formatCurrency(total)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
+                              </thead>
+                              <tbody>
+                                {inv.lineItems.map((li, idx) => (
+                                  <tr key={li.id || idx} className="border-t border-[var(--border)]">
+                                    <td className="px-4 py-2">{li.description}</td>
+                                    <td className="px-4 py-2 text-right">{li.quantity}</td>
+                                    <td className="px-4 py-2 text-right">{formatCurrency(li.unitPrice)}</td>
+                                    <td className="px-4 py-2 text-right font-medium">
+                                      {formatCurrency(li.quantity * li.unitPrice)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="border-t border-[var(--border)] bg-[var(--muted)]">
+                                  <td colSpan={3} className="px-4 py-2 text-right font-medium">Total</td>
+                                  <td className="px-4 py-2 text-right font-bold">{formatCurrency(total)}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        )}
 
                         {inv.notes && (
                           <div>

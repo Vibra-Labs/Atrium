@@ -19,10 +19,11 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  sessions       Session[]
-  accounts       Account[]
-  members        Member[]
-  projectClients ProjectClient[]
+  sessions           Session[]
+  accounts           Account[]
+  members            Member[]
+  projectClients     ProjectClient[]
+  documentResponses  DocumentResponse[]
 
   @@map("user")
 }
@@ -136,12 +137,14 @@ model Project {
   updatedAt      DateTime  @updatedAt
   archivedAt     DateTime?
 
-  files    File[]
-  clients  ProjectClient[]
-  updates  ProjectUpdate[]
-  tasks    Task[]
-  invoices Invoice[]
-  notes    ProjectNote[]
+  files     File[]
+  clients   ProjectClient[]
+  updates   ProjectUpdate[]
+  tasks     Task[]
+  invoices  Invoice[]
+  notes      ProjectNote[]
+  documents  Document[]
+  activities ActivityLog[]
 
   @@index([organizationId])
   @@map("project")
@@ -172,8 +175,17 @@ model File {
   uploadedById   String
   createdAt      DateTime @default(now())
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  updates ProjectUpdate[]
+  documentType   String?
+  documentTitle  String?
+  documentStatus String?
+  respondedAt    DateTime?
+  respondedById  String?
+  respondReason  String?
+
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updates   ProjectUpdate[]
+  documents Document[]
+  invoices  Invoice[]        @relation("UploadedInvoiceFile")
 
   @@index([projectId])
   @@index([organizationId])
@@ -207,31 +219,68 @@ model Task {
   dueDate        DateTime?
   completed      Boolean   @default(false)
   order          Int       @default(0)
+  type           String    @default("checkbox") // "checkbox" | "decision"
+  question       String?
+  closedAt       DateTime?
   projectId      String
   organizationId String
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  options  DecisionOption[]
+  votes    DecisionVote[]
 
   @@index([projectId])
   @@index([organizationId])
   @@map("task")
 }
 
+model DecisionOption {
+  id     String @id @default(cuid())
+  taskId String
+  label  String
+  order  Int    @default(0)
+
+  task  Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  votes DecisionVote[]
+
+  @@index([taskId])
+  @@map("decision_option")
+}
+
+model DecisionVote {
+  id        String   @id @default(cuid())
+  optionId  String
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  option DecisionOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  task   Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([optionId])
+  @@map("decision_vote")
+}
+
 model Invoice {
   id             String            @id @default(cuid())
   invoiceNumber  String
   status         String            @default("draft")
+  type           String            @default("itemized") // "itemized" | "uploaded"
   dueDate        DateTime?
   notes          String?
+  amount         Int?              // Total in cents, used for uploaded invoices
+  uploadedFileId String?
   projectId      String?
   organizationId String
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
-  project   Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  lineItems InvoiceLineItem[]
+  project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  uploadedFile File?             @relation("UploadedInvoiceFile", fields: [uploadedFileId], references: [id])
+  lineItems    InvoiceLineItem[]
 
   @@unique([organizationId, invoiceNumber])
   @@index([organizationId])
@@ -311,6 +360,11 @@ model SystemSettings {
   smtpPass       String?  // encrypted
   smtpSecure     Boolean  @default(true)
 
+  // Payment settings
+  paymentInstructions String?  // Displayed on invoices in the portal
+  paymentMethod       String?  // "bank_transfer", "paypal", "stripe_link", "other"
+  paymentDetails      String?  // Encrypted — bank account, PayPal email, etc.
+
   // File settings
   maxFileSizeMb  Int      @default(50)
 
@@ -336,6 +390,46 @@ model ProjectStatus {
   @@unique([organizationId, slug])
   @@index([organizationId])
   @@map("project_status")
+}
+
+// ─── Documents ───
+
+model Document {
+  id             String   @id @default(cuid())
+  type           String   // "quote", "contract", "nda", "other"
+  title          String
+  fileId         String
+  projectId      String
+  organizationId String
+  uploadedById   String
+  status         String   @default("pending") // "pending", "accepted", "declined", "acknowledged"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  file      File               @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responses DocumentResponse[]
+
+  @@index([projectId])
+  @@index([organizationId])
+  @@map("document")
+}
+
+model DocumentResponse {
+  id         String   @id @default(cuid())
+  documentId String
+  userId     String
+  action     String   // "accepted", "declined", "acknowledged"
+  reason     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@map("document_response")
 }
 
 // ─── Billing / Subscription tables ───
@@ -385,4 +479,23 @@ model Subscription {
 
   @@index([planId])
   @@map("subscription")
+}
+
+model ActivityLog {
+  id             String   @id @default(cuid())
+  type           String   // "document_response" | "decision_vote" | "decision_closed"
+  action         String
+  actorId        String
+  targetId       String
+  targetTitle    String
+  detail         String?
+  projectId      String
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([organizationId])
+  @@map("activity_log")
 }

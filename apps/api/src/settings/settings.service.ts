@@ -66,6 +66,7 @@ export class SettingsService {
       ...settings,
       resendApiKey: settings.resendApiKey ? "••••••••" : null,
       smtpPass: settings.smtpPass ? "••••••••" : null,
+      paymentDetails: settings.paymentDetails ? "••••••••" : null,
     };
   }
 
@@ -80,6 +81,8 @@ export class SettingsService {
     if (dto.smtpUser !== undefined) data.smtpUser = dto.smtpUser;
     if (dto.smtpSecure !== undefined) data.smtpSecure = dto.smtpSecure;
     if (dto.maxFileSizeMb !== undefined) data.maxFileSizeMb = dto.maxFileSizeMb;
+    if (dto.paymentInstructions !== undefined) data.paymentInstructions = dto.paymentInstructions;
+    if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
 
     // Encrypt sensitive fields
     if (dto.resendApiKey !== undefined) {
@@ -87,6 +90,9 @@ export class SettingsService {
     }
     if (dto.smtpPass !== undefined) {
       data.smtpPass = dto.smtpPass ? this.encrypt(dto.smtpPass) : null;
+    }
+    if (dto.paymentDetails !== undefined) {
+      data.paymentDetails = dto.paymentDetails ? this.encrypt(dto.paymentDetails) : null;
     }
 
     const settings = await this.prisma.systemSettings.upsert({
@@ -99,6 +105,18 @@ export class SettingsService {
       ...settings,
       resendApiKey: settings.resendApiKey ? "••••••••" : null,
       smtpPass: settings.smtpPass ? "••••••••" : null,
+      paymentDetails: settings.paymentDetails ? "••••••••" : null,
+    };
+  }
+
+  async getPaymentInstructions(organizationId: string) {
+    const settings = await this.prisma.systemSettings.findUnique({
+      where: { organizationId },
+    });
+
+    return {
+      paymentInstructions: settings?.paymentInstructions ?? null,
+      paymentMethod: settings?.paymentMethod ?? null,
     };
   }
 

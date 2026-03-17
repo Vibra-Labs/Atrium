@@ -2,6 +2,31 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.3.0] — 2026-03-17
+
+### Added
+
+- **Documents** — Upload quotes, contracts, and NDAs to projects. Clients review inline and accept/decline with optional reason. Admin sees status, decline reason, and can reset to re-request.
+- **Decision tasks** — New task type where clients vote on options. Vote counts hidden until all clients have voted.
+- **Activity feed** — Document responses and decision votes appear in the project updates timeline.
+- **Email notifications** — Clients notified on document uploads, invoice uploads, and decision results. Admins notified on client responses.
+- **Invoice uploads** — Upload PDF/image invoices as an alternative to itemized invoices.
+- **Payment settings** — Configure payment instructions and method (bank transfer, PayPal, Stripe, other) with encrypted storage.
+- **Portal UX** — Pending actions banner, badge counts on Files tab, confirmation dialog on accept/decline, inline document viewer modal.
+- **Responsive layout** — Dashboard and portal stack vertically on small screens; tabs scroll, forms wrap.
+- Configurable rate limiting via `THROTTLE_LIMIT` and `SIGNUP_THROTTLE_LIMIT` env vars.
+
+### Fixed
+
+- Portal invoice pagination now filters server-side by project (was client-side, broke page counts)
+- Activity logging errors now logged instead of silently swallowed
+- Tracker script injection hardened: `NEXT_PUBLIC_TRACKERS` validated against attribute whitelist
+- React hydration mismatch (#418) suppressed on root elements
+
+### Upgrade Notes
+
+Additive schema changes only (new tables + nullable columns). No data migration needed. Docker entrypoint handles it automatically; manual deployments run `bun run db:push`.
+
 ## [1.2.1] — 2026-03-12
 
 ### Added

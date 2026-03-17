@@ -4,8 +4,10 @@ import {
   ForbiddenException,
   BadRequestException,
 } from "@nestjs/common";
+import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { ActivityService } from "../activity/activity.service";
 import { paginationArgs, paginatedResponse } from "../common";
 import { CreateTaskDto, UpdateTaskDto } from "./tasks.dto";
 
@@ -14,6 +16,8 @@ export class TasksService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private activityService: ActivityService,
+    @InjectPinoLogger(TasksService.name) private readonly logger: PinoLogger,
   ) {}
 
   async create(dto: CreateTaskDto, projectId: string, orgId: string) {
@@ -59,7 +63,7 @@ export class TasksService {
           : {}),
       },
       include: {
-        options: isDecision ? { orderBy: { order: "asc" } } : false,
+        options: isDecision ? { orderBy: { order: "asc" as const } } : false,
       },
     });
 
@@ -136,17 +140,23 @@ export class TasksService {
       this.prisma.task.count({ where }),
     ]);
 
-    // Hide vote counts from clients until voting is closed
+    // Count assigned clients to determine if all have voted
+    const clientCount = await this.prisma.projectClient.count({ where: { projectId } });
+
+    // Hide vote counts from clients until all clients have voted or voting is closed
     const sanitized = data.map((task) => {
       if (task.type === "decision" && !task.closedAt && task.options) {
-        return {
-          ...task,
-          options: task.options.map((opt) => ({
-            ...opt,
+        const allVoted = task._count.votes >= clientCount;
+        if (!allVoted) {
+          return {
+            ...task,
+            options: task.options.map((opt) => ({
+              ...opt,
+              _count: { votes: 0 },
+            })),
             _count: { votes: 0 },
-          })),
-          _count: { votes: 0 },
-        };
+          };
+        }
       }
       return task;
     });
@@ -174,11 +184,26 @@ export class TasksService {
     const option = task.options.find((o) => o.id === optionId);
     if (!option) throw new BadRequestException("Invalid option");
 
-    return this.prisma.decisionVote.upsert({
+    const vote = await this.prisma.decisionVote.upsert({
       where: { taskId_userId: { taskId, userId } },
       create: { optionId, taskId, userId },
       update: { optionId },
     });
+
+    this.activityService
+      .create({
+        type: "decision_vote",
+        action: "voted",
+        actorId: userId,
+        targetId: taskId,
+        targetTitle: task.question || task.title,
+        detail: option.label,
+        projectId: task.projectId,
+        organizationId: orgId,
+      })
+      .catch((err) => this.logger.warn({ err }, "Failed to log decision vote activity"));
+
+    return vote;
   }
 
   async closeVoting(taskId: string, orgId: string) {
@@ -188,7 +213,7 @@ export class TasksService {
     if (!task) throw new NotFoundException("Decision task not found");
     if (task.closedAt) throw new BadRequestException("Voting is already closed");
 
-    return this.prisma.task.update({
+    const updated = await this.prisma.task.update({
       where: { id: taskId },
       data: { closedAt: new Date(), completed: true },
       include: {
@@ -200,6 +225,22 @@ export class TasksService {
         },
       },
     });
+
+    this.notifications.notifyDecisionClosed(taskId);
+
+    this.activityService
+      .create({
+        type: "decision_closed",
+        action: "closed",
+        actorId: "system",
+        targetId: taskId,
+        targetTitle: task.question || task.title,
+        projectId: task.projectId,
+        organizationId: orgId,
+      })
+      .catch((err) => this.logger.warn({ err }, "Failed to log decision closed activity"));
+
+    return updated;
   }
 
   async update(id: string, dto: UpdateTaskDto, orgId: string) {

@@ -135,7 +135,9 @@ export default async function DashboardLayout({
           </span>
         </div>
         <SidebarNav />
-        <SignOutButton />
+        <div className="mt-auto pt-4">
+          <SignOutButton />
+        </div>
       </aside>
       <main className="flex-1 p-8">
         {!session.user?.emailVerified && (

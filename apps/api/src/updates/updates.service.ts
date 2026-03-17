@@ -7,20 +7,16 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { ActivityService } from "../activity/activity.service";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import type { UploadedFile } from "../files/files.service";
 import { randomUUID } from "crypto";
 import { extname } from "path";
 import type { Response } from "express";
-import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess } from "../common";
+import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess, BLOCKED_EXTENSIONS } from "../common";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
-
-const BLOCKED_EXTENSIONS = new Set([
-  ".exe", ".sh", ".bat", ".cmd", ".com", ".msi", ".ps1",
-  ".scr", ".pif", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
-]);
 
 const IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -34,6 +30,7 @@ export class UpdatesService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private activityService: ActivityService,
     @Inject(STORAGE_PROVIDER) private storage: StorageProvider,
   ) {}
 
@@ -172,6 +169,117 @@ export class UpdatesService {
     }
 
     return this.findByProject(projectId, organizationId, page, limit);
+  }
+
+  /**
+   * Returns a combined timeline of project updates and activity log entries,
+   * sorted chronologically (newest first).
+   *
+   * Uses count-based total and fetches only (limit + limit) rows from each
+   * source, then merges and takes the top `limit` — avoids loading the
+   * entire history into memory.
+   */
+  async findTimeline(
+    projectId: string,
+    organizationId: string,
+    page = 1,
+    limit = 20,
+  ) {
+    const where = { projectId, organizationId };
+    const skip = (page - 1) * limit;
+
+    // Fetch counts and page-sized batches in parallel
+    const [updates, updateCount, activities, activityCount] = await Promise.all([
+      this.prisma.projectUpdate.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+        include: { file: { select: { id: true } } },
+      }),
+      this.prisma.projectUpdate.count({ where }),
+      this.prisma.activityLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      this.prisma.activityLog.count({ where }),
+    ]);
+
+    // Batch-resolve author names for updates
+    const authorIds = [...new Set(updates.map((u) => u.authorId))];
+    const actorIds = [...new Set(activities.map((a) => a.actorId))];
+    const allUserIds = [...new Set([...authorIds, ...actorIds])];
+    const users = allUserIds.length > 0
+      ? await this.prisma.user.findMany({ where: { id: { in: allUserIds } }, select: { id: true, name: true } })
+      : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    // Build update entries with attachment URLs
+    const updateEntries = await Promise.all(
+      updates.map(async (u) => {
+        let attachmentUrl: string | undefined;
+        if (u.fileId) {
+          attachmentUrl = `/api/files/${u.fileId}/download`;
+        } else if (u.attachmentKey) {
+          attachmentUrl = await this.storage.getSignedUrl(u.attachmentKey);
+        }
+        const author = userMap.get(u.authorId);
+        return {
+          id: u.id,
+          kind: "update" as const,
+          createdAt: u.createdAt,
+          content: u.content,
+          attachmentUrl,
+          attachmentName: u.attachmentName,
+          attachmentMimeType: u.attachmentMimeType,
+          hasAttachment: !!u.attachmentKey || !!u.fileId,
+          fileId: u.fileId,
+          author: author ?? { id: u.authorId, name: "Unknown" },
+        };
+      }),
+    );
+
+    const activityEntries = activities.map((a) => ({
+      id: a.id,
+      kind: "activity" as const,
+      createdAt: a.createdAt,
+      type: a.type,
+      action: a.action,
+      actor: userMap.get(a.actorId) ?? { id: a.actorId, name: "Unknown" },
+      targetId: a.targetId,
+      targetTitle: a.targetTitle,
+      detail: a.detail,
+    }));
+
+    // Merge and sort the two page-sized arrays, take top `limit`
+    const merged = [...updateEntries, ...activityEntries]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
+
+    const total = updateCount + activityCount;
+    return paginatedResponse(merged, total, page, limit);
+  }
+
+  /**
+   * Timeline for clients — verifies project access first.
+   */
+  async findTimelineForClient(
+    projectId: string,
+    clientUserId: string,
+    organizationId: string,
+    page = 1,
+    limit = 20,
+  ) {
+    const assignment = await this.prisma.projectClient.findFirst({
+      where: { projectId, userId: clientUserId },
+    });
+    if (!assignment) {
+      throw new ForbiddenException("Not assigned to this project");
+    }
+
+    return this.findTimeline(projectId, organizationId, page, limit);
   }
 
   async remove(id: string, organizationId: string) {

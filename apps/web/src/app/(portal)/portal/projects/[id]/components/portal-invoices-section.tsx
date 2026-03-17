@@ -65,13 +65,9 @@ export function PortalInvoicesSection({
     setLoading(true);
     try {
       const res = await apiFetch<PaginatedResponse<InvoiceListItem>>(
-        `/invoices/mine?page=${page}&limit=20`,
+        `/invoices/mine?page=${page}&limit=20&projectId=${encodeURIComponent(projectId)}`,
       );
-      // Filter to this project client-side
-      const projectInvoices = res.data.filter(
-        (inv) => inv.projectId === projectId,
-      );
-      setInvoices(projectInvoices);
+      setInvoices(res.data);
       setTotalPages(res.meta.totalPages);
     } catch (err) {
       console.error(err);

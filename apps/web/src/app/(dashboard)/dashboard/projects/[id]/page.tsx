@@ -23,6 +23,12 @@ interface FileRecord {
   mimeType: string;
   sizeBytes: number;
   createdAt: string;
+  documentType?: string | null;
+  documentTitle?: string | null;
+  documentStatus?: string | null;
+  respondedAt?: string | null;
+  respondedBy?: { name: string } | null;
+  respondReason?: string | null;
 }
 
 interface Project {
@@ -251,9 +257,9 @@ export default function ProjectDetailPage() {
   const assignedIds = new Set((project.clients ?? []).map((c) => c.userId));
 
   return (
-    <div className="flex gap-8 items-start">
+    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
       {/* Left sidebar — project metadata */}
-      <aside className="w-72 shrink-0 sticky top-8 space-y-4">
+      <aside className="w-full lg:w-72 lg:shrink-0 lg:sticky lg:top-8 space-y-4">
         {error && (
           <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{error}</div>
         )}
@@ -364,12 +370,12 @@ export default function ProjectDetailPage() {
 
       {/* Right content area — tabbed sections */}
       <div className="flex-1 min-w-0">
-        <div className="flex border-b border-[var(--border)] mb-6">
+        <div className="flex overflow-x-auto border-b border-[var(--border)] mb-6 -mx-1 px-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              className={`px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
                 activeTab === tab.id
                   ? "border-[var(--primary)] text-[var(--primary)]"
                   : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border)]"

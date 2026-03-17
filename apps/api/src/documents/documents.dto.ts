@@ -11,7 +11,7 @@ export class CreateDocumentDto {
   projectId!: string;
 
   @IsString()
-  @IsIn(["quote", "contract", "nda", "other"])
+  @IsIn(["quote", "contract", "proposal", "nda", "other"])
   type!: string;
 
   @IsString()

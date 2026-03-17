@@ -217,4 +217,103 @@ test.describe("Documents", () => {
       }
     });
   });
+
+  test.describe("Portal UI - Document Confirmation Dialog", () => {
+    test("accept button opens confirmation dialog on portal", async ({ page }) => {
+      await page.goto("/portal/projects");
+      const projectLink = page.locator("a[href*='/portal/projects/']").first();
+      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await projectLink.click();
+        await page.getByRole("button", { name: /^files$/i }).click();
+        await page.waitForTimeout(2000);
+
+        const acceptBtn = page.getByRole("button", { name: /^accept$/i }).first();
+        if (await acceptBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await acceptBtn.click();
+          // Confirmation dialog should appear
+          await expect(page.getByText(/are you sure you want to/i)).toBeVisible({ timeout: 3000 });
+          await expect(page.getByRole("button", { name: /confirm accept/i })).toBeVisible();
+          await expect(page.getByRole("button", { name: /cancel/i })).toBeVisible();
+        }
+      }
+    });
+
+    test("decline button opens confirmation dialog with reason textarea", async ({ page }) => {
+      await page.goto("/portal/projects");
+      const projectLink = page.locator("a[href*='/portal/projects/']").first();
+      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await projectLink.click();
+        await page.getByRole("button", { name: /^files$/i }).click();
+        await page.waitForTimeout(2000);
+
+        const declineBtn = page.getByRole("button", { name: /^decline$/i }).first();
+        if (await declineBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await declineBtn.click();
+          // Confirmation dialog should appear with decline-specific content
+          await expect(page.getByText(/decline document/i)).toBeVisible({ timeout: 3000 });
+          await expect(page.getByText(/reason for declining/i)).toBeVisible();
+          await expect(page.getByPlaceholder(/provide a reason/i)).toBeVisible();
+          await expect(page.getByRole("button", { name: /confirm decline/i })).toBeVisible();
+        }
+      }
+    });
+
+    test("acknowledge button opens confirmation dialog on portal", async ({ page }) => {
+      await page.goto("/portal/projects");
+      const projectLink = page.locator("a[href*='/portal/projects/']").first();
+      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await projectLink.click();
+        await page.getByRole("button", { name: /^files$/i }).click();
+        await page.waitForTimeout(2000);
+
+        const ackBtn = page.getByRole("button", { name: /^acknowledge$/i }).first();
+        if (await ackBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await ackBtn.click();
+          await expect(page.getByText(/acknowledge document/i)).toBeVisible({ timeout: 3000 });
+          await expect(page.getByRole("button", { name: /confirm acknowledge/i })).toBeVisible();
+        }
+      }
+    });
+
+    test("cancel button in confirmation dialog closes it without action", async ({ page }) => {
+      await page.goto("/portal/projects");
+      const projectLink = page.locator("a[href*='/portal/projects/']").first();
+      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await projectLink.click();
+        await page.getByRole("button", { name: /^files$/i }).click();
+        await page.waitForTimeout(2000);
+
+        const acceptBtn = page.getByRole("button", { name: /^accept$/i }).first();
+        if (await acceptBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await acceptBtn.click();
+          await expect(page.getByText(/are you sure you want to/i)).toBeVisible({ timeout: 3000 });
+          // Click cancel
+          await page.getByRole("button", { name: /cancel/i }).click();
+          // Dialog should be gone
+          await expect(page.getByText(/are you sure you want to/i)).not.toBeVisible();
+        }
+      }
+    });
+
+    test("confirmation dialog shows document title and type", async ({ page }) => {
+      await page.goto("/portal/projects");
+      const projectLink = page.locator("a[href*='/portal/projects/']").first();
+      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await projectLink.click();
+        await page.getByRole("button", { name: /^files$/i }).click();
+        await page.waitForTimeout(2000);
+
+        const acceptBtn = page.getByRole("button", { name: /^accept$/i }).first();
+        if (await acceptBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await acceptBtn.click();
+          // Dialog should show document type badge (Quote, Contract, NDA, Other)
+          const dialog = page.locator(".fixed.inset-0.z-50");
+          await expect(dialog).toBeVisible({ timeout: 3000 });
+          // Should contain a type label like Quote, Contract, NDA, or Other
+          const typeLabel = dialog.locator("text=/Quote|Contract|NDA|Other/i");
+          await expect(typeLabel.first()).toBeVisible();
+        }
+      }
+    });
+  });
 });

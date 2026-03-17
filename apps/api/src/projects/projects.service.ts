@@ -63,7 +63,21 @@ export class ProjectsService {
       include: { files: true, clients: { select: { userId: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
-    return project;
+
+    // Enrich files with respondedBy user name
+    const respondedByIds = [...new Set(project.files.filter(f => f.respondedById).map(f => f.respondedById!))];
+    const responders = respondedByIds.length > 0
+      ? await this.prisma.user.findMany({ where: { id: { in: respondedByIds } }, select: { id: true, name: true } })
+      : [];
+    const responderMap = new Map(responders.map(u => [u.id, u]));
+
+    return {
+      ...project,
+      files: project.files.map(f => ({
+        ...f,
+        respondedBy: f.respondedById ? responderMap.get(f.respondedById) || null : null,
+      })),
+    };
   }
 
   async findOneByClient(

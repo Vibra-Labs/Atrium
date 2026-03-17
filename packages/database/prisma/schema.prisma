@@ -142,8 +142,9 @@ model Project {
   updates   ProjectUpdate[]
   tasks     Task[]
   invoices  Invoice[]
-  notes     ProjectNote[]
-  documents Document[]
+  notes      ProjectNote[]
+  documents  Document[]
+  activities ActivityLog[]
 
   @@index([organizationId])
   @@map("project")
@@ -173,6 +174,13 @@ model File {
   organizationId String
   uploadedById   String
   createdAt      DateTime @default(now())
+
+  documentType   String?
+  documentTitle  String?
+  documentStatus String?
+  respondedAt    DateTime?
+  respondedById  String?
+  respondReason  String?
 
   project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   updates   ProjectUpdate[]
@@ -226,6 +234,34 @@ model Task {
   @@index([projectId])
   @@index([organizationId])
   @@map("task")
+}
+
+model DecisionOption {
+  id     String @id @default(cuid())
+  taskId String
+  label  String
+  order  Int    @default(0)
+
+  task  Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  votes DecisionVote[]
+
+  @@index([taskId])
+  @@map("decision_option")
+}
+
+model DecisionVote {
+  id        String   @id @default(cuid())
+  optionId  String
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  option DecisionOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  task   Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([optionId])
+  @@map("decision_vote")
 }
 
 model Invoice {
@@ -395,36 +431,6 @@ model DocumentResponse {
   @@map("document_response")
 }
 
-// ─── Decision Tasks ───
-
-model DecisionOption {
-  id     String @id @default(cuid())
-  taskId String
-  label  String
-  order  Int    @default(0)
-
-  task  Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  votes DecisionVote[]
-
-  @@index([taskId])
-  @@map("decision_option")
-}
-
-model DecisionVote {
-  id        String   @id @default(cuid())
-  optionId  String
-  taskId    String
-  userId    String
-  createdAt DateTime @default(now())
-
-  option DecisionOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  task   Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([taskId, userId])
-  @@index([optionId])
-  @@map("decision_vote")
-}
-
 // ─── Billing / Subscription tables ───
 
 model SubscriptionPlan {
@@ -472,4 +478,23 @@ model Subscription {
 
   @@index([planId])
   @@map("subscription")
+}
+
+model ActivityLog {
+  id             String   @id @default(cuid())
+  type           String   // "document_response" | "decision_vote" | "decision_closed"
+  action         String
+  actorId        String
+  targetId       String
+  targetTitle    String
+  detail         String?
+  projectId      String
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([organizationId])
+  @@map("activity_log")
 }

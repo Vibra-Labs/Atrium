@@ -11,10 +11,13 @@ import { paginationArgs, paginatedResponse } from "../common";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import { CreateDocumentDto } from "./documents.dto";
+import { NotificationsService } from "../notifications/notifications.service";
+import { ActivityService } from "../activity/activity.service";
 
 const ALLOWED_ACTIONS: Record<string, string[]> = {
   quote: ["accepted", "declined"],
   contract: ["accepted", "declined"],
+  proposal: ["accepted", "declined"],
   nda: ["acknowledged"],
   other: ["acknowledged"],
 };
@@ -25,6 +28,8 @@ export class DocumentsService {
     private prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private storage: StorageProvider,
     @InjectPinoLogger(DocumentsService.name) private readonly logger: PinoLogger,
+    private notifications: NotificationsService,
+    private activityService: ActivityService,
   ) {}
 
   async create(
@@ -38,7 +43,7 @@ export class DocumentsService {
     });
     if (!project) throw new NotFoundException("Project not found");
 
-    return this.prisma.document.create({
+    const document = await this.prisma.document.create({
       data: {
         type: dto.type,
         title: dto.title,
@@ -54,6 +59,10 @@ export class DocumentsService {
         },
       },
     });
+
+    this.notifications.notifyDocumentUploaded(document.id);
+
+    return document;
   }
 
   async findByProject(
@@ -176,6 +185,20 @@ export class DocumentsService {
     // Update document status based on all responses
     await this.updateDocumentStatus(id);
 
+    this.notifications.notifyDocumentResponded(id, userId, action);
+
+    this.activityService
+      .create({
+        type: "document_response",
+        action,
+        actorId: userId,
+        targetId: id,
+        targetTitle: doc.title,
+        projectId: doc.projectId,
+        organizationId: orgId,
+      })
+      .catch((err) => this.logger.warn({ err }, "Failed to log document response activity"));
+
     return response;
   }
 
@@ -184,13 +207,7 @@ export class DocumentsService {
       where: { id: documentId },
       include: { responses: true },
     });
-    if (!doc) return;
-
-    const clientCount = await this.prisma.projectClient.count({
-      where: { projectId: doc.projectId },
-    });
-
-    if (doc.responses.length === 0) return;
+    if (!doc || doc.responses.length === 0) return;
 
     // If any client declined, status is declined
     if (doc.responses.some((r) => r.action === "declined")) {
@@ -201,17 +218,12 @@ export class DocumentsService {
       return;
     }
 
-    // If all assigned clients have responded positively
-    if (doc.responses.length >= clientCount) {
-      const status = doc.responses.every((r) => r.action === "accepted")
-        ? "accepted"
-        : "acknowledged";
-      await this.prisma.document.update({
-        where: { id: documentId },
-        data: { status },
-      });
-      return;
-    }
+    // Determine status from existing responses (don't wait for all clients)
+    const allAccepted = doc.responses.every((r) => r.action === "accepted");
+    await this.prisma.document.update({
+      where: { id: documentId },
+      data: { status: allAccepted ? "accepted" : "acknowledged" },
+    });
   }
 
   async remove(id: string, orgId: string) {

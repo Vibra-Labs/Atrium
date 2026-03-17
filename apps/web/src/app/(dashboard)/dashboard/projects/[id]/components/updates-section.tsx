@@ -6,27 +6,77 @@ import { formatRelativeTime } from "@/lib/utils";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Trash2, Plus, MessageSquare, Paperclip, FileText, Download } from "lucide-react";
+import {
+  Trash2,
+  Plus,
+  MessageSquare,
+  Paperclip,
+  FileText,
+  Download,
+  FileCheck,
+  Vote,
+  Lock,
+} from "lucide-react";
 import { linkify } from "@/lib/linkify";
 import { track } from "@/lib/track";
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
-interface ProjectUpdateRecord {
+interface TimelineEntry {
   id: string;
-  content: string;
+  kind: "update" | "activity";
+  createdAt: string;
+  // Update fields
+  content?: string;
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentMimeType?: string;
-  hasAttachment: boolean;
+  hasAttachment?: boolean;
   fileId?: string;
-  author: { id: string; name: string };
-  createdAt: string;
+  author?: { id: string; name: string };
+  // Activity fields
+  type?: string;
+  action?: string;
+  actor?: { id: string; name: string };
+  targetId?: string;
+  targetTitle?: string;
+  detail?: string;
 }
 
 interface PaginatedResponse<T> {
   data: T[];
   meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+const actionLabels: Record<string, string> = {
+  accepted: "accepted",
+  declined: "declined",
+  acknowledged: "acknowledged",
+  signed: "signed",
+  voted: "voted on",
+  closed: "closed voting on",
+};
+
+const actionColors: Record<string, { bg: string; text: string }> = {
+  accepted: { bg: "#dcfce7", text: "#15803d" },
+  declined: { bg: "#fee2e2", text: "#b91c1c" },
+  acknowledged: { bg: "#dbeafe", text: "#1d4ed8" },
+  signed: { bg: "#ccfbf1", text: "#0f766e" },
+  voted: { bg: "#fef3c7", text: "#92400e" },
+  closed: { bg: "#f3f4f6", text: "#374151" },
+};
+
+function ActivityIcon({ type }: { type?: string }) {
+  switch (type) {
+    case "document_response":
+      return <FileCheck size={14} className="text-blue-500" />;
+    case "decision_vote":
+      return <Vote size={14} className="text-amber-500" />;
+    case "decision_closed":
+      return <Lock size={14} className="text-gray-500" />;
+    default:
+      return <MessageSquare size={14} className="text-[var(--muted-foreground)]" />;
+  }
 }
 
 export function UpdatesSection({
@@ -40,7 +90,7 @@ export function UpdatesSection({
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
-  const [updates, setUpdates] = useState<ProjectUpdateRecord[]>([]);
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [newContent, setNewContent] = useState("");
@@ -48,20 +98,20 @@ export function UpdatesSection({
   const [posting, setPosting] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
 
-  const loadUpdates = useCallback(() => {
-    apiFetch<PaginatedResponse<ProjectUpdateRecord>>(
-      `/updates/project/${projectId}?page=${page}&limit=10`,
+  const loadTimeline = useCallback(() => {
+    apiFetch<PaginatedResponse<TimelineEntry>>(
+      `/updates/timeline/${projectId}?page=${page}&limit=10`,
     )
       .then((res) => {
-        setUpdates(res.data);
+        setTimeline(res.data);
         setTotalPages(res.meta.totalPages);
       })
       .catch(console.error);
   }, [projectId, page]);
 
   useEffect(() => {
-    loadUpdates();
-  }, [loadUpdates]);
+    loadTimeline();
+  }, [loadTimeline]);
 
   const handlePost = async () => {
     if (!newContent.trim()) return;
@@ -80,7 +130,7 @@ export function UpdatesSection({
       setNewContent("");
       setNewAttachment(null);
       setShowCompose(false);
-      loadUpdates();
+      loadTimeline();
       onFileChange?.();
       success("Update posted");
     } catch (err) {
@@ -121,7 +171,7 @@ export function UpdatesSection({
     if (!ok) return;
     try {
       await apiFetch(`/updates/${updateId}`, { method: "DELETE" });
-      loadUpdates();
+      loadTimeline();
       onFileChange?.();
       success("Update deleted");
     } catch (err) {
@@ -212,27 +262,72 @@ export function UpdatesSection({
       )}
 
       <div className="space-y-3">
-        {updates.map((update) => {
+        {timeline.map((entry) => {
+          if (entry.kind === "activity") {
+            const colors = actionColors[entry.action || ""] || actionColors.closed;
+            const actorName = entry.actor?.name || "Someone";
+            const label = actionLabels[entry.action || ""] || entry.action;
+
+            return (
+              <div
+                key={entry.id}
+                data-testid="activity-entry"
+                className="flex items-start gap-3 px-4 py-3 border border-[var(--border)] rounded-lg bg-[var(--muted)]/30"
+              >
+                <div className="mt-0.5">
+                  <ActivityIcon type={entry.type} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm">
+                    <span className="font-medium">{actorName}</span>
+                    {" "}
+                    <span className="text-[var(--muted-foreground)]">{label}</span>
+                    {" "}
+                    <span className="font-medium">{entry.targetTitle}</span>
+                    {entry.detail && (
+                      <span className="text-[var(--muted-foreground)]">
+                        {" "}
+                        &mdash; {entry.detail}
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                      style={{ backgroundColor: colors.bg, color: colors.text }}
+                    >
+                      {entry.action}
+                    </span>
+                    <span className="text-xs text-[var(--muted-foreground)]">
+                      {formatRelativeTime(entry.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // Regular update entry
           const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-          const isImage = IMAGE_TYPES.has(update.attachmentMimeType || "");
-          const attachmentSrc = update.fileId
-            ? `${API_URL}/api/files/${update.fileId}/download`
-            : update.attachmentUrl || `${API_URL}/api/updates/${update.id}/attachment`;
+          const isImage = IMAGE_TYPES.has(entry.attachmentMimeType || "");
+          const attachmentSrc = entry.fileId
+            ? `${API_URL}/api/files/${entry.fileId}/download`
+            : entry.attachmentUrl || `${API_URL}/api/updates/${entry.id}/attachment`;
           return (
             <div
-              key={update.id}
+              key={entry.id}
               className="border border-[var(--border)] rounded-lg p-4"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{update.author.name}</span>
+                  <span className="text-sm font-medium">{entry.author?.name}</span>
                   <span className="text-xs text-[var(--muted-foreground)]">
-                    {formatRelativeTime(update.createdAt)}
+                    {formatRelativeTime(entry.createdAt)}
                   </span>
                 </div>
                 {!isArchived && (
                   <button
-                    onClick={() => handleDelete(update.id)}
+                    onClick={() => handleDelete(entry.id)}
                     className="flex items-center gap-1 text-xs text-red-500 hover:underline"
                   >
                     <Trash2 size={12} />
@@ -240,32 +335,32 @@ export function UpdatesSection({
                   </button>
                 )}
               </div>
-              <p className="text-sm whitespace-pre-wrap">{linkify(update.content)}</p>
-              {update.hasAttachment && isImage && (
+              <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
+              {entry.hasAttachment && isImage && (
                 <img
                   src={attachmentSrc}
                   alt=""
                   className="mt-3 max-w-full max-h-80 rounded-lg border border-[var(--border)]"
                 />
               )}
-              {update.hasAttachment && !isImage && (
+              {entry.hasAttachment && !isImage && (
                 <button
                   onClick={() =>
-                    update.fileId
-                      ? handleAttachmentDownload(update.fileId, update.attachmentName || "download")
+                    entry.fileId
+                      ? handleAttachmentDownload(entry.fileId, entry.attachmentName || "download")
                       : window.open(attachmentSrc, "_blank")
                   }
                   className="mt-3 flex items-center gap-2 px-3 py-2 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors w-fit"
                 >
                   <FileText size={16} className="text-[var(--muted-foreground)] shrink-0" />
-                  <span className="truncate max-w-[200px]">{update.attachmentName || "Download"}</span>
+                  <span className="truncate max-w-[200px]">{entry.attachmentName || "Download"}</span>
                   <Download size={14} className="text-[var(--muted-foreground)] shrink-0" />
                 </button>
               )}
             </div>
           );
         })}
-        {updates.length === 0 && (
+        {timeline.length === 0 && (
           <div className="text-center py-8">
             <MessageSquare size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
             <p className="text-sm text-[var(--muted-foreground)]">

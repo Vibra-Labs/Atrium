@@ -23,6 +23,7 @@ import {
   CreateUploadedInvoiceDto,
   UpdateInvoiceDto,
   InvoiceListQueryDto,
+  MineInvoiceQueryDto,
 } from "./invoices.dto";
 import {
   AuthGuard,
@@ -30,7 +31,6 @@ import {
   Roles,
   CurrentUser,
   CurrentOrg,
-  PaginationQueryDto,
   PlanLimit,
   sanitizeFilename,
 } from "../common";
@@ -78,7 +78,7 @@ export class InvoicesController {
       userId,
     );
 
-    return this.invoicesService.createUploaded(dto, fileRecord.id, orgId);
+    return this.invoicesService.createUploadedAndNotify(dto, fileRecord.id, orgId);
   }
 
   @Get()
@@ -103,13 +103,14 @@ export class InvoicesController {
   findMine(
     @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
-    @Query() pagination: PaginationQueryDto,
+    @Query() query: MineInvoiceQueryDto,
   ) {
     return this.invoicesService.findMine(
       userId,
       orgId,
-      pagination.page,
-      pagination.limit,
+      query.page,
+      query.limit,
+      query.projectId,
     );
   }
 

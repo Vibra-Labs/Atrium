@@ -8,11 +8,16 @@ export async function assertProjectAccess(
   projectId: string,
   userId: string,
   role: string,
+  organizationId?: string,
 ): Promise<void> {
   if (PRIVILEGED_ROLES.has(role)) return;
 
   const assignment = await prisma.projectClient.findFirst({
-    where: { projectId, userId },
+    where: {
+      projectId,
+      userId,
+      ...(organizationId ? { project: { organizationId } } : {}),
+    },
   });
   if (!assignment) {
     throw new ForbiddenException("You do not have access to this project");

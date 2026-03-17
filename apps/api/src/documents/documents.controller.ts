@@ -117,7 +117,7 @@ export class DocumentsController {
       orgId,
       dto.action,
       req.ip,
-      req.headers["user-agent"],
+      String(req.headers["user-agent"] || ""),
     );
   }
 

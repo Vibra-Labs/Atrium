@@ -175,13 +175,6 @@ model File {
   uploadedById   String
   createdAt      DateTime @default(now())
 
-  documentType   String?
-  documentTitle  String?
-  documentStatus String?
-  respondedAt    DateTime?
-  respondedById  String?
-  respondReason  String?
-
   project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   updates         ProjectUpdate[]
   documents       Document[]

@@ -9,7 +9,12 @@ import { Pagination } from "@/components/pagination";
 import { Upload, Download, Trash2, FileCheck, ChevronDown, ChevronRight, PenTool } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
-import { SignatureFieldPlacer } from "@/components/signature-field-placer";
+import dynamic from "next/dynamic";
+
+const SignatureFieldPlacer = dynamic(
+  () => import("@/components/signature-field-placer").then((m) => m.SignatureFieldPlacer),
+  { ssr: false },
+);
 
 interface DocumentResponse {
   id: string;

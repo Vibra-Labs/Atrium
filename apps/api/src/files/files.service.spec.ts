@@ -10,7 +10,7 @@ import { Readable } from "stream";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { ConfigService } from "@nestjs/config";
 import type { StorageProvider } from "./storage/storage.provider";
-import type { NotificationsService } from "../notifications/notifications.service";
+
 import type { SettingsService } from "../settings/settings.service";
 
 interface PrismaArgs {
@@ -58,9 +58,6 @@ const mockPrisma = {
   invoice: {
     findFirst: mock(() => Promise.resolve(null)),
   },
-  document: {
-    findFirst: mock(() => Promise.resolve(null)),
-  },
   $transaction: mock((fn: (prisma: typeof mockPrisma) => unknown) => fn(mockPrisma)),
 };
 
@@ -76,10 +73,6 @@ const mockSettingsService = {
   getEffectiveMaxFileSize: mock(() => Promise.resolve(50)),
 };
 
-const mockNotifications = {
-  notifyDocumentUploaded: mock(() => Promise.resolve()),
-};
-
 describe("FilesService", () => {
   let service: FilesService;
 
@@ -89,7 +82,6 @@ describe("FilesService", () => {
       mockConfig as unknown as ConfigService,
       mockSettingsService as unknown as SettingsService,
       mockStorage as unknown as StorageProvider,
-      mockNotifications as unknown as NotificationsService,
     );
     // Reset the max file size to the default between tests
     mockSettingsService.getEffectiveMaxFileSize.mockImplementation(() =>
@@ -517,110 +509,4 @@ describe("FilesService", () => {
     });
   });
 
-  // --- Document upload ---
-
-  describe("upload with document metadata", () => {
-    const docFile = {
-      originalname: "contract.pdf",
-      buffer: Buffer.from("pdf content"),
-      mimetype: "application/pdf",
-      size: 1024,
-    } as MockFile;
-
-    it("stores document metadata when documentType is provided", async () => {
-      mockPrisma.project.findFirst.mockReturnValue(
-        Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
-      );
-
-      await service.upload(docFile, "proj-1", "org-1", "user-1", {
-        documentType: "contract",
-        documentTitle: "Website Contract",
-      });
-
-      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaArgs;
-      expect(createCall.data.documentType).toBe("contract");
-      expect(createCall.data.documentTitle).toBe("Website Contract");
-      expect(createCall.data.documentStatus).toBe("pending");
-    });
-
-    it("rejects invalid document types", async () => {
-      mockPrisma.project.findFirst.mockReturnValue(
-        Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
-      );
-
-      try {
-        await service.upload(docFile, "proj-1", "org-1", "user-1", {
-          documentType: "invalid_type",
-        });
-        expect(true).toBe(false);
-      } catch (e) {
-        expect(e).toBeInstanceOf(BadRequestException);
-      }
-    });
-
-    it("uses filename as documentTitle when not provided", async () => {
-      mockPrisma.project.findFirst.mockReturnValue(
-        Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
-      );
-
-      await service.upload(docFile, "proj-1", "org-1", "user-1", {
-        documentType: "nda",
-      });
-
-      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaArgs;
-      expect(createCall.data.documentType).toBe("nda");
-      expect(createCall.data.documentTitle).toBe("contract.pdf");
-    });
-  });
-
-  // --- Document response ---
-
-  describe("respondToDocument", () => {
-    it("throws NotFoundException when file not found", async () => {
-      mockPrisma.file.findFirst.mockReturnValue(Promise.resolve(null));
-
-      try {
-        await service.respondToDocument("nonexistent", "org-1", "user-1", "member", "accepted");
-        expect(true).toBe(false);
-      } catch (e) {
-        expect(e).toBeInstanceOf(NotFoundException);
-      }
-    });
-
-    it("throws BadRequestException when file is not a document", async () => {
-      mockPrisma.file.findFirst.mockReturnValue(
-        Promise.resolve({
-          id: "file-1",
-          documentType: null,
-          projectId: "proj-1",
-          organizationId: "org-1",
-        }),
-      );
-
-      try {
-        await service.respondToDocument("file-1", "org-1", "user-1", "member", "accepted");
-        expect(true).toBe(false);
-      } catch (e) {
-        expect(e).toBeInstanceOf(BadRequestException);
-      }
-    });
-
-    it("updates document status to accepted", async () => {
-      const mockUpdate = mock(() => Promise.resolve({ id: "file-1", documentStatus: "accepted" }));
-      mockPrisma.file.findFirst.mockReturnValue(
-        Promise.resolve({
-          id: "file-1",
-          documentType: "contract",
-          documentStatus: "pending",
-          projectId: "proj-1",
-          organizationId: "org-1",
-        }),
-      );
-      // Owner/admin bypass project access check
-      (mockPrisma.file as Record<string, unknown>).update = mockUpdate;
-
-      const result = await service.respondToDocument("file-1", "org-1", "user-1", "owner", "accepted");
-      expect(result.documentStatus).toBe("accepted");
-    });
-  });
 });

@@ -129,6 +129,7 @@ export class DocumentsService {
               documentId: true,
               userId: true,
               action: true,
+              reason: true,
               signatureMethod: true,
               signedAt: true,
               fieldId: true,

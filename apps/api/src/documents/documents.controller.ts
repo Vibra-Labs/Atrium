@@ -156,7 +156,7 @@ export class DocumentsController {
       id,
       userId,
       orgId,
-      { method: dto.method, fieldId: dto.fieldId },
+      { method: dto.method, fieldId: dto.fieldId, timezone: dto.timezone },
       file,
       req.ip,
       req.headers["user-agent"],

@@ -2,6 +2,10 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 
+const SIGNATURE_FONT_FAMILY = "Dancing Script";
+const SIGNATURE_FONT_URL =
+  "https://fonts.gstatic.com/s/dancingscript/v25/If2RXTr6YS-zF4S-kcSWSVi_szLgiuE.woff2";
+
 interface SignaturePadProps {
   onSignatureChange: (dataUrl: string | null, method: "draw" | "type") => void;
 }
@@ -9,9 +13,30 @@ interface SignaturePadProps {
 export function SignaturePad({ onSignatureChange }: SignaturePadProps) {
   const [mode, setMode] = useState<"draw" | "type">("draw");
   const [typedText, setTypedText] = useState("");
+  const [fontLoaded, setFontLoaded] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawing = useRef(false);
   const hasDrawn = useRef(false);
+  const prevModeRef = useRef(mode);
+
+  // Load signature font
+  useEffect(() => {
+    const font = new FontFace(
+      SIGNATURE_FONT_FAMILY,
+      `url(${SIGNATURE_FONT_URL})`,
+      { style: "normal", weight: "700" },
+    );
+    font
+      .load()
+      .then((loaded) => {
+        document.fonts.add(loaded);
+        setFontLoaded(true);
+      })
+      .catch(() => {
+        // Fall back gracefully
+        setFontLoaded(true);
+      });
+  }, []);
 
   const getCanvas = () => canvasRef.current;
   const getCtx = () => getCanvas()?.getContext("2d") ?? null;
@@ -51,12 +76,15 @@ export function SignaturePad({ onSignatureChange }: SignaturePadProps) {
 
   // Re-clear when mode switches
   useEffect(() => {
-    handleClear();
+    if (prevModeRef.current !== mode) {
+      prevModeRef.current = mode;
+      handleClear();
+    }
   }, [mode, handleClear]);
 
   // Render typed text onto canvas
   useEffect(() => {
-    if (mode !== "type") return;
+    if (mode !== "type" || !fontLoaded) return;
     clearCanvas();
     const canvas = getCanvas();
     const ctx = getCtx();
@@ -67,13 +95,13 @@ export function SignaturePad({ onSignatureChange }: SignaturePadProps) {
     }
     const h = canvas.height / 2;
     const w = canvas.width / 2;
-    ctx.font = `italic 32px "Georgia", "Times New Roman", serif`;
+    ctx.font = `700 38px "${SIGNATURE_FONT_FAMILY}", cursive`;
     ctx.fillStyle = "#111";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(typedText, w / 2, h / 2, w - 32);
     emitSignature();
-  }, [typedText, mode, clearCanvas, emitSignature, onSignatureChange]);
+  }, [typedText, mode, fontLoaded, clearCanvas, emitSignature, onSignatureChange]);
 
   const getPos = (e: React.PointerEvent) => {
     const canvas = getCanvas()!;
@@ -138,7 +166,7 @@ export function SignaturePad({ onSignatureChange }: SignaturePadProps) {
           placeholder="Type your signature..."
           autoFocus
           className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:ring-1 focus:ring-[var(--primary)]"
-          style={{ fontFamily: `"Georgia", "Times New Roman", serif`, fontStyle: "italic", fontSize: "1.1rem" }}
+          style={{ fontFamily: `"${SIGNATURE_FONT_FAMILY}", cursive`, fontWeight: 700, fontSize: "1.25rem" }}
         />
       )}
 

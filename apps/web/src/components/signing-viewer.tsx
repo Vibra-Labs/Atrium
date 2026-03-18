@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Check } from "lucide-react";
+import { X, Check, Download } from "lucide-react";
 import { PdfViewer } from "./pdf-viewer";
 import { SignaturePad } from "./signature-pad";
 import { apiFetch } from "@/lib/api";
+import { downloadFile } from "@/lib/download";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -52,11 +53,20 @@ export function SigningViewer({
   const [signatureMethod, setSignatureMethod] = useState<"draw" | "type">("draw");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfVersion, setPdfVersion] = useState(0);
 
   const closeSignatureCapture = useCallback(() => {
     setActiveFieldId(null);
     setSignatureDataUrl(null);
   }, []);
+
+  const handleSignatureChange = useCallback(
+    (dataUrl: string | null, method: "draw" | "type") => {
+      setSignatureDataUrl(dataUrl);
+      setSignatureMethod(method);
+    },
+    [],
+  );
 
   const fetchSigningInfo = useCallback(async () => {
     try {
@@ -82,13 +92,23 @@ export function SigningViewer({
         if (activeFieldId) {
           closeSignatureCapture();
         } else {
-          onClose();
+          handleClose();
         }
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose, activeFieldId, closeSignatureCapture]);
+  }, [activeFieldId, closeSignatureCapture]);
+
+  const allSigned =
+    signingInfo &&
+    signingInfo.signatureFields.length > 0 &&
+    signingInfo.signedFieldIds.length === signingInfo.signatureFields.length;
+
+  const handleClose = () => {
+    if (allSigned) onSigned();
+    onClose();
+  };
 
   const handleApplySignature = async () => {
     if (!activeFieldId || !signatureDataUrl) return;
@@ -101,6 +121,7 @@ export function SigningViewer({
       formData.append("signature", blob, "signature.png");
       formData.append("method", signatureMethod);
       formData.append("fieldId", activeFieldId);
+      formData.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
 
       await apiFetch(`/documents/${documentId}/sign`, {
         method: "POST",
@@ -109,18 +130,14 @@ export function SigningViewer({
 
       closeSignatureCapture();
 
+      // Bump version to force PdfViewer to re-fetch the now-signed PDF
+      setPdfVersion((v) => v + 1);
+
       // Refresh signing info
       const updatedInfo = await apiFetch<SigningInfo>(
         `/documents/${documentId}/signing-info`,
       );
       setSigningInfo(updatedInfo);
-
-      if (
-        updatedInfo.signatureFields.length > 0 &&
-        updatedInfo.signedFieldIds.length === updatedInfo.signatureFields.length
-      ) {
-        onSigned();
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit signature");
     } finally {
@@ -128,12 +145,17 @@ export function SigningViewer({
     }
   };
 
-  const allSigned =
-    signingInfo &&
-    signingInfo.signatureFields.length > 0 &&
-    signingInfo.signedFieldIds.length === signingInfo.signatureFields.length;
+  const handleDownloadSigned = async () => {
+    if (!signingInfo?.signedFileId) return;
+    try {
+      await downloadFile(signingInfo.signedFileId, "signed-document.pdf");
+    } catch (err) {
+      console.error("Download failed:", err);
+    }
+  };
 
-  const pdfUrl = `${API_URL}/api/documents/${documentId}/view`;
+  // Cache-bust the PDF URL so PdfViewer re-fetches after each signature
+  const pdfUrl = `${API_URL}/api/documents/${documentId}/view${pdfVersion ? `?v=${pdfVersion}` : ""}`;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[var(--background)]">
@@ -156,12 +178,30 @@ export function SigningViewer({
               {signingInfo.signatureFields.length} signed
             </span>
           )}
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-[var(--muted)] transition-colors cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+          {allSigned && signingInfo?.signedFileId && (
+            <button
+              onClick={handleDownloadSigned}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors cursor-pointer"
+            >
+              <Download size={14} />
+              Download Signed
+            </button>
+          )}
+          {allSigned ? (
+            <button
+              onClick={handleClose}
+              className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors cursor-pointer"
+            >
+              Done
+            </button>
+          ) : (
+            <button
+              onClick={handleClose}
+              className="p-1.5 rounded-lg hover:bg-[var(--muted)] transition-colors cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -174,49 +214,53 @@ export function SigningViewer({
         ) : (
           <PdfViewer
             url={pdfUrl}
-            overlay={(pageNumber, dimensions) => (
-              <div className="absolute inset-0">
-                {signingInfo?.signatureFields
-                  .filter((f) => f.pageNumber === pageNumber - 1)
-                  .map((field) => {
-                    const isSigned = signingInfo.signedFieldIds.includes(
-                      field.id,
-                    );
-                    return (
-                      <div
-                        key={field.id}
-                        className={`absolute flex items-center justify-center rounded border-2 transition-colors ${
-                          isSigned
-                            ? "border-green-500 bg-green-50/60"
-                            : "border-amber-400 bg-amber-50/70 cursor-pointer hover:bg-amber-100/80"
-                        }`}
-                        style={{
-                          left: `${field.x * 100}%`,
-                          top: `${field.y * 100}%`,
-                          width: `${field.width * 100}%`,
-                          height: `${field.height * 100}%`,
-                        }}
-                        onClick={() => {
-                          if (!isSigned) {
-                            setActiveFieldId(field.id);
-                            setSignatureDataUrl(null);
-                          }
-                        }}
-                      >
-                        {isSigned ? (
-                          <span className="flex items-center gap-1 text-xs text-green-700 font-medium">
-                            <Check size={14} /> Signed
-                          </span>
-                        ) : (
-                          <span className="text-xs text-amber-700 font-medium">
-                            Sign Here
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
+            overlay={
+              allSigned
+                ? undefined
+                : (pageNumber) => (
+                    <div className="absolute inset-0">
+                      {signingInfo?.signatureFields
+                        .filter((f) => f.pageNumber === pageNumber - 1)
+                        .map((field) => {
+                          const isSigned = signingInfo.signedFieldIds.includes(
+                            field.id,
+                          );
+                          return (
+                            <div
+                              key={field.id}
+                              className={`absolute flex items-center justify-center rounded border-2 transition-colors ${
+                                isSigned
+                                  ? "border-green-500 bg-green-50/60"
+                                  : "border-amber-400 bg-amber-50/70 cursor-pointer hover:bg-amber-100/80"
+                              }`}
+                              style={{
+                                left: `${field.x * 100}%`,
+                                top: `${field.y * 100}%`,
+                                width: `${field.width * 100}%`,
+                                height: `${field.height * 100}%`,
+                              }}
+                              onClick={() => {
+                                if (!isSigned) {
+                                  setActiveFieldId(field.id);
+                                  setSignatureDataUrl(null);
+                                }
+                              }}
+                            >
+                              {isSigned ? (
+                                <span className="flex items-center gap-1 text-xs text-green-700 font-medium">
+                                  <Check size={14} /> Signed
+                                </span>
+                              ) : (
+                                <span className="text-xs text-amber-700 font-medium">
+                                  Sign Here
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )
+            }
           />
         )}
       </div>
@@ -241,10 +285,7 @@ export function SigningViewer({
             </div>
 
             <SignaturePad
-              onSignatureChange={(dataUrl, method) => {
-                setSignatureDataUrl(dataUrl);
-                setSignatureMethod(method);
-              }}
+              onSignatureChange={handleSignatureChange}
             />
 
             {error && (

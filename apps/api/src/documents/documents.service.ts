@@ -28,8 +28,8 @@ const ALLOWED_ACTIONS: Record<string, string[]> = {
   quote: ["accepted", "declined"],
   contract: ["accepted", "declined"],
   proposal: ["accepted", "declined"],
-  nda: ["acknowledged"],
-  other: ["acknowledged"],
+  nda: ["accepted", "declined"],
+  other: ["accepted", "declined"],
 };
 
 /** Shared include shape for document queries that need full details. */
@@ -72,6 +72,7 @@ export class DocumentsService {
         organizationId: orgId,
         uploadedById,
         requiresSignature: dto.requiresSignature ?? false,
+        requiresApproval: dto.requiresApproval ?? false,
       },
       include: DOCUMENT_FULL_INCLUDE,
     });
@@ -169,7 +170,7 @@ export class DocumentsService {
     if (!doc) throw new NotFoundException("Document not found");
 
     // Prevent changes to finalized documents
-    const finalStatuses = new Set(["accepted", "declined", "acknowledged", "signed"]);
+    const finalStatuses = new Set(["accepted", "declined", "signed"]);
     if (finalStatuses.has(doc.status)) {
       throw new BadRequestException(
         `Cannot respond to a document with status "${doc.status}"`,
@@ -184,8 +185,12 @@ export class DocumentsService {
       throw new ForbiddenException("Not assigned to this project");
     }
 
+    if (!doc.requiresApproval) {
+      throw new BadRequestException("This document does not require approval");
+    }
+
     // Validate action for document type
-    const allowed = ALLOWED_ACTIONS[doc.type] || ["acknowledged"];
+    const allowed = ALLOWED_ACTIONS[doc.type] || ["accepted", "declined"];
     if (!allowed.includes(action)) {
       throw new BadRequestException(
         `Action "${action}" is not allowed for document type "${doc.type}"`,
@@ -273,12 +278,9 @@ export class DocumentsService {
       where: { projectId: doc.projectId },
     });
     if (doc.responses.length >= clientCount) {
-      const status = doc.responses.every((r) => r.action === "accepted")
-        ? "accepted"
-        : "acknowledged";
       await this.prisma.document.update({
         where: { id: documentId },
-        data: { status },
+        data: { status: "accepted" },
       });
       return;
     }
@@ -334,7 +336,7 @@ export class DocumentsService {
     id: string,
     userId: string,
     orgId: string,
-    dto: { method: string; fieldId: string },
+    dto: { method: string; fieldId: string; timezone?: string },
     signatureFile: { buffer: Buffer; originalname: string; mimetype: string; size: number },
     ipAddress?: string,
     userAgent?: string,
@@ -429,7 +431,12 @@ export class DocumentsService {
       const annotY = drawY - fontSize - 2 > 0
         ? drawY - fontSize - 2
         : drawY + drawH + 2;
-      page.drawText(`Signed by ${signerName} on ${signedDate.toISOString().split("T")[0]}`, {
+      const dateOpts: Intl.DateTimeFormatOptions = { year: "numeric", month: "long", day: "numeric" };
+      if (dto.timezone) {
+        try { dateOpts.timeZone = dto.timezone; } catch { /* ignore invalid tz */ }
+      }
+      const formattedDate = signedDate.toLocaleDateString("en-US", dateOpts);
+      page.drawText(`Signed by ${signerName} on ${formattedDate}`, {
         x: drawX,
         y: annotY,
         size: fontSize,

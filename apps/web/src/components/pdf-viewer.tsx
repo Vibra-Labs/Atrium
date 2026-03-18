@@ -134,8 +134,7 @@ export function PdfViewer({
 
           {overlay && pageDimensions.width > 0 && (
             <div
-              className="absolute inset-0 relative"
-              style={{ width: pageWidth, height: (pageWidth / pageDimensions.width) * pageDimensions.height }}
+              className="absolute inset-0 z-10"
             >
               {overlay(currentPage, {
                 width: pageWidth,

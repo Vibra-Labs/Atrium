@@ -179,7 +179,7 @@ export function DocumentViewer({
               </span>
             ) : (
               <>
-                {actions.includes("accepted") && (
+                {actions.length > 0 && (
                   <>
                     <button
                       onClick={() => handleRespond("accepted")}
@@ -198,15 +198,6 @@ export function DocumentViewer({
                       Decline
                     </button>
                   </>
-                )}
-                {!actions.includes("accepted") && (
-                  <button
-                    onClick={() => handleRespond("acknowledged")}
-                    disabled={responding}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--primary)] text-white transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer"
-                  >
-                    {responding ? "..." : "Acknowledge"}
-                  </button>
                 )}
               </>
             )}

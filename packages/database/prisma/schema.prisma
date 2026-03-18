@@ -398,6 +398,7 @@ model Document {
   uploadedById      String
   status            String   @default("pending") // "pending", "accepted", "declined", "acknowledged", "signed"
   requiresSignature Boolean  @default(false)
+  requiresApproval  Boolean  @default(false)
   signedFileId      String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

@@ -112,6 +112,7 @@ interface DocumentRecord {
   title: string;
   status: string;
   requiresSignature: boolean;
+  requiresApproval: boolean;
   signedFileId?: string;
   signedFile?: { id: string; filename: string; sizeBytes: number };
   signatureFields?: { id: string }[];
@@ -136,8 +137,8 @@ const docActions: Record<string, string[]> = {
   quote: ["accepted", "declined"],
   contract: ["accepted", "declined"],
   proposal: ["accepted", "declined"],
-  nda: ["acknowledged"],
-  other: ["acknowledged"],
+  nda: ["accepted", "declined"],
+  other: ["accepted", "declined"],
 };
 
 const tabs = [
@@ -260,9 +261,7 @@ export default function PortalProjectDetailPage() {
       });
       const actionLabel = pendingDocAction.action === "accepted"
         ? "accepted"
-        : pendingDocAction.action === "declined"
-          ? "declined"
-          : "acknowledged";
+        : "declined";
       toast.success(`Document "${pendingDocAction.docTitle}" ${actionLabel} successfully.`);
       setPendingDocAction(null);
       setDeclineReason("");
@@ -792,9 +791,11 @@ export default function PortalProjectDetailPage() {
                   </div>
                   <div className="space-y-2">
                     {documents.map((doc) => {
-                      const hasResponded = doc.responses.length > 0;
-                      const lastResponse = hasResponded ? doc.responses[0] : null;
-                      const actions = docActions[doc.type] || ["acknowledged"];
+                      // Approval responses (non-signing)
+                      const approvalResponses = doc.responses.filter((r) => r.action !== "signed");
+                      const hasResponded = approvalResponses.length > 0;
+                      const lastResponse = hasResponded ? approvalResponses[0] : null;
+                      const actions = docActions[doc.type] || ["accepted", "declined"];
 
                       // Check if this document requires signing and has unsigned fields
                       const needsSigning = doc.requiresSignature &&
@@ -836,7 +837,7 @@ export default function PortalProjectDetailPage() {
                             >
                               <Download size={14} />
                             </button>
-                            {hasResponded && lastResponse ? (
+                            {doc.requiresApproval && hasResponded && lastResponse ? (
                               <span
                                 className="text-xs px-2 py-1 rounded-full font-medium"
                                 style={{
@@ -855,7 +856,7 @@ export default function PortalProjectDetailPage() {
                               </span>
                             ) : (
                               <>
-                                {actions.includes("accepted") && (
+                                {doc.requiresApproval && !hasResponded && (
                                   <>
                                     <button
                                       onClick={() =>
@@ -876,16 +877,6 @@ export default function PortalProjectDetailPage() {
                                       Decline
                                     </button>
                                   </>
-                                )}
-                                {!actions.includes("accepted") && (
-                                  <button
-                                    onClick={() =>
-                                      openDocumentConfirm(doc, "acknowledged")
-                                    }
-                                    className="px-3 py-1 text-xs font-medium rounded-lg bg-[var(--primary)] text-white transition-opacity hover:opacity-90"
-                                  >
-                                    Acknowledge
-                                  </button>
                                 )}
                                 {/* Signing flow */}
                                 {hasUnsignedFields && (
@@ -951,9 +942,9 @@ export default function PortalProjectDetailPage() {
           mimeType={viewingDoc.file.mimeType}
           fileId={viewingDoc.file.id}
           filename={viewingDoc.file.filename}
-          hasResponded={viewingDoc.responses.length > 0}
-          lastResponseAction={viewingDoc.responses[0]?.action}
-          actions={docActions[viewingDoc.type] || ["acknowledged"]}
+          hasResponded={viewingDoc.requiresApproval && viewingDoc.responses.filter((r) => r.action !== "signed").length > 0}
+          lastResponseAction={viewingDoc.responses.filter((r) => r.action !== "signed")[0]?.action}
+          actions={viewingDoc.requiresApproval ? (docActions[viewingDoc.type] || ["accepted", "declined"]) : []}
           onRespond={async (action, reason) => {
             await handleDocumentRespond(viewingDoc.id, action, reason);
           }}
@@ -976,19 +967,13 @@ export default function PortalProjectDetailPage() {
             <h3 className="text-lg font-semibold">
               {pendingDocAction.action === "accepted"
                 ? "Accept Document"
-                : pendingDocAction.action === "declined"
-                  ? "Decline Document"
-                  : "Acknowledge Document"}
+                : "Decline Document"}
             </h3>
             <div className="text-sm text-[var(--muted-foreground)] space-y-2">
               <p>
                 Are you sure you want to{" "}
                 <span className="font-medium text-[var(--foreground)]">
-                  {pendingDocAction.action === "accepted"
-                    ? "accept"
-                    : pendingDocAction.action === "declined"
-                      ? "decline"
-                      : "acknowledge"}
+                  {pendingDocAction.action === "accepted" ? "accept" : "decline"}
                 </span>{" "}
                 this document?
               </p>
@@ -1037,9 +1022,7 @@ export default function PortalProjectDetailPage() {
                   ? "Submitting..."
                   : pendingDocAction.action === "accepted"
                     ? "Confirm Accept"
-                    : pendingDocAction.action === "declined"
-                      ? "Confirm Decline"
-                      : "Confirm Acknowledge"}
+                    : "Confirm Decline"}
               </button>
             </div>
           </div>

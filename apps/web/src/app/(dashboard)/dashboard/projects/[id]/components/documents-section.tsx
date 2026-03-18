@@ -89,6 +89,7 @@ export function DocumentsSection({
   const [docType, setDocType] = useState("quote");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [requiresSignature, setRequiresSignature] = useState(false);
+  const [requiresApproval, setRequiresApproval] = useState(false);
 
   // Signature field placer
   const [placerDocId, setPlacerDocId] = useState<string | null>(null);
@@ -121,6 +122,9 @@ export function DocumentsSection({
       if (requiresSignature) {
         formData.append("requiresSignature", "true");
       }
+      if (requiresApproval) {
+        formData.append("requiresApproval", "true");
+      }
 
       const doc = await apiFetch<DocumentRecord>("/documents", {
         method: "POST",
@@ -132,6 +136,7 @@ export function DocumentsSection({
       setDocType("quote");
       setDocFile(null);
       setRequiresSignature(false);
+      setRequiresApproval(false);
       loadDocuments();
       success("Document uploaded");
 
@@ -235,17 +240,34 @@ export function DocumentsSection({
               />
             </div>
 
-            {docFile?.type === "application/pdf" && (
+            <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={requiresSignature}
-                  onChange={(e) => setRequiresSignature(e.target.checked)}
+                  checked={requiresApproval}
+                  onChange={(e) => {
+                    setRequiresApproval(e.target.checked);
+                    if (e.target.checked) setRequiresSignature(false);
+                  }}
                   className="accent-[var(--primary)]"
                 />
-                <span className="text-sm">Requires Signature</span>
+                <span className="text-sm">Requires Approval</span>
               </label>
-            )}
+              {docFile?.type === "application/pdf" && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requiresSignature}
+                    onChange={(e) => {
+                      setRequiresSignature(e.target.checked);
+                      if (e.target.checked) setRequiresApproval(false);
+                    }}
+                    className="accent-[var(--primary)]"
+                  />
+                  <span className="text-sm">Requires Signature</span>
+                </label>
+              )}
+            </div>
 
             <div className="flex justify-end gap-2">
               <button
@@ -307,21 +329,15 @@ export function DocumentsSection({
                 <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)]">
                   <div className="flex items-center gap-2 pt-3 flex-wrap">
                     <button
-                      onClick={() => handleDownload(doc.file.id, doc.file.filename)}
+                      onClick={() => {
+                        const file = doc.signedFileId && doc.signedFile ? doc.signedFile : doc.file;
+                        handleDownload(file.id, file.filename);
+                      }}
                       className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
                     >
                       <Download size={14} />
                       Download
                     </button>
-                    {doc.signedFileId && doc.signedFile && (
-                      <button
-                        onClick={() => handleDownload(doc.signedFile!.id, doc.signedFile!.filename)}
-                        className="flex items-center gap-1.5 text-sm text-teal-600 hover:underline"
-                      >
-                        <Download size={14} />
-                        Download Signed Copy
-                      </button>
-                    )}
                     {doc.requiresSignature && !isArchived && (
                       <button
                         onClick={() => {
@@ -344,38 +360,48 @@ export function DocumentsSection({
                     )}
                   </div>
 
-                  {/* Responses */}
-                  {doc.responses.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium mb-2">Responses</p>
-                      <div className="space-y-1">
-                        {doc.responses.map((r) => (
-                          <div
-                            key={r.id}
-                            className="flex items-center justify-between text-xs p-2 bg-[var(--muted)] rounded"
-                          >
-                            <span>{r.user.name}</span>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="px-2 py-0.5 rounded-full font-medium"
-                                style={{
-                                  backgroundColor: statusColors[r.action]?.bg || "#f3f4f6",
-                                  color: statusColors[r.action]?.text || "#374151",
-                                }}
-                              >
-                                {r.action}
-                              </span>
-                              <span className="text-[var(--muted-foreground)]">
-                                {r.signedAt
-                                  ? new Date(r.signedAt).toLocaleDateString()
-                                  : new Date(r.createdAt).toLocaleDateString()}
-                              </span>
+                  {/* Responses (deduplicated per user — show latest response per user) */}
+                  {doc.responses.length > 0 && (() => {
+                    const byUser = new Map<string, DocumentResponse>();
+                    for (const r of doc.responses) {
+                      const existing = byUser.get(r.userId);
+                      if (!existing || new Date(r.signedAt || r.createdAt) > new Date(existing.signedAt || existing.createdAt)) {
+                        byUser.set(r.userId, r);
+                      }
+                    }
+                    const uniqueResponses = Array.from(byUser.values());
+                    return (
+                      <div>
+                        <p className="text-xs font-medium mb-2">Responses</p>
+                        <div className="space-y-1">
+                          {uniqueResponses.map((r) => (
+                            <div
+                              key={r.id}
+                              className="flex items-center justify-between text-xs p-2 bg-[var(--muted)] rounded"
+                            >
+                              <span>{r.user.name}</span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="px-2 py-0.5 rounded-full font-medium"
+                                  style={{
+                                    backgroundColor: statusColors[r.action]?.bg || "#f3f4f6",
+                                    color: statusColors[r.action]?.text || "#374151",
+                                  }}
+                                >
+                                  {r.action}
+                                </span>
+                                <span className="text-[var(--muted-foreground)]">
+                                  {r.signedAt
+                                    ? new Date(r.signedAt).toLocaleDateString()
+                                    : new Date(r.createdAt).toLocaleDateString()}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
             </div>

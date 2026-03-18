@@ -32,11 +32,16 @@ export class CreateDocumentDto {
   @IsBoolean()
   @Transform(({ value }) => value === "true" || value === true)
   requiresSignature?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true" || value === true)
+  requiresApproval?: boolean;
 }
 
 export class RespondDocumentDto {
   @IsString()
-  @IsIn(["accepted", "declined", "acknowledged"])
+  @IsIn(["accepted", "declined"])
   action!: string;
 
   @IsOptional()
@@ -86,4 +91,9 @@ export class SignDocumentDto {
   @IsString()
   @IsNotEmpty()
   fieldId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
 }

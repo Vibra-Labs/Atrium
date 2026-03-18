@@ -9,6 +9,8 @@ import {
   DecisionClosedEmail,
   DocumentUploadedEmail,
   DocumentRespondedEmail,
+  DocumentReminderEmail,
+  DocumentSigningTurnEmail,
 } from "@atrium/email";
 import { MailService } from "../mail/mail.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -458,19 +460,166 @@ export class NotificationsService {
   }
 
   /**
+   * Notify all clients assigned to a document's project about a reminder.
+   * Fire-and-forget: errors are logged but never thrown.
+   */
+  notifyDocumentReminder(documentId: string): void {
+    this.sendDocumentReminderEmails(documentId).catch((err) => {
+      this.logger.error(
+        { err, documentId },
+        "Failed to send document reminder notifications",
+      );
+    });
+  }
+
+  private async sendDocumentReminderEmails(
+    documentId: string,
+  ): Promise<void> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      select: {
+        title: true,
+        type: true,
+        projectId: true,
+        organizationId: true,
+        expiresAt: true,
+        responses: { select: { userId: true, action: true } },
+      },
+    });
+    if (!doc) return;
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: doc.projectId },
+      select: { name: true },
+    });
+    if (!project) return;
+
+    // Only remind clients who haven't responded
+    const respondedUserIds = new Set(doc.responses.map((r) => r.userId));
+    const clients = await this.getProjectClients(doc.projectId);
+    const unrespondedClients = clients.filter(
+      (c) => !respondedUserIds.has(c.id),
+    );
+    if (unrespondedClients.length === 0) return;
+
+    const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
+    const expiresAt = doc.expiresAt
+      ? doc.expiresAt.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
+      : undefined;
+
+    await Promise.allSettled(
+      unrespondedClients.map(async (client) => {
+        try {
+          const html = await render(
+            DocumentReminderEmail({
+              clientName: client.name,
+              projectName: project.name,
+              documentTitle: doc.title,
+              documentType: doc.type,
+              portalUrl,
+              expiresAt,
+            }),
+          );
+          await this.mail.send(
+            client.email,
+            `Reminder: ${doc.type} awaiting your response — ${doc.title}`,
+            html,
+            doc.organizationId,
+          );
+        } catch (err) {
+          this.logger.warn(
+            { err, email: client.email, documentId },
+            "Failed to send document reminder email to client",
+          );
+        }
+      }),
+    );
+  }
+
+  /**
+   * Notify a specific user that it's their turn to sign a document.
+   * Fire-and-forget.
+   */
+  notifyDocumentSigningTurn(documentId: string, userId: string): void {
+    this.sendDocumentSigningTurnEmail(documentId, userId).catch((err) => {
+      this.logger.error(
+        { err, documentId, userId },
+        "Failed to send signing turn notification",
+      );
+    });
+  }
+
+  private async sendDocumentSigningTurnEmail(
+    documentId: string,
+    userId: string,
+  ): Promise<void> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      select: {
+        title: true,
+        type: true,
+        projectId: true,
+        organizationId: true,
+      },
+    });
+    if (!doc) return;
+
+    const [project, user] = await Promise.all([
+      this.prisma.project.findUnique({
+        where: { id: doc.projectId },
+        select: { name: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true },
+      }),
+    ]);
+    if (!project || !user) return;
+
+    const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
+
+    try {
+      const html = await render(
+        DocumentSigningTurnEmail({
+          clientName: user.name,
+          projectName: project.name,
+          documentTitle: doc.title,
+          documentType: doc.type,
+          portalUrl,
+        }),
+      );
+      await this.mail.send(
+        user.email,
+        `Your turn to sign: ${doc.title}`,
+        html,
+        doc.organizationId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err, email: user.email, documentId },
+        "Failed to send signing turn email",
+      );
+    }
+  }
+
+  /**
    * Fetch all client users assigned to a project with their name + email.
    */
   private async getProjectClients(
     projectId: string,
-  ): Promise<Array<{ name: string; email: string }>> {
+  ): Promise<Array<{ id: string; name: string; email: string }>> {
     const assignments = await this.prisma.projectClient.findMany({
       where: { projectId },
       select: {
-        user: { select: { name: true, email: true } },
+        user: { select: { id: true, name: true, email: true } },
       },
     });
     return assignments.map(
-      (a: { user: { name: string; email: string } }) => a.user,
+      (a: { user: { id: string; name: string; email: string } }) => a.user,
     );
   }
 }

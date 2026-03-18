@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Check, Download } from "lucide-react";
+import { X, Check, Download, Calendar, Type, PenLine, ListChecks } from "lucide-react";
 import { PdfViewer } from "./pdf-viewer";
 import { SignaturePad } from "./signature-pad";
 import { apiFetch } from "@/lib/api";
@@ -16,6 +16,10 @@ interface SignatureField {
   y: number;
   width: number;
   height: number;
+  type: string; // "signature" | "date" | "initials" | "text"
+  label?: string;
+  signerOrder: number;
+  assignedTo?: string;
 }
 
 interface SigningInfo {
@@ -24,10 +28,13 @@ interface SigningInfo {
   signatureFields: SignatureField[];
   signedFieldIds: string[];
   signedFileId: string | null;
+  signingOrderEnabled?: boolean;
+  status?: string;
 }
 
 interface SigningViewerProps {
   documentId: string;
+  tokenMode?: string; // access token for public signing
   onClose: () => void;
   onSigned: () => void;
 }
@@ -41,23 +48,54 @@ function dataURLtoBlob(dataUrl: string): Blob {
   return new Blob([u8arr], { type: mime });
 }
 
+const fieldTypeIcons: Record<string, typeof PenLine> = {
+  signature: PenLine,
+  initials: PenLine,
+  date: Calendar,
+  text: Type,
+  select: ListChecks,
+};
+
+const fieldTypeLabels: Record<string, string> = {
+  signature: "Sign Here",
+  initials: "Initial Here",
+  date: "Date",
+  text: "Enter Text",
+  select: "Select",
+};
+
 export function SigningViewer({
   documentId,
+  tokenMode,
   onClose,
   onSigned,
 }: SigningViewerProps) {
+  // When tokenMode is set, use public token-based endpoints
+  const signingInfoUrl = tokenMode
+    ? `/documents/sign-via-token/${tokenMode}/signing-info`
+    : `/documents/${documentId}/signing-info`;
+  const signUrl = tokenMode
+    ? `/documents/sign-via-token/${tokenMode}/sign`
+    : `/documents/${documentId}/sign`;
+  const viewUrl = tokenMode
+    ? `${API_URL}/api/documents/sign-via-token/${tokenMode}/view`
+    : `${API_URL}/api/documents/${documentId}/view`;
   const [signingInfo, setSigningInfo] = useState<SigningInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
+  const [activeFieldType, setActiveFieldType] = useState<string>("signature");
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [signatureMethod, setSignatureMethod] = useState<"draw" | "type">("draw");
+  const [textValue, setTextValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pdfVersion, setPdfVersion] = useState(0);
 
-  const closeSignatureCapture = useCallback(() => {
+  const closeFieldCapture = useCallback(() => {
     setActiveFieldId(null);
+    setActiveFieldType("signature");
     setSignatureDataUrl(null);
+    setTextValue("");
   }, []);
 
   const handleSignatureChange = useCallback(
@@ -71,7 +109,7 @@ export function SigningViewer({
   const fetchSigningInfo = useCallback(async () => {
     try {
       const info = await apiFetch<SigningInfo>(
-        `/documents/${documentId}/signing-info`,
+        `${signingInfoUrl}`,
       );
       setSigningInfo(info);
     } catch (err) {
@@ -79,18 +117,18 @@ export function SigningViewer({
     } finally {
       setLoading(false);
     }
-  }, [documentId]);
+  }, [signingInfoUrl]);
 
   useEffect(() => {
     fetchSigningInfo();
   }, [fetchSigningInfo]);
 
-  // Close on Escape (only if signature modal is not open)
+  // Close on Escape (only if field modal is not open)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (activeFieldId) {
-          closeSignatureCapture();
+          closeFieldCapture();
         } else {
           handleClose();
         }
@@ -98,7 +136,7 @@ export function SigningViewer({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [activeFieldId, closeSignatureCapture]);
+  }, [activeFieldId, closeFieldCapture]);
 
   const allSigned =
     signingInfo &&
@@ -110,36 +148,83 @@ export function SigningViewer({
     onClose();
   };
 
-  const handleApplySignature = async () => {
-    if (!activeFieldId || !signatureDataUrl) return;
+  const isFieldLocked = (field: SignatureField): boolean => {
+    if (!signingInfo?.signingOrderEnabled || field.signerOrder === 0) return false;
+    // Check if all prior-order fields are signed
+    const priorFields = signingInfo.signatureFields.filter(
+      (f) => f.signerOrder > 0 && f.signerOrder < field.signerOrder,
+    );
+    return priorFields.some((f) => !signingInfo.signedFieldIds.includes(f.id));
+  };
+
+  const handleFieldClick = (field: SignatureField) => {
+    if (signingInfo?.signedFieldIds.includes(field.id)) return;
+    if (isFieldLocked(field)) return;
+
+    setActiveFieldId(field.id);
+    setActiveFieldType(field.type || "signature");
+
+    // Auto-fill date fields
+    if (field.type === "date") {
+      setTextValue(
+        new Date().toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+      );
+    }
+  };
+
+  const handleApplyField = async () => {
+    if (!activeFieldId) return;
+
+    const field = signingInfo?.signatureFields.find((f) => f.id === activeFieldId);
+    if (!field) return;
 
     setSubmitting(true);
     setError(null);
     try {
-      const blob = dataURLtoBlob(signatureDataUrl);
-      const formData = new FormData();
-      formData.append("signature", blob, "signature.png");
-      formData.append("method", signatureMethod);
-      formData.append("fieldId", activeFieldId);
-      formData.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+      const fieldType = field.type || "signature";
 
-      await apiFetch(`/documents/${documentId}/sign`, {
-        method: "POST",
-        body: formData,
-      });
+      if (fieldType === "date" || fieldType === "text") {
+        // Text-based fields — send as JSON
+        await apiFetch(`${signUrl}`, {
+          method: "POST",
+          body: (() => {
+            const formData = new FormData();
+            formData.append("method", "type");
+            formData.append("fieldId", activeFieldId);
+            formData.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+            formData.append("textValue", textValue);
+            return formData;
+          })(),
+        });
+      } else {
+        // Signature/initials — send with image
+        if (!signatureDataUrl) return;
+        const blob = dataURLtoBlob(signatureDataUrl);
+        const formData = new FormData();
+        formData.append("signature", blob, "signature.png");
+        formData.append("method", signatureMethod);
+        formData.append("fieldId", activeFieldId);
+        formData.append("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
 
-      closeSignatureCapture();
+        await apiFetch(`${signUrl}`, {
+          method: "POST",
+          body: formData,
+        });
+      }
 
-      // Bump version to force PdfViewer to re-fetch the now-signed PDF
+      closeFieldCapture();
       setPdfVersion((v) => v + 1);
 
-      // Refresh signing info
       const updatedInfo = await apiFetch<SigningInfo>(
-        `/documents/${documentId}/signing-info`,
+        `${signingInfoUrl}`,
       );
       setSigningInfo(updatedInfo);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit signature");
+      setError(err instanceof Error ? err.message : "Failed to submit");
     } finally {
       setSubmitting(false);
     }
@@ -155,7 +240,14 @@ export function SigningViewer({
   };
 
   // Cache-bust the PDF URL so PdfViewer re-fetches after each signature
-  const pdfUrl = `${API_URL}/api/documents/${documentId}/view${pdfVersion ? `?v=${pdfVersion}` : ""}`;
+  const pdfUrl = `${viewUrl}${pdfVersion ? `?v=${pdfVersion}` : ""}`;
+
+  const activeField = signingInfo?.signatureFields.find((f) => f.id === activeFieldId);
+  const isImageField = activeFieldType === "signature" || activeFieldType === "initials";
+  const isTextBasedField = activeFieldType === "date" || activeFieldType === "text" || activeFieldType === "select";
+  const selectOptions = activeFieldType === "select" && activeField?.label
+    ? activeField.label.split(",").map((o) => o.trim()).filter(Boolean)
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[var(--background)]">
@@ -167,8 +259,8 @@ export function SigningViewer({
           </h2>
           <p className="text-sm text-[var(--muted-foreground)]">
             {allSigned
-              ? "All signature fields have been completed."
-              : "Click on the highlighted fields to add your signature."}
+              ? "All fields have been completed."
+              : "Click on the highlighted fields to complete them."}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -222,16 +314,21 @@ export function SigningViewer({
                       {signingInfo?.signatureFields
                         .filter((f) => f.pageNumber === pageNumber - 1)
                         .map((field) => {
-                          const isSigned = signingInfo.signedFieldIds.includes(
-                            field.id,
-                          );
+                          const isSigned = signingInfo.signedFieldIds.includes(field.id);
+                          const locked = isFieldLocked(field);
+                          const fieldType = field.type || "signature";
+                          const Icon = fieldTypeIcons[fieldType] || PenLine;
+                          const label = fieldTypeLabels[fieldType] || "Sign Here";
+
                           return (
                             <div
                               key={field.id}
                               className={`absolute flex items-center justify-center rounded border-2 transition-colors ${
                                 isSigned
                                   ? "border-green-500 bg-green-50/60"
-                                  : "border-amber-400 bg-amber-50/70 cursor-pointer hover:bg-amber-100/80"
+                                  : locked
+                                    ? "border-gray-300 bg-gray-50/60 cursor-not-allowed"
+                                    : "border-amber-400 bg-amber-50/70 cursor-pointer hover:bg-amber-100/80"
                               }`}
                               style={{
                                 left: `${field.x * 100}%`,
@@ -239,20 +336,20 @@ export function SigningViewer({
                                 width: `${field.width * 100}%`,
                                 height: `${field.height * 100}%`,
                               }}
-                              onClick={() => {
-                                if (!isSigned) {
-                                  setActiveFieldId(field.id);
-                                  setSignatureDataUrl(null);
-                                }
-                              }}
+                              onClick={() => handleFieldClick(field)}
                             >
                               {isSigned ? (
                                 <span className="flex items-center gap-1 text-xs text-green-700 font-medium">
-                                  <Check size={14} /> Signed
+                                  <Check size={14} /> Done
+                                </span>
+                              ) : locked ? (
+                                <span className="text-xs text-gray-400 font-medium">
+                                  Waiting...
                                 </span>
                               ) : (
-                                <span className="text-xs text-amber-700 font-medium">
-                                  Sign Here
+                                <span className="flex items-center gap-1 text-xs text-amber-700 font-medium">
+                                  <Icon size={12} />
+                                  {label}
                                 </span>
                               )}
                             </div>
@@ -265,28 +362,103 @@ export function SigningViewer({
         )}
       </div>
 
-      {/* Signature capture modal */}
+      {/* Field capture modal */}
       {activeFieldId && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
           onClick={(e) => {
-            if (e.target === e.currentTarget) closeSignatureCapture();
+            if (e.target === e.currentTarget) closeFieldCapture();
           }}
         >
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md mx-4 p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Add Your Signature</h3>
+              <h3 className="text-lg font-semibold">
+                {activeFieldType === "signature" && "Add Your Signature"}
+                {activeFieldType === "initials" && "Add Your Initials"}
+                {activeFieldType === "date" && "Confirm Date"}
+                {activeFieldType === "text" && (activeField?.label || "Enter Text")}
+                {activeFieldType === "select" && "Select an Option"}
+              </h3>
               <button
-                onClick={closeSignatureCapture}
+                onClick={closeFieldCapture}
                 className="p-1 rounded-lg hover:bg-[var(--muted)] transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <SignaturePad
-              onSignatureChange={handleSignatureChange}
-            />
+            {/* Signature/initials: show signature pad */}
+            {isImageField && (
+              <SignaturePad
+                onSignatureChange={handleSignatureChange}
+              />
+            )}
+
+            {/* Date field: show pre-filled date */}
+            {activeFieldType === "date" && (
+              <div>
+                <label className="block text-sm text-[var(--muted-foreground)] mb-1.5">Date</label>
+                <input
+                  type="text"
+                  value={textValue}
+                  onChange={(e) => setTextValue(e.target.value)}
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                />
+              </div>
+            )}
+
+            {/* Text field: show input */}
+            {activeFieldType === "text" && (
+              <div>
+                <label className="block text-sm text-[var(--muted-foreground)] mb-1.5">
+                  {activeField?.label || "Text"}
+                </label>
+                <input
+                  type="text"
+                  value={textValue}
+                  onChange={(e) => setTextValue(e.target.value)}
+                  placeholder="Type here..."
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                  autoFocus
+                />
+              </div>
+            )}
+
+            {/* Select field: show options */}
+            {activeFieldType === "select" && selectOptions.length > 0 && (
+              <div>
+                <label className="block text-sm text-[var(--muted-foreground)] mb-2">
+                  Choose an option
+                </label>
+                <div className="space-y-1.5">
+                  {selectOptions.map((option) => (
+                    <label
+                      key={option}
+                      className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                        textValue === option
+                          ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_5%,transparent)]"
+                          : "border-[var(--border)] hover:bg-[var(--muted)]"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="select-option"
+                        value={option}
+                        checked={textValue === option}
+                        onChange={() => setTextValue(option)}
+                        className="accent-[var(--primary)]"
+                      />
+                      <span className="text-sm">{option}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {activeFieldType === "select" && selectOptions.length === 0 && (
+              <p className="text-sm text-[var(--muted-foreground)]">
+                No options configured for this field.
+              </p>
+            )}
 
             {error && (
               <p className="text-sm text-red-500">{error}</p>
@@ -294,17 +466,21 @@ export function SigningViewer({
 
             <div className="flex justify-end gap-2">
               <button
-                onClick={closeSignatureCapture}
+                onClick={closeFieldCapture}
                 className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
-                onClick={handleApplySignature}
-                disabled={!signatureDataUrl || submitting}
+                onClick={handleApplyField}
+                disabled={
+                  submitting ||
+                  (isImageField && !signatureDataUrl) ||
+                  (isTextBasedField && !textValue.trim())
+                }
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                {submitting ? "Applying..." : "Apply Signature"}
+                {submitting ? "Applying..." : "Apply"}
               </button>
             </div>
           </div>

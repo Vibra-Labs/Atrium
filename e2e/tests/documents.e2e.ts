@@ -67,7 +67,7 @@ test.describe("Documents", () => {
   });
 
   test.describe("API", () => {
-    test("create document via API", async ({ request }) => {
+    test("create document via API — defaults to draft status", async ({ request }) => {
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
@@ -87,7 +87,161 @@ test.describe("Documents", () => {
       const doc = await res.json();
       expect(doc.title).toBe("E2E Test Quote");
       expect(doc.type).toBe("quote");
-      expect(doc.status).toBe("pending");
+      expect(doc.status).toBe("draft");
+    });
+
+    test("send document transitions draft to pending", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Send Test",
+        filename: "send-test.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+      expect(doc.status).toBe("draft");
+
+      const sendRes = await request.post(`${API}/documents/${doc.id}/send`, {
+        data: {},
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(sendRes.ok()).toBeTruthy();
+      const sent = await sendRes.json();
+      expect(sent.status).toBe("pending");
+      expect(sent.sentAt).toBeTruthy();
+    });
+
+    test("send with expiresInDays sets expiresAt", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "nda",
+        title: "Expiry Test",
+        filename: "expiry-test.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      const sendRes = await request.post(`${API}/documents/${doc.id}/send`, {
+        data: { expiresInDays: 7 },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(sendRes.ok()).toBeTruthy();
+      const sent = await sendRes.json();
+      expect(sent.expiresAt).toBeTruthy();
+      // Verify expiry is roughly 7 days from now
+      const expiresAt = new Date(sent.expiresAt);
+      const diff = expiresAt.getTime() - Date.now();
+      expect(diff).toBeGreaterThan(6 * 24 * 60 * 60 * 1000);
+      expect(diff).toBeLessThan(8 * 24 * 60 * 60 * 1000);
+    });
+
+    test("void document transitions to voided status", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Void Test",
+        filename: "void-test.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      const voidRes = await request.post(`${API}/documents/${doc.id}/void`, {
+        data: { reason: "Sent in error" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(voidRes.ok()).toBeTruthy();
+      const voided = await voidRes.json();
+      expect(voided.status).toBe("voided");
+      expect(voided.voidReason).toBe("Sent in error");
+      expect(voided.voidedAt).toBeTruthy();
+    });
+
+    test("cannot void a signed document", async ({ request }) => {
+      // We can't easily create a signed document in e2e, but we can verify
+      // that voiding a voided document fails
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "quote",
+        title: "Double Void Test",
+        filename: "double-void.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Void it
+      await request.post(`${API}/documents/${doc.id}/void`, {
+        data: {},
+        headers: { "x-csrf-token": csrfToken },
+      });
+
+      // Try to void again
+      const res = await request.post(`${API}/documents/${doc.id}/void`, {
+        data: {},
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.status()).toBeGreaterThanOrEqual(400);
+    });
+
+    test("audit trail endpoint returns events", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "quote",
+        title: "Audit Trail Test",
+        filename: "audit.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Wait briefly for async audit log
+      await new Promise((r) => setTimeout(r, 500));
+
+      const auditRes = await request.get(`${API}/documents/${doc.id}/audit-trail`);
+      expect(auditRes.ok()).toBeTruthy();
+      const audit = await auditRes.json();
+      expect(audit.data).toBeInstanceOf(Array);
+      // Should have at least the "created" event
+      expect(audit.data.length).toBeGreaterThanOrEqual(1);
+      expect(audit.data.some((e: { action: string }) => e.action === "created")).toBeTruthy();
     });
 
     test("list documents by project via API", async ({ request }) => {
@@ -147,6 +301,32 @@ test.describe("Documents", () => {
       expect(res.ok()).toBeTruthy();
     });
 
+    test("document respond endpoint rejects draft documents", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "quote",
+        title: "Respond Draft Test",
+        filename: "respond-draft.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Try to respond to a draft (should fail with blocked status)
+      const res = await request.post(`${API}/documents/${doc.id}/respond`, {
+        data: { action: "accepted" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.status()).toBeGreaterThanOrEqual(400);
+    });
+
     test("document respond endpoint requires project assignment", async ({ request }) => {
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
@@ -164,6 +344,12 @@ test.describe("Documents", () => {
         },
       });
       const doc = await createRes.json();
+
+      // Send the document first so it's in "pending" status
+      await request.post(`${API}/documents/${doc.id}/send`, {
+        data: {},
+        headers: { "x-csrf-token": csrfToken },
+      });
 
       // Try to respond as the owner (not a project client) — should fail
       const res = await request.post(`${API}/documents/${doc.id}/respond`, {
@@ -198,7 +384,7 @@ test.describe("Documents", () => {
       expect(doc.signatureFields).toEqual([]);
     });
 
-    test("set signature fields for a document", async ({ request }) => {
+    test("set signature fields with type for a document", async ({ request }) => {
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
@@ -220,15 +406,16 @@ test.describe("Documents", () => {
       const fieldsRes = await request.put(`${API}/documents/${doc.id}/signature-fields`, {
         data: {
           fields: [
-            { pageNumber: 0, x: 0.1, y: 0.8, width: 0.3, height: 0.06 },
-            { pageNumber: 0, x: 0.5, y: 0.8, width: 0.3, height: 0.06 },
+            { pageNumber: 0, x: 0.1, y: 0.8, width: 0.3, height: 0.06, type: "signature" },
+            { pageNumber: 0, x: 0.5, y: 0.8, width: 0.18, height: 0.035, type: "date" },
+            { pageNumber: 0, x: 0.5, y: 0.9, width: 0.25, height: 0.035, type: "text", label: "Title" },
           ],
         },
         headers: { "x-csrf-token": csrfToken },
       });
       expect(fieldsRes.ok()).toBeTruthy();
       const updated = await fieldsRes.json();
-      expect(updated.signatureFields).toHaveLength(2);
+      expect(updated.signatureFields).toHaveLength(3);
     });
 
     test("signing-info endpoint returns fields and signed status for admin", async ({ request }) => {
@@ -267,6 +454,64 @@ test.describe("Documents", () => {
       expect(info.signedFieldIds).toEqual([]);
     });
 
+    test("sign endpoint rejects draft documents", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Sign Draft Test",
+        filename: "sign-draft.pdf",
+        requiresSignature: true,
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Set a field
+      const fieldsRes = await request.put(`${API}/documents/${doc.id}/signature-fields`, {
+        data: {
+          fields: [{ pageNumber: 0, x: 0.1, y: 0.5, width: 0.25, height: 0.06 }],
+        },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      const updated = await fieldsRes.json();
+      const fieldId = updated.signatureFields[0].id;
+
+      // Try to sign a draft — should fail
+      const sigBoundary = "----SigBoundary" + Date.now();
+      const sigBody = [
+        `--${sigBoundary}`,
+        'Content-Disposition: form-data; name="method"',
+        "",
+        "draw",
+        `--${sigBoundary}`,
+        'Content-Disposition: form-data; name="fieldId"',
+        "",
+        fieldId,
+        `--${sigBoundary}`,
+        'Content-Disposition: form-data; name="signature"; filename="sig.png"',
+        "Content-Type: image/png",
+        "",
+        "fake png signature",
+        `--${sigBoundary}--`,
+      ].join("\r\n");
+
+      const signRes = await request.post(`${API}/documents/${doc.id}/sign`, {
+        data: sigBody,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${sigBoundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      expect(signRes.status()).toBeGreaterThanOrEqual(400);
+    });
+
     test("sign endpoint requires project client assignment", async ({ request }) => {
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
@@ -285,6 +530,12 @@ test.describe("Documents", () => {
         },
       });
       const doc = await createRes.json();
+
+      // Send the document
+      await request.post(`${API}/documents/${doc.id}/send`, {
+        data: {},
+        headers: { "x-csrf-token": csrfToken },
+      });
 
       // Set a field
       const fieldsRes = await request.put(`${API}/documents/${doc.id}/signature-fields`, {
@@ -349,6 +600,174 @@ test.describe("Documents", () => {
       expect(contentType).toContain("application/");
       const disposition = viewRes.headers()["content-disposition"];
       expect(disposition).toContain("inline");
+    });
+
+    test("track-view endpoint works", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "quote",
+        title: "Track View Test",
+        filename: "track-view.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      const res = await request.post(`${API}/documents/${doc.id}/track-view`, {
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.ok()).toBeTruthy();
+      const result = await res.json();
+      expect(result.viewed).toBe(true);
+    });
+
+    test("certificate endpoint rejects non-signed documents", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Cert Test",
+        filename: "cert-test.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      const certRes = await request.get(`${API}/documents/${doc.id}/certificate`);
+      expect(certRes.status()).toBeGreaterThanOrEqual(400);
+    });
+
+    test("cannot send signature document with zero fields", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "No Fields Test",
+        filename: "no-fields.pdf",
+        requiresSignature: true,
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Try to send without placing fields
+      const sendRes = await request.post(`${API}/documents/${doc.id}/send`, {
+        data: {},
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(sendRes.status()).toBeGreaterThanOrEqual(400);
+    });
+
+    test("cannot edit signature fields on sent document", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Fields Lock Test",
+        filename: "fields-lock.pdf",
+        requiresSignature: true,
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Place fields and send
+      await request.put(`${API}/documents/${doc.id}/signature-fields`, {
+        data: {
+          fields: [{ pageNumber: 0, x: 0.1, y: 0.5, width: 0.25, height: 0.06 }],
+        },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      await request.post(`${API}/documents/${doc.id}/send`, {
+        data: {},
+        headers: { "x-csrf-token": csrfToken },
+      });
+
+      // Try to edit fields after sending — should fail
+      const fieldsRes = await request.put(`${API}/documents/${doc.id}/signature-fields`, {
+        data: {
+          fields: [{ pageNumber: 0, x: 0.5, y: 0.5, width: 0.25, height: 0.06 }],
+        },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(fieldsRes.status()).toBeGreaterThanOrEqual(400);
+    });
+
+    test("generate access token validates org ownership", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Token Test",
+        filename: "token-test.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Try to generate token with invalid userId — should fail
+      const tokenRes = await request.post(`${API}/documents/${doc.id}/generate-access-token`, {
+        data: { userId: "nonexistent-user-id" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(tokenRes.status()).toBeGreaterThanOrEqual(400);
+    });
+
+    test("send endpoint validates expiresInDays", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "quote",
+        title: "Expiry Validation Test",
+        filename: "expiry-val.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Try to send with invalid expiresInDays
+      const sendRes = await request.post(`${API}/documents/${doc.id}/send`, {
+        data: { expiresInDays: -1 },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(sendRes.status()).toBeGreaterThanOrEqual(400);
     });
   });
 

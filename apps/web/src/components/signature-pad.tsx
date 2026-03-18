@@ -11,7 +11,7 @@ interface SignaturePadProps {
 }
 
 export function SignaturePad({ onSignatureChange }: SignaturePadProps) {
-  const [mode, setMode] = useState<"draw" | "type">("draw");
+  const [mode, setMode] = useState<"draw" | "type">("type");
   const [typedText, setTypedText] = useState("");
   const [fontLoaded, setFontLoaded] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -148,8 +148,8 @@ export function SignaturePad({ onSignatureChange }: SignaturePadProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <button className={mode === "draw" ? btnActive : btnInactive} onClick={() => setMode("draw")}>Draw</button>
         <button className={mode === "type" ? btnActive : btnInactive} onClick={() => setMode("type")}>Type</button>
+        <button className={mode === "draw" ? btnActive : btnInactive} onClick={() => setMode("draw")}>Draw</button>
         <button
           className="ml-auto px-3 py-1.5 text-sm rounded-lg border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors cursor-pointer"
           onClick={handleClear}

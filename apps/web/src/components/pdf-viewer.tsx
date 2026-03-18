@@ -17,6 +17,78 @@ interface PdfViewerProps {
   className?: string;
 }
 
+/** Renders a page only when it enters the viewport (or is within 1 page of it). */
+function LazyPage({
+  pageNumber,
+  pageWidth,
+  numPages,
+  overlay,
+  onDimensions,
+}: {
+  pageNumber: number;
+  pageWidth: number;
+  numPages: number;
+  overlay?: PdfViewerProps["overlay"];
+  onDimensions: (pageNumber: number, dims: { width: number; height: number }) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(pageNumber <= 3); // render first 3 pages immediately
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    if (visible) return; // already visible
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }, // pre-load 200px before viewport
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  return (
+    <div ref={ref} className="relative" style={!visible ? { minHeight: 800 } : undefined}>
+      {visible ? (
+        <>
+          <Page
+            pageNumber={pageNumber}
+            width={pageWidth}
+            onLoadSuccess={(page) => {
+              const d = { width: page.width, height: page.height };
+              setDims(d);
+              onDimensions(pageNumber, d);
+            }}
+            renderAnnotationLayer={false}
+          />
+          {overlay && dims && dims.width > 0 && (
+            <div className="absolute inset-0 z-10">
+              {overlay(pageNumber, {
+                width: pageWidth,
+                height: (pageWidth / dims.width) * dims.height,
+              })}
+            </div>
+          )}
+          {numPages > 1 && (
+            <div className="absolute bottom-2 right-3 text-xs text-[var(--muted-foreground)] bg-[var(--background)]/80 px-2 py-0.5 rounded">
+              {pageNumber} / {numPages}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="flex items-center justify-center h-full text-xs text-[var(--muted-foreground)]">
+          Page {pageNumber}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PdfViewer({
   url,
   overlay,
@@ -25,17 +97,11 @@ export function PdfViewer({
 }: PdfViewerProps) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageDimensions, setPageDimensions] = useState<{
-    width: number;
-    height: number;
-  }>({ width: 0, height: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(800);
 
-  // Observe container width for responsive sizing
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -48,7 +114,6 @@ export function PdfViewer({
     return () => observer.disconnect();
   }, []);
 
-  // Fetch PDF blob
   useEffect(() => {
     let revoked = false;
     const controller = new AbortController();
@@ -78,7 +143,6 @@ export function PdfViewer({
     };
   }, [url]);
 
-  // Cleanup object URL
   useEffect(() => {
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -88,15 +152,14 @@ export function PdfViewer({
   const handleDocumentLoad = useCallback(
     ({ numPages: n }: { numPages: number }) => {
       setNumPages(n);
-      setCurrentPage(1);
       onLoadSuccess?.(n);
     },
     [onLoadSuccess],
   );
 
-  const handlePageLoad = useCallback(
-    (page: { width: number; height: number }) => {
-      setPageDimensions({ width: page.width, height: page.height });
+  const handlePageDimensions = useCallback(
+    (_pageNumber: number, _dims: { width: number; height: number }) => {
+      // No-op — dimensions are tracked per-LazyPage
     },
     [],
   );
@@ -121,51 +184,22 @@ export function PdfViewer({
 
   return (
     <div ref={containerRef} className={className}>
-      <div className="flex flex-col items-center">
-        <div className="relative inline-block">
-          <Document file={objectUrl} onLoadSuccess={handleDocumentLoad}>
-            <Page
-              pageNumber={currentPage}
-              width={pageWidth}
-              onLoadSuccess={handlePageLoad}
-              renderAnnotationLayer={false}
-            />
-          </Document>
-
-          {overlay && pageDimensions.width > 0 && (
-            <div
-              className="absolute inset-0 z-10"
-            >
-              {overlay(currentPage, {
-                width: pageWidth,
-                height: (pageWidth / pageDimensions.width) * pageDimensions.height,
-              })}
-            </div>
-          )}
-        </div>
-
-        {numPages > 1 && (
-          <div className="flex items-center gap-3 mt-4">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              className="px-3 py-1.5 text-sm rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              Previous
-            </button>
-            <span className="text-sm text-[var(--muted-foreground)]">
-              Page {currentPage} of {numPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
-              disabled={currentPage >= numPages}
-              className="px-3 py-1.5 text-sm rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              Next
-            </button>
-          </div>
-        )}
-      </div>
+      <Document
+        file={objectUrl}
+        onLoadSuccess={handleDocumentLoad}
+        className="flex flex-col items-center gap-4"
+      >
+        {Array.from({ length: numPages }, (_, i) => (
+          <LazyPage
+            key={i + 1}
+            pageNumber={i + 1}
+            pageWidth={pageWidth}
+            numPages={numPages}
+            overlay={overlay}
+            onDimensions={handlePageDimensions}
+          />
+        ))}
+      </Document>
     </div>
   );
 }

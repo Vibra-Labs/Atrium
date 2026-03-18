@@ -14,7 +14,6 @@ import { ClientAssignment } from "./components/client-assignment";
 import { TasksSection } from "./components/tasks-section";
 import { UpdatesSection } from "./components/updates-section";
 import { FilesSection } from "./components/files-section";
-import { DocumentsSection } from "./components/documents-section";
 import { InvoicesSection } from "./components/invoices-section";
 import { NotesSection } from "./components/notes-section";
 
@@ -388,15 +387,12 @@ export default function ProjectDetailPage() {
           <UpdatesSection projectId={id} isArchived={isArchived} onFileChange={loadProject} />
         )}
         {activeTab === "files" && (
-          <>
-            <FilesSection
-              projectId={id}
-              isArchived={isArchived}
-              files={project.files}
-              onFileChange={loadProject}
-            />
-            <DocumentsSection projectId={id} isArchived={isArchived} />
-          </>
+          <FilesSection
+            projectId={id}
+            isArchived={isArchived}
+            files={project.files}
+            onFileChange={loadProject}
+          />
         )}
         {activeTab === "invoices" && (
           <InvoicesSection projectId={id} isArchived={isArchived} />

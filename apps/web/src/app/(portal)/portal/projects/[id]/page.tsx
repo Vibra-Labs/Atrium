@@ -20,6 +20,9 @@ import {
   Lock,
   FileCheck,
   PenTool,
+  Award,
+  Ban,
+  Clock,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
@@ -117,8 +120,11 @@ interface DocumentRecord {
   signedFile?: { id: string; filename: string; sizeBytes: number };
   signatureFields?: { id: string }[];
   file: { id: string; filename: string; mimeType: string; sizeBytes: number };
-  responses: { id: string; action: string; createdAt: string; fieldId?: string }[];
+  responses: { id: string; action: string; createdAt: string; fieldId?: string; reason?: string }[];
   createdAt: string;
+  expiresAt?: string;
+  voidReason?: string;
+  options?: string;
 }
 
 interface PaginatedResponse<T> {
@@ -129,6 +135,7 @@ interface PaginatedResponse<T> {
 const docTypeLabels: Record<string, string> = {
   quote: "Quote",
   contract: "Contract",
+  proposal: "Proposal",
   nda: "NDA",
   other: "Other",
 };
@@ -180,6 +187,7 @@ export default function PortalProjectDetailPage() {
   const [pendingDocAction, setPendingDocAction] = useState<PendingDocAction | null>(null);
   const [declineReason, setDeclineReason] = useState("");
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [selectedDocOptions, setSelectedDocOptions] = useState<Record<string, string>>({});
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -214,6 +222,11 @@ export default function PortalProjectDetailPage() {
       .then((res) => {
         setDocuments(res.data);
         setDocsTotalPages(res.meta.totalPages);
+        // Track view for first pending document only (avoids N requests)
+        const firstPending = res.data.find((d) => d.status === "pending");
+        if (firstPending) {
+          apiFetch(`/documents/${firstPending.id}/track-view`, { method: "POST" }).catch(() => {});
+        }
       })
       .catch(console.error);
   }, [id, docsPage]);
@@ -791,11 +804,14 @@ export default function PortalProjectDetailPage() {
                   </div>
                   <div className="space-y-2">
                     {documents.map((doc) => {
+                      const isVoided = doc.status === "voided";
+                      const isExpired = doc.status === "expired";
+                      const isReadOnly = isVoided || isExpired;
+
                       // Approval responses (non-signing)
                       const approvalResponses = doc.responses.filter((r) => r.action !== "signed");
                       const hasResponded = approvalResponses.length > 0;
                       const lastResponse = hasResponded ? approvalResponses[0] : null;
-                      const actions = docActions[doc.type] || ["accepted", "declined"];
 
                       // Check if this document requires signing and has unsigned fields
                       const needsSigning = doc.requiresSignature &&
@@ -806,100 +822,195 @@ export default function PortalProjectDetailPage() {
                         .map((r) => r.fieldId);
                       const allFieldsSigned = needsSigning &&
                         doc.signatureFields!.every((f) => signedFieldIds.includes(f.id));
-                      const hasUnsignedFields = needsSigning && !allFieldsSigned;
+                      const hasUnsignedFields = needsSigning && !allFieldsSigned && !isReadOnly;
+
+                      // Options — format: "question|choice1,choice2" or "choice1,choice2"
+                      const hasQuestionSep = doc.options?.includes("|");
+                      const optionsQuestion = hasQuestionSep ? doc.options!.split("|")[0] : null;
+                      const optionsRaw = hasQuestionSep ? doc.options!.split("|")[1] : doc.options;
+                      const docOptionsList = optionsRaw ? optionsRaw.split(",").map((o) => o.trim()).filter(Boolean) : [];
+                      const hasOptions = docOptionsList.length > 0;
+                      const selectedOption = selectedDocOptions[doc.id] || lastResponse?.reason || "";
 
                       return (
                         <div
                           key={doc.id}
-                          className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]/50 transition-colors"
+                          className={`p-3 border border-[var(--border)] rounded-lg transition-colors ${
+                            isReadOnly ? "opacity-60" : ""
+                          }`}
                         >
-                          <button
-                            onClick={() => setViewingDoc(doc)}
-                            className="flex items-center gap-3 min-w-0 text-left cursor-pointer flex-1"
-                            data-testid={`view-document-${doc.id}`}
-                          >
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate text-[var(--primary)] hover:underline">{doc.title}</p>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                                  {docTypeLabels[doc.type] || doc.type}
-                                </span>
-                                <span className="text-xs text-[var(--muted-foreground)]">
-                                  {formatBytes(doc.file.sizeBytes)}
-                                </span>
-                              </div>
-                            </div>
-                          </button>
-                          <div className="flex items-center gap-2 shrink-0">
+                          {/* Header row */}
+                          <div className="flex items-center justify-between">
                             <button
-                              onClick={() => handleDownload(doc.file.id, doc.file.filename)}
-                              className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                              onClick={() => setViewingDoc(doc)}
+                              className="flex items-center gap-3 min-w-0 text-left cursor-pointer flex-1"
+                              data-testid={`view-document-${doc.id}`}
                             >
-                              <Download size={14} />
-                            </button>
-                            {doc.requiresApproval && hasResponded && lastResponse ? (
-                              <span
-                                className="text-xs px-2 py-1 rounded-full font-medium"
-                                style={{
-                                  backgroundColor:
-                                    lastResponse.action === "declined"
-                                      ? "#fee2e2"
-                                      : "#dcfce7",
-                                  color:
-                                    lastResponse.action === "declined"
-                                      ? "#b91c1c"
-                                      : "#15803d",
-                                }}
-                              >
-                                {lastResponse.action.charAt(0).toUpperCase() +
-                                  lastResponse.action.slice(1)}
-                              </span>
-                            ) : (
-                              <>
-                                {doc.requiresApproval && !hasResponded && (
-                                  <>
-                                    <button
-                                      onClick={() =>
-                                        openDocumentConfirm(doc, "accepted")
-                                      }
-                                      className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                                      style={{ backgroundColor: "#15803d" }}
-                                    >
-                                      Accept
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        openDocumentConfirm(doc, "declined")
-                                      }
-                                      className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                                      style={{ backgroundColor: "#b91c1c" }}
-                                    >
-                                      Decline
-                                    </button>
-                                  </>
-                                )}
-                                {/* Signing flow */}
-                                {hasUnsignedFields && (
-                                  <button
-                                    onClick={() => setSigningDocId(doc.id)}
-                                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                                    style={{ backgroundColor: "#d97706" }}
-                                  >
-                                    <PenTool size={12} />
-                                    Review & Sign
-                                  </button>
-                                )}
-                                {allFieldsSigned && (
-                                  <span
-                                    className="text-xs px-2 py-1 rounded-full font-medium"
-                                    style={{ backgroundColor: "#ccfbf1", color: "#0f766e" }}
-                                  >
-                                    Signed
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate text-[var(--primary)] hover:underline">{doc.title}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                                    {docTypeLabels[doc.type] || doc.type}
                                   </span>
-                                )}
-                              </>
-                            )}
+                                  <span className="text-xs text-[var(--muted-foreground)]">
+                                    {formatBytes(doc.file.sizeBytes)}
+                                  </span>
+                                  {doc.expiresAt && !isExpired && (
+                                    <span className="text-xs text-amber-600 flex items-center gap-1">
+                                      <Clock size={10} />
+                                      Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => handleDownload(doc.file.id, doc.file.filename)}
+                                className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                              >
+                                <Download size={14} />
+                              </button>
+                              {doc.status === "signed" && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const response = await fetch(
+                                        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/documents/${doc.id}/certificate`,
+                                        { credentials: "include" },
+                                      );
+                                      if (!response.ok) throw new Error("Failed");
+                                      const blob = await response.blob();
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download = `certificate-${doc.id.slice(0, 8)}.pdf`;
+                                      a.click();
+                                      URL.revokeObjectURL(url);
+                                    } catch {
+                                      console.error("Failed to download certificate");
+                                    }
+                                  }}
+                                  className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                                >
+                                  <Award size={12} />
+                                  Certificate
+                                </button>
+                              )}
+                              {isVoided && (
+                                <span className="text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1" style={{ backgroundColor: "#fce7f3", color: "#9d174d" }}>
+                                  <Ban size={10} /> Voided
+                                </span>
+                              )}
+                              {isExpired && (
+                                <span className="text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1" style={{ backgroundColor: "#f3f4f6", color: "#9ca3af" }}>
+                                  <Clock size={10} /> Expired
+                                </span>
+                              )}
+                              {!isReadOnly && !hasOptions && (
+                                <>
+                                  {doc.requiresApproval && hasResponded && lastResponse ? (
+                                    <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ backgroundColor: lastResponse.action === "declined" ? "#fee2e2" : "#dcfce7", color: lastResponse.action === "declined" ? "#b91c1c" : "#15803d" }}>
+                                      {lastResponse.action.charAt(0).toUpperCase() + lastResponse.action.slice(1)}
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {doc.requiresApproval && !hasResponded && (
+                                        <>
+                                          <button onClick={() => openDocumentConfirm(doc, "accepted")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#15803d" }}>Accept</button>
+                                          <button onClick={() => openDocumentConfirm(doc, "declined")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#b91c1c" }}>Decline</button>
+                                        </>
+                                      )}
+                                      {hasUnsignedFields && (
+                                        <button onClick={() => setSigningDocId(doc.id)} className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#d97706" }}>
+                                          <PenTool size={12} /> Review & Sign
+                                        </button>
+                                      )}
+                                      {allFieldsSigned && (
+                                        <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ backgroundColor: "#ccfbf1", color: "#0f766e" }}>Signed</span>
+                                      )}
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Radio options — shown when document has options */}
+                          {hasOptions && !isReadOnly && (
+                            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+                              {optionsQuestion && (
+                                <p className="text-sm font-medium mb-2">{optionsQuestion}</p>
+                              )}
+                              {hasResponded && lastResponse?.reason ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-[var(--muted-foreground)]">Selected:</span>
+                                  <span className="text-sm font-medium px-3 py-1 bg-[var(--primary)]/10 rounded-full" style={{ color: "var(--primary)" }}>
+                                    {lastResponse.reason}
+                                  </span>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="space-y-1.5">
+                                    {docOptionsList.map((option) => (
+                                      <label
+                                        key={option}
+                                        className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                                          selectedOption === option
+                                            ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_5%,transparent)]"
+                                            : "border-[var(--border)] hover:bg-[var(--muted)]"
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name={`doc-option-${doc.id}`}
+                                          value={option}
+                                          checked={selectedOption === option}
+                                          onChange={() => setSelectedDocOptions((prev) => ({ ...prev, [doc.id]: option }))}
+                                          className="accent-[var(--primary)]"
+                                        />
+                                        <span className="text-sm">{option}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-3">
+                                    <button
+                                      onClick={async () => {
+                                        const selected = selectedDocOptions[doc.id];
+                                        if (!selected) return;
+                                        try {
+                                          await apiFetch(`/documents/${doc.id}/respond`, {
+                                            method: "POST",
+                                            body: JSON.stringify({ action: "accepted", reason: selected }),
+                                          });
+                                          toast.success(`Selection "${selected}" submitted.`);
+                                          setSelectedDocOptions((prev) => { const next = { ...prev }; delete next[doc.id]; return next; });
+                                          loadDocuments();
+                                        } catch (err) {
+                                          toast.error("Failed to submit selection.");
+                                        }
+                                      }}
+                                      disabled={!selectedDocOptions[doc.id]}
+                                      className="px-4 py-1.5 text-sm rounded-lg bg-[var(--primary)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                                    >
+                                      Submit Selection
+                                    </button>
+                                    {doc.requiresApproval && (
+                                      <>
+                                        <button onClick={() => openDocumentConfirm(doc, "accepted")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#15803d" }}>Accept</button>
+                                        <button onClick={() => openDocumentConfirm(doc, "declined")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#b91c1c" }}>Decline</button>
+                                      </>
+                                    )}
+                                    {hasUnsignedFields && (
+                                      <button onClick={() => setSigningDocId(doc.id)} className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#d97706" }}>
+                                        <PenTool size={12} /> Review & Sign
+                                      </button>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

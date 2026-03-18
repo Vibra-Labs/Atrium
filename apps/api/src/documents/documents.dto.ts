@@ -37,6 +37,35 @@ export class CreateDocumentDto {
   @IsBoolean()
   @Transform(({ value }) => value === "true" || value === true)
   requiresApproval?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  options?: string; // comma-separated choices
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true" || value === true)
+  signingOrderEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  @Transform(({ value }) => value != null ? parseInt(value, 10) : undefined)
+  expiresInDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true" || value === true)
+  reminderEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  @Transform(({ value }) => value != null ? parseInt(value, 10) : undefined)
+  reminderIntervalDays?: number;
 }
 
 export class RespondDocumentDto {
@@ -44,6 +73,21 @@ export class RespondDocumentDto {
   @IsIn(["accepted", "declined"])
   action!: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class SendDocumentDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  expiresInDays?: number;
+}
+
+export class VoidDocumentDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -74,6 +118,29 @@ export class CreateSignatureFieldDto {
   @Min(0)
   @Max(1)
   height!: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(["signature", "date", "initials", "text", "select"])
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  label?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  required?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  signerOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  assignedTo?: string;
 }
 
 export class SetSignatureFieldsDto {
@@ -96,4 +163,9 @@ export class SignDocumentDto {
   @IsString()
   @MaxLength(64)
   timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  textValue?: string;
 }

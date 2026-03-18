@@ -6,7 +6,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { randomBytes, createHash } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   paginationArgs,
@@ -19,6 +20,7 @@ import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import { CreateDocumentDto } from "./documents.dto";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ActivityService } from "../activity/activity.service";
+import { DocumentAuditService } from "./document-audit.service";
 
 /** Max PDF size allowed for signing (50MB) to prevent OOM. */
 const MAX_SIGNABLE_PDF_BYTES = 50 * 1024 * 1024;
@@ -31,6 +33,10 @@ const ALLOWED_ACTIONS: Record<string, string[]> = {
   nda: ["accepted", "declined"],
   other: ["accepted", "declined"],
 };
+
+/** Statuses that block respond/sign actions. */
+const RESPOND_BLOCKED_STATUSES = new Set(["draft", "voided", "expired", "accepted", "declined", "signed"]);
+const SIGN_BLOCKED_STATUSES = new Set(["draft", "voided", "expired", "signed"]);
 
 /** Shared include shape for document queries that need full details. */
 const DOCUMENT_FULL_INCLUDE = {
@@ -50,6 +56,7 @@ export class DocumentsService {
     @InjectPinoLogger(DocumentsService.name) private readonly logger: PinoLogger,
     private notifications: NotificationsService,
     private activityService: ActivityService,
+    private auditService: DocumentAuditService,
   ) {}
 
   async create(
@@ -71,15 +78,124 @@ export class DocumentsService {
         projectId: dto.projectId,
         organizationId: orgId,
         uploadedById,
+        status: "draft",
         requiresSignature: dto.requiresSignature ?? false,
         requiresApproval: dto.requiresApproval ?? false,
+        options: dto.options || null,
+        signingOrderEnabled: dto.signingOrderEnabled ?? false,
+        reminderEnabled: dto.reminderEnabled ?? false,
+        reminderIntervalDays: dto.reminderIntervalDays ?? 3,
       },
       include: DOCUMENT_FULL_INCLUDE,
     });
 
-    this.notifications.notifyDocumentUploaded(document.id);
+    this.auditService.log(document.id, "created", { userId: uploadedById });
 
     return document;
+  }
+
+  async send(
+    id: string,
+    orgId: string,
+    userId: string,
+    expiresInDays?: number,
+  ) {
+    const doc = await this.prisma.document.findFirst({
+      where: { id, organizationId: orgId },
+      include: { signatureFields: true },
+    });
+    if (!doc) throw new NotFoundException("Document not found");
+    if (doc.status !== "draft") {
+      throw new BadRequestException("Only draft documents can be sent");
+    }
+
+    // Prevent sending signature docs with no fields placed
+    if (doc.requiresSignature && doc.signatureFields.length === 0) {
+      throw new BadRequestException(
+        "Please place signature fields before sending this document",
+      );
+    }
+
+    const sentAt = new Date();
+    const expiresAt = expiresInDays
+      ? new Date(sentAt.getTime() + expiresInDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    const updated = await this.prisma.document.update({
+      where: { id },
+      data: {
+        status: "pending",
+        sentAt,
+        ...(expiresAt ? { expiresAt } : {}),
+      },
+      include: DOCUMENT_FULL_INCLUDE,
+    });
+
+    this.auditService.log(id, "sent", { userId });
+    this.notifications.notifyDocumentUploaded(id);
+
+    return updated;
+  }
+
+  async voidDocument(
+    id: string,
+    orgId: string,
+    userId: string,
+    reason?: string,
+  ) {
+    const doc = await this.prisma.document.findFirst({
+      where: { id, organizationId: orgId },
+    });
+    if (!doc) throw new NotFoundException("Document not found");
+
+    const voidableStatuses = new Set(["draft", "pending"]);
+    if (!voidableStatuses.has(doc.status)) {
+      throw new BadRequestException(
+        `Cannot void a document with status "${doc.status}"`,
+      );
+    }
+
+    const updated = await this.prisma.document.update({
+      where: { id },
+      data: {
+        status: "voided",
+        voidedAt: new Date(),
+        voidedById: userId,
+        voidReason: reason || null,
+      },
+      include: DOCUMENT_FULL_INCLUDE,
+    });
+
+    this.auditService.log(id, "voided", {
+      userId,
+      metadata: reason ? { reason } : undefined,
+    });
+
+    return updated;
+  }
+
+  async trackView(
+    id: string,
+    userId: string,
+    orgId: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    const doc = await this.prisma.document.findFirst({
+      where: { id, organizationId: orgId },
+    });
+    if (!doc) throw new NotFoundException("Document not found");
+
+    // Log view event (idempotent check — only log first view per user)
+    const existingView = await this.prisma.documentAuditEvent.findFirst({
+      where: { documentId: id, userId, action: "viewed" },
+    });
+
+    if (!existingView) {
+      this.auditService.log(id, "viewed", { userId, ipAddress, userAgent });
+    }
+
+    return { viewed: true };
   }
 
   async findByProject(
@@ -115,7 +231,12 @@ export class DocumentsService {
       throw new ForbiddenException("Not assigned to this project");
     }
 
-    const where = { projectId, organizationId: orgId };
+    // Filter out drafts for clients
+    const where = {
+      projectId,
+      organizationId: orgId,
+      status: { not: "draft" },
+    };
     const [data, total] = await Promise.all([
       this.prisma.document.findMany({
         where,
@@ -146,6 +267,14 @@ export class DocumentsService {
     return paginatedResponse(data, total, page, limit);
   }
 
+  async assertDocumentAccess(id: string, orgId: string) {
+    const exists = await this.prisma.document.findFirst({
+      where: { id, organizationId: orgId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException("Document not found");
+  }
+
   async findOne(id: string, orgId: string) {
     const doc = await this.prisma.document.findFirst({
       where: { id, organizationId: orgId },
@@ -169,12 +298,15 @@ export class DocumentsService {
     });
     if (!doc) throw new NotFoundException("Document not found");
 
-    // Prevent changes to finalized documents
-    const finalStatuses = new Set(["accepted", "declined", "signed"]);
-    if (finalStatuses.has(doc.status)) {
+    if (RESPOND_BLOCKED_STATUSES.has(doc.status)) {
       throw new BadRequestException(
         `Cannot respond to a document with status "${doc.status}"`,
       );
+    }
+
+    // Check expiry
+    if (doc.expiresAt && new Date() > doc.expiresAt) {
+      throw new BadRequestException("This document has expired");
     }
 
     // Verify client is assigned to the project
@@ -224,6 +356,7 @@ export class DocumentsService {
     // Update document status based on all responses
     await this.updateDocumentStatus(id);
 
+    this.auditService.log(id, action, { userId, ipAddress, userAgent });
     this.notifications.notifyDocumentResponded(id, userId, action);
 
     this.activityService
@@ -269,6 +402,7 @@ export class DocumentsService {
           where: { id: documentId },
           data: { status: "signed" },
         });
+        this.notifications.notifyDocumentResponded(documentId, "", "signed");
       }
       return;
     }
@@ -282,6 +416,7 @@ export class DocumentsService {
         where: { id: documentId },
         data: { status: "accepted" },
       });
+      this.notifications.notifyDocumentResponded(documentId, "", "accepted");
       return;
     }
   }
@@ -297,18 +432,35 @@ export class DocumentsService {
 
     const fileToView = doc.signedFile ?? doc.file;
     const { body, contentType } = await this.storage.download(fileToView.storageKey);
+
+    this.auditService.log(id, "downloaded", { userId });
+
     return { body, contentType, filename: fileToView.filename };
   }
 
   async setSignatureFields(
     docId: string,
     orgId: string,
-    fields: { pageNumber: number; x: number; y: number; width: number; height: number }[],
+    fields: {
+      pageNumber: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      type?: string;
+      label?: string;
+      required?: boolean;
+      signerOrder?: number;
+      assignedTo?: string;
+    }[],
   ) {
     const doc = await this.prisma.document.findFirst({
       where: { id: docId, organizationId: orgId },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    if (doc.status !== "draft") {
+      throw new BadRequestException("Signature fields can only be edited on draft documents");
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.signatureField.deleteMany({ where: { documentId: docId } });
@@ -321,6 +473,11 @@ export class DocumentsService {
             y: f.y,
             width: f.width,
             height: f.height,
+            type: f.type || "signature",
+            label: f.label || null,
+            required: f.required ?? true,
+            signerOrder: f.signerOrder ?? 0,
+            assignedTo: f.assignedTo || null,
           })),
         });
       }
@@ -336,16 +493,12 @@ export class DocumentsService {
     id: string,
     userId: string,
     orgId: string,
-    dto: { method: string; fieldId: string; timezone?: string },
-    signatureFile: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+    role: string,
+    dto: { method: string; fieldId: string; timezone?: string; textValue?: string },
+    signatureFile: { buffer: Buffer; originalname: string; mimetype: string; size: number } | null,
     ipAddress?: string,
     userAgent?: string,
   ) {
-    // Validate signature file MIME type
-    if (!ALLOWED_SIGNATURE_MIMES.has(signatureFile.mimetype)) {
-      throw new BadRequestException("Signature must be a PNG or JPEG image");
-    }
-
     // Use a single serialized transaction with FOR UPDATE to prevent concurrent
     // signers from overwriting each other's signatures in the PDF.
     const response = await this.prisma.$transaction(async (tx) => {
@@ -363,8 +516,18 @@ export class DocumentsService {
       if (!doc.requiresSignature) {
         throw new BadRequestException("This document does not require a signature");
       }
-      if (doc.status === "signed") {
-        throw new BadRequestException("This document has already been fully signed");
+
+      if (SIGN_BLOCKED_STATUSES.has(doc.status)) {
+        throw new BadRequestException(
+          doc.status === "signed"
+            ? "This document has already been fully signed"
+            : `Cannot sign a document with status "${doc.status}"`,
+        );
+      }
+
+      // Check expiry
+      if (doc.expiresAt && new Date() > doc.expiresAt) {
+        throw new BadRequestException("This document has expired");
       }
 
       const field = doc.signatureFields.find((f) => f.id === dto.fieldId);
@@ -372,22 +535,82 @@ export class DocumentsService {
         throw new BadRequestException("Signature field not found on this document");
       }
 
+      const isAdmin = role === "owner" || role === "admin";
       const [assignment, existingResponse, signer] = await Promise.all([
-        tx.projectClient.findFirst({ where: { projectId: doc.projectId, userId } }),
+        isAdmin ? null : tx.projectClient.findFirst({ where: { projectId: doc.projectId, userId } }),
         tx.documentResponse.findFirst({ where: { documentId: id, userId, fieldId: dto.fieldId } }),
         tx.user.findUnique({ where: { id: userId }, select: { name: true } }),
       ]);
-      if (!assignment) throw new ForbiddenException("Not assigned to this project");
+      if (!isAdmin && !assignment) throw new ForbiddenException("Not assigned to this project");
       if (existingResponse) throw new BadRequestException("You have already signed this field");
 
+      // Check signing order if enabled
+      if (doc.signingOrderEnabled && field.signerOrder > 0) {
+        const priorFields = doc.signatureFields.filter(
+          (f) => f.signerOrder > 0 && f.signerOrder < field.signerOrder,
+        );
+        if (priorFields.length > 0) {
+          const priorFieldIds = priorFields.map((f) => f.id);
+          const priorResponses = await tx.documentResponse.findMany({
+            where: { documentId: id, fieldId: { in: priorFieldIds }, action: "signed" },
+          });
+          const signedPriorIds = new Set(priorResponses.map((r) => r.fieldId));
+          const allPriorSigned = priorFieldIds.every((fid) => signedPriorIds.has(fid));
+          if (!allPriorSigned) {
+            throw new BadRequestException("Previous signers must complete their fields first");
+          }
+        }
+      }
+
+      // Check assigned-to constraint
+      if (field.assignedTo && field.assignedTo !== userId) {
+        throw new ForbiddenException("This field is assigned to another signer");
+      }
+
       const signerName = signer?.name || "Unknown";
+      const signedDate = new Date();
+
+      // Handle different field types
+      if (field.type === "date") {
+        // Date field — auto-fill with current date, embed as text
+        const dateOpts: Intl.DateTimeFormatOptions = { year: "numeric", month: "long", day: "numeric" };
+        if (dto.timezone) {
+          try { dateOpts.timeZone = dto.timezone; } catch { /* ignore invalid tz */ }
+        }
+        const formattedDate = signedDate.toLocaleDateString("en-US", dateOpts);
+
+        return await this.embedTextInPdf(tx, doc, field, formattedDate, {
+          id, userId, orgId, signerName, signedDate, ipAddress, userAgent,
+          dto: { method: dto.method, fieldId: dto.fieldId },
+          textValue: formattedDate,
+        });
+      }
+
+      if (field.type === "text" || field.type === "select") {
+        // Text/select field — accept textValue, embed as text
+        if (!dto.textValue) {
+          throw new BadRequestException(`A value is required for ${field.type} fields`);
+        }
+        return await this.embedTextInPdf(tx, doc, field, dto.textValue, {
+          id, userId, orgId, signerName, signedDate, ipAddress, userAgent,
+          dto: { method: dto.method, fieldId: dto.fieldId },
+          textValue: dto.textValue,
+        });
+      }
+
+      // Signature and initials fields — require image upload
+      if (!signatureFile) {
+        throw new BadRequestException("No signature file provided");
+      }
+      if (!ALLOWED_SIGNATURE_MIMES.has(signatureFile.mimetype)) {
+        throw new BadRequestException("Signature must be a PNG or JPEG image");
+      }
 
       // Upload signature image to storage
       const sigKey = `${orgId}/${doc.projectId}/signatures/${id}-${userId}-${dto.fieldId}.png`;
       await this.storage.upload(sigKey, signatureFile.buffer, signatureFile.mimetype);
 
-      // Download the latest signed PDF (or original) — safe because FOR UPDATE lock
-      // ensures no concurrent signer can modify signedFileId between our read and write
+      // Download the latest signed PDF (or original)
       const sourceFile = doc.signedFileId ? doc.signedFile! : doc.file;
       const { body: pdfStream } = await this.storage.download(sourceFile.storageKey);
 
@@ -426,7 +649,6 @@ export class DocumentsService {
 
       page.drawImage(embedImage, { x: drawX, y: drawY, width: drawW, height: drawH });
 
-      const signedDate = new Date();
       const fontSize = Math.max(6, drawH * 0.15);
       const annotY = drawY - fontSize - 2 > 0
         ? drawY - fontSize - 2
@@ -436,7 +658,10 @@ export class DocumentsService {
         try { dateOpts.timeZone = dto.timezone; } catch { /* ignore invalid tz */ }
       }
       const formattedDate = signedDate.toLocaleDateString("en-US", dateOpts);
-      page.drawText(`Signed by ${signerName} on ${formattedDate}`, {
+      const annotText = field.type === "initials"
+        ? `Initialed by ${signerName} on ${formattedDate}`
+        : `Signed by ${signerName} on ${formattedDate}`;
+      page.drawText(annotText, {
         x: drawX,
         y: annotY,
         size: fontSize,
@@ -490,7 +715,155 @@ export class DocumentsService {
 
     await this.updateDocumentStatus(id);
 
+    // Signing audit is critical for compliance — log synchronously (not fire-and-forget)
+    await this.prisma.documentAuditEvent.create({
+      data: {
+        documentId: id,
+        action: "signed",
+        userId,
+        ipAddress,
+        userAgent,
+        metadata: JSON.stringify({ fieldId: dto.fieldId }),
+      },
+    }).catch((err) => this.logger.error({ err }, "Failed to log signing audit event"));
+
+    // Check if signing order is enabled and notify next signer
+    this.notifyNextSignerIfNeeded(id).catch((err) =>
+      this.logger.warn({ err }, "Failed to notify next signer"),
+    );
+
     return response;
+  }
+
+  /**
+   * Embed text into a PDF field (for date and text field types).
+   */
+  private async embedTextInPdf(
+    tx: Parameters<Parameters<PrismaService["$transaction"]>[0]>[0],
+    doc: {
+      id: string;
+      title: string;
+      projectId: string;
+      signedFileId: string | null;
+      signedFile: { storageKey: string } | null;
+      file: { storageKey: string };
+    },
+    field: { pageNumber: number; x: number; y: number; width: number; height: number },
+    text: string,
+    ctx: {
+      id: string;
+      userId: string;
+      orgId: string;
+      signerName: string;
+      signedDate: Date;
+      ipAddress?: string;
+      userAgent?: string;
+      dto: { method: string; fieldId: string };
+      textValue: string;
+    },
+  ) {
+    const sourceFile = doc.signedFileId ? doc.signedFile! : doc.file;
+    const { body: pdfStream } = await this.storage.download(sourceFile.storageKey);
+
+    const pdfChunks: Buffer[] = [];
+    let totalSize = 0;
+    for await (const chunk of pdfStream) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalSize += buf.length;
+      if (totalSize > MAX_SIGNABLE_PDF_BYTES) {
+        throw new BadRequestException("PDF is too large for signing");
+      }
+      pdfChunks.push(buf);
+    }
+    const pdfBuffer = Buffer.concat(pdfChunks);
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+
+    if (field.pageNumber >= pdfDoc.getPageCount()) {
+      throw new BadRequestException(
+        `Field references page ${field.pageNumber} but the PDF only has ${pdfDoc.getPageCount()} page(s)`,
+      );
+    }
+
+    const page = pdfDoc.getPages()[field.pageNumber];
+    const { width: pageW, height: pageH } = page.getSize();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    const drawX = field.x * pageW;
+    const drawH = field.height * pageH;
+    const drawY = pageH - (field.y * pageH) - drawH;
+    const fontSize = Math.min(Math.max(8, drawH * 0.6), 14);
+
+    page.drawText(text, {
+      x: drawX + 4,
+      y: drawY + (drawH - fontSize) / 2,
+      size: fontSize,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    const pdfBytes = await pdfDoc.save();
+    const signedPdfKey = `${ctx.orgId}/${doc.projectId}/documents/${ctx.id}-signed.pdf`;
+    await this.storage.upload(signedPdfKey, Buffer.from(pdfBytes), "application/pdf");
+
+    const oldSignedFileId = doc.signedFileId;
+    const signedFileRecord = await tx.file.create({
+      data: {
+        filename: sanitizeFilename(`${doc.title}-signed.pdf`),
+        storageKey: signedPdfKey,
+        mimeType: "application/pdf",
+        sizeBytes: pdfBytes.length,
+        projectId: doc.projectId,
+        organizationId: ctx.orgId,
+        uploadedById: ctx.userId,
+      },
+    });
+
+    await tx.document.update({
+      where: { id: ctx.id },
+      data: { signedFileId: signedFileRecord.id },
+    });
+
+    if (oldSignedFileId) {
+      await tx.file.deleteMany({ where: { id: oldSignedFileId } });
+    }
+
+    return tx.documentResponse.create({
+      data: {
+        documentId: ctx.id,
+        userId: ctx.userId,
+        action: "signed",
+        signatureMethod: ctx.dto.method,
+        signedAt: ctx.signedDate,
+        fieldId: ctx.dto.fieldId,
+        textValue: ctx.textValue,
+        ipAddress: ctx.ipAddress,
+        userAgent: ctx.userAgent,
+      },
+    });
+  }
+
+  private async notifyNextSignerIfNeeded(documentId: string) {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      include: { signatureFields: true, responses: true },
+    });
+    if (!doc || !doc.signingOrderEnabled) return;
+
+    const signedFieldIds = new Set(
+      doc.responses.filter((r) => r.action === "signed").map((r) => r.fieldId),
+    );
+
+    // Find the next unsigned field with a signing order
+    const orderedFields = doc.signatureFields
+      .filter((f) => f.signerOrder > 0 && !signedFieldIds.has(f.id))
+      .sort((a, b) => a.signerOrder - b.signerOrder);
+
+    if (orderedFields.length === 0) return;
+
+    const nextField = orderedFields[0];
+    if (nextField.assignedTo) {
+      this.notifications.notifyDocumentSigningTurn(documentId, nextField.assignedTo);
+    }
   }
 
   async getSigningInfo(id: string, userId: string, orgId: string, role: string) {
@@ -521,6 +894,8 @@ export class DocumentsService {
       signatureFields: doc.signatureFields,
       signedFieldIds,
       signedFileId: doc.signedFileId,
+      signingOrderEnabled: doc.signingOrderEnabled,
+      status: doc.status,
     };
   }
 
@@ -562,5 +937,218 @@ export class DocumentsService {
         ),
       ),
     );
+  }
+
+  // --- Access Token (Direct Signing Link) ---
+
+  private hashToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  async generateAccessToken(documentId: string, userId: string, orgId: string) {
+    // Verify document belongs to org
+    const doc = await this.prisma.document.findFirst({
+      where: { id: documentId, organizationId: orgId },
+    });
+    if (!doc) throw new NotFoundException("Document not found");
+
+    // Verify userId is a project client on this document's project
+    const assignment = await this.prisma.projectClient.findFirst({
+      where: { projectId: doc.projectId, userId },
+    });
+    if (!assignment) {
+      throw new BadRequestException("User is not a client on this project");
+    }
+
+    const rawToken = randomBytes(32).toString("hex");
+    const tokenHash = this.hashToken(rawToken);
+    const defaultExpiryMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const expiresAt = doc.expiresAt
+      ? new Date(Math.min(doc.expiresAt.getTime(), Date.now() + defaultExpiryMs))
+      : new Date(Date.now() + defaultExpiryMs);
+
+    await this.prisma.documentAccessToken.create({
+      data: { documentId, userId, token: tokenHash, expiresAt },
+    });
+
+    // Return the raw token only once — it's not stored
+    return { token: rawToken, expiresAt };
+  }
+
+  async revokeAccessToken(documentId: string, tokenId: string, orgId: string) {
+    await this.assertDocumentAccess(documentId, orgId);
+    const token = await this.prisma.documentAccessToken.findFirst({
+      where: { id: tokenId, documentId },
+    });
+    if (!token) throw new NotFoundException("Access token not found");
+    if (token.revokedAt) throw new BadRequestException("Token is already revoked");
+    return this.prisma.documentAccessToken.update({
+      where: { id: tokenId },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  async validateAccessToken(rawToken: string) {
+    const tokenHash = this.hashToken(rawToken);
+    const record = await this.prisma.documentAccessToken.findUnique({
+      where: { token: tokenHash },
+      include: {
+        document: {
+          include: { file: true, signedFile: true, signatureFields: true },
+        },
+      },
+    });
+
+    if (!record) throw new NotFoundException("Invalid or expired link");
+    if (record.revokedAt) {
+      throw new BadRequestException("This signing link has been revoked");
+    }
+    if (record.expiresAt < new Date()) {
+      throw new BadRequestException("This signing link has expired");
+    }
+
+    // Block access to voided/expired/draft documents
+    const blockedStatuses = new Set(["voided", "expired", "draft"]);
+    if (blockedStatuses.has(record.document.status)) {
+      throw new BadRequestException("This document is no longer available for signing");
+    }
+
+    // Mark as used
+    if (!record.usedAt) {
+      await this.prisma.documentAccessToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      });
+    }
+
+    return {
+      document: record.document,
+      userId: record.userId,
+      documentId: record.documentId,
+    };
+  }
+
+  // --- Completion Certificate ---
+
+  async generateCertificate(id: string, orgId: string) {
+    const doc = await this.prisma.document.findFirst({
+      where: { id, organizationId: orgId },
+      include: {
+        file: true,
+        responses: {
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
+      },
+    });
+    if (!doc) throw new NotFoundException("Document not found");
+    if (doc.status !== "signed") {
+      throw new BadRequestException("Certificate is only available for fully signed documents");
+    }
+
+    // Get audit trail
+    const auditEvents = await this.prisma.documentAuditEvent.findMany({
+      where: { documentId: id },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // Enrich audit events with user names
+    const userIds = [...new Set(auditEvents.filter((e) => e.userId).map((e) => e.userId!))];
+    const users = userIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    const page = pdfDoc.addPage([612, 792]); // Letter size
+    let y = 740;
+    const leftMargin = 50;
+    const black = rgb(0, 0, 0);
+    const gray = rgb(0.4, 0.4, 0.4);
+
+    // Title
+    page.drawText("CERTIFICATE OF COMPLETION", {
+      x: leftMargin,
+      y,
+      size: 18,
+      font: boldFont,
+      color: black,
+    });
+    y -= 30;
+
+    // Horizontal rule
+    page.drawLine({
+      start: { x: leftMargin, y },
+      end: { x: 562, y },
+      thickness: 1,
+      color: gray,
+    });
+    y -= 25;
+
+    // Document info
+    const drawLabel = (label: string, value: string) => {
+      page.drawText(label, { x: leftMargin, y, size: 10, font: boldFont, color: gray });
+      page.drawText(value, { x: leftMargin + 120, y, size: 10, font, color: black });
+      y -= 18;
+    };
+
+    const certId = doc.id.slice(0, 12).toUpperCase();
+    drawLabel("Certificate ID:", certId);
+    drawLabel("Document:", doc.title);
+    drawLabel("Type:", doc.type.charAt(0).toUpperCase() + doc.type.slice(1));
+    drawLabel("Status:", "Completed");
+    drawLabel("File:", doc.file.filename);
+
+    y -= 15;
+    page.drawText("SIGNERS", { x: leftMargin, y, size: 12, font: boldFont, color: black });
+    y -= 20;
+
+    // Signer table
+    const signerResponses = doc.responses.filter((r) => r.action === "signed");
+    for (const resp of signerResponses) {
+      const name = resp.user?.name || "Unknown";
+      const email = resp.user?.email || "";
+      const signedAt = resp.signedAt
+        ? resp.signedAt.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }) + " UTC"
+        : resp.createdAt.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }) + " UTC";
+      const method = resp.signatureMethod || "draw";
+
+      page.drawText(`${name} (${email})`, { x: leftMargin + 10, y, size: 9, font: boldFont, color: black });
+      y -= 14;
+      page.drawText(`Signed: ${signedAt}  |  Method: ${method}`, {
+        x: leftMargin + 10, y, size: 8, font, color: gray,
+      });
+      y -= 18;
+    }
+
+    // Audit trail section
+    if (auditEvents.length > 0) {
+      let currentPage = page;
+      y -= 10;
+      currentPage.drawText("AUDIT TRAIL", { x: leftMargin, y, size: 12, font: boldFont, color: black });
+      y -= 20;
+
+      for (const event of auditEvents) {
+        if (y < 60) {
+          currentPage = pdfDoc.addPage([612, 792]);
+          y = 740;
+        }
+
+        const actor = event.userId ? (userMap.get(event.userId)?.name || "Unknown") : "System";
+        const time = event.createdAt.toLocaleString("en-US", { dateStyle: "short", timeStyle: "short", timeZone: "UTC" });
+        currentPage.drawText(`${time}  —  ${event.action}  —  ${actor}`, {
+          x: leftMargin + 10, y, size: 8, font, color: gray,
+        });
+        y -= 14;
+      }
+    }
+
+    const pdfBytes = await pdfDoc.save();
+    return { buffer: Buffer.from(pdfBytes), filename: `certificate-${certId}.pdf` };
   }
 }

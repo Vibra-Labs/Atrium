@@ -2,6 +2,72 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.3.1] — 2026-03-18
+
+### Added
+
+#### Document Lifecycle
+- **Draft status** — Documents start as drafts, invisible to clients until explicitly sent
+- **Send workflow** — `Send to Client` transitions draft → pending and notifies clients via email
+- **Void documents** — Cancel sent documents with optional reason; clients see read-only "Voided" badge
+- **Audit trail** — Every document action (created, sent, viewed, signed, voided, expired) logged with timestamp, user, IP, and user agent. Viewable from the dashboard
+
+#### E-Signature Enhancements
+- **Field types** — Signature, date (auto-fill), initials, text input, and select (radio options) fields
+- **Signing order** — Sequential signing enforcement; locked fields show "Waiting..." until prior signers complete
+- **Signer assignment** — Assign specific fields to specific project clients
+- **Admin signing** — Admins/owners can sign documents directly from the dashboard
+- **Type-to-sign default** — Signature pad now defaults to type mode (draw still available)
+
+#### Expiration & Reminders
+- **Document expiration** — Set expiry (7/14/30/60/90 days) when sending; auto-expired by hourly cron
+- **Automatic reminders** — Email reminders to unresponsive clients at configurable intervals (1-7 days)
+
+#### Direct Signing Links
+- **Access tokens** — Generate secure signing links for clients (SHA-256 hashed, time-limited)
+- **Public signing page** — `/portal/sign/[token]` renders signing UI without portal login
+- **Token revocation** — Admins can revoke individual signing links
+- **Token cleanup** — Daily cron deletes expired tokens older than 30 days
+
+#### Completion Certificate
+- **PDF certificate** — Auto-generated completion certificate with document info, signer table, and full audit trail
+- **Download** from both dashboard and portal when document is fully signed
+
+#### Client Choices
+- **Question with options** — Attach a question with radio button choices to any document; client must select one
+
+#### UI Improvements
+- **Unified Files tab** — Documents and files merged into single "Files" tab with one Upload button
+- **Simplified upload modal** — Progressive disclosure: title + type + file upfront, signature checkbox for PDFs, advanced options collapsed
+- **Upload & Send** — Primary CTA sends immediately; Save Draft for preparation
+- **Auto-populate title** from filename on file selection
+- **Three-tier action bar** — Primary action (solid button), secondary actions (icon group), destructive actions (right-aligned, danger on hover)
+- **Continuous PDF scroll** — All pages render in a scrollable view with lazy loading via IntersectionObserver
+- **Voided/expired states** in portal — Read-only badges, no action buttons
+
+#### Email Templates
+- `DocumentReminderEmail` — Reminder for unresponsive clients with optional expiry date
+- `DocumentSigningTurnEmail` — "Your turn to sign" notification for sequential signing
+
+#### Testing
+- 82 unit tests for `DocumentsService` covering all business logic paths
+- 13 new E2E API tests (send, void, audit trail, field locking, token generation, expiry validation)
+
+### Fixed
+- Certificate page overflow — audit trail now properly spans multiple pages
+- Token endpoint response filtered — no internal IDs exposed to unauthenticated users
+- Signature fields locked on sent documents — prevents editing after clients have signed
+- `requiresSignature` enforced as PDF-only on the API
+- Send blocked for signature documents with zero fields placed
+- `expiresInDays` validated on send endpoint (1-365 range)
+- Signing audit events logged synchronously for compliance
+- Notification type safety — removed unsafe `as any` cast
+- `fetchSigningInfo` stale closure fixed in signing viewer
+
+### Upgrade Notes
+
+Schema changes require `bun run db:push`. **Data migration needed**: run `bun run packages/database/scripts/migrate-document-sent-at.ts` to backfill `sentAt` on existing pending documents. New tables: `document_audit_event`, `document_access_token`. New columns on `document` and `signature_field` models.
+
 ## [1.3.0] — 2026-03-17
 
 ### Added

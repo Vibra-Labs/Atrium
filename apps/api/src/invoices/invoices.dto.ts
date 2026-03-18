@@ -98,6 +98,12 @@ export class CreateUploadedInvoiceDto {
   notes?: string;
 }
 
+export class MineInvoiceQueryDto extends PaginationQueryDto {
+  @IsString()
+  @IsOptional()
+  projectId?: string;
+}
+
 export class InvoiceListQueryDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()

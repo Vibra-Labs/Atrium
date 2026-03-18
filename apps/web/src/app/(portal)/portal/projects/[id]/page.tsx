@@ -20,18 +20,27 @@ import {
   Lock,
   FileCheck,
   PenTool,
+  Check,
+  X,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
 import { downloadFile } from "@/lib/download";
 import { SigningViewer } from "@/components/signing-viewer";
+import { DocumentViewer } from "@/components/document-viewer";
+import { useToast } from "@/components/toast";
 
+// -- From agent-a6c3c855: unified file record with document fields --
 interface FileRecord {
   id: string;
   filename: string;
   mimeType: string;
   sizeBytes: number;
   createdAt: string;
+  documentType?: string | null;
+  documentTitle?: string | null;
+  documentStatus?: string | null;
+  respondedAt?: string | null;
 }
 
 interface Project {
@@ -44,19 +53,53 @@ interface Project {
   files: FileRecord[];
 }
 
-interface ProjectUpdateRecord {
+// -- From agent-a2624ff7: timeline entry for activity feed --
+interface TimelineEntry {
   id: string;
-  content: string;
+  kind: "update" | "activity";
+  createdAt: string;
+  // Update fields
+  content?: string;
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentMimeType?: string;
-  hasAttachment: boolean;
+  hasAttachment?: boolean;
   fileId?: string;
-  author: { id: string; name: string };
-  createdAt: string;
+  author?: { id: string; name: string };
+  // Activity fields
+  type?: string;
+  action?: string;
+  actor?: { id: string; name: string };
+  targetId?: string;
+  targetTitle?: string;
+  detail?: string;
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+// -- From agent-a6c3c855: unified status/type badge styles --
+const DOC_STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  pending: { bg: "bg-amber-50", text: "text-amber-700", label: "Pending" },
+  viewed: { bg: "bg-blue-50", text: "text-blue-700", label: "Viewed" },
+  accepted: { bg: "bg-green-50", text: "text-green-700", label: "Accepted" },
+  rejected: { bg: "bg-red-50", text: "text-red-700", label: "Rejected" },
+};
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  quote: "Quote",
+  contract: "Contract",
+  nda: "NDA",
+  proposal: "Proposal",
+  other: "Document",
+};
+
+const DOC_TYPE_STYLES: Record<string, { bg: string; text: string }> = {
+  quote: { bg: "bg-purple-50", text: "text-purple-700" },
+  contract: { bg: "bg-blue-50", text: "text-blue-700" },
+  nda: { bg: "bg-orange-50", text: "text-orange-700" },
+  proposal: { bg: "bg-teal-50", text: "text-teal-700" },
+  other: { bg: "bg-gray-50", text: "text-gray-700" },
+};
 
 function formatDateDisplay(dateStr: string): string {
   const d = new Date(dateStr);
@@ -95,6 +138,7 @@ interface TaskRecord {
   _count?: { votes: number };
 }
 
+// -- Documents are still loaded separately for the document viewer / signing features --
 interface DocumentRecord {
   id: string;
   type: string;
@@ -104,7 +148,7 @@ interface DocumentRecord {
   signedFileId?: string;
   signedFile?: { id: string; filename: string; sizeBytes: number };
   signatureFields?: { id: string }[];
-  file: { id: string; filename: string; sizeBytes: number };
+  file: { id: string; filename: string; mimeType: string; sizeBytes: number };
   responses: { id: string; action: string; createdAt: string; fieldId?: string }[];
   createdAt: string;
 }
@@ -124,6 +168,7 @@ const docTypeLabels: Record<string, string> = {
 const docActions: Record<string, string[]> = {
   quote: ["accepted", "declined"],
   contract: ["accepted", "declined"],
+  proposal: ["accepted", "declined"],
   nda: ["acknowledged"],
   other: ["acknowledged"],
 };
@@ -137,11 +182,20 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
+// -- From agent-a3c3fd72: confirmation dialog state --
+interface PendingDocAction {
+  docId: string;
+  docTitle: string;
+  docType: string;
+  action: string;
+}
+
 export default function PortalProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const toast = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
-  const [updates, setUpdates] = useState<ProjectUpdateRecord[]>([]);
+  const [updates, setUpdates] = useState<TimelineEntry[]>([]);
   const [updatesPage, setUpdatesPage] = useState(1);
   const [updatesTotalPages, setUpdatesTotalPages] = useState(1);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
@@ -155,6 +209,17 @@ export default function PortalProjectDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [signingDocId, setSigningDocId] = useState<string | null>(null);
+  // -- From agent-acabd59e: inline document viewer --
+  const [viewingDoc, setViewingDoc] = useState<DocumentRecord | null>(null);
+  // -- From agent-a3c3fd72: confirmation dialog --
+  const [pendingDocAction, setPendingDocAction] = useState<PendingDocAction | null>(null);
+  const [declineReason, setDeclineReason] = useState("");
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  // -- From agent-a6c3c855: responding state for unified files --
+  const [respondingTo, setRespondingTo] = useState<string | null>(null);
+  // State for viewing a file-based document in the viewer
+  const [viewingFile, setViewingFile] = useState<FileRecord | null>(null);
+  const [viewingFileDecline, setViewingFileDecline] = useState(false);
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -162,9 +227,10 @@ export default function PortalProjectDetailPage() {
       .catch((err) => setError(err.message || "Failed to load project"));
   }, [id]);
 
+  // -- From agent-a2624ff7: timeline API endpoint --
   const loadUpdates = useCallback(() => {
-    apiFetch<PaginatedResponse<ProjectUpdateRecord>>(
-      `/updates/mine/${id}?page=${updatesPage}&limit=10`,
+    apiFetch<PaginatedResponse<TimelineEntry>>(
+      `/updates/timeline/mine/${id}?page=${updatesPage}&limit=10`,
     )
       .then((res) => {
         setUpdates(res.data);
@@ -209,6 +275,63 @@ export default function PortalProjectDetailPage() {
       loadTasks();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // -- From agent-a3c3fd72: confirmation dialog for document accept/decline --
+  const openDocumentConfirm = (doc: DocumentRecord, action: string) => {
+    setPendingDocAction({
+      docId: doc.id,
+      docTitle: doc.title,
+      docType: doc.type,
+      action,
+    });
+    setDeclineReason("");
+  };
+
+  const handleDocumentConfirm = async () => {
+    if (!pendingDocAction) return;
+    setConfirmSubmitting(true);
+    try {
+      const body: Record<string, string> = { action: pendingDocAction.action };
+      if (pendingDocAction.action === "declined" && declineReason.trim()) {
+        body.reason = declineReason.trim();
+      }
+      await apiFetch(`/documents/${pendingDocAction.docId}/respond`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const actionLabel = pendingDocAction.action === "accepted"
+        ? "accepted"
+        : pendingDocAction.action === "declined"
+          ? "declined"
+          : "acknowledged";
+      toast.success(`Document "${pendingDocAction.docTitle}" ${actionLabel} successfully.`);
+      setPendingDocAction(null);
+      setDeclineReason("");
+      loadDocuments();
+      loadProject();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to respond to document. Please try again.");
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
+
+  // -- From agent-a6c3c855: respond to files with document fields --
+  const handleFileDocumentRespond = async (fileId: string, action: "accepted" | "rejected", reason?: string) => {
+    setRespondingTo(fileId);
+    try {
+      await apiFetch(`/files/${fileId}/respond`, {
+        method: "PATCH",
+        body: JSON.stringify({ action, reason }),
+      });
+      loadProject();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRespondingTo(null);
     }
   };
 
@@ -274,13 +397,13 @@ export default function PortalProjectDetailPage() {
   const currentIndex = statuses.findIndex((s) => s.slug === project.status);
 
   return (
-    <div className="flex gap-8">
+    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
       {error && (
         <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{error}</div>
       )}
 
       {/* Left sidebar */}
-      <aside className="w-72 shrink-0 sticky top-8 space-y-4">
+      <aside className="w-full lg:w-72 lg:shrink-0 lg:sticky lg:top-8 space-y-4">
         <h1 className="text-lg font-bold leading-tight">{project.name}</h1>
         {project.description && (
           <p className="text-xs text-[var(--muted-foreground)] leading-relaxed -mt-1">
@@ -349,64 +472,175 @@ export default function PortalProjectDetailPage() {
         )}
       </aside>
 
-      {/* Right content area — tabbed sections */}
+      {/* Right content area -- tabbed sections */}
       <div className="flex-1 min-w-0">
-        <div className="flex border-b border-[var(--border)] mb-6">
-          {tabs.map((tab) => (
+        {/* Pending actions banner */}
+        {(() => {
+          const pendingFiles = (project?.files || []).filter(
+            (f: FileRecord) => f.documentType && (f.documentStatus === "pending" || f.documentStatus === "viewed")
+          );
+          const pendingTasks: unknown[] = [];
+          const totalPending = pendingFiles.length + pendingTasks.length;
+          if (totalPending === 0) return null;
+          return (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === tab.id
-                  ? "border-[var(--primary)] text-[var(--primary)]"
-                  : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border)]"
-              }`}
+              onClick={() => setActiveTab("files")}
+              className="w-full mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"
             >
-              {tab.label}
+              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-bold shrink-0">
+                {totalPending}
+              </span>
+              <div>
+                <p className="text-sm font-medium text-amber-900">
+                  {totalPending === 1 ? "1 item needs" : `${totalPending} items need`} your attention
+                </p>
+                <p className="text-xs text-amber-700">
+                  {pendingFiles.length > 0 && `${pendingFiles.length} document${pendingFiles.length > 1 ? "s" : ""} to review`}
+                  {pendingFiles.length > 0 && pendingTasks.length > 0 && " · "}
+                  {pendingTasks.length > 0 && `${pendingTasks.length} decision${pendingTasks.length > 1 ? "s" : ""} to vote on`}
+                </p>
+              </div>
             </button>
-          ))}
+          );
+        })()}
+
+        <div className="flex border-b border-[var(--border)] mb-6">
+          {tabs.map((tab) => {
+            const pendingCount = tab.id === "files"
+              ? (project?.files || []).filter((f: FileRecord) => f.documentType && (f.documentStatus === "pending" || f.documentStatus === "viewed")).length
+              : 0;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
+                  activeTab === tab.id
+                    ? "border-[var(--primary)] text-[var(--primary)]"
+                    : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border)]"
+                }`}
+              >
+                {tab.label}
+                {pendingCount > 0 && (
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Updates Tab */}
+        {/* Updates Tab -- From agent-a2624ff7: activity feed in timeline */}
         {activeTab === "updates" && (
           <div>
             <div className="space-y-3">
-              {updates.map((update) => {
+              {updates.map((entry) => {
+                // -- Activity entry rendering from agent-a2624ff7 --
+                if (entry.kind === "activity") {
+                  const actorName = entry.actor?.name || "Someone";
+                  const actionLabels: Record<string, string> = {
+                    accepted: "accepted",
+                    declined: "declined",
+                    acknowledged: "acknowledged",
+                    signed: "signed",
+                    voted: "voted on",
+                    closed: "closed voting on",
+                  };
+                  const actionBg: Record<string, string> = {
+                    accepted: "#dcfce7",
+                    declined: "#fee2e2",
+                    acknowledged: "#dbeafe",
+                    signed: "#ccfbf1",
+                    voted: "#fef3c7",
+                    closed: "#f3f4f6",
+                  };
+                  const actionFg: Record<string, string> = {
+                    accepted: "#15803d",
+                    declined: "#b91c1c",
+                    acknowledged: "#1d4ed8",
+                    signed: "#0f766e",
+                    voted: "#92400e",
+                    closed: "#374151",
+                  };
+                  const label = actionLabels[entry.action || ""] || entry.action;
+
+                  return (
+                    <div
+                      key={entry.id}
+                      data-testid="activity-entry"
+                      className="flex items-start gap-3 px-4 py-3 border border-[var(--border)] rounded-lg bg-[var(--muted)]/30"
+                    >
+                      <div className="mt-0.5">
+                        {entry.type === "document_response" && <FileCheck size={14} className="text-blue-500" />}
+                        {entry.type === "decision_vote" && <Vote size={14} className="text-amber-500" />}
+                        {entry.type === "decision_closed" && <Lock size={14} className="text-gray-500" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm">
+                          <span className="font-medium">{actorName}</span>
+                          {" "}
+                          <span className="text-[var(--muted-foreground)]">{label}</span>
+                          {" "}
+                          <span className="font-medium">{entry.targetTitle}</span>
+                          {entry.detail && (
+                            <span className="text-[var(--muted-foreground)]"> &mdash; {entry.detail}</span>
+                          )}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                            style={{
+                              backgroundColor: actionBg[entry.action || ""] || "#f3f4f6",
+                              color: actionFg[entry.action || ""] || "#374151",
+                            }}
+                          >
+                            {entry.action}
+                          </span>
+                          <span className="text-xs text-[var(--muted-foreground)]">
+                            {formatRelativeTime(entry.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Regular update entry
                 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-                const isImage = IMAGE_TYPES.has(update.attachmentMimeType || "");
-                const attachmentSrc = update.fileId
-                  ? `${API_URL}/api/files/${update.fileId}/download`
-                  : update.attachmentUrl || `${API_URL}/api/updates/${update.id}/attachment`;
+                const isImage = IMAGE_TYPES.has(entry.attachmentMimeType || "");
+                const attachmentSrc = entry.fileId
+                  ? `${API_URL}/api/files/${entry.fileId}/download`
+                  : entry.attachmentUrl || `${API_URL}/api/updates/${entry.id}/attachment`;
                 return (
                   <div
-                    key={update.id}
+                    key={entry.id}
                     className="border border-[var(--border)] rounded-lg p-4"
                   >
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm font-medium">{update.author.name}</span>
+                      <span className="text-sm font-medium">{entry.author?.name}</span>
                       <span className="text-xs text-[var(--muted-foreground)]">
-                        {formatRelativeTime(update.createdAt)}
+                        {formatRelativeTime(entry.createdAt)}
                       </span>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">{linkify(update.content)}</p>
-                    {update.hasAttachment && isImage && (
+                    <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
+                    {entry.hasAttachment && isImage && (
                       <img
                         src={attachmentSrc}
                         alt=""
                         className="mt-3 max-w-full max-h-80 rounded-lg border border-[var(--border)]"
                       />
                     )}
-                    {update.hasAttachment && !isImage && (
+                    {entry.hasAttachment && !isImage && (
                       <button
                         onClick={() =>
-                          update.fileId
-                            ? handleDownload(update.fileId, update.attachmentName || "download")
+                          entry.fileId
+                            ? handleDownload(entry.fileId, entry.attachmentName || "download")
                             : window.open(attachmentSrc, "_blank")
                         }
                         className="mt-3 flex items-center gap-2 px-3 py-2 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors w-fit"
                       >
                         <FileText size={16} className="text-[var(--muted-foreground)] shrink-0" />
-                        <span className="truncate max-w-[200px]">{update.attachmentName || "Download"}</span>
+                        <span className="truncate max-w-[200px]">{entry.attachmentName || "Download"}</span>
                         <Download size={14} className="text-[var(--muted-foreground)] shrink-0" />
                       </button>
                     )}
@@ -437,6 +671,7 @@ export default function PortalProjectDetailPage() {
                   const userVote = task.votes?.[0];
                   const isClosed = !!task.closedAt;
                   const totalVotes = task._count?.votes ?? 0;
+                  const hasResults = totalVotes > 0 && task.options?.some((o) => o._count.votes > 0);
 
                   return (
                     <div
@@ -486,7 +721,7 @@ export default function PortalProjectDetailPage() {
                                   className="accent-[var(--primary)]"
                                 />
                                 <span className="text-sm flex-1">{opt.label}</span>
-                                {isClosed && (
+                                {(isClosed || hasResults) && (
                                   <span className="text-xs text-[var(--muted-foreground)]">
                                     {opt._count.votes} vote{opt._count.votes !== 1 ? "s" : ""}
                                   </span>
@@ -509,7 +744,7 @@ export default function PortalProjectDetailPage() {
                         </div>
                       )}
 
-                      {isClosed && totalVotes > 0 && (
+                      {(isClosed || hasResults) && totalVotes > 0 && (
                         <p className="text-xs text-[var(--muted-foreground)]">
                           {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
                         </p>
@@ -555,187 +790,272 @@ export default function PortalProjectDetailPage() {
           </div>
         )}
 
-        {/* Files Tab */}
-        {activeTab === "files" && (
-          <div>
-            <div className="flex justify-end mb-4">
-              <label className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm cursor-pointer hover:opacity-90">
-                <Upload size={14} />
-                {uploading ? "Uploading..." : "Upload File"}
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleUpload}
-                  disabled={uploading}
-                />
-              </label>
-            </div>
-            <div className="space-y-2">
-              {project.files.map((file) => (
-                <div
-                  key={file.id}
-                  className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{file.filename}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      {formatBytes(file.sizeBytes)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleDownload(file.id, file.filename)}
-                    className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
-                  >
-                    <Download size={14} />
-                    Download
-                  </button>
-                </div>
-              ))}
-              {project.files.length === 0 && documents.length === 0 && (
-                <div className="text-center py-8">
-                  <FileX size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
-                  <p className="text-sm text-[var(--muted-foreground)]">
-                    No files shared yet.
-                  </p>
-                </div>
-              )}
-            </div>
+        {/* Files Tab -- From agent-a6c3c855: unified files + documents section */}
+        {activeTab === "files" && (() => {
+          // Sort: documents needing action first, then by date descending
+          const sortedFiles = [...project.files].sort((a, b) => {
+            const aAction = a.documentType && (a.documentStatus === "pending" || a.documentStatus === "viewed") ? 1 : 0;
+            const bAction = b.documentType && (b.documentStatus === "pending" || b.documentStatus === "viewed") ? 1 : 0;
+            if (aAction !== bAction) return bAction - aAction;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
 
-            {/* Documents section */}
-            {documents.length > 0 && (
-              <div className="mt-6">
-                <div className="border-t border-[var(--border)] pt-4 mb-3">
-                  <h3 className="text-sm font-medium flex items-center gap-2">
-                    <FileCheck size={16} className="text-[var(--muted-foreground)]" />
-                    Documents
-                  </h3>
-                </div>
-                <div className="space-y-2">
-                  {documents.map((doc) => {
-                    const hasResponded = doc.responses.length > 0;
-                    const lastResponse = hasResponded ? doc.responses[0] : null;
-                    const actions = docActions[doc.type] || ["acknowledged"];
+          return (
+            <div>
+              <div className="flex justify-end mb-4">
+                <label className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm cursor-pointer hover:opacity-90">
+                  <Upload size={14} />
+                  {uploading ? "Uploading..." : "Upload File"}
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={handleUpload}
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+              <div className="space-y-2">
+                {sortedFiles.map((file) => {
+                  const isDoc = !!file.documentType;
+                  const needsAction = isDoc && (file.documentStatus === "pending" || file.documentStatus === "viewed");
+                  const statusStyle = file.documentStatus ? DOC_STATUS_STYLES[file.documentStatus] || DOC_STATUS_STYLES.pending : null;
+                  const typeStyle = file.documentType ? DOC_TYPE_STYLES[file.documentType] || DOC_TYPE_STYLES.other : null;
 
-                    // Check if this document requires signing and has unsigned fields
-                    const needsSigning = doc.requiresSignature &&
-                      doc.signatureFields &&
-                      doc.signatureFields.length > 0;
-                    const signedFieldIds = doc.responses
-                      .filter((r) => r.action === "signed" && r.fieldId)
-                      .map((r) => r.fieldId);
-                    const allFieldsSigned = needsSigning &&
-                      doc.signatureFields!.every((f) => signedFieldIds.includes(f.id));
-                    const hasUnsignedFields = needsSigning && !allFieldsSigned;
-
-                    return (
-                      <div
-                        key={doc.id}
-                        className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg"
-                      >
+                  return (
+                    <div
+                      key={file.id}
+                      className={`p-3 border rounded-lg ${
+                        needsAction
+                          ? "border-amber-200 bg-amber-50/30"
+                          : "border-[var(--border)]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 min-w-0">
+                          {isDoc && (
+                            <FileText size={18} className="text-[var(--primary)] shrink-0" />
+                          )}
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{doc.title}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                                {docTypeLabels[doc.type] || doc.type}
-                              </span>
-                              <span className="text-xs text-[var(--muted-foreground)]">
-                                {formatBytes(doc.file.sizeBytes)}
-                              </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {isDoc ? (
+                                <button
+                                  onClick={() => setViewingFile(file)}
+                                  className="text-sm font-medium truncate text-[var(--primary)] hover:underline text-left"
+                                >
+                                  {file.documentTitle || file.filename}
+                                </button>
+                              ) : (
+                                <p className="text-sm font-medium truncate">
+                                  {file.filename}
+                                </p>
+                              )}
+                              {isDoc && typeStyle && (
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${typeStyle.bg} ${typeStyle.text}`}>
+                                  {DOC_TYPE_LABELS[file.documentType!] || file.documentType}
+                                </span>
+                              )}
+                              {isDoc && statusStyle && (
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${statusStyle.bg} ${statusStyle.text}`}>
+                                  {statusStyle.label}
+                                </span>
+                              )}
+                              {needsAction && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600">
+                                  Action Required
+                                </span>
+                              )}
                             </div>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              {isDoc && file.documentTitle ? file.filename + " \u00B7 " : ""}
+                              {formatBytes(file.sizeBytes)}
+                            </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => handleDownload(doc.file.id, doc.file.filename)}
-                            className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
-                          >
-                            <Download size={14} />
-                          </button>
-                          {/* Signing flow */}
-                          {hasUnsignedFields ? (
-                            <button
-                              onClick={() => setSigningDocId(doc.id)}
-                              className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                              style={{ backgroundColor: "#d97706" }}
-                            >
-                              <PenTool size={12} />
-                              Review & Sign
-                            </button>
-                          ) : allFieldsSigned ? (
-                            <span
-                              className="text-xs px-2 py-1 rounded-full font-medium"
-                              style={{ backgroundColor: "#ccfbf1", color: "#0f766e" }}
-                            >
-                              Signed
-                            </span>
-                          ) : hasResponded && lastResponse ? (
-                            <span
-                              className="text-xs px-2 py-1 rounded-full font-medium"
-                              style={{
-                                backgroundColor:
-                                  lastResponse.action === "declined"
-                                    ? "#fee2e2"
-                                    : "#dcfce7",
-                                color:
-                                  lastResponse.action === "declined"
-                                    ? "#b91c1c"
-                                    : "#15803d",
-                              }}
-                            >
-                              {lastResponse.action.charAt(0).toUpperCase() +
-                                lastResponse.action.slice(1)}
-                            </span>
-                          ) : (
-                            <>
-                              {actions.includes("accepted") && (
-                                <>
-                                  <button
-                                    onClick={() =>
-                                      handleDocumentRespond(doc.id, "accepted")
-                                    }
-                                    className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                                    style={{ backgroundColor: "#15803d" }}
-                                  >
-                                    Accept
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      handleDocumentRespond(doc.id, "declined")
-                                    }
-                                    className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                                    style={{ backgroundColor: "#b91c1c" }}
-                                  >
-                                    Decline
-                                  </button>
-                                </>
-                              )}
-                              {!actions.includes("accepted") && (
-                                <button
-                                  onClick={() =>
-                                    handleDocumentRespond(doc.id, "acknowledged")
-                                  }
-                                  className="px-3 py-1 text-xs font-medium rounded-lg bg-[var(--primary)] text-white transition-opacity hover:opacity-90"
-                                >
-                                  Acknowledge
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
+                        <button
+                          onClick={() => handleDownload(file.id, file.filename)}
+                          className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline shrink-0"
+                        >
+                          <Download size={14} />
+                          Download
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-                {docsTotalPages > 1 && (
-                  <div className="mt-3">
-                    <Pagination page={docsPage} totalPages={docsTotalPages} onPageChange={setDocsPage} />
+                      {/* Document action buttons */}
+                      {needsAction && (
+                        <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]">
+                          <button
+                            onClick={() => handleFileDocumentRespond(file.id, "accepted")}
+                            disabled={respondingTo === file.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
+                          >
+                            <Check size={14} />
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => { setViewingFile(file); setViewingFileDecline(true); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-sm hover:bg-red-50"
+                          >
+                            <X size={14} />
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {project.files.length === 0 && documents.length === 0 && (
+                  <div className="text-center py-8">
+                    <FileX size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
+                    <p className="text-sm text-[var(--muted-foreground)]">
+                      No files shared yet.
+                    </p>
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        )}
+
+              {/* Documents section -- separate document records with signing, viewer, and confirmation features */}
+              {documents.length > 0 && (
+                <div className="mt-6">
+                  <div className="border-t border-[var(--border)] pt-4 mb-3">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <FileCheck size={16} className="text-[var(--muted-foreground)]" />
+                      Documents
+                    </h3>
+                  </div>
+                  <div className="space-y-2">
+                    {documents.map((doc) => {
+                      const hasResponded = doc.responses.length > 0;
+                      const lastResponse = hasResponded ? doc.responses[0] : null;
+                      const actions = docActions[doc.type] || ["acknowledged"];
+
+                      // Check if this document requires signing and has unsigned fields
+                      const needsSigning = doc.requiresSignature &&
+                        doc.signatureFields &&
+                        doc.signatureFields.length > 0;
+                      const signedFieldIds = doc.responses
+                        .filter((r) => r.action === "signed" && r.fieldId)
+                        .map((r) => r.fieldId);
+                      const allFieldsSigned = needsSigning &&
+                        doc.signatureFields!.every((f) => signedFieldIds.includes(f.id));
+                      const hasUnsignedFields = needsSigning && !allFieldsSigned;
+
+                      return (
+                        <div
+                          key={doc.id}
+                          className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]/50 transition-colors"
+                        >
+                          {/* From agent-acabd59e: clickable doc title to open viewer */}
+                          <button
+                            onClick={() => setViewingDoc(doc)}
+                            className="flex items-center gap-3 min-w-0 text-left cursor-pointer flex-1"
+                            data-testid={`view-document-${doc.id}`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate text-[var(--primary)] hover:underline">{doc.title}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                                  {docTypeLabels[doc.type] || doc.type}
+                                </span>
+                                <span className="text-xs text-[var(--muted-foreground)]">
+                                  {formatBytes(doc.file.sizeBytes)}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleDownload(doc.file.id, doc.file.filename)}
+                              className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                            >
+                              <Download size={14} />
+                            </button>
+                            {hasResponded && lastResponse ? (
+                              <span
+                                className="text-xs px-2 py-1 rounded-full font-medium"
+                                style={{
+                                  backgroundColor:
+                                    lastResponse.action === "declined"
+                                      ? "#fee2e2"
+                                      : "#dcfce7",
+                                  color:
+                                    lastResponse.action === "declined"
+                                      ? "#b91c1c"
+                                      : "#15803d",
+                                }}
+                              >
+                                {lastResponse.action.charAt(0).toUpperCase() +
+                                  lastResponse.action.slice(1)}
+                              </span>
+                            ) : (
+                              <>
+                                {/* From agent-a3c3fd72: use confirmation dialog instead of direct respond */}
+                                {actions.includes("accepted") && (
+                                  <>
+                                    <button
+                                      onClick={() =>
+                                        openDocumentConfirm(doc, "accepted")
+                                      }
+                                      className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
+                                      style={{ backgroundColor: "#15803d" }}
+                                    >
+                                      Accept
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        openDocumentConfirm(doc, "declined")
+                                      }
+                                      className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
+                                      style={{ backgroundColor: "#b91c1c" }}
+                                    >
+                                      Decline
+                                    </button>
+                                  </>
+                                )}
+                                {!actions.includes("accepted") && (
+                                  <button
+                                    onClick={() =>
+                                      openDocumentConfirm(doc, "acknowledged")
+                                    }
+                                    className="px-3 py-1 text-xs font-medium rounded-lg bg-[var(--primary)] text-white transition-opacity hover:opacity-90"
+                                  >
+                                    Acknowledge
+                                  </button>
+                                )}
+                                {/* Signing flow */}
+                                {hasUnsignedFields && (
+                                  <button
+                                    onClick={() => setSigningDocId(doc.id)}
+                                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
+                                    style={{ backgroundColor: "#d97706" }}
+                                  >
+                                    <PenTool size={12} />
+                                    Review & Sign
+                                  </button>
+                                )}
+                                {allFieldsSigned && (
+                                  <span
+                                    className="text-xs px-2 py-1 rounded-full font-medium"
+                                    style={{ backgroundColor: "#ccfbf1", color: "#0f766e" }}
+                                  >
+                                    Signed
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {docsTotalPages > 1 && (
+                    <div className="mt-3">
+                      <Pagination page={docsPage} totalPages={docsTotalPages} onPageChange={setDocsPage} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Invoices Tab */}
         {activeTab === "invoices" && (
@@ -753,6 +1073,133 @@ export default function PortalProjectDetailPage() {
             loadDocuments();
           }}
         />
+      )}
+
+      {/* From agent-acabd59e: Document Viewer Modal */}
+      {viewingDoc && (
+        <DocumentViewer
+          documentId={viewingDoc.id}
+          title={viewingDoc.title}
+          typeLabel={docTypeLabels[viewingDoc.type] || viewingDoc.type}
+          mimeType={viewingDoc.file.mimeType}
+          fileId={viewingDoc.file.id}
+          filename={viewingDoc.file.filename}
+          hasResponded={viewingDoc.responses.length > 0}
+          lastResponseAction={viewingDoc.responses[0]?.action}
+          actions={docActions[viewingDoc.type] || ["acknowledged"]}
+          onRespond={async (action) => {
+            await handleDocumentRespond(viewingDoc.id, action);
+          }}
+          onClose={() => setViewingDoc(null)}
+        />
+      )}
+
+      {/* File-based Document Viewer Modal */}
+      {viewingFile && (
+        <DocumentViewer
+          documentId={viewingFile.id}
+          title={viewingFile.documentTitle || viewingFile.filename}
+          typeLabel={viewingFile.documentType ? (DOC_TYPE_LABELS[viewingFile.documentType] || viewingFile.documentType) : "File"}
+          mimeType={viewingFile.mimeType}
+          fileId={viewingFile.id}
+          filename={viewingFile.filename}
+          hasResponded={viewingFile.documentStatus !== "pending" && viewingFile.documentStatus !== "viewed"}
+          lastResponseAction={viewingFile.documentStatus === "accepted" ? "accepted" : viewingFile.documentStatus === "rejected" ? "declined" : undefined}
+          actions={viewingFile.documentType === "nda" ? ["acknowledged"] : ["accepted", "declined"]}
+          useFileEndpoint
+          initialDecline={viewingFileDecline}
+          onRespond={async (action, reason) => {
+            await handleFileDocumentRespond(viewingFile.id, action === "declined" ? "rejected" : action as "accepted" | "rejected", reason);
+            setViewingFile(null);
+            setViewingFileDecline(false);
+          }}
+          onClose={() => { setViewingFile(null); setViewingFileDecline(false); }}
+        />
+      )}
+
+      {/* Document Response Confirmation Dialog */}
+      {pendingDocAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !confirmSubmitting) {
+              setPendingDocAction(null);
+              setDeclineReason("");
+            }
+          }}
+        >
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-sm mx-4 p-6 space-y-4">
+            <h3 className="text-lg font-semibold">
+              {pendingDocAction.action === "accepted"
+                ? "Accept Document"
+                : pendingDocAction.action === "declined"
+                  ? "Decline Document"
+                  : "Acknowledge Document"}
+            </h3>
+            <div className="text-sm text-[var(--muted-foreground)] space-y-2">
+              <p>
+                Are you sure you want to{" "}
+                <span className="font-medium text-[var(--foreground)]">
+                  {pendingDocAction.action === "accepted"
+                    ? "accept"
+                    : pendingDocAction.action === "declined"
+                      ? "decline"
+                      : "acknowledge"}
+                </span>{" "}
+                this document?
+              </p>
+              <div className="border border-[var(--border)] rounded-lg p-3 bg-[var(--muted)]">
+                <p className="text-sm font-medium text-[var(--foreground)]">{pendingDocAction.docTitle}</p>
+                <span className="text-xs px-2 py-0.5 bg-[var(--background)] rounded-full text-[var(--muted-foreground)] mt-1 inline-block">
+                  {docTypeLabels[pendingDocAction.docType] || pendingDocAction.docType}
+                </span>
+              </div>
+            </div>
+            {pendingDocAction.action === "declined" && (
+              <div>
+                <label className="block text-sm text-[var(--muted-foreground)] mb-1.5">
+                  Reason for declining (optional)
+                </label>
+                <textarea
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                  placeholder="Provide a reason for declining..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:ring-1 focus:ring-[var(--primary)] resize-none"
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setPendingDocAction(null);
+                  setDeclineReason("");
+                }}
+                disabled={confirmSubmitting}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDocumentConfirm}
+                disabled={confirmSubmitting}
+                className={
+                  pendingDocAction.action === "declined"
+                    ? "px-4 py-1.5 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors disabled:opacity-40"
+                    : "px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors disabled:opacity-40"
+                }
+              >
+                {confirmSubmitting
+                  ? "Submitting..."
+                  : pendingDocAction.action === "accepted"
+                    ? "Confirm Accept"
+                    : pendingDocAction.action === "declined"
+                      ? "Confirm Decline"
+                      : "Confirm Acknowledge"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

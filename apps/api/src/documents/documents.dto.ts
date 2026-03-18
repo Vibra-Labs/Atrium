@@ -2,6 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsIn,
+  IsOptional,
   MaxLength,
   IsOptional,
   IsBoolean,
@@ -20,7 +21,7 @@ export class CreateDocumentDto {
   projectId!: string;
 
   @IsString()
-  @IsIn(["quote", "contract", "nda", "other"])
+  @IsIn(["quote", "contract", "proposal", "nda", "other"])
   type!: string;
 
   @IsString()
@@ -38,6 +39,11 @@ export class RespondDocumentDto {
   @IsString()
   @IsIn(["accepted", "declined", "acknowledged"])
   action!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
 }
 
 export class CreateSignatureFieldDto {

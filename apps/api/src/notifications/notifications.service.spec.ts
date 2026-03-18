@@ -12,6 +12,9 @@ mock.module("@atrium/email", () => ({
   ProjectUpdateEmail: (props: Record<string, unknown>) => props,
   TaskAssignedEmail: (props: Record<string, unknown>) => props,
   InvoiceSentEmail: (props: Record<string, unknown>) => props,
+  DecisionClosedEmail: (props: Record<string, unknown>) => props,
+  DocumentUploadedEmail: (props: Record<string, unknown>) => props,
+  DocumentRespondedEmail: (props: Record<string, unknown>) => props,
 }));
 
 mock.module("@react-email/render", () => ({

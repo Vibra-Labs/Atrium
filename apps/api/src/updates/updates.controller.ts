@@ -71,6 +71,37 @@ export class UpdatesController {
     );
   }
 
+  @Get("timeline/mine/:projectId")
+  findTimelineForClient(
+    @Param("projectId") projectId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentOrg("id") orgId: string,
+    @Query() pagination: PaginationQueryDto,
+  ) {
+    return this.updatesService.findTimelineForClient(
+      projectId,
+      userId,
+      orgId,
+      pagination.page,
+      pagination.limit,
+    );
+  }
+
+  @Get("timeline/:projectId")
+  @Roles("owner", "admin")
+  findTimeline(
+    @Param("projectId") projectId: string,
+    @CurrentOrg("id") orgId: string,
+    @Query() pagination: PaginationQueryDto,
+  ) {
+    return this.updatesService.findTimeline(
+      projectId,
+      orgId,
+      pagination.page,
+      pagination.limit,
+    );
+  }
+
   @Get(":id/attachment")
   getAttachment(
     @Param("id") id: string,

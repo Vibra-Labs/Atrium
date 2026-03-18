@@ -100,7 +100,7 @@ export class InvoicesService {
         }
         const invoiceNumber = `INV-${String(nextNumber).padStart(4, "0")}`;
 
-        return tx.invoice.create({
+        const invoice = await tx.invoice.create({
           data: {
             invoiceNumber,
             type: "uploaded",
@@ -114,6 +114,8 @@ export class InvoicesService {
           },
           include: { uploadedFile: true },
         });
+
+        return invoice;
       }, { isolationLevel: "Serializable" });
     } catch (err) {
       if (err instanceof Error && "code" in err && (err as { code: string }).code === "P2002" && retries < 3) {
@@ -121,6 +123,15 @@ export class InvoicesService {
       }
       throw err;
     }
+  }
+
+  // Separate method so we can call notify after createUploaded
+  async createUploadedAndNotify(dto: CreateUploadedInvoiceDto, fileId: string, orgId: string): Promise<Invoice> {
+    const invoice = await this.createUploaded(dto, fileId, orgId);
+    if (invoice.projectId) {
+      this.notifications.notifyInvoiceSent(invoice.id);
+    }
+    return invoice;
   }
 
   async findAll(orgId: string, query: InvoiceListQueryDto) {
@@ -158,12 +169,17 @@ export class InvoicesService {
     return invoice;
   }
 
-  async findMine(userId: string, orgId: string, page = 1, limit = 20) {
+  async findMine(userId: string, orgId: string, page = 1, limit = 20, projectId?: string) {
+    const clientProjectsWhere: { userId: string; project: { organizationId: string; id?: string } } = {
+      userId,
+      project: { organizationId: orgId },
+    };
+    if (projectId) {
+      clientProjectsWhere.project.id = projectId;
+    }
+
     const clientProjects = await this.prisma.projectClient.findMany({
-      where: {
-        userId,
-        project: { organizationId: orgId },
-      },
+      where: clientProjectsWhere,
       select: { projectId: true },
     });
     const projectIds = clientProjects.map((pc) => pc.projectId);

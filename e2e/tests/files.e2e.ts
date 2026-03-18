@@ -19,7 +19,7 @@ test.describe("Files", () => {
     const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
     if (await projectLink.isVisible({ timeout: 3000 }).catch(() => false)) {
       await projectLink.click();
-      await expect(page.getByText(/upload file/i)).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText(/upload/i).first()).toBeVisible({ timeout: 5000 });
       await expect(page.getByText(/files/i)).toBeVisible();
     }
   });

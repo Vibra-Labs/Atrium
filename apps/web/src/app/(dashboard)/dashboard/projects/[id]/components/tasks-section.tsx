@@ -188,7 +188,7 @@ export function TasksSection({
           </div>
 
           {taskType === "checkbox" ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
                 type="text"
                 value={newTitle}
@@ -197,7 +197,7 @@ export function TasksSection({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleAdd();
                 }}
-                className="flex-1 px-3 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                className="flex-1 min-w-0 px-3 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
               />
               <input
                 type="date"
@@ -279,14 +279,14 @@ export function TasksSection({
                 key={task.id}
                 className={`p-3 border border-[var(--border)] rounded-lg space-y-2 ${isClosed ? "opacity-75" : ""}`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Vote size={16} className="text-[var(--primary)]" />
-                    <span className={`text-sm font-medium ${isClosed ? "line-through text-[var(--muted-foreground)]" : ""}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Vote size={16} className="text-[var(--primary)] shrink-0" />
+                    <span className={`text-sm font-medium break-words ${isClosed ? "line-through text-[var(--muted-foreground)]" : ""}`}>
                       {task.question || task.title}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     {isClosed ? (
                       <span className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
                         <Lock size={12} />
@@ -355,7 +355,7 @@ export function TasksSection({
             </button>
 
             {editingId === task.id ? (
-              <div className="flex-1 flex items-center gap-2">
+              <div className="flex-1 flex flex-wrap items-center gap-2 min-w-0">
                 <input
                   type="text"
                   value={editingTitle}
@@ -365,7 +365,7 @@ export function TasksSection({
                     if (e.key === "Escape") setEditingId(null);
                   }}
                   autoFocus
-                  className="flex-1 px-2 py-1 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
+                  className="flex-1 min-w-0 px-2 py-1 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
                 />
                 <input
                   type="date"

@@ -17,6 +17,8 @@ import {
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import { CreateDocumentDto } from "./documents.dto";
+import { NotificationsService } from "../notifications/notifications.service";
+import { ActivityService } from "../activity/activity.service";
 
 /** Max PDF size allowed for signing (50MB) to prevent OOM. */
 const MAX_SIGNABLE_PDF_BYTES = 50 * 1024 * 1024;
@@ -25,6 +27,7 @@ const ALLOWED_SIGNATURE_MIMES = new Set(["image/png", "image/jpeg"]);
 const ALLOWED_ACTIONS: Record<string, string[]> = {
   quote: ["accepted", "declined"],
   contract: ["accepted", "declined"],
+  proposal: ["accepted", "declined"],
   nda: ["acknowledged"],
   other: ["acknowledged"],
 };
@@ -45,6 +48,8 @@ export class DocumentsService {
     private prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private storage: StorageProvider,
     @InjectPinoLogger(DocumentsService.name) private readonly logger: PinoLogger,
+    private notifications: NotificationsService,
+    private activityService: ActivityService,
   ) {}
 
   async create(
@@ -58,7 +63,7 @@ export class DocumentsService {
     });
     if (!project) throw new NotFoundException("Project not found");
 
-    return this.prisma.document.create({
+    const document = await this.prisma.document.create({
       data: {
         type: dto.type,
         title: dto.title,
@@ -70,6 +75,10 @@ export class DocumentsService {
       },
       include: DOCUMENT_FULL_INCLUDE,
     });
+
+    this.notifications.notifyDocumentUploaded(document.id);
+
+    return document;
   }
 
   async findByProject(
@@ -151,6 +160,7 @@ export class DocumentsService {
     action: string,
     ipAddress?: string,
     userAgent?: string,
+    reason?: string,
   ) {
     const doc = await this.prisma.document.findFirst({
       where: { id, organizationId: orgId },
@@ -190,7 +200,7 @@ export class DocumentsService {
     if (existing) {
       response = await this.prisma.documentResponse.update({
         where: { id: existing.id },
-        data: { action, ipAddress, userAgent },
+        data: { action, reason: reason || null, ipAddress, userAgent },
       });
     } else {
       response = await this.prisma.documentResponse.create({
@@ -198,6 +208,7 @@ export class DocumentsService {
           documentId: id,
           userId,
           action,
+          reason: reason || null,
           ipAddress,
           userAgent,
         },
@@ -206,6 +217,20 @@ export class DocumentsService {
 
     // Update document status based on all responses
     await this.updateDocumentStatus(id);
+
+    this.notifications.notifyDocumentResponded(id, userId, action);
+
+    this.activityService
+      .create({
+        type: "document_response",
+        action,
+        actorId: userId,
+        targetId: id,
+        targetTitle: doc.title,
+        projectId: doc.projectId,
+        organizationId: orgId,
+      })
+      .catch((err) => this.logger.warn({ err }, "Failed to log document response activity"));
 
     return response;
   }

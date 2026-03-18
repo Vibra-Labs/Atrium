@@ -12,6 +12,9 @@ if (existsSync(changelogSrc) && !existsSync(changelogDest)) {
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@atrium/shared"],
+  images: {
+    unoptimized: true, // CVE-2026-27980: disable image optimization (not used in this app)
+  },
   webpack: (config) => {
     config.module.rules.push({
       test: /CHANGELOG\.md$/,

@@ -1,5 +1,5 @@
-import fs from "fs";
-import path from "path";
+// @ts-expect-error — raw string import via webpack asset/source
+import changelogRaw from "../../../../CHANGELOG.md";
 
 function parseChangelog(raw: string) {
   const sections: { version: string; date: string; content: string }[] = [];
@@ -17,22 +17,6 @@ function parseChangelog(raw: string) {
   }
   if (current) sections.push({ version: current.version, date: current.date, content: current.lines.join("\n") });
   return sections;
-}
-
-function readChangelog(): string {
-  const candidates = [
-    path.join(process.cwd(), "CHANGELOG.md"),
-    path.join(process.cwd(), "../../CHANGELOG.md"),
-    path.join(process.cwd(), "../../../CHANGELOG.md"),
-  ];
-  for (const p of candidates) {
-    try {
-      return fs.readFileSync(p, "utf-8");
-    } catch {
-      // try next
-    }
-  }
-  return "";
 }
 
 function renderLine(line: string, i: number) {
@@ -61,8 +45,7 @@ function renderLine(line: string, i: number) {
 }
 
 export function Changelog() {
-  const raw = readChangelog();
-  const sections = parseChangelog(raw);
+  const sections = parseChangelog(changelogRaw as string);
 
   return (
     <div className="max-w-2xl">

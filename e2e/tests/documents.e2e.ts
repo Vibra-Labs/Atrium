@@ -769,6 +769,247 @@ test.describe("Documents", () => {
       });
       expect(sendRes.status()).toBeGreaterThanOrEqual(400);
     });
+
+    // --- Version history tests ---
+
+    test("upload new version to a document", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Version Upload Test",
+        filename: "v1.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      expect(createRes.status()).toBe(201);
+      const doc = await createRes.json();
+      const originalVersion = doc.currentVersion ?? 1;
+
+      // Build multipart for the new version upload
+      const v2Boundary = "----VersionBoundary" + Date.now();
+      const v2Body = [
+        `--${v2Boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="v2.pdf"`,
+        "Content-Type: application/pdf",
+        "",
+        "fake pdf v2 content",
+        `--${v2Boundary}--`,
+      ].join("\r\n");
+
+      const versionRes = await request.post(`${API}/documents/${doc.id}/upload-version`, {
+        data: v2Body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${v2Boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      expect(versionRes.ok()).toBeTruthy();
+      const updated = await versionRes.json();
+      expect(updated.currentVersion).toBeGreaterThan(originalVersion);
+    });
+
+    test("cannot upload version to voided document", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "quote",
+        title: "Void Version Test",
+        filename: "void-v.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      await request.post(`${API}/documents/${doc.id}/void`, {
+        data: { reason: "Testing void block" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+
+      const v2Boundary = "----VoidVersionBoundary" + Date.now();
+      const v2Body = [
+        `--${v2Boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="v2.pdf"`,
+        "Content-Type: application/pdf",
+        "",
+        "fake pdf v2",
+        `--${v2Boundary}--`,
+      ].join("\r\n");
+
+      const versionRes = await request.post(`${API}/documents/${doc.id}/upload-version`, {
+        data: v2Body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${v2Boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      expect(versionRes.status()).toBeGreaterThanOrEqual(400);
+    });
+
+    test("version history shows previous versions after upload", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "nda",
+        title: "Version History Test",
+        filename: "history-v1.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Upload a second version so the history endpoint has something to return
+      const v2Boundary = "----HistoryVersionBoundary" + Date.now();
+      const v2Body = [
+        `--${v2Boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="history-v2.pdf"`,
+        "Content-Type: application/pdf",
+        "",
+        "fake pdf v2 content for history",
+        `--${v2Boundary}--`,
+      ].join("\r\n");
+
+      await request.post(`${API}/documents/${doc.id}/upload-version`, {
+        data: v2Body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${v2Boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+
+      const historyRes = await request.get(`${API}/documents/${doc.id}/versions`);
+      expect(historyRes.ok()).toBeTruthy();
+      const history = await historyRes.json();
+      expect(history.currentVersion).toBeDefined();
+      expect(history.versions).toBeInstanceOf(Array);
+      // After uploading v2, there should be at least one previous version entry
+      expect(history.versions.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("restore a version reverts to the previous file", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Restore Version Test",
+        filename: "restore-v1.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Upload v2 so there is a version entry for v1
+      const v2Boundary = "----RestoreVersionBoundary" + Date.now();
+      const v2Body = [
+        `--${v2Boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="restore-v2.pdf"`,
+        "Content-Type: application/pdf",
+        "",
+        "fake pdf v2 for restore",
+        `--${v2Boundary}--`,
+      ].join("\r\n");
+
+      await request.post(`${API}/documents/${doc.id}/upload-version`, {
+        data: v2Body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${v2Boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+
+      // Get the version list to find the v1 version entry id
+      const historyRes = await request.get(`${API}/documents/${doc.id}/versions`);
+      const history = await historyRes.json();
+      expect(history.versions.length).toBeGreaterThanOrEqual(1);
+      const v1Entry = history.versions[history.versions.length - 1];
+
+      // Restore v1
+      const restoreRes = await request.post(
+        `${API}/documents/${doc.id}/restore-version/${v1Entry.id}`,
+        { headers: { "x-csrf-token": csrfToken } },
+      );
+      expect(restoreRes.ok()).toBeTruthy();
+      const restored = await restoreRes.json();
+      // The restored document's fileId should have changed back (or currentVersion incremented)
+      expect(restored.currentVersion).toBeGreaterThan(history.currentVersion);
+    });
+
+    // --- Access token tests ---
+
+    test("list access tokens returns empty array for new document", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Token List Test",
+        filename: "token-list.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      const tokensRes = await request.get(`${API}/documents/${doc.id}/access-tokens`);
+      expect(tokensRes.ok()).toBeTruthy();
+      const tokens = await tokensRes.json();
+      expect(tokens).toBeInstanceOf(Array);
+      expect(tokens.length).toBe(0);
+    });
+
+    test("revoke access token returns 404 for nonexistent token", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "contract",
+        title: "Token Revoke Test",
+        filename: "token-revoke.pdf",
+      });
+
+      const createRes = await request.post(`${API}/documents`, {
+        data: body,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-csrf-token": csrfToken,
+        },
+      });
+      const doc = await createRes.json();
+
+      // Try to revoke a token id that does not exist
+      const revokeRes = await request.delete(
+        `${API}/documents/${doc.id}/access-tokens/nonexistent-token-id`,
+        { headers: { "x-csrf-token": csrfToken } },
+      );
+      expect(revokeRes.status()).toBe(404);
+    });
   });
 
   test.describe("Dashboard UI", () => {

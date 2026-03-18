@@ -103,6 +103,7 @@ const mockPrisma = {
     update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown> }) =>
       Promise.resolve({ id: args.where.id, ...args.data }),
     ),
+    deleteMany: mock(() => Promise.resolve({ count: 0 })),
   },
   documentAuditEvent: {
     findFirst: mock(() => Promise.resolve(null)),
@@ -110,12 +111,20 @@ const mockPrisma = {
   },
   documentAccessToken: {
     findUnique: mock(() => Promise.resolve(null)),
+    findFirst: mock(() => Promise.resolve(null)),
+    findMany: mock(() => Promise.resolve([])),
     create: mock((args: { data: Record<string, unknown> }) =>
       Promise.resolve({ id: "token-1", ...args.data }),
     ),
     update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown> }) =>
       Promise.resolve({ id: args.where.id, ...args.data }),
     ),
+  },
+  documentVersion: {
+    create: mock((args: { data: Record<string, unknown> }) =>
+      Promise.resolve({ id: "ver-1", ...args.data }),
+    ),
+    findFirst: mock(() => Promise.resolve(null)),
   },
   projectClient: {
     findFirst: mock(() => Promise.resolve(null)),
@@ -127,6 +136,7 @@ const mockPrisma = {
   },
   user: {
     findUnique: mock(() => Promise.resolve({ id: CLIENT_USER, name: "Test Client" })),
+    findMany: mock(() => Promise.resolve([])),
   },
   file: {
     create: mock((args: { data: Record<string, unknown> }) =>
@@ -1427,6 +1437,437 @@ describe("DocumentsService", () => {
           where: expect.objectContaining({ organizationId: "org-other" }),
         }),
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // uploadVersion()
+  // -------------------------------------------------------------------------
+
+  describe("uploadVersion()", () => {
+    const pdfFile = {
+      buffer: Buffer.from("%PDF-fake"),
+      originalname: "v2.pdf",
+      mimetype: "application/pdf",
+      size: 9,
+    };
+
+    /** Set up mocks for a successful uploadVersion call. Individual tests can
+     *  override specific mocks to trigger error paths. */
+    function setupUploadVersion(docOverrides: Record<string, unknown> = {}) {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(
+          makeDoc({ currentVersion: 1, uploadedById: USER, responses: [], signedFileId: null, signedFile: null, ...docOverrides }),
+        ),
+      );
+      mockPrisma.documentVersion.create.mockReturnValue(
+        Promise.resolve({ id: "ver-1", documentId: DOC_ID, version: 1, fileId: FILE_ID }),
+      );
+      mockPrisma.file.create.mockReturnValue(
+        Promise.resolve({ id: "new-file-1", storageKey: "org-1/proj-1/documents/doc-1-v2" }),
+      );
+      mockPrisma.document.update.mockReturnValue(
+        Promise.resolve(makeDoc({ currentVersion: 2, fileId: "new-file-1", signedFileId: null, signatureFields: [], responses: [], file: {} })),
+      );
+    }
+
+    it("throws NotFoundException if document not found", async () => {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));
+
+      try {
+        await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(NotFoundException);
+        expect((e as NotFoundException).message).toBe("Document not found");
+      }
+    });
+
+    it("throws BadRequestException for voided documents", async () => {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ status: "voided", currentVersion: 1, uploadedById: USER, responses: [] })),
+      );
+
+      try {
+        await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toContain("voided");
+      }
+    });
+
+    it("throws BadRequestException for expired documents", async () => {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ status: "expired", currentVersion: 1, uploadedById: USER, responses: [] })),
+      );
+
+      try {
+        await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toContain("expired");
+      }
+    });
+
+    it("throws BadRequestException for non-PDF file on signature-required documents", async () => {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ requiresSignature: true, currentVersion: 1, uploadedById: USER, responses: [] })),
+      );
+
+      const nonPdfFile = { buffer: Buffer.from("fake"), originalname: "doc.docx", mimetype: "application/msword", size: 4 };
+
+      try {
+        await service.uploadVersion(DOC_ID, ORG, USER, nonPdfFile);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toContain("PDF");
+      }
+    });
+
+    it("creates a version entry with the current version number", async () => {
+      setupUploadVersion();
+
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+
+      expect(mockPrisma.documentVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            documentId: DOC_ID,
+            fileId: FILE_ID,
+            version: 1,
+          }),
+        }),
+      );
+    });
+
+    it("increments currentVersion on the document update", async () => {
+      setupUploadVersion();
+
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ currentVersion: 2 }),
+        }),
+      );
+    });
+
+    it("clears signedFileId on the document update", async () => {
+      setupUploadVersion();
+
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ signedFileId: null }),
+        }),
+      );
+    });
+
+    it("deletes responses when document was already sent (status !== 'draft')", async () => {
+      setupUploadVersion({ status: "pending" });
+
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+
+      expect(mockPrisma.documentResponse.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { documentId: DOC_ID } }),
+      );
+    });
+
+    it("resets status to 'pending' when document was already sent", async () => {
+      setupUploadVersion({ status: "pending" });
+
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "pending" }),
+        }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // restoreVersion()
+  // -------------------------------------------------------------------------
+
+  describe("restoreVersion()", () => {
+    const VERSION_ID = "ver-1";
+    const RESTORED_FILE_ID = "restored-file-1";
+
+    function setupRestoreVersion(docOverrides: Record<string, unknown> = {}) {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(
+          makeDoc({ currentVersion: 2, uploadedById: USER, responses: [], signedFileId: null, signedFile: null, ...docOverrides }),
+        ),
+      );
+      mockPrisma.documentVersion.findFirst.mockReturnValue(
+        Promise.resolve({ id: VERSION_ID, documentId: DOC_ID, version: 1, fileId: RESTORED_FILE_ID }),
+      );
+      mockPrisma.documentVersion.create.mockReturnValue(
+        Promise.resolve({ id: "ver-2", documentId: DOC_ID, version: 2, fileId: FILE_ID }),
+      );
+      mockPrisma.document.update.mockReturnValue(
+        Promise.resolve(makeDoc({ currentVersion: 3, fileId: RESTORED_FILE_ID, signedFileId: null, signatureFields: [], responses: [], file: {} })),
+      );
+    }
+
+    it("throws NotFoundException if document not found", async () => {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));
+
+      try {
+        await service.restoreVersion(DOC_ID, VERSION_ID, ORG, USER);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(NotFoundException);
+        expect((e as NotFoundException).message).toBe("Document not found");
+      }
+    });
+
+    it("throws NotFoundException if version not found", async () => {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ currentVersion: 2, uploadedById: USER, responses: [] })),
+      );
+      mockPrisma.documentVersion.findFirst.mockReturnValue(Promise.resolve(null));
+
+      try {
+        await service.restoreVersion(DOC_ID, "nonexistent-version", ORG, USER);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(NotFoundException);
+        expect((e as NotFoundException).message).toBe("Version not found");
+      }
+    });
+
+    it("throws BadRequestException for voided documents", async () => {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ status: "voided", currentVersion: 2, uploadedById: USER, responses: [] })),
+      );
+
+      try {
+        await service.restoreVersion(DOC_ID, VERSION_ID, ORG, USER);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toContain("voided");
+      }
+    });
+
+    it("increments currentVersion on restore", async () => {
+      setupRestoreVersion();
+
+      await service.restoreVersion(DOC_ID, VERSION_ID, ORG, USER);
+
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ currentVersion: 3 }),
+        }),
+      );
+    });
+
+    it("sets fileId to the restored version's fileId", async () => {
+      setupRestoreVersion();
+
+      await service.restoreVersion(DOC_ID, VERSION_ID, ORG, USER);
+
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ fileId: RESTORED_FILE_ID }),
+        }),
+      );
+    });
+
+    it("clears responses when document was already sent", async () => {
+      setupRestoreVersion({ status: "pending" });
+
+      await service.restoreVersion(DOC_ID, VERSION_ID, ORG, USER);
+
+      expect(mockPrisma.documentResponse.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { documentId: DOC_ID } }),
+      );
+    });
+
+    it("resets status to 'pending' when document was already sent", async () => {
+      setupRestoreVersion({ status: "pending" });
+
+      await service.restoreVersion(DOC_ID, VERSION_ID, ORG, USER);
+
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "pending" }),
+        }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // revokeAccessToken()
+  // -------------------------------------------------------------------------
+
+  describe("revokeAccessToken()", () => {
+    const TOKEN_ID = "tok-revoke-1";
+
+    function makeTokenRecord(overrides: Record<string, unknown> = {}) {
+      return {
+        id: TOKEN_ID,
+        documentId: DOC_ID,
+        userId: CLIENT_USER,
+        token: "hashed-token",
+        expiresAt: new Date(Date.now() + 3600000),
+        usedAt: null,
+        revokedAt: null,
+        createdAt: new Date(),
+        ...overrides,
+      };
+    }
+
+    it("throws NotFoundException if token not found", async () => {
+      // assertDocumentAccess uses document.findFirst — return the doc so it passes
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve({ id: DOC_ID }));
+      mockPrisma.documentAccessToken.findFirst.mockReturnValue(Promise.resolve(null));
+
+      try {
+        await service.revokeAccessToken(DOC_ID, TOKEN_ID, ORG);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(NotFoundException);
+        expect((e as NotFoundException).message).toBe("Access token not found");
+      }
+    });
+
+    it("throws BadRequestException if token is already revoked", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve({ id: DOC_ID }));
+      mockPrisma.documentAccessToken.findFirst.mockReturnValue(
+        Promise.resolve(makeTokenRecord({ revokedAt: new Date(Date.now() - 1000) })),
+      );
+
+      try {
+        await service.revokeAccessToken(DOC_ID, TOKEN_ID, ORG);
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toBe("Token is already revoked");
+      }
+    });
+
+    it("sets revokedAt timestamp on successful revocation", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve({ id: DOC_ID }));
+      mockPrisma.documentAccessToken.findFirst.mockReturnValue(
+        Promise.resolve(makeTokenRecord()),
+      );
+      mockPrisma.documentAccessToken.update.mockReturnValue(
+        Promise.resolve(makeTokenRecord({ revokedAt: new Date() })),
+      );
+
+      await service.revokeAccessToken(DOC_ID, TOKEN_ID, ORG);
+
+      expect(mockPrisma.documentAccessToken.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: TOKEN_ID },
+          data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+        }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getAccessTokens()
+  // -------------------------------------------------------------------------
+
+  describe("getAccessTokens()", () => {
+    function makeTokenRecord(overrides: Record<string, unknown> = {}) {
+      return {
+        id: "tok-1",
+        documentId: DOC_ID,
+        userId: CLIENT_USER,
+        token: "hashed-token",
+        expiresAt: new Date(Date.now() + 3600000),
+        usedAt: null,
+        revokedAt: null,
+        createdAt: new Date(),
+        ...overrides,
+      };
+    }
+
+    it("returns enriched tokens with user info and isActive flag", async () => {
+      const token = makeTokenRecord();
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve({ id: DOC_ID }));
+      mockPrisma.documentAccessToken.findMany.mockReturnValue(Promise.resolve([token]));
+      mockPrisma.user.findMany.mockReturnValue(
+        Promise.resolve([{ id: CLIENT_USER, name: "Test Client", email: "client@test.com" }]),
+      );
+
+      const result = await service.getAccessTokens(DOC_ID, ORG);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.id).toBe("tok-1");
+      expect(result[0]!.user).toEqual({ id: CLIENT_USER, name: "Test Client", email: "client@test.com" });
+      expect(result[0]!.isActive).toBe(true);
+    });
+
+    it("marks expired tokens as not active", async () => {
+      const expiredToken = makeTokenRecord({ expiresAt: new Date(Date.now() - 1000) });
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve({ id: DOC_ID }));
+      mockPrisma.documentAccessToken.findMany.mockReturnValue(Promise.resolve([expiredToken]));
+      mockPrisma.user.findMany.mockReturnValue(
+        Promise.resolve([{ id: CLIENT_USER, name: "Test Client", email: "client@test.com" }]),
+      );
+
+      const result = await service.getAccessTokens(DOC_ID, ORG);
+
+      expect(result[0]!.isActive).toBe(false);
+    });
+
+    it("marks revoked tokens as not active", async () => {
+      const revokedToken = makeTokenRecord({ revokedAt: new Date(Date.now() - 500) });
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve({ id: DOC_ID }));
+      mockPrisma.documentAccessToken.findMany.mockReturnValue(Promise.resolve([revokedToken]));
+      mockPrisma.user.findMany.mockReturnValue(
+        Promise.resolve([{ id: CLIENT_USER, name: "Test Client", email: "client@test.com" }]),
+      );
+
+      const result = await service.getAccessTokens(DOC_ID, ORG);
+
+      expect(result[0]!.isActive).toBe(false);
     });
   });
 });

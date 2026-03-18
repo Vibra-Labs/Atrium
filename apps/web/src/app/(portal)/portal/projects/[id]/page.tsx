@@ -19,26 +19,24 @@ import {
   Vote,
   Lock,
   FileCheck,
-  Check,
-  X,
+  PenTool,
+  Award,
+  Ban,
+  Clock,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
 import { downloadFile } from "@/lib/download";
+import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
 import { useToast } from "@/components/toast";
 
-// -- From agent-a6c3c855: unified file record with document fields --
 interface FileRecord {
   id: string;
   filename: string;
   mimeType: string;
   sizeBytes: number;
   createdAt: string;
-  documentType?: string | null;
-  documentTitle?: string | null;
-  documentStatus?: string | null;
-  respondedAt?: string | null;
 }
 
 interface Project {
@@ -51,7 +49,6 @@ interface Project {
   files: FileRecord[];
 }
 
-// -- From agent-a2624ff7: timeline entry for activity feed --
 interface TimelineEntry {
   id: string;
   kind: "update" | "activity";
@@ -74,30 +71,6 @@ interface TimelineEntry {
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
-// -- From agent-a6c3c855: unified status/type badge styles --
-const DOC_STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  pending: { bg: "bg-amber-50", text: "text-amber-700", label: "Pending" },
-  viewed: { bg: "bg-blue-50", text: "text-blue-700", label: "Viewed" },
-  accepted: { bg: "bg-green-50", text: "text-green-700", label: "Accepted" },
-  rejected: { bg: "bg-red-50", text: "text-red-700", label: "Rejected" },
-};
-
-const DOC_TYPE_LABELS: Record<string, string> = {
-  quote: "Quote",
-  contract: "Contract",
-  nda: "NDA",
-  proposal: "Proposal",
-  other: "Document",
-};
-
-const DOC_TYPE_STYLES: Record<string, { bg: string; text: string }> = {
-  quote: { bg: "bg-purple-50", text: "text-purple-700" },
-  contract: { bg: "bg-blue-50", text: "text-blue-700" },
-  nda: { bg: "bg-orange-50", text: "text-orange-700" },
-  proposal: { bg: "bg-teal-50", text: "text-teal-700" },
-  other: { bg: "bg-gray-50", text: "text-gray-700" },
-};
 
 function formatDateDisplay(dateStr: string): string {
   const d = new Date(dateStr);
@@ -136,15 +109,22 @@ interface TaskRecord {
   _count?: { votes: number };
 }
 
-// -- Documents are still loaded separately for the document viewer / signing features --
 interface DocumentRecord {
   id: string;
   type: string;
   title: string;
   status: string;
+  requiresSignature: boolean;
+  requiresApproval: boolean;
+  signedFileId?: string;
+  signedFile?: { id: string; filename: string; sizeBytes: number };
+  signatureFields?: { id: string }[];
   file: { id: string; filename: string; mimeType: string; sizeBytes: number };
-  responses: { id: string; action: string; createdAt: string }[];
+  responses: { id: string; action: string; createdAt: string; fieldId?: string; reason?: string }[];
   createdAt: string;
+  expiresAt?: string;
+  voidReason?: string;
+  options?: string;
 }
 
 interface PaginatedResponse<T> {
@@ -155,6 +135,7 @@ interface PaginatedResponse<T> {
 const docTypeLabels: Record<string, string> = {
   quote: "Quote",
   contract: "Contract",
+  proposal: "Proposal",
   nda: "NDA",
   other: "Other",
 };
@@ -163,8 +144,8 @@ const docActions: Record<string, string[]> = {
   quote: ["accepted", "declined"],
   contract: ["accepted", "declined"],
   proposal: ["accepted", "declined"],
-  nda: ["acknowledged"],
-  other: ["acknowledged"],
+  nda: ["accepted", "declined"],
+  other: ["accepted", "declined"],
 };
 
 const tabs = [
@@ -176,7 +157,6 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
-// -- From agent-a3c3fd72: confirmation dialog state --
 interface PendingDocAction {
   docId: string;
   docTitle: string;
@@ -202,17 +182,12 @@ export default function PortalProjectDetailPage() {
   const [activeTab, setActiveTab] = useState<TabId>("updates");
   const [uploading, setUploading] = useState(false);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
-  // -- From agent-acabd59e: inline document viewer --
+  const [signingDocId, setSigningDocId] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<DocumentRecord | null>(null);
-  // -- From agent-a3c3fd72: confirmation dialog --
   const [pendingDocAction, setPendingDocAction] = useState<PendingDocAction | null>(null);
   const [declineReason, setDeclineReason] = useState("");
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
-  // -- From agent-a6c3c855: responding state for unified files --
-  const [respondingTo, setRespondingTo] = useState<string | null>(null);
-  // State for viewing a file-based document in the viewer
-  const [viewingFile, setViewingFile] = useState<FileRecord | null>(null);
-  const [viewingFileDecline, setViewingFileDecline] = useState(false);
+  const [selectedDocOptions, setSelectedDocOptions] = useState<Record<string, string>>({});
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -220,7 +195,6 @@ export default function PortalProjectDetailPage() {
       .catch((err) => setError(err.message || "Failed to load project"));
   }, [id]);
 
-  // -- From agent-a2624ff7: timeline API endpoint --
   const loadUpdates = useCallback(() => {
     apiFetch<PaginatedResponse<TimelineEntry>>(
       `/updates/timeline/mine/${id}?page=${updatesPage}&limit=10`,
@@ -248,6 +222,11 @@ export default function PortalProjectDetailPage() {
       .then((res) => {
         setDocuments(res.data);
         setDocsTotalPages(res.meta.totalPages);
+        // Track view for first pending document only (avoids N requests)
+        const firstPending = res.data.find((d) => d.status === "pending");
+        if (firstPending) {
+          apiFetch(`/documents/${firstPending.id}/track-view`, { method: "POST" }).catch(() => {});
+        }
       })
       .catch(console.error);
   }, [id, docsPage]);
@@ -271,7 +250,6 @@ export default function PortalProjectDetailPage() {
     }
   };
 
-  // -- From agent-a3c3fd72: confirmation dialog for document accept/decline --
   const openDocumentConfirm = (doc: DocumentRecord, action: string) => {
     setPendingDocAction({
       docId: doc.id,
@@ -296,9 +274,7 @@ export default function PortalProjectDetailPage() {
       });
       const actionLabel = pendingDocAction.action === "accepted"
         ? "accepted"
-        : pendingDocAction.action === "declined"
-          ? "declined"
-          : "acknowledged";
+        : "declined";
       toast.success(`Document "${pendingDocAction.docTitle}" ${actionLabel} successfully.`);
       setPendingDocAction(null);
       setDeclineReason("");
@@ -312,27 +288,11 @@ export default function PortalProjectDetailPage() {
     }
   };
 
-  // -- From agent-a6c3c855: respond to files with document fields --
-  const handleFileDocumentRespond = async (fileId: string, action: "accepted" | "rejected", reason?: string) => {
-    setRespondingTo(fileId);
-    try {
-      await apiFetch(`/files/${fileId}/respond`, {
-        method: "PATCH",
-        body: JSON.stringify({ action, reason }),
-      });
-      loadProject();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setRespondingTo(null);
-    }
-  };
-
-  const handleDocumentRespond = async (docId: string, action: string) => {
+  const handleDocumentRespond = async (docId: string, action: string, reason?: string) => {
     try {
       await apiFetch(`/documents/${docId}/respond`, {
         method: "POST",
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...(reason ? { reason } : {}) }),
       });
       loadDocuments();
     } catch (err) {
@@ -469,28 +429,24 @@ export default function PortalProjectDetailPage() {
       <div className="flex-1 min-w-0">
         {/* Pending actions banner */}
         {(() => {
-          const pendingFiles = (project?.files || []).filter(
-            (f: FileRecord) => f.documentType && (f.documentStatus === "pending" || f.documentStatus === "viewed")
+          const pendingDocs = documents.filter(
+            (d) => d.status === "pending" && d.responses.length === 0
           );
-          const pendingTasks: unknown[] = [];
-          const totalPending = pendingFiles.length + pendingTasks.length;
-          if (totalPending === 0) return null;
+          if (pendingDocs.length === 0) return null;
           return (
             <button
               onClick={() => setActiveTab("files")}
               className="w-full mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"
             >
               <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-bold shrink-0">
-                {totalPending}
+                {pendingDocs.length}
               </span>
               <div>
                 <p className="text-sm font-medium text-amber-900">
-                  {totalPending === 1 ? "1 item needs" : `${totalPending} items need`} your attention
+                  {pendingDocs.length === 1 ? "1 document needs" : `${pendingDocs.length} documents need`} your attention
                 </p>
                 <p className="text-xs text-amber-700">
-                  {pendingFiles.length > 0 && `${pendingFiles.length} document${pendingFiles.length > 1 ? "s" : ""} to review`}
-                  {pendingFiles.length > 0 && pendingTasks.length > 0 && " · "}
-                  {pendingTasks.length > 0 && `${pendingTasks.length} decision${pendingTasks.length > 1 ? "s" : ""} to vote on`}
+                  {pendingDocs.length} document{pendingDocs.length > 1 ? "s" : ""} to review
                 </p>
               </div>
             </button>
@@ -500,7 +456,7 @@ export default function PortalProjectDetailPage() {
         <div className="flex border-b border-[var(--border)] mb-6">
           {tabs.map((tab) => {
             const pendingCount = tab.id === "files"
-              ? (project?.files || []).filter((f: FileRecord) => f.documentType && (f.documentStatus === "pending" || f.documentStatus === "viewed")).length
+              ? documents.filter((d) => d.status === "pending" && d.responses.length === 0).length
               : 0;
             return (
               <button
@@ -523,12 +479,11 @@ export default function PortalProjectDetailPage() {
           })}
         </div>
 
-        {/* Updates Tab -- From agent-a2624ff7: activity feed in timeline */}
+        {/* Updates Tab */}
         {activeTab === "updates" && (
           <div>
             <div className="space-y-3">
               {updates.map((entry) => {
-                // -- Activity entry rendering from agent-a2624ff7 --
                 if (entry.kind === "activity") {
                   const actorName = entry.actor?.name || "Someone";
                   const actionLabels: Record<string, string> = {
@@ -783,15 +738,11 @@ export default function PortalProjectDetailPage() {
           </div>
         )}
 
-        {/* Files Tab -- From agent-a6c3c855: unified files + documents section */}
+        {/* Files Tab */}
         {activeTab === "files" && (() => {
-          // Sort: documents needing action first, then by date descending
-          const sortedFiles = [...project.files].sort((a, b) => {
-            const aAction = a.documentType && (a.documentStatus === "pending" || a.documentStatus === "viewed") ? 1 : 0;
-            const bAction = b.documentType && (b.documentStatus === "pending" || b.documentStatus === "viewed") ? 1 : 0;
-            if (aAction !== bAction) return bAction - aAction;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          });
+          const sortedFiles = [...project.files].sort((a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
 
           return (
             <div>
@@ -808,93 +759,30 @@ export default function PortalProjectDetailPage() {
                 </label>
               </div>
               <div className="space-y-2">
-                {sortedFiles.map((file) => {
-                  const isDoc = !!file.documentType;
-                  const needsAction = isDoc && (file.documentStatus === "pending" || file.documentStatus === "viewed");
-                  const statusStyle = file.documentStatus ? DOC_STATUS_STYLES[file.documentStatus] || DOC_STATUS_STYLES.pending : null;
-                  const typeStyle = file.documentType ? DOC_TYPE_STYLES[file.documentType] || DOC_TYPE_STYLES.other : null;
-
-                  return (
-                    <div
-                      key={file.id}
-                      className={`p-3 border rounded-lg ${
-                        needsAction
-                          ? "border-amber-200 bg-amber-50/30"
-                          : "border-[var(--border)]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 min-w-0">
-                          {isDoc && (
-                            <FileText size={18} className="text-[var(--primary)] shrink-0" />
-                          )}
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {isDoc ? (
-                                <button
-                                  onClick={() => setViewingFile(file)}
-                                  className="text-sm font-medium truncate text-[var(--primary)] hover:underline text-left"
-                                >
-                                  {file.documentTitle || file.filename}
-                                </button>
-                              ) : (
-                                <p className="text-sm font-medium truncate">
-                                  {file.filename}
-                                </p>
-                              )}
-                              {isDoc && typeStyle && (
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${typeStyle.bg} ${typeStyle.text}`}>
-                                  {DOC_TYPE_LABELS[file.documentType!] || file.documentType}
-                                </span>
-                              )}
-                              {isDoc && statusStyle && (
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${statusStyle.bg} ${statusStyle.text}`}>
-                                  {statusStyle.label}
-                                </span>
-                              )}
-                              {needsAction && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600">
-                                  Action Required
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-[var(--muted-foreground)]">
-                              {isDoc && file.documentTitle ? file.filename + " \u00B7 " : ""}
-                              {formatBytes(file.sizeBytes)}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleDownload(file.id, file.filename)}
-                          className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline shrink-0"
-                        >
-                          <Download size={14} />
-                          Download
-                        </button>
+                {sortedFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="p-3 border border-[var(--border)] rounded-lg"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {file.filename}
+                        </p>
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          {formatBytes(file.sizeBytes)}
+                        </p>
                       </div>
-                      {/* Document action buttons */}
-                      {needsAction && (
-                        <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]">
-                          <button
-                            onClick={() => handleFileDocumentRespond(file.id, "accepted")}
-                            disabled={respondingTo === file.id}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
-                          >
-                            <Check size={14} />
-                            Accept
-                          </button>
-                          <button
-                            onClick={() => { setViewingFile(file); setViewingFileDecline(true); }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-sm hover:bg-red-50"
-                          >
-                            <X size={14} />
-                            Decline
-                          </button>
-                        </div>
-                      )}
+                      <button
+                        onClick={() => handleDownload(file.id, file.filename)}
+                        className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline shrink-0"
+                      >
+                        <Download size={14} />
+                        Download
+                      </button>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
                 {project.files.length === 0 && documents.length === 0 && (
                   <div className="text-center py-8">
                     <FileX size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
@@ -905,7 +793,7 @@ export default function PortalProjectDetailPage() {
                 )}
               </div>
 
-              {/* Documents section -- separate document records with signing, viewer, and confirmation features */}
+              {/* Documents section */}
               {documents.length > 0 && (
                 <div className="mt-6">
                   <div className="border-t border-[var(--border)] pt-4 mb-3">
@@ -916,95 +804,213 @@ export default function PortalProjectDetailPage() {
                   </div>
                   <div className="space-y-2">
                     {documents.map((doc) => {
-                      const hasResponded = doc.responses.length > 0;
-                      const lastResponse = hasResponded ? doc.responses[0] : null;
-                      const actions = docActions[doc.type] || ["acknowledged"];
+                      const isVoided = doc.status === "voided";
+                      const isExpired = doc.status === "expired";
+                      const isReadOnly = isVoided || isExpired;
+
+                      // Approval responses (non-signing)
+                      const approvalResponses = doc.responses.filter((r) => r.action !== "signed");
+                      const hasResponded = approvalResponses.length > 0;
+                      const lastResponse = hasResponded ? approvalResponses[0] : null;
+
+                      // Check if this document requires signing and has unsigned fields
+                      const needsSigning = doc.requiresSignature &&
+                        doc.signatureFields &&
+                        doc.signatureFields.length > 0;
+                      const signedFieldIds = doc.responses
+                        .filter((r) => r.action === "signed" && r.fieldId)
+                        .map((r) => r.fieldId);
+                      const allFieldsSigned = needsSigning &&
+                        doc.signatureFields!.every((f) => signedFieldIds.includes(f.id));
+                      const hasUnsignedFields = needsSigning && !allFieldsSigned && !isReadOnly;
+
+                      // Options — format: "question|choice1,choice2" or "choice1,choice2"
+                      const hasQuestionSep = doc.options?.includes("|");
+                      const optionsQuestion = hasQuestionSep ? doc.options!.split("|")[0] : null;
+                      const optionsRaw = hasQuestionSep ? doc.options!.split("|")[1] : doc.options;
+                      const docOptionsList = optionsRaw ? optionsRaw.split(",").map((o) => o.trim()).filter(Boolean) : [];
+                      const hasOptions = docOptionsList.length > 0;
+                      const selectedOption = selectedDocOptions[doc.id] || lastResponse?.reason || "";
 
                       return (
                         <div
                           key={doc.id}
-                          className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]/50 transition-colors"
+                          className={`p-3 border border-[var(--border)] rounded-lg transition-colors ${
+                            isReadOnly ? "opacity-60" : ""
+                          }`}
                         >
-                          {/* From agent-acabd59e: clickable doc title to open viewer */}
-                          <button
-                            onClick={() => setViewingDoc(doc)}
-                            className="flex items-center gap-3 min-w-0 text-left cursor-pointer flex-1"
-                            data-testid={`view-document-${doc.id}`}
-                          >
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate text-[var(--primary)] hover:underline">{doc.title}</p>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                                  {docTypeLabels[doc.type] || doc.type}
-                                </span>
-                                <span className="text-xs text-[var(--muted-foreground)]">
-                                  {formatBytes(doc.file.sizeBytes)}
-                                </span>
-                              </div>
-                            </div>
-                          </button>
-                          <div className="flex items-center gap-2 shrink-0">
+                          {/* Header row */}
+                          <div className="flex items-center justify-between">
                             <button
-                              onClick={() => handleDownload(doc.file.id, doc.file.filename)}
-                              className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                              onClick={() => setViewingDoc(doc)}
+                              className="flex items-center gap-3 min-w-0 text-left cursor-pointer flex-1"
+                              data-testid={`view-document-${doc.id}`}
                             >
-                              <Download size={14} />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate text-[var(--primary)] hover:underline">{doc.title}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                                    {docTypeLabels[doc.type] || doc.type}
+                                  </span>
+                                  <span className="text-xs text-[var(--muted-foreground)]">
+                                    {formatBytes(doc.file.sizeBytes)}
+                                  </span>
+                                  {doc.expiresAt && !isExpired && (
+                                    <span className="text-xs text-amber-600 flex items-center gap-1">
+                                      <Clock size={10} />
+                                      Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </button>
-                            {hasResponded && lastResponse ? (
-                              <span
-                                className="text-xs px-2 py-1 rounded-full font-medium"
-                                style={{
-                                  backgroundColor:
-                                    lastResponse.action === "declined"
-                                      ? "#fee2e2"
-                                      : "#dcfce7",
-                                  color:
-                                    lastResponse.action === "declined"
-                                      ? "#b91c1c"
-                                      : "#15803d",
-                                }}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => handleDownload(doc.file.id, doc.file.filename)}
+                                className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
                               >
-                                {lastResponse.action.charAt(0).toUpperCase() +
-                                  lastResponse.action.slice(1)}
-                              </span>
-                            ) : (
-                              <>
-                                {/* From agent-a3c3fd72: use confirmation dialog instead of direct respond */}
-                                {actions.includes("accepted") && (
-                                  <>
-                                    <button
-                                      onClick={() =>
-                                        openDocumentConfirm(doc, "accepted")
-                                      }
-                                      className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                                      style={{ backgroundColor: "#15803d" }}
-                                    >
-                                      Accept
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        openDocumentConfirm(doc, "declined")
-                                      }
-                                      className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90"
-                                      style={{ backgroundColor: "#b91c1c" }}
-                                    >
-                                      Decline
-                                    </button>
-                                  </>
-                                )}
-                                {!actions.includes("accepted") && (
-                                  <button
-                                    onClick={() =>
-                                      openDocumentConfirm(doc, "acknowledged")
+                                <Download size={14} />
+                              </button>
+                              {doc.status === "signed" && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const response = await fetch(
+                                        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/documents/${doc.id}/certificate`,
+                                        { credentials: "include" },
+                                      );
+                                      if (!response.ok) throw new Error("Failed");
+                                      const blob = await response.blob();
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download = `certificate-${doc.id.slice(0, 8)}.pdf`;
+                                      a.click();
+                                      URL.revokeObjectURL(url);
+                                    } catch {
+                                      console.error("Failed to download certificate");
                                     }
-                                    className="px-3 py-1 text-xs font-medium rounded-lg bg-[var(--primary)] text-white transition-opacity hover:opacity-90"
-                                  >
-                                    Acknowledge
-                                  </button>
-                                )}
-                              </>
-                            )}
+                                  }}
+                                  className="flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                                >
+                                  <Award size={12} />
+                                  Certificate
+                                </button>
+                              )}
+                              {isVoided && (
+                                <span className="text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1" style={{ backgroundColor: "#fce7f3", color: "#9d174d" }}>
+                                  <Ban size={10} /> Voided
+                                </span>
+                              )}
+                              {isExpired && (
+                                <span className="text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1" style={{ backgroundColor: "#f3f4f6", color: "#9ca3af" }}>
+                                  <Clock size={10} /> Expired
+                                </span>
+                              )}
+                              {!isReadOnly && !hasOptions && (
+                                <>
+                                  {doc.requiresApproval && hasResponded && lastResponse ? (
+                                    <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ backgroundColor: lastResponse.action === "declined" ? "#fee2e2" : "#dcfce7", color: lastResponse.action === "declined" ? "#b91c1c" : "#15803d" }}>
+                                      {lastResponse.action.charAt(0).toUpperCase() + lastResponse.action.slice(1)}
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {doc.requiresApproval && !hasResponded && (
+                                        <>
+                                          <button onClick={() => openDocumentConfirm(doc, "accepted")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#15803d" }}>Accept</button>
+                                          <button onClick={() => openDocumentConfirm(doc, "declined")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#b91c1c" }}>Decline</button>
+                                        </>
+                                      )}
+                                      {hasUnsignedFields && (
+                                        <button onClick={() => setSigningDocId(doc.id)} className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#d97706" }}>
+                                          <PenTool size={12} /> Review & Sign
+                                        </button>
+                                      )}
+                                      {allFieldsSigned && (
+                                        <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ backgroundColor: "#ccfbf1", color: "#0f766e" }}>Signed</span>
+                                      )}
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Radio options — shown when document has options */}
+                          {hasOptions && !isReadOnly && (
+                            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+                              {optionsQuestion && (
+                                <p className="text-sm font-medium mb-2">{optionsQuestion}</p>
+                              )}
+                              {hasResponded && lastResponse?.reason ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-[var(--muted-foreground)]">Selected:</span>
+                                  <span className="text-sm font-medium px-3 py-1 bg-[var(--primary)]/10 rounded-full" style={{ color: "var(--primary)" }}>
+                                    {lastResponse.reason}
+                                  </span>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="space-y-1.5">
+                                    {docOptionsList.map((option) => (
+                                      <label
+                                        key={option}
+                                        className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                                          selectedOption === option
+                                            ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_5%,transparent)]"
+                                            : "border-[var(--border)] hover:bg-[var(--muted)]"
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name={`doc-option-${doc.id}`}
+                                          value={option}
+                                          checked={selectedOption === option}
+                                          onChange={() => setSelectedDocOptions((prev) => ({ ...prev, [doc.id]: option }))}
+                                          className="accent-[var(--primary)]"
+                                        />
+                                        <span className="text-sm">{option}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-3">
+                                    <button
+                                      onClick={async () => {
+                                        const selected = selectedDocOptions[doc.id];
+                                        if (!selected) return;
+                                        try {
+                                          await apiFetch(`/documents/${doc.id}/respond`, {
+                                            method: "POST",
+                                            body: JSON.stringify({ action: "accepted", reason: selected }),
+                                          });
+                                          toast.success(`Selection "${selected}" submitted.`);
+                                          setSelectedDocOptions((prev) => { const next = { ...prev }; delete next[doc.id]; return next; });
+                                          loadDocuments();
+                                        } catch (err) {
+                                          toast.error("Failed to submit selection.");
+                                        }
+                                      }}
+                                      disabled={!selectedDocOptions[doc.id]}
+                                      className="px-4 py-1.5 text-sm rounded-lg bg-[var(--primary)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                                    >
+                                      Submit Selection
+                                    </button>
+                                    {doc.requiresApproval && (
+                                      <>
+                                        <button onClick={() => openDocumentConfirm(doc, "accepted")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#15803d" }}>Accept</button>
+                                        <button onClick={() => openDocumentConfirm(doc, "declined")} className="px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#b91c1c" }}>Decline</button>
+                                      </>
+                                    )}
+                                    {hasUnsignedFields && (
+                                      <button onClick={() => setSigningDocId(doc.id)} className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-white transition-opacity hover:opacity-90" style={{ backgroundColor: "#d97706" }}>
+                                        <PenTool size={12} /> Review & Sign
+                                      </button>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1026,7 +1032,19 @@ export default function PortalProjectDetailPage() {
         )}
       </div>
 
-      {/* From agent-acabd59e: Document Viewer Modal */}
+      {/* Signing Viewer Modal */}
+      {signingDocId && (
+        <SigningViewer
+          documentId={signingDocId}
+          onClose={() => setSigningDocId(null)}
+          onSigned={() => {
+            setSigningDocId(null);
+            loadDocuments();
+          }}
+        />
+      )}
+
+      {/* Document Viewer Modal */}
       {viewingDoc && (
         <DocumentViewer
           documentId={viewingDoc.id}
@@ -1035,36 +1053,13 @@ export default function PortalProjectDetailPage() {
           mimeType={viewingDoc.file.mimeType}
           fileId={viewingDoc.file.id}
           filename={viewingDoc.file.filename}
-          hasResponded={viewingDoc.responses.length > 0}
-          lastResponseAction={viewingDoc.responses[0]?.action}
-          actions={docActions[viewingDoc.type] || ["acknowledged"]}
-          onRespond={async (action) => {
-            await handleDocumentRespond(viewingDoc.id, action);
+          hasResponded={viewingDoc.requiresApproval && viewingDoc.responses.filter((r) => r.action !== "signed").length > 0}
+          lastResponseAction={viewingDoc.responses.filter((r) => r.action !== "signed")[0]?.action}
+          actions={viewingDoc.requiresApproval ? (docActions[viewingDoc.type] || ["accepted", "declined"]) : []}
+          onRespond={async (action, reason) => {
+            await handleDocumentRespond(viewingDoc.id, action, reason);
           }}
           onClose={() => setViewingDoc(null)}
-        />
-      )}
-
-      {/* File-based Document Viewer Modal */}
-      {viewingFile && (
-        <DocumentViewer
-          documentId={viewingFile.id}
-          title={viewingFile.documentTitle || viewingFile.filename}
-          typeLabel={viewingFile.documentType ? (DOC_TYPE_LABELS[viewingFile.documentType] || viewingFile.documentType) : "File"}
-          mimeType={viewingFile.mimeType}
-          fileId={viewingFile.id}
-          filename={viewingFile.filename}
-          hasResponded={viewingFile.documentStatus !== "pending" && viewingFile.documentStatus !== "viewed"}
-          lastResponseAction={viewingFile.documentStatus === "accepted" ? "accepted" : viewingFile.documentStatus === "rejected" ? "declined" : undefined}
-          actions={viewingFile.documentType === "nda" ? ["acknowledged"] : ["accepted", "declined"]}
-          useFileEndpoint
-          initialDecline={viewingFileDecline}
-          onRespond={async (action, reason) => {
-            await handleFileDocumentRespond(viewingFile.id, action === "declined" ? "rejected" : action as "accepted" | "rejected", reason);
-            setViewingFile(null);
-            setViewingFileDecline(false);
-          }}
-          onClose={() => { setViewingFile(null); setViewingFileDecline(false); }}
         />
       )}
 
@@ -1083,19 +1078,13 @@ export default function PortalProjectDetailPage() {
             <h3 className="text-lg font-semibold">
               {pendingDocAction.action === "accepted"
                 ? "Accept Document"
-                : pendingDocAction.action === "declined"
-                  ? "Decline Document"
-                  : "Acknowledge Document"}
+                : "Decline Document"}
             </h3>
             <div className="text-sm text-[var(--muted-foreground)] space-y-2">
               <p>
                 Are you sure you want to{" "}
                 <span className="font-medium text-[var(--foreground)]">
-                  {pendingDocAction.action === "accepted"
-                    ? "accept"
-                    : pendingDocAction.action === "declined"
-                      ? "decline"
-                      : "acknowledge"}
+                  {pendingDocAction.action === "accepted" ? "accept" : "decline"}
                 </span>{" "}
                 this document?
               </p>
@@ -1144,9 +1133,7 @@ export default function PortalProjectDetailPage() {
                   ? "Submitting..."
                   : pendingDocAction.action === "accepted"
                     ? "Confirm Accept"
-                    : pendingDocAction.action === "declined"
-                      ? "Confirm Decline"
-                      : "Confirm Acknowledge"}
+                    : "Confirm Decline"}
               </button>
             </div>
           </div>

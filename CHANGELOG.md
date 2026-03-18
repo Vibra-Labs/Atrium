@@ -2,6 +2,89 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.3.1] — 2026-03-18
+
+### Breaking Changes
+
+- **Documents start as drafts** — Uploaded documents are no longer immediately visible to clients. Admins must click "Send to Client" (or use "Upload & Send") to make them visible. Existing pending documents are unaffected.
+- **New version resets responses** — When an admin uploads a new version of a sent/signed document, all client responses and signatures are cleared and the document returns to "pending" for re-review. This enables scope change tracking but means clients must re-sign.
+- **Unified upload flow** — The separate "Upload File" button is removed. All uploads go through the document modal (title, type, optional signature/approval). For quick file shares, use type "Other" and hit "Upload & Send".
+
+### Added
+
+#### Document Lifecycle
+- **Draft status** — Documents start as drafts, invisible to clients until explicitly sent
+- **Send workflow** — `Send to Client` transitions draft → pending and notifies clients via email
+- **Void documents** — Cancel sent documents with optional reason; clients see read-only "Voided" badge
+- **Audit trail** — Every document action (created, sent, viewed, signed, voided, expired) logged with timestamp, user, IP, and user agent. Viewable from the dashboard
+
+#### E-Signature Enhancements
+- **Field types** — Signature, date (auto-fill), initials, text input, and select (radio options) fields
+- **Signing order** — Sequential signing enforcement; locked fields show "Waiting..." until prior signers complete
+- **Signer assignment** — Assign specific fields to specific project clients
+- **Admin signing** — Admins/owners can sign documents directly from the dashboard
+- **Type-to-sign default** — Signature pad now defaults to type mode (draw still available)
+
+#### Expiration & Reminders
+- **Document expiration** — Set expiry (7/14/30/60/90 days) when sending; auto-expired by hourly cron
+- **Automatic reminders** — Email reminders to unresponsive clients at configurable intervals (1-7 days)
+
+#### Direct Signing Links
+- **Access tokens** — Generate secure signing links for clients (SHA-256 hashed, time-limited)
+- **Public signing page** — `/portal/sign/[token]` renders signing UI without portal login
+- **Token revocation** — Admins can revoke individual signing links
+- **Token cleanup** — Daily cron deletes expired tokens older than 30 days
+
+#### Completion Certificate
+- **PDF certificate** — Auto-generated completion certificate with document info, signer table, and full audit trail
+- **Download** from both dashboard and portal when document is fully signed
+
+#### Client Choices
+- **Question with options** — Attach a question with radio button choices to any document; client must select one
+
+#### UI Improvements
+- **Unified Files tab** — Documents and files merged into single "Files" tab with one Upload button
+- **Simplified upload modal** — Progressive disclosure: title + type + file upfront, signature checkbox for PDFs, advanced options collapsed
+- **Upload & Send** — Primary CTA sends immediately; Save Draft for preparation
+- **Auto-populate title** from filename on file selection
+- **Three-tier action bar** — Primary action (solid button), secondary actions (icon group), destructive actions (right-aligned, danger on hover)
+- **Continuous PDF scroll** — All pages render in a scrollable view with lazy loading via IntersectionObserver
+- **Voided/expired states** in portal — Read-only badges, no action buttons
+
+#### Document Versioning
+- **Version history** — Upload new file versions to any document (draft or sent). Previous versions preserved with uploader name and timestamp
+- **Restore versions** — Restore any previous version with one click; creates a new version entry for traceability
+- **Scope change tracking** — Uploading a new version on a sent document resets to "pending" so clients re-review the changes
+- **Version badge** — Documents with multiple versions show a "v2", "v3" etc. badge
+
+#### Direct Signing Links
+- **Generate signing links** — Create secure, time-limited signing URLs for specific clients from the dashboard
+- **Manage links** — View active links, copy URLs, and revoke links per document
+- **Token security** — SHA-256 hashed tokens, rate-limited public endpoints, auto-cleanup of expired tokens
+
+#### Email Templates
+- `DocumentReminderEmail` — Reminder for unresponsive clients with optional expiry date
+- `DocumentSigningTurnEmail` — "Your turn to sign" notification for sequential signing
+
+#### Testing
+- 82 unit tests for `DocumentsService` covering all business logic paths
+- 13 new E2E API tests (send, void, audit trail, field locking, token generation, expiry validation)
+
+### Fixed
+- Certificate page overflow — audit trail now properly spans multiple pages
+- Token endpoint response filtered — no internal IDs exposed to unauthenticated users
+- Signature fields locked on sent documents — prevents editing after clients have signed
+- `requiresSignature` enforced as PDF-only on the API
+- Send blocked for signature documents with zero fields placed
+- `expiresInDays` validated on send endpoint (1-365 range)
+- Signing audit events logged synchronously for compliance
+- Notification type safety — removed unsafe `as any` cast
+- `fetchSigningInfo` stale closure fixed in signing viewer
+
+### Upgrade Notes
+
+Schema changes require `bun run db:push`. **Data migration needed**: run `bun run packages/database/scripts/migrate-document-sent-at.ts` to backfill `sentAt` on existing pending documents. New tables: `document_audit_event`, `document_access_token`. New columns on `document` and `signature_field` models.
+
 ## [1.3.0] — 2026-03-17
 
 ### Added

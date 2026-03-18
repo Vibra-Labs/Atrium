@@ -26,10 +26,6 @@ interface DocumentViewerProps {
   actions: string[];
   onRespond: (action: string, reason?: string) => Promise<void>;
   onClose: () => void;
-  /** If true, fetch from /api/files/:fileId/download instead of /api/documents/:documentId/view */
-  useFileEndpoint?: boolean;
-  /** If true, open with the decline form visible immediately */
-  initialDecline?: boolean;
 }
 
 export function DocumentViewer({
@@ -44,24 +40,20 @@ export function DocumentViewer({
   actions,
   onRespond,
   onClose,
-  useFileEndpoint,
-  initialDecline,
 }: DocumentViewerProps) {
   const [responding, setResponding] = useState(false);
   const [currentResponse, setCurrentResponse] = useState(lastResponseAction);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [showDeclineForm, setShowDeclineForm] = useState(initialDecline ?? false);
+  const [showDeclineForm, setShowDeclineForm] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
 
   const isPdf = PDF_TYPES.has(mimeType);
   const isImage = IMAGE_TYPES.has(mimeType);
   const canPreview = isPdf || isImage;
 
-  const viewUrl = useFileEndpoint
-    ? `${API_URL}/api/files/${fileId}/download`
-    : `${API_URL}/api/documents/${documentId}/view`;
+  const viewUrl = `${API_URL}/api/documents/${documentId}/view`;
 
   useEffect(() => {
     if (!canPreview) {
@@ -187,7 +179,7 @@ export function DocumentViewer({
               </span>
             ) : (
               <>
-                {actions.includes("accepted") && (
+                {actions.length > 0 && (
                   <>
                     <button
                       onClick={() => handleRespond("accepted")}
@@ -206,15 +198,6 @@ export function DocumentViewer({
                       Decline
                     </button>
                   </>
-                )}
-                {!actions.includes("accepted") && (
-                  <button
-                    onClick={() => handleRespond("acknowledged")}
-                    disabled={responding}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--primary)] text-white transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer"
-                  >
-                    {responding ? "..." : "Acknowledge"}
-                  </button>
                 )}
               </>
             )}

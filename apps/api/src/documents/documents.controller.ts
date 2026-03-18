@@ -26,6 +26,7 @@ import {
   SetSignatureFieldsDto,
   SignDocumentDto,
   VoidDocumentDto,
+  UploadVersionDto,
 } from "./documents.dto";
 import { Throttle } from "@nestjs/throttler";
 import {
@@ -217,6 +218,44 @@ export class DocumentsController {
     return this.documentsService.setSignatureFields(id, orgId, dto.fields);
   }
 
+  @Post(":id/upload-version")
+  @Roles("owner", "admin")
+  @PlanLimit("storage")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
+  async uploadVersion(
+    @Param("id") id: string,
+    @UploadedFile() file: UploadedFileType,
+    @Body() dto: UploadVersionDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    if (!file) throw new BadRequestException("No file provided");
+    if (!DOCUMENT_ALLOWED_MIMES.has(file.mimetype)) {
+      throw new BadRequestException("Only PDF, Word, OpenDocument, and image files are allowed");
+    }
+    return this.documentsService.uploadVersion(id, orgId, userId, file, dto.note);
+  }
+
+  @Get(":id/versions")
+  @Roles("owner", "admin")
+  getVersions(
+    @Param("id") id: string,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.documentsService.getVersions(id, orgId);
+  }
+
+  @Post(":id/restore-version/:versionId")
+  @Roles("owner", "admin")
+  restoreVersion(
+    @Param("id") id: string,
+    @Param("versionId") versionId: string,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.documentsService.restoreVersion(id, versionId, orgId, userId);
+  }
+
   @Post(":id/sign")
   @UseInterceptors(FileInterceptor("signature", { limits: { fileSize: 5 * 1024 * 1024 } }))
   async signDocument(
@@ -349,6 +388,15 @@ export class DocumentsController {
     @CurrentOrg("id") orgId: string,
   ) {
     return this.documentsService.revokeAccessToken(id, tokenId, orgId);
+  }
+
+  @Get(":id/access-tokens")
+  @Roles("owner", "admin")
+  getAccessTokens(
+    @Param("id") id: string,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.documentsService.getAccessTokens(id, orgId);
   }
 
   @Post(":id/generate-access-token")

@@ -20,6 +20,11 @@ import {
   History,
   X,
   File as FileIcon,
+  FilePlus,
+  RotateCcw,
+  Link2,
+  Copy,
+  XCircle,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
@@ -61,6 +66,14 @@ interface DocumentFile {
   sizeBytes: number;
 }
 
+interface DocumentVersion {
+  id: string;
+  version: number;
+  file: { id: string; filename: string; sizeBytes: number };
+  uploadedBy?: { id: string; name: string };
+  createdAt: string;
+}
+
 interface DocumentRecord {
   id: string;
   type: string;
@@ -72,6 +85,8 @@ interface DocumentRecord {
   file: DocumentFile;
   signatureFields?: { id: string }[];
   responses: DocumentResponse[];
+  versions?: DocumentVersion[];
+  currentVersion?: number;
   createdAt: string;
   sentAt?: string;
   expiresAt?: string;
@@ -107,11 +122,13 @@ export function FilesSection({
   isArchived,
   files,
   onFileChange,
+  projectClients: projectClientsProp = [],
 }: {
   projectId: string;
   isArchived: boolean;
   files: FileRecord[];
   onFileChange: () => void;
+  projectClients?: { userId: string; user: { id: string; name: string; email: string } }[];
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -128,6 +145,19 @@ export function FilesSection({
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
   const [showAuditDocId, setShowAuditDocId] = useState<string | null>(null);
   const [signingDocId, setSigningDocId] = useState<string | null>(null);
+  const [signingLinksDocId, setSigningLinksDocId] = useState<string | null>(null);
+  const [signingLinks, setSigningLinks] = useState<{
+    id: string;
+    userId: string;
+    user: { id: string; name: string; email: string } | null;
+    expiresAt: string;
+    usedAt?: string;
+    revokedAt?: string;
+    createdAt: string;
+    isActive: boolean;
+  }[]>([]);
+  const [projectClients, setProjectClients] = useState<{ userId: string; user: { id: string; name: string; email: string } }[]>([]);
+  const [newLinkToken, setNewLinkToken] = useState<string | null>(null);
   const [placerDocId, setPlacerDocId] = useState<string | null>(null);
 
   // Doc upload form
@@ -334,6 +364,45 @@ export function FilesSection({
     } catch (err) { console.error(err); }
   };
 
+  const openSigningLinks = async (docId: string) => {
+    setSigningLinksDocId(docId);
+    setNewLinkToken(null);
+    setProjectClients(projectClientsProp);
+    try {
+      const tokens = await apiFetch<typeof signingLinks>(`/documents/${docId}/access-tokens`);
+      setSigningLinks(tokens);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const generateSigningLink = async (docId: string, userId: string) => {
+    try {
+      const res = await apiFetch<{ token: string; expiresAt: string }>(`/documents/${docId}/generate-access-token`, {
+        method: "POST",
+        body: JSON.stringify({ userId }),
+      });
+      setNewLinkToken(res.token);
+      // Refresh the list
+      const tokens = await apiFetch<typeof signingLinks>(`/documents/${docId}/access-tokens`);
+      setSigningLinks(tokens);
+      success("Signing link created");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to create signing link");
+    }
+  };
+
+  const revokeSigningLink = async (docId: string, tokenId: string) => {
+    try {
+      await apiFetch(`/documents/${docId}/access-tokens/${tokenId}`, { method: "DELETE" });
+      const tokens = await apiFetch<typeof signingLinks>(`/documents/${docId}/access-tokens`);
+      setSigningLinks(tokens);
+      success("Signing link revoked");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to revoke link");
+    }
+  };
+
   const sortedFiles = [...files].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
@@ -373,8 +442,15 @@ export function FilesSection({
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     <div>
-                      <p className="text-sm font-medium">{doc.title}</p>
-                      <p className="text-xs text-[var(--muted-foreground)] ml-5">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium">{doc.title}</p>
+                        {(doc.currentVersion ?? 1) > 1 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--muted)] text-[var(--muted-foreground)] font-medium">
+                            v{doc.currentVersion}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[var(--muted-foreground)]">
                         {doc.file.filename} &middot; {formatBytes(doc.file.sizeBytes)}
                         {doc.expiresAt && <span> &middot; Expires {new Date(doc.expiresAt).toLocaleDateString()}</span>}
                       </p>
@@ -447,6 +523,45 @@ export function FilesSection({
                         >
                           <History size={14} />
                         </button>
+                        {doc.requiresSignature && doc.status !== "draft" && (
+                          <button
+                            onClick={() => openSigningLinks(doc.id)}
+                            title="Signing links"
+                            className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                          >
+                            <Link2 size={14} />
+                          </button>
+                        )}
+                        {!isArchived && doc.status !== "voided" && doc.status !== "expired" && (
+                          <label
+                            title="Upload new version"
+                            className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                          >
+                            <FilePlus size={14} />
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept=".pdf,.doc,.docx,.odt,.jpg,.jpeg,.png,.webp"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0];
+                                if (!f) return;
+                                try {
+                                  const formData = new FormData();
+                                  formData.append("file", f);
+                                  await apiFetch(`/documents/${doc.id}/upload-version`, {
+                                    method: "POST",
+                                    body: formData,
+                                  });
+                                  loadDocuments();
+                                  success(`Version ${(doc.currentVersion ?? 1) + 1} uploaded`);
+                                } catch (err) {
+                                  showError(err instanceof Error ? err.message : "Failed to upload version");
+                                }
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        )}
                       </div>
 
                       {/* Destructive actions — right-aligned */}
@@ -508,6 +623,58 @@ export function FilesSection({
                         </div>
                       );
                     })()}
+                    {/* Version history */}
+                    {doc.versions && doc.versions.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium mb-2">Version History</p>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs p-2 bg-[var(--primary)]/5 border border-[var(--primary)]/20 rounded">
+                            <div>
+                              <span className="font-medium">v{doc.currentVersion}</span>
+                              <span className="text-[var(--muted-foreground)] ml-1.5">(current)</span>
+                            </div>
+                            <span className="text-[var(--muted-foreground)]">{formatBytes(doc.file.sizeBytes)}</span>
+                          </div>
+                          {doc.versions.map((v) => (
+                            <div key={v.id} className="flex items-center justify-between text-xs p-2 bg-[var(--muted)] rounded">
+                              <div>
+                                <span className="font-medium">v{v.version}</span>
+                                <span className="text-[var(--muted-foreground)] ml-1.5">
+                                  {v.uploadedBy?.name || "Unknown"} &middot; {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} {new Date(v.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[var(--muted-foreground)]">{formatBytes(v.file.sizeBytes)}</span>
+                                <button
+                                  onClick={() => handleDocDownload(v.file.id, v.file.filename)}
+                                  title="Download this version"
+                                  className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                                >
+                                  <Download size={12} />
+                                </button>
+                                {doc.status !== "voided" && doc.status !== "expired" && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await apiFetch(`/documents/${doc.id}/restore-version/${v.id}`, { method: "POST" });
+                                        loadDocuments();
+                                        success(`Restored to v${v.version}`);
+                                      } catch (err) {
+                                        showError(err instanceof Error ? err.message : "Failed to restore version");
+                                      }
+                                    }}
+                                    title="Restore this version"
+                                    className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                                  >
+                                    <RotateCcw size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -725,6 +892,111 @@ export function FilesSection({
               {auditTrail.length === 0 && <p className="text-sm text-[var(--muted-foreground)] text-center py-4">No events recorded.</p>}
             </div>
             <div className="flex justify-end"><button onClick={() => setShowAuditDocId(null)} className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]">Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* Signing Links Modal */}
+      {signingLinksDocId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={(e) => { if (e.target === e.currentTarget) setSigningLinksDocId(null); }}>
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Link2 size={18} />
+              Signing Links
+            </h3>
+
+            {/* Generate new link */}
+            <div className="space-y-2">
+              <p className="text-sm text-[var(--muted-foreground)]">Generate a direct signing link for a client. They can sign without logging into the portal.</p>
+              {projectClients.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {projectClients.map((c) => {
+                    const hasActiveLink = signingLinks.some((l) => l.userId === c.userId && l.isActive);
+                    return (
+                      <button
+                        key={c.userId}
+                        onClick={() => generateSigningLink(signingLinksDocId, c.userId)}
+                        disabled={hasActiveLink}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-md text-xs hover:bg-[var(--muted)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={hasActiveLink ? "Active link already exists" : `Generate link for ${c.user.name}`}
+                      >
+                        <Link2 size={12} />
+                        {c.user.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-[var(--muted-foreground)]">No clients assigned to this project.</p>
+              )}
+            </div>
+
+            {/* Newly generated link — copy box */}
+            {newLinkToken && (
+              <div className="p-3 border border-green-200 bg-green-50 rounded-lg space-y-2">
+                <p className="text-xs font-medium text-green-800">Link created! Copy and share with the client:</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/portal/sign/${newLinkToken}`}
+                    className="flex-1 px-3 py-1.5 bg-white border border-green-300 rounded text-xs font-mono"
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/portal/sign/${newLinkToken}`);
+                      success("Link copied!");
+                    }}
+                    className="p-1.5 rounded hover:bg-green-100 text-green-700 transition-colors"
+                    title="Copy link"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Active links */}
+            {signingLinks.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium">Active & Past Links</p>
+                {signingLinks.map((link) => (
+                  <div key={link.id} className={`flex items-center justify-between text-xs p-2 rounded border border-[var(--border)] ${link.isActive ? "" : "opacity-50"}`}>
+                    <div>
+                      <span className="font-medium">{link.user?.name || "Unknown"}</span>
+                      <span className="text-[var(--muted-foreground)] ml-1.5">
+                        {link.user?.email}
+                      </span>
+                      <div className="text-[10px] text-[var(--muted-foreground)] mt-0.5">
+                        Created {new Date(link.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} {new Date(link.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                        {link.usedAt && " · Opened"}
+                        {link.revokedAt && " · Revoked"}
+                        {!link.isActive && !link.revokedAt && " · Expired"}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {link.isActive && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Active</span>
+                      )}
+                      {link.isActive && (
+                        <button
+                          onClick={() => revokeSigningLink(signingLinksDocId, link.id)}
+                          title="Revoke link"
+                          className="p-1 rounded text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                        >
+                          <XCircle size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-[var(--border)]">
+              <button onClick={() => setSigningLinksDocId(null)} className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]">Close</button>
+            </div>
           </div>
         </div>
       )}

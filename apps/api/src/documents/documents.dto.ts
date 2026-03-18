@@ -87,6 +87,13 @@ export class SendDocumentDto {
   expiresInDays?: number;
 }
 
+export class UploadVersionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export class VoidDocumentDto {
   @IsOptional()
   @IsString()

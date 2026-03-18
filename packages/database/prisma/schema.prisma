@@ -24,6 +24,7 @@ model User {
   members            Member[]
   projectClients     ProjectClient[]
   documentResponses  DocumentResponse[]
+  documentVersions   DocumentVersion[]
 
   @@map("user")
 }
@@ -175,11 +176,12 @@ model File {
   uploadedById   String
   createdAt      DateTime @default(now())
 
-  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  updates         ProjectUpdate[]
-  documents       Document[]
-  signedDocuments Document[]       @relation("SignedDocumentFile")
-  invoices        Invoice[]        @relation("UploadedInvoiceFile")
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updates          ProjectUpdate[]
+  documents        Document[]
+  signedDocuments  Document[]        @relation("SignedDocumentFile")
+  invoices         Invoice[]         @relation("UploadedInvoiceFile")
+  documentVersions DocumentVersion[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -410,6 +412,7 @@ model Document {
   lastReminderAt       DateTime?
   signingOrderEnabled  Boolean   @default(false)
   options              String?   // comma-separated choices for client selection
+  currentVersion       Int       @default(1)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -420,10 +423,28 @@ model Document {
   signatureFields SignatureField[]
   auditEvents     DocumentAuditEvent[]
   accessTokens    DocumentAccessToken[]
+  versions        DocumentVersion[]
 
   @@index([projectId])
   @@index([organizationId])
   @@map("document")
+}
+
+model DocumentVersion {
+  id           String   @id @default(cuid())
+  documentId   String
+  fileId       String
+  version      Int
+  uploadedById String
+  note         String?
+  createdAt    DateTime @default(now())
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  file       File     @relation(fields: [fileId], references: [id])
+  uploadedBy User     @relation(fields: [uploadedById], references: [id])
+
+  @@index([documentId])
+  @@map("document_version")
 }
 
 model DocumentResponse {

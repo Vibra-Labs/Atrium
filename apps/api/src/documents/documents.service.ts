@@ -46,6 +46,13 @@ const DOCUMENT_FULL_INCLUDE = {
   responses: {
     include: { user: { select: { id: true, name: true } } },
   },
+  versions: {
+    include: {
+      file: { select: { id: true, filename: true, sizeBytes: true } },
+      uploadedBy: { select: { id: true, name: true } },
+    },
+    orderBy: { version: "desc" as const },
+  },
 } as const;
 
 @Injectable()
@@ -902,27 +909,43 @@ export class DocumentsService {
   async remove(id: string, orgId: string) {
     const doc = await this.prisma.document.findFirst({
       where: { id, organizationId: orgId },
-      include: { file: true, signedFile: true, responses: true },
+      include: {
+        file: true,
+        signedFile: true,
+        responses: true,
+        versions: { include: { file: true } },
+      },
     });
     if (!doc) throw new NotFoundException("Document not found");
 
-    // Collect storage keys to delete
+    // Collect all storage keys to delete
     const keysToDelete: string[] = [doc.file.storageKey];
     if (doc.signedFile) {
       keysToDelete.push(doc.signedFile.storageKey);
     }
 
-    // Collect signature PNG keys from responses
-    const sigKeys = doc.responses
-      .filter((r) => r.signatureImageKey)
-      .map((r) => r.signatureImageKey!);
-    keysToDelete.push(...sigKeys);
+    // Signature PNG keys from responses
+    for (const r of doc.responses) {
+      if (r.signatureImageKey) keysToDelete.push(r.signatureImageKey);
+    }
+
+    // Version file storage keys
+    const versionFileIds: string[] = [];
+    for (const v of doc.versions) {
+      keysToDelete.push(v.file.storageKey);
+      versionFileIds.push(v.fileId);
+    }
 
     await this.prisma.$transaction(async (tx) => {
+      // Delete document (cascades versions, responses, audit events, access tokens)
       await tx.document.delete({ where: { id } });
+      // Delete file records (current + signed + version files)
       await tx.file.delete({ where: { id: doc.fileId } });
       if (doc.signedFileId) {
         await tx.file.deleteMany({ where: { id: doc.signedFileId } });
+      }
+      if (versionFileIds.length > 0) {
+        await tx.file.deleteMany({ where: { id: { in: versionFileIds } } });
       }
     });
 
@@ -939,10 +962,283 @@ export class DocumentsService {
     );
   }
 
+  // --- Document Versioning ---
+
+  async uploadVersion(
+    id: string,
+    orgId: string,
+    userId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+    note?: string,
+  ) {
+    // Collect orphaned storage keys for cleanup after transaction
+    const keysToDelete: string[] = [];
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Lock document row to prevent concurrent version uploads
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM "document" WHERE id = $1 FOR UPDATE`,
+        id,
+      );
+
+      const doc = await tx.document.findFirst({
+        where: { id, organizationId: orgId },
+        include: { file: true, signedFile: true, responses: true },
+      });
+      if (!doc) throw new NotFoundException("Document not found");
+
+      if (doc.status === "voided" || doc.status === "expired") {
+        throw new BadRequestException(`Cannot upload new versions to ${doc.status} documents`);
+      }
+
+      // Enforce PDF-only for signature-required documents
+      if (doc.requiresSignature && file.mimetype !== "application/pdf") {
+        throw new BadRequestException("Signature documents require PDF files");
+      }
+
+      const newVersion = doc.currentVersion + 1;
+
+      // Upload new file to storage
+      const storageKey = `${orgId}/${doc.projectId}/documents/${id}-v${newVersion}-${Date.now()}`;
+      await this.storage.upload(storageKey, file.buffer, file.mimetype);
+
+      // Save current file as a version entry
+      await tx.documentVersion.create({
+        data: {
+          documentId: id,
+          fileId: doc.fileId,
+          version: doc.currentVersion,
+          uploadedById: doc.uploadedById,
+          note,
+        },
+      });
+
+      // Create new file record
+      const newFile = await tx.file.create({
+        data: {
+          filename: file.originalname,
+          storageKey,
+          mimeType: file.mimetype,
+          sizeBytes: file.size,
+          projectId: doc.projectId,
+          organizationId: orgId,
+          uploadedById: userId,
+        },
+      });
+
+      // Clean up old signed file and signature blobs if document was sent
+      const wasSent = doc.status !== "draft";
+      if (wasSent) {
+        // Collect signature image keys before deleting responses
+        for (const r of doc.responses) {
+          if (r.signatureImageKey) keysToDelete.push(r.signatureImageKey);
+        }
+        await tx.documentResponse.deleteMany({ where: { documentId: id } });
+      }
+
+      // Clean up old signed file record + blob
+      if (doc.signedFileId && doc.signedFile) {
+        keysToDelete.push(doc.signedFile.storageKey);
+        await tx.file.deleteMany({ where: { id: doc.signedFileId } });
+      }
+
+      // Update document to point to new file
+      return tx.document.update({
+        where: { id },
+        data: {
+          fileId: newFile.id,
+          currentVersion: newVersion,
+          signedFileId: null,
+          ...(wasSent ? { status: "pending" } : {}),
+        },
+        include: DOCUMENT_FULL_INCLUDE,
+      });
+    }, { timeout: 30000 });
+
+    // Clean up orphaned storage blobs after successful transaction
+    if (keysToDelete.length > 0) {
+      Promise.allSettled(
+        keysToDelete.map((key) =>
+          this.storage.delete(key).catch((err) =>
+            this.logger.error({ err, storageKey: key }, "Failed to delete orphaned blob"),
+          ),
+        ),
+      );
+    }
+
+    this.auditService.log(id, "version_uploaded", {
+      userId,
+      metadata: { version: result.currentVersion, filename: file.originalname, note },
+    });
+
+    return result;
+  }
+
+  async getVersions(id: string, orgId: string) {
+    await this.assertDocumentAccess(id, orgId);
+
+    const doc = await this.prisma.document.findFirst({
+      where: { id, organizationId: orgId },
+      select: {
+        id: true,
+        currentVersion: true,
+        fileId: true,
+        file: { select: { id: true, filename: true, sizeBytes: true, createdAt: true } },
+        versions: {
+          include: {
+            file: { select: { id: true, filename: true, sizeBytes: true, createdAt: true } },
+          },
+          orderBy: { version: "desc" },
+        },
+      },
+    });
+    if (!doc) throw new NotFoundException("Document not found");
+
+    // Enrich version uploaders
+    const uploaderIds = doc.versions.map((v) => v.uploadedById);
+    const uploaders = uploaderIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: uploaderIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const uploaderMap = new Map(uploaders.map((u) => [u.id, u.name]));
+
+    return {
+      currentVersion: doc.currentVersion,
+      currentFile: doc.file,
+      versions: doc.versions.map((v) => ({
+        id: v.id,
+        version: v.version,
+        file: v.file,
+        uploadedBy: uploaderMap.get(v.uploadedById) || "Unknown",
+        note: v.note,
+        createdAt: v.createdAt,
+      })),
+    };
+  }
+
+  async restoreVersion(
+    id: string,
+    versionId: string,
+    orgId: string,
+    userId: string,
+  ) {
+    const keysToDelete: string[] = [];
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Lock document row
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM "document" WHERE id = $1 FOR UPDATE`,
+        id,
+      );
+
+      const doc = await tx.document.findFirst({
+        where: { id, organizationId: orgId },
+        include: { signedFile: true, responses: true },
+      });
+      if (!doc) throw new NotFoundException("Document not found");
+      if (doc.status === "voided" || doc.status === "expired") {
+        throw new BadRequestException(`Cannot restore versions on ${doc.status} documents`);
+      }
+
+      const version = await tx.documentVersion.findFirst({
+        where: { id: versionId, documentId: id },
+      });
+      if (!version) throw new NotFoundException("Version not found");
+
+      const newVersion = doc.currentVersion + 1;
+
+      // Save current file as a version entry
+      await tx.documentVersion.create({
+        data: {
+          documentId: id,
+          fileId: doc.fileId,
+          version: doc.currentVersion,
+          uploadedById: userId,
+          note: `Replaced by restore of v${version.version}`,
+        },
+      });
+
+      // Clean up responses + signed file if already sent
+      const wasSent = doc.status !== "draft";
+      if (wasSent) {
+        for (const r of doc.responses) {
+          if (r.signatureImageKey) keysToDelete.push(r.signatureImageKey);
+        }
+        await tx.documentResponse.deleteMany({ where: { documentId: id } });
+      }
+      if (doc.signedFileId && doc.signedFile) {
+        keysToDelete.push(doc.signedFile.storageKey);
+        await tx.file.deleteMany({ where: { id: doc.signedFileId } });
+      }
+
+      return tx.document.update({
+        where: { id },
+        data: {
+          fileId: version.fileId,
+          currentVersion: newVersion,
+          signedFileId: null,
+          ...(wasSent ? { status: "pending" } : {}),
+        },
+        include: DOCUMENT_FULL_INCLUDE,
+      });
+    }, { timeout: 30000 });
+
+    // Clean up orphaned blobs
+    if (keysToDelete.length > 0) {
+      Promise.allSettled(
+        keysToDelete.map((key) =>
+          this.storage.delete(key).catch((err) =>
+            this.logger.error({ err, storageKey: key }, "Failed to delete orphaned blob"),
+          ),
+        ),
+      );
+    }
+
+    this.auditService.log(id, "version_restored", {
+      userId,
+      metadata: { restoredVersion: updated.currentVersion },
+    });
+
+    return updated;
+  }
+
   // --- Access Token (Direct Signing Link) ---
 
   private hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
+  }
+
+  async getAccessTokens(documentId: string, orgId: string) {
+    await this.assertDocumentAccess(documentId, orgId);
+
+    const tokens = await this.prisma.documentAccessToken.findMany({
+      where: { documentId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Enrich with user names
+    const userIds = [...new Set(tokens.map((t) => t.userId))];
+    const users = userIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const now = new Date();
+    return tokens.map((t) => ({
+      id: t.id,
+      userId: t.userId,
+      user: userMap.get(t.userId) || null,
+      expiresAt: t.expiresAt,
+      usedAt: t.usedAt,
+      revokedAt: t.revokedAt,
+      createdAt: t.createdAt,
+      isActive: !t.revokedAt && t.expiresAt > now,
+    }));
   }
 
   async generateAccessToken(documentId: string, userId: string, orgId: string) {

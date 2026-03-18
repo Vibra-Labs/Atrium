@@ -392,6 +392,7 @@ export default function ProjectDetailPage() {
             isArchived={isArchived}
             files={project.files}
             onFileChange={loadProject}
+            projectClients={clients.filter((c) => assignedIds.has(c.userId))}
           />
         )}
         {activeTab === "invoices" && (

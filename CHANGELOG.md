@@ -4,6 +4,12 @@ All notable changes to Atrium will be documented in this file.
 
 ## [1.3.1] — 2026-03-18
 
+### Breaking Changes
+
+- **Documents start as drafts** — Uploaded documents are no longer immediately visible to clients. Admins must click "Send to Client" (or use "Upload & Send") to make them visible. Existing pending documents are unaffected.
+- **New version resets responses** — When an admin uploads a new version of a sent/signed document, all client responses and signatures are cleared and the document returns to "pending" for re-review. This enables scope change tracking but means clients must re-sign.
+- **Unified upload flow** — The separate "Upload File" button is removed. All uploads go through the document modal (title, type, optional signature/approval). For quick file shares, use type "Other" and hit "Upload & Send".
+
 ### Added
 
 #### Document Lifecycle
@@ -44,6 +50,17 @@ All notable changes to Atrium will be documented in this file.
 - **Three-tier action bar** — Primary action (solid button), secondary actions (icon group), destructive actions (right-aligned, danger on hover)
 - **Continuous PDF scroll** — All pages render in a scrollable view with lazy loading via IntersectionObserver
 - **Voided/expired states** in portal — Read-only badges, no action buttons
+
+#### Document Versioning
+- **Version history** — Upload new file versions to any document (draft or sent). Previous versions preserved with uploader name and timestamp
+- **Restore versions** — Restore any previous version with one click; creates a new version entry for traceability
+- **Scope change tracking** — Uploading a new version on a sent document resets to "pending" so clients re-review the changes
+- **Version badge** — Documents with multiple versions show a "v2", "v3" etc. badge
+
+#### Direct Signing Links
+- **Generate signing links** — Create secure, time-limited signing URLs for specific clients from the dashboard
+- **Manage links** — View active links, copy URLs, and revoke links per document
+- **Token security** — SHA-256 hashed tokens, rate-limited public endpoints, auto-cleanup of expired tokens
 
 #### Email Templates
 - `DocumentReminderEmail` — Reminder for unresponsive clients with optional expiry date

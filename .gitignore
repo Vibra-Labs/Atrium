@@ -3,6 +3,7 @@ dist/
 .next/
 .turbo/
 *.tsbuildinfo
+apps/web/CHANGELOG.md
 .env
 .env.local
 uploads/

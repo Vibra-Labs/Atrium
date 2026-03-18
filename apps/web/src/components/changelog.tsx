@@ -1,5 +1,5 @@
 // @ts-expect-error — raw string import via webpack asset/source
-import changelogRaw from "../../../../CHANGELOG.md";
+import changelogRaw from "../../CHANGELOG.md";
 
 function parseChangelog(raw: string) {
   const sections: { version: string; date: string; content: string }[] = [];

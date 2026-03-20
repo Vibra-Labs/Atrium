@@ -24,6 +24,7 @@ model User {
   members            Member[]
   projectClients     ProjectClient[]
   documentResponses  DocumentResponse[]
+  documentVersions   DocumentVersion[]
 
   @@map("user")
 }
@@ -175,17 +176,12 @@ model File {
   uploadedById   String
   createdAt      DateTime @default(now())
 
-  documentType   String?
-  documentTitle  String?
-  documentStatus String?
-  respondedAt    DateTime?
-  respondedById  String?
-  respondReason  String?
-
-  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  updates   ProjectUpdate[]
-  documents Document[]
-  invoices  Invoice[]        @relation("UploadedInvoiceFile")
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updates          ProjectUpdate[]
+  documents        Document[]
+  signedDocuments  Document[]        @relation("SignedDocumentFile")
+  invoices         Invoice[]         @relation("UploadedInvoiceFile")
+  documentVersions DocumentVersion[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -395,41 +391,134 @@ model ProjectStatus {
 // ─── Documents ───
 
 model Document {
-  id             String   @id @default(cuid())
-  type           String   // "quote", "contract", "nda", "other"
-  title          String
-  fileId         String
-  projectId      String
-  organizationId String
-  uploadedById   String
-  status         String   @default("pending") // "pending", "accepted", "declined", "acknowledged"
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  type                 String    // "quote", "contract", "nda", "other"
+  title                String
+  fileId               String
+  projectId            String
+  organizationId       String
+  uploadedById         String
+  status               String    @default("draft") // "draft", "pending", "accepted", "declined", "acknowledged", "signed", "voided", "expired"
+  requiresSignature    Boolean   @default(false)
+  requiresApproval     Boolean   @default(false)
+  signedFileId         String?
+  sentAt               DateTime?
+  voidedAt             DateTime?
+  voidedById           String?
+  voidReason           String?
+  expiresAt            DateTime?
+  reminderEnabled      Boolean   @default(false)
+  reminderIntervalDays Int       @default(3)
+  lastReminderAt       DateTime?
+  signingOrderEnabled  Boolean   @default(false)
+  options              String?   // comma-separated choices for client selection
+  currentVersion       Int       @default(1)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  file      File               @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  responses DocumentResponse[]
+  file            File                @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  signedFile      File?               @relation("SignedDocumentFile", fields: [signedFileId], references: [id])
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responses       DocumentResponse[]
+  signatureFields SignatureField[]
+  auditEvents     DocumentAuditEvent[]
+  accessTokens    DocumentAccessToken[]
+  versions        DocumentVersion[]
 
   @@index([projectId])
   @@index([organizationId])
   @@map("document")
 }
 
+model DocumentVersion {
+  id           String   @id @default(cuid())
+  documentId   String
+  fileId       String
+  version      Int
+  uploadedById String
+  note         String?
+  createdAt    DateTime @default(now())
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  file       File     @relation(fields: [fileId], references: [id])
+  uploadedBy User     @relation(fields: [uploadedById], references: [id])
+
+  @@index([documentId])
+  @@map("document_version")
+}
+
 model DocumentResponse {
-  id         String   @id @default(cuid())
-  documentId String
-  userId     String
-  action     String   // "accepted", "declined", "acknowledged"
-  reason     String?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+  id                String    @id @default(cuid())
+  documentId        String
+  userId            String
+  action            String    // "accepted", "declined", "acknowledged", "signed"
+  reason            String?
+  ipAddress         String?
+  userAgent         String?
+  signatureImageKey String?   // storage key for raw signature PNG
+  signatureMethod   String?   // "draw" or "type"
+  signedAt          DateTime? // explicit signing timestamp
+  fieldId           String?   // which SignatureField was signed
+  textValue         String?   // for text/date field values
+  createdAt         DateTime  @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([documentId, userId])
+  @@unique([documentId, userId, fieldId])
   @@map("document_response")
+}
+
+model SignatureField {
+  id          String  @id @default(cuid())
+  documentId  String
+  pageNumber  Int     // 0-indexed page
+  x           Float   // normalized 0-1 (left edge)
+  y           Float   // normalized 0-1 (top edge)
+  width       Float   // normalized 0-1
+  height      Float   // normalized 0-1
+  type        String  @default("signature") // "signature", "date", "initials", "text"
+  label       String?
+  required    Boolean @default(true)
+  signerOrder Int     @default(0) // 0 = any order, 1/2/3 = sequential
+  assignedTo  String? // specific userId
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("signature_field")
+}
+
+model DocumentAuditEvent {
+  id         String   @id @default(cuid())
+  documentId String
+  userId     String?
+  action     String   // "created","sent","viewed","signed","accepted","declined","voided","expired","reminder_sent","downloaded"
+  ipAddress  String?
+  userAgent  String?
+  metadata   String?  // JSON
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+  @@map("document_audit_event")
+}
+
+model DocumentAccessToken {
+  id         String    @id @default(cuid())
+  documentId String
+  userId     String
+  token      String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("document_access_token")
 }
 
 // ─── Billing / Subscription tables ───

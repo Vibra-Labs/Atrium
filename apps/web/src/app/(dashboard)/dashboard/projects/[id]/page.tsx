@@ -23,12 +23,6 @@ interface FileRecord {
   mimeType: string;
   sizeBytes: number;
   createdAt: string;
-  documentType?: string | null;
-  documentTitle?: string | null;
-  documentStatus?: string | null;
-  respondedAt?: string | null;
-  respondedBy?: { name: string } | null;
-  respondReason?: string | null;
 }
 
 interface Project {
@@ -360,6 +354,7 @@ export default function ProjectDetailPage() {
           isArchived={isArchived}
           files={project.files}
           onFileChange={loadProject}
+          projectClients={clients.filter((c) => assignedIds.has(c.userId))}
         />
       )}
       {activeTab === "invoices" && (

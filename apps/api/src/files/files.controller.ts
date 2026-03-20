@@ -1,10 +1,8 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   Get,
   Post,
-  Patch,
   Delete,
   Param,
   Query,
@@ -30,16 +28,11 @@ export class FilesController {
   upload(
     @UploadedFile() file: UploadedFileType,
     @Query("projectId") projectId: string,
-    @Query("documentType") documentType: string | undefined,
-    @Query("documentTitle") documentTitle: string | undefined,
     @CurrentOrg("id") orgId: string,
     @CurrentUser("id") userId: string,
   ) {
     if (!file) throw new BadRequestException("No file provided");
-    const documentMeta = documentType
-      ? { documentType, documentTitle }
-      : undefined;
-    return this.filesService.upload(file, projectId, orgId, userId, documentMeta);
+    return this.filesService.upload(file, projectId, orgId, userId);
   }
 
   @Post("upload/mine")
@@ -99,47 +92,6 @@ export class FilesController {
     @CurrentMember("role") role: string,
   ) {
     return this.filesService.getDownloadUrl(id, orgId, userId, role);
-  }
-
-  @Patch(":id/respond")
-  respond(
-    @Param("id") id: string,
-    @Body("action") action: string,
-    @Body("reason") reason: string | undefined,
-    @CurrentOrg("id") orgId: string,
-    @CurrentUser("id") userId: string,
-    @CurrentMember("role") role: string,
-  ) {
-    // Normalize "declined" → "rejected" for consistency across both document systems
-    const normalized = action === "declined" ? "rejected" : action;
-    if (normalized !== "accepted" && normalized !== "rejected") {
-      throw new BadRequestException("Action must be 'accepted', 'declined', or 'rejected'");
-    }
-    return this.filesService.respondToDocument(id, orgId, userId, role, normalized, reason);
-  }
-
-  @Patch(":id/viewed")
-  markViewed(
-    @Param("id") id: string,
-    @CurrentOrg("id") orgId: string,
-    @CurrentUser("id") userId: string,
-    @CurrentMember("role") role: string,
-  ) {
-    return this.filesService.markDocumentViewed(id, orgId, userId, role);
-  }
-
-  @Patch(":id/status")
-  @Roles("owner", "admin")
-  updateDocumentStatus(
-    @Param("id") id: string,
-    @Body("status") status: string,
-    @CurrentOrg("id") orgId: string,
-  ) {
-    const allowed = ["pending", "accepted", "rejected"];
-    if (!allowed.includes(status)) {
-      throw new BadRequestException(`Status must be one of: ${allowed.join(", ")}`);
-    }
-    return this.filesService.updateDocumentStatus(id, orgId, status);
   }
 
   @Delete(":id")

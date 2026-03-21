@@ -2,9 +2,26 @@
 
 All notable changes to Atrium will be documented in this file.
 
-## [1.3.2] — 2026-03-20
+## [1.3.2] — 2026-03-21
 
-- Mobile-responsive dashboard and portal — collapsible sidebar, adaptive layouts, and improved touch targets across all project views.
+### Added
+
+#### Mobile-Responsive UI
+- **Collapsible sidebar** — Slide-out hamburger menu on mobile with backdrop, auto-close on navigation
+- **Adaptive project detail** — Collapsible `<details>` card for project metadata on mobile so tabs are immediately accessible
+- **Responsive layouts** — Padding, tab bars, and flex layouts adapt across all dashboard and portal views
+- **Responsive button labels** — "Upload Invoice" shortens to "Upload" on small screens
+
+#### Testing
+- Mobile navigation e2e tests (hamburger visibility, drawer open/close, route-change auto-close, desktop sidebar)
+
+### Fixed
+- Email errors in password reset and verification now propagate to the user instead of being silently swallowed
+- Removed PII (email addresses) from error logs in onboarding controller
+- Signup error logging now captures only `message` and `code` instead of full error object
+
+### Security
+- Next.js updated to 15.5.14 (patches CVE HTTP request smuggling + disk cache exhaustion)
 
 ## [1.3.1] — 2026-03-18
 

@@ -3,6 +3,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -34,5 +35,4 @@ jobs:
           tags: |
             vibralabs/atrium:${{ github.sha }}
             vibralabs/atrium:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true

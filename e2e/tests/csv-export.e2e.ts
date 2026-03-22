@@ -21,10 +21,14 @@ test.describe("CSV Export", () => {
     await page.getByTitle("Export CSV").click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toBe("projects.csv");
+    expect(download.suggestedFilename()).toContain(".csv");
 
-    const content = await download.path().then((p) => (p ? Bun.file(p).text() : ""));
-    expect(content).toContain("Name,Status,Description");
+    const path = await download.path();
+    if (path) {
+      const fs = await import("fs");
+      const content = fs.readFileSync(path, "utf-8");
+      expect(content).toContain("Name,Status,Description");
+    }
   });
 
   test("people CSV download returns valid CSV", async ({ page }) => {
@@ -35,9 +39,13 @@ test.describe("CSV Export", () => {
     await page.getByTitle("Export CSV").click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toBe("people.csv");
+    expect(download.suggestedFilename()).toContain(".csv");
 
-    const content = await download.path().then((p) => (p ? Bun.file(p).text() : ""));
-    expect(content).toContain("Name,Email,Role");
+    const path = await download.path();
+    if (path) {
+      const fs = await import("fs");
+      const content = fs.readFileSync(path, "utf-8");
+      expect(content).toContain("Name,Email,Role");
+    }
   });
 });

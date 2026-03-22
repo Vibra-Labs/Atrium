@@ -426,7 +426,7 @@ test.describe("People (Team & Clients)", () => {
     test("GET /clients includes at least the owner in results", async ({
       request,
     }) => {
-      const res = await request.get(`${API}/clients?page=1&limit=250`);
+      const res = await request.get(`${API}/clients?page=1&limit=100`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
       const ownerMembers = body.data.filter(
@@ -438,7 +438,7 @@ test.describe("People (Team & Clients)", () => {
     test("GET /clients separates team members (non-member role) from clients (member role)", async ({
       request,
     }) => {
-      const res = await request.get(`${API}/clients?page=1&limit=250`);
+      const res = await request.get(`${API}/clients?page=1&limit=100`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
       // Every record must have a role field
@@ -567,7 +567,7 @@ test.describe("People (Team & Clients)", () => {
 
     test.beforeAll(async ({ request }) => {
       // Find a non-owner member to use for role change tests
-      const res = await request.get(`${API}/clients?page=1&limit=250`);
+      const res = await request.get(`${API}/clients?page=1&limit=100`);
       if (!res.ok()) return;
       const body = await res.json();
       const adminOrMember = body.data.find(

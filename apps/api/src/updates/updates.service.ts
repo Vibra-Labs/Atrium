@@ -16,6 +16,7 @@ import { extname } from "path";
 import type { Response } from "express";
 import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess, BLOCKED_EXTENSIONS } from "../common";
 
+
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
 
 const IMAGE_TYPES = new Set([
@@ -39,12 +40,15 @@ export class UpdatesService {
     projectId: string,
     organizationId: string,
     authorId: string,
+    role: string,
     attachment?: UploadedFile,
   ) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId },
     });
     if (!project) throw new NotFoundException("Project not found");
+
+    await assertProjectAccess(this.prisma, projectId, authorId, role, organizationId);
 
     let attachmentKey: string | undefined;
     let attachmentMimeType: string | undefined;
@@ -112,7 +116,10 @@ export class UpdatesService {
       this.prisma.projectUpdate.findMany({
         where,
         orderBy: { createdAt: "desc" },
-        include: { file: { select: { id: true } } },
+        include: {
+          file: { select: { id: true } },
+          _count: { select: { comments: true } },
+        },
         ...paginationArgs(page, limit),
       }),
       this.prisma.projectUpdate.count({ where }),
@@ -146,6 +153,7 @@ export class UpdatesService {
           fileId: u.fileId,
           projectId: u.projectId,
           author: author ?? { id: u.authorId, name: "Unknown" },
+          commentCount: u._count.comments,
           createdAt: u.createdAt,
         };
       }),
@@ -195,7 +203,10 @@ export class UpdatesService {
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
-        include: { file: { select: { id: true } } },
+        include: {
+          file: { select: { id: true } },
+          _count: { select: { comments: true } },
+        },
       }),
       this.prisma.projectUpdate.count({ where }),
       this.prisma.activityLog.findMany({
@@ -237,6 +248,7 @@ export class UpdatesService {
           hasAttachment: !!u.attachmentKey || !!u.fileId,
           fileId: u.fileId,
           author: author ?? { id: u.authorId, name: "Unknown" },
+          commentCount: u._count.comments,
         };
       }),
     );
@@ -308,7 +320,7 @@ export class UpdatesService {
       throw new NotFoundException("Attachment not found");
     }
 
-    await assertProjectAccess(this.prisma, update.projectId, userId, role);
+    await assertProjectAccess(this.prisma, update.projectId, userId, role, organizationId);
 
     const { body, contentType } = await this.storage.download(update.attachmentKey);
     res.setHeader("Content-Type", contentType);

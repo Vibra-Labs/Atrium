@@ -29,7 +29,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/webp",
 ]);
 
-const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_LOGO_SIZE = 5 * 1024 * 1024; // 5MB
 
 @Controller("branding")
 @UseGuards(AuthGuard, RolesGuard)
@@ -66,7 +66,7 @@ export class BrandingController {
     }
 
     if (file.size > MAX_LOGO_SIZE) {
-      throw new BadRequestException("Logo must be under 2MB");
+      throw new BadRequestException("Logo must be under 5MB");
     }
 
     // Delete old logo if one exists

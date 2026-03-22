@@ -5,8 +5,11 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Trash2, Pencil, CheckSquare, Square, ListTodo, Vote, Lock } from "lucide-react";
+import { Trash2, Pencil, CheckSquare, Square, ListTodo, Vote, Lock, Download } from "lucide-react";
 import { track } from "@/lib/track";
+import { CommentsSection } from "@/components/comments-section";
+import { LabelBadge } from "@/components/label-badge";
+import { downloadCsv } from "@/lib/download";
 
 interface TaskRecord {
   id: string;
@@ -24,7 +27,8 @@ interface TaskRecord {
     order: number;
     _count: { votes: number };
   }[];
-  _count?: { votes: number };
+  labels?: { label: { id: string; name: string; color: string } }[];
+  _count?: { votes: number; comments: number };
 }
 
 interface PaginatedResponse<T> {
@@ -166,9 +170,21 @@ export function TasksSection({
 
   return (
     <div>
-      <h2 className="text-sm font-medium mb-3">
-        Tasks{tasks.length > 0 && ` (${tasks.length})`}
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-medium">
+          Tasks{tasks.length > 0 && ` (${tasks.length})`}
+        </h2>
+        {tasks.length > 0 && (
+          <button
+            onClick={() => downloadCsv(`/tasks/project/${projectId}/export`)}
+            className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+            title="Export tasks as CSV"
+          >
+            <Download size={13} />
+            Export
+          </button>
+        )}
+      </div>
 
       {!isArchived && (
         <div className="mb-3 space-y-2">
@@ -339,6 +355,11 @@ export function TasksSection({
                     {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
                   </p>
                 )}
+                <CommentsSection
+                  targetType="task"
+                  targetId={task.id}
+                  commentCount={task._count?.comments ?? 0}
+                />
               </div>
             );
           }
@@ -346,84 +367,98 @@ export function TasksSection({
           return (
           <div
             key={task.id}
-            className="flex items-center gap-2 p-2 border border-[var(--border)] rounded-lg"
+            className="p-2 border border-[var(--border)] rounded-lg"
           >
-            <button
-              onClick={() => handleToggle(task)}
-              disabled={isArchived}
-              className="shrink-0 text-[var(--primary)] disabled:opacity-50"
-            >
-              {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleToggle(task)}
+                disabled={isArchived}
+                className="shrink-0 text-[var(--primary)] disabled:opacity-50"
+              >
+                {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
+              </button>
 
-            {editingId === task.id ? (
-              <div className="flex-1 flex flex-col gap-2 min-w-0">
-                <input
-                  type="text"
-                  value={editingTitle}
-                  onChange={(e) => setEditingTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleUpdate(task.id);
-                    if (e.key === "Escape") setEditingId(null);
-                  }}
-                  autoFocus
-                  className="w-full px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
-                />
-                <div className="flex items-center gap-2">
+              {editingId === task.id ? (
+                <div className="flex-1 flex flex-col gap-2 min-w-0">
                   <input
-                    type="date"
-                    value={editingDueDate}
-                    onChange={(e) => setEditingDueDate(e.target.value)}
-                    className="flex-1 min-w-0 px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleUpdate(task.id);
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    autoFocus
+                    className="w-full px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
                   />
-                  <button
-                    onClick={() => handleUpdate(task.id)}
-                    className="px-3 py-1.5 text-sm text-[var(--primary)] hover:underline"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setEditingId(null)}
-                    className="px-1 py-1.5 text-sm text-[var(--muted-foreground)] hover:underline"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <span
-                  className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
-                >
-                  {task.title}
-                </span>
-                {task.dueDate && (
-                  <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                    {new Date(task.dueDate).toLocaleDateString()}
-                  </span>
-                )}
-                {!isArchived && (
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={editingDueDate}
+                      onChange={(e) => setEditingDueDate(e.target.value)}
+                      className="flex-1 min-w-0 px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
+                    />
                     <button
-                      onClick={() => {
-                        setEditingId(task.id);
-                        setEditingTitle(task.title);
-                        setEditingDueDate(task.dueDate ? task.dueDate.split("T")[0] : "");
-                      }}
-                      className="p-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                      onClick={() => handleUpdate(task.id)}
+                      className="px-3 py-1.5 text-sm text-[var(--primary)] hover:underline"
                     >
-                      <Pencil size={14} />
+                      Save
                     </button>
                     <button
-                      onClick={() => handleDelete(task.id)}
-                      className="p-2 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                      onClick={() => setEditingId(null)}
+                      className="px-1 py-1.5 text-sm text-[var(--muted-foreground)] hover:underline"
                     >
-                      <Trash2 size={14} />
+                      Cancel
                     </button>
                   </div>
-                )}
-              </>
-            )}
+                </div>
+              ) : (
+                <>
+                  <span
+                    className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
+                  >
+                    {task.title}
+                    {task.labels && task.labels.length > 0 && (
+                      <span className="inline-flex gap-1 ml-2 align-middle">
+                        {task.labels.map((l) => (
+                          <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                  {task.dueDate && (
+                    <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                      {new Date(task.dueDate).toLocaleDateString()}
+                    </span>
+                  )}
+                  {!isArchived && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => {
+                          setEditingId(task.id);
+                          setEditingTitle(task.title);
+                          setEditingDueDate(task.dueDate ? task.dueDate.split("T")[0] : "");
+                        }}
+                        className="p-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(task.id)}
+                        className="p-2 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <CommentsSection
+              targetType="task"
+              targetId={task.id}
+              commentCount={task._count?.comments ?? 0}
+            />
           </div>
           );
         })}

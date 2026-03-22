@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
 import { ProjectCardSkeleton } from "@/components/skeletons";
-import { Plus, Search, FolderOpen, Archive } from "lucide-react";
+import { Plus, Search, FolderOpen, Archive, Tag, Download } from "lucide-react";
 import { track } from "@/lib/track";
+import { LabelBadge } from "@/components/label-badge";
+import { downloadCsv } from "@/lib/download";
+
+interface LabelRecord {
+  id: string;
+  name: string;
+  color: string;
+}
 
 interface Project {
   id: string;
@@ -16,6 +24,7 @@ interface Project {
   description?: string;
   archivedAt?: string | null;
   createdAt: string;
+  labels?: { label: LabelRecord }[];
 }
 
 interface ProjectStatus {
@@ -46,10 +55,28 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
+  const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
+  const [labelFilter, setLabelFilter] = useState<string[]>([]);
+  const [labelFilterOpen, setLabelFilterOpen] = useState(false);
+  const labelFilterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!labelFilterOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (labelFilterRef.current && !labelFilterRef.current.contains(e.target as Node)) {
+        setLabelFilterOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [labelFilterOpen]);
 
   useEffect(() => {
     apiFetch<ProjectStatus[]>("/projects/statuses")
       .then(setStatuses)
+      .catch(console.error);
+    apiFetch<LabelRecord[]>("/labels")
+      .then(setOrgLabels)
       .catch(console.error);
   }, []);
 
@@ -60,6 +87,7 @@ export default function ProjectsPage() {
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (statusFilter) params.set("status", statusFilter);
       if (showArchived) params.set("archived", "true");
+      if (labelFilter.length > 0) params.set("labels", labelFilter.join(","));
       const res = await apiFetch<PaginatedResponse<Project>>(
         `/projects?${params}`,
       );
@@ -70,7 +98,7 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, statusFilter, showArchived]);
+  }, [page, debouncedSearch, statusFilter, showArchived, labelFilter]);
 
   useEffect(() => {
     loadProjects();
@@ -79,7 +107,7 @@ export default function ProjectsPage() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, statusFilter, showArchived]);
+  }, [debouncedSearch, statusFilter, showArchived, labelFilter]);
 
   const [creating, setCreating] = useState(false);
 
@@ -108,13 +136,23 @@ export default function ProjectsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Projects</h1>
-        <button
-          onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90"
-        >
-          <Plus size={16} />
-          New Project
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => downloadCsv("/projects/export")}
+            className="flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
+            title="Export CSV"
+          >
+            <Download size={16} />
+            <span className="hidden sm:inline">Export</span>
+          </button>
+          <button
+            onClick={() => setShowCreate(!showCreate)}
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90"
+          >
+            <Plus size={16} />
+            New Project
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -178,6 +216,65 @@ export default function ProjectsPage() {
             </option>
           ))}
         </select>
+        {orgLabels.length > 0 && (
+          <div ref={labelFilterRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setLabelFilterOpen(!labelFilterOpen)}
+              className={`flex items-center gap-1.5 w-full sm:w-auto px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm ${
+                labelFilter.length > 0 ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"
+              }`}
+            >
+              <Tag size={14} />
+              Labels
+              {labelFilter.length > 0 && (
+                <span className="bg-[var(--primary)] text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {labelFilter.length}
+                </span>
+              )}
+            </button>
+            {labelFilterOpen && (
+              <div className="absolute left-0 top-full mt-1 w-56 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-50 py-1 max-h-60 overflow-y-auto" role="listbox" aria-multiselectable="true">
+                {orgLabels.map((label) => (
+                  <div
+                    key={label.id}
+                    role="option"
+                    aria-selected={labelFilter.includes(label.id)}
+                    onClick={() =>
+                      setLabelFilter((prev) =>
+                        prev.includes(label.id)
+                          ? prev.filter((id) => id !== label.id)
+                          : [...prev, label.id],
+                      )
+                    }
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-[var(--muted)] transition-colors cursor-pointer"
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: label.color }}
+                    />
+                    <span className="flex-1 text-left truncate">{label.name}</span>
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                      labelFilter.includes(label.id)
+                        ? "bg-[var(--primary)] border-[var(--primary)] text-white"
+                        : "border-[var(--border)]"
+                    }`}>
+                      {labelFilter.includes(label.id) && "✓"}
+                    </span>
+                  </div>
+                ))}
+                {labelFilter.length > 0 && (
+                  <button
+                    onClick={() => setLabelFilter([])}
+                    className="w-full px-3 py-1.5 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors border-t border-[var(--border)]"
+                  >
+                    Clear filter
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm text-[var(--muted-foreground)] cursor-pointer">
           <input
             type="checkbox"
@@ -215,6 +312,13 @@ export default function ProjectsPage() {
                         </span>
                       )}
                     </div>
+                    {project.labels && project.labels.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {project.labels.map((l) => (
+                          <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                        ))}
+                      </div>
+                    )}
                     {project.description && (
                       <p className="text-sm text-[var(--muted-foreground)] mt-1">
                         {project.description}
@@ -231,7 +335,7 @@ export default function ProjectsPage() {
               <div className="text-center py-12">
                 <FolderOpen size={40} className="mx-auto text-[var(--muted-foreground)] mb-3" />
                 <p className="text-[var(--muted-foreground)]">
-                  {debouncedSearch || statusFilter
+                  {debouncedSearch || statusFilter || labelFilter.length > 0
                     ? "No projects match your search."
                     : "No projects yet. Create your first one."}
                 </p>

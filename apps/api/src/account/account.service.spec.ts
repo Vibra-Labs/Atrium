@@ -49,6 +49,12 @@ const mockPrisma = {
   subscription: {
     deleteMany: mock(() => Promise.resolve({ count: 0 })),
   },
+  notification: {
+    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+  },
+  pushSubscription: {
+    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+  },
   invitation: {
     deleteMany: mock(() => Promise.resolve({ count: 0 })),
   },
@@ -103,6 +109,8 @@ function clearAllMocks() {
   mockPrisma.branding.deleteMany.mockClear();
   mockPrisma.invoice.deleteMany.mockClear();
   mockPrisma.subscription.deleteMany.mockClear();
+  mockPrisma.notification.deleteMany.mockClear();
+  mockPrisma.pushSubscription.deleteMany.mockClear();
   mockPrisma.invitation.deleteMany.mockClear();
   mockPrisma.projectUpdate.updateMany.mockClear();
   mockPrisma.projectNote.updateMany.mockClear();

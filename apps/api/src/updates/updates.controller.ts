@@ -24,8 +24,9 @@ import type { UploadedFile as UploadedFileType } from "../files/files.service";
 export class UpdatesController {
   constructor(private updatesService: UpdatesService) {}
 
+  // No @Roles — any authenticated org member (including clients) can post updates.
+  // Access is enforced via assertProjectAccess in the service (clients must be assigned to the project).
   @Post()
-  @Roles("owner", "admin")
   @UseInterceptors(
     FileInterceptor("attachment", { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
@@ -35,9 +36,10 @@ export class UpdatesController {
     @UploadedFile() attachment: UploadedFileType | undefined,
     @CurrentOrg("id") orgId: string,
     @CurrentUser("id") userId: string,
+    @CurrentMember("role") role: string,
   ) {
     if (!projectId) throw new BadRequestException("projectId is required");
-    return this.updatesService.create(dto, projectId, orgId, userId, attachment);
+    return this.updatesService.create(dto, projectId, orgId, userId, role, attachment);
   }
 
   @Get("project/:projectId")

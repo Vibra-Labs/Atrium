@@ -9,6 +9,7 @@ interface ProjectWhereInput {
   name?: { contains: string; mode: "default" | "insensitive" };
   status?: string;
   clients?: { some: { userId: string } };
+  labels?: { some: { labelId: { in: string[] } } };
 }
 
 interface ProjectUpdateInput {
@@ -28,9 +29,10 @@ export class ProjectsService {
       search?: string;
       status?: string;
       archived?: string;
+      labels?: string;
     },
   ) {
-    const { page = 1, limit = 20, search, status, archived } = query;
+    const { page = 1, limit = 20, search, status, archived, labels } = query;
     const where: ProjectWhereInput = { organizationId };
 
     if (archived !== "true") {
@@ -43,11 +45,20 @@ export class ProjectsService {
     if (status) {
       where.status = status;
     }
+    if (labels) {
+      const labelIds = labels.split(",").filter(Boolean);
+      if (labelIds.length > 0) {
+        where.labels = { some: { labelId: { in: labelIds } } };
+      }
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.project.findMany({
         where,
-        include: { clients: { select: { userId: true } } },
+        include: {
+          clients: { select: { userId: true } },
+          labels: { include: { label: true } },
+        },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
       }),
@@ -60,7 +71,11 @@ export class ProjectsService {
   async findOne(id: string, organizationId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id, organizationId },
-      include: { files: true, clients: { select: { userId: true } } },
+      include: {
+        files: true,
+        clients: { select: { userId: true } },
+        labels: { include: { label: true } },
+      },
     });
     if (!project) throw new NotFoundException("Project not found");
 
@@ -231,6 +246,14 @@ export class ProjectsService {
       }),
     ]);
     return { total, inProgress, completed };
+  }
+
+  async exportAll(organizationId: string) {
+    return this.prisma.project.findMany({
+      where: { organizationId },
+      include: { clients: { select: { userId: true } } },
+      orderBy: { createdAt: "desc" },
+    });
   }
 
   async archive(id: string, organizationId: string) {

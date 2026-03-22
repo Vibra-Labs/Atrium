@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Mail, HardDrive, Send, Palette } from "lucide-react";
+import { Mail, HardDrive, Send, Palette, Tag } from "lucide-react";
 import { BrandingSection } from "./branding-section";
+import { LabelsSection } from "./labels-section";
 
 interface SystemSettings {
   emailProvider: string | null;
@@ -195,6 +196,18 @@ export default function SystemSettingsPage() {
             </p>
           </div>
           <BrandingSection branding={branding} onBrandingChange={setBranding} orgName={orgName} />
+        </section>
+
+        {/* Labels */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Tag size={20} />
+            <h2 className="text-lg font-semibold">Labels</h2>
+          </div>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Create labels to tag and organize projects, tasks, files, and clients.
+          </p>
+          <LabelsSection />
         </section>
 
         {/* Email Configuration */}

@@ -93,7 +93,8 @@ export class TasksService {
               _count: { select: { votes: true } },
             },
           },
-          _count: { select: { votes: true } },
+          labels: { include: { label: true } },
+          _count: { select: { votes: true, comments: true } },
         },
         orderBy: { order: "asc" },
         ...paginationArgs(page, limit),
@@ -132,7 +133,7 @@ export class TasksService {
             where: { userId },
             select: { optionId: true },
           },
-          _count: { select: { votes: true } },
+          _count: { select: { votes: true, comments: true } },
         },
         orderBy: { order: "asc" },
         ...paginationArgs(page, limit),
@@ -154,7 +155,7 @@ export class TasksService {
               ...opt,
               _count: { votes: 0 },
             })),
-            _count: { votes: 0 },
+            _count: { votes: 0, comments: task._count.comments },
           };
         }
       }
@@ -162,6 +163,13 @@ export class TasksService {
     });
 
     return paginatedResponse(sanitized, total, page, limit);
+  }
+
+  async exportByProject(projectId: string, orgId: string) {
+    return this.prisma.task.findMany({
+      where: { projectId, organizationId: orgId },
+      orderBy: { order: "asc" },
+    });
   }
 
   async vote(taskId: string, optionId: string, userId: string, orgId: string) {

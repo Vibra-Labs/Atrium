@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { SignOutButton } from "./sign-out-button";
 import { getSession } from "@/lib/auth";
+import { NotificationBell } from "@/components/notification-bell";
+import { DynamicFavicon } from "@/components/dynamic-favicon";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
 
@@ -13,7 +15,7 @@ async function getBranding() {
       `${API_URL}/api/branding`,
       {
         headers: { Cookie: cookieStore.toString() },
-        next: { revalidate: 60 },
+        cache: "no-store",
       },
     );
     if (!res.ok) return null;
@@ -30,7 +32,7 @@ async function getOrgName() {
       `${API_URL}/api/auth/organization/get-full-organization`,
       {
         headers: { Cookie: cookieStore.toString() },
-        next: { revalidate: 60 },
+        cache: "no-store",
       },
     );
     if (!res.ok) return null;
@@ -44,7 +46,7 @@ async function getOrgName() {
 function getLogoSrc(branding: { logoKey?: string; logoUrl?: string; organizationId?: string } | null) {
   if (!branding) return null;
   if (branding.logoKey) {
-    return `${API_URL}/api/branding/logo/${branding.organizationId}`;
+    return `${API_URL}/api/branding/logo/${branding.organizationId}?v=${Date.now()}`;
   }
   if (branding.logoUrl) {
     return branding.logoUrl;
@@ -77,6 +79,7 @@ export default async function PortalLayout({
         } as React.CSSProperties
       }
     >
+      <DynamicFavicon href={logoSrc || "/icon.png"} />
       <header className="border-b border-[var(--border)] px-6 py-4 flex items-center gap-3">
         {!branding?.hideLogo && (
           /* eslint-disable-next-line @next/next/no-img-element */
@@ -95,6 +98,7 @@ export default async function PortalLayout({
         >
           Settings
         </Link>
+        <NotificationBell />
         <SignOutButton />
       </header>
       <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">{children}</main>

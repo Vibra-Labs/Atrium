@@ -115,6 +115,8 @@ export class AccountService {
           tx.clientProfile.deleteMany({ where: { organizationId: orgId } }),
           tx.branding.deleteMany({ where: { organizationId: orgId } }),
           tx.subscription.deleteMany({ where: { organizationId: orgId } }),
+          tx.notification.deleteMany({ where: { organizationId: orgId } }),
+          tx.pushSubscription.deleteMany({ where: { organizationId: orgId } }),
         ]);
         await tx.organization.delete({ where: { id: orgId } });
       }
@@ -141,6 +143,8 @@ export class AccountService {
       await Promise.all([
         tx.clientProfile.deleteMany({ where: { userId } }),
         tx.invitation.deleteMany({ where: { inviterId: userId } }),
+        tx.notification.deleteMany({ where: { userId } }),
+        tx.pushSubscription.deleteMany({ where: { userId } }),
       ]);
 
       // Delete the user row (cascades Session, Account, Member, ProjectClient)

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutButton } from "./sign-out-button";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface MobileNavProps {
   logoSrc: string | null;
@@ -55,6 +56,9 @@ export function MobileNav({ logoSrc, orgName, hideLogo }: MobileNavProps) {
         <span className="font-bold text-sm truncate">
           {orgName || "Atrium"}
         </span>
+        <div className="ml-auto">
+          <NotificationBell align="left" />
+        </div>
       </div>
 
       {/* Backdrop */}

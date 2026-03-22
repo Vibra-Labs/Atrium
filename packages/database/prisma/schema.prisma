@@ -90,6 +90,7 @@ model Organization {
   invitations    Invitation[]
   systemSettings SystemSettings?
   subscription   Subscription?
+  labels         Label[]
 
   @@map("organization")
 }
@@ -103,6 +104,7 @@ model Member {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  labels       MemberLabel[]
 
   @@index([organizationId])
   @@index([userId])
@@ -146,6 +148,7 @@ model Project {
   notes      ProjectNote[]
   documents  Document[]
   activities ActivityLog[]
+  labels     ProjectLabel[]
 
   @@index([organizationId])
   @@map("project")
@@ -182,6 +185,7 @@ model File {
   signedDocuments  Document[]        @relation("SignedDocumentFile")
   invoices         Invoice[]         @relation("UploadedInvoiceFile")
   documentVersions DocumentVersion[]
+  labels           FileLabel[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -200,8 +204,9 @@ model ProjectUpdate {
   authorId           String
   createdAt          DateTime @default(now())
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  file    File?   @relation(fields: [fileId], references: [id])
+  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  file     File?            @relation(fields: [fileId], references: [id])
+  comments Comment[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -226,6 +231,8 @@ model Task {
   project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   options  DecisionOption[]
   votes    DecisionVote[]
+  comments Comment[]
+  labels   TaskLabel[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -258,6 +265,24 @@ model DecisionVote {
   @@unique([taskId, userId])
   @@index([optionId])
   @@map("decision_vote")
+}
+
+model Comment {
+  id             String   @id @default(cuid())
+  content        String
+  authorId       String
+  organizationId String
+  updateId       String?
+  taskId         String?
+  createdAt      DateTime @default(now())
+
+  update ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  task   Task?          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([updateId])
+  @@index([taskId])
+  @@index([organizationId])
+  @@map("comment")
 }
 
 model Invoice {
@@ -363,6 +388,10 @@ model SystemSettings {
 
   // File settings
   maxFileSizeMb  Int      @default(50)
+
+  // Push notification settings
+  vapidPublicKey  String?  // encrypted, auto-generated
+  vapidPrivateKey String?  // encrypted, auto-generated
 
   // General
   setupCompleted Boolean  @default(false)
@@ -570,6 +599,36 @@ model Subscription {
   @@map("subscription")
 }
 
+model Notification {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  type           String   // project_update, comment, task_created, etc.
+  title          String
+  message        String
+  link           String?  // relative URL e.g. "/portal/projects/abc"
+  read           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([userId, organizationId, read])
+  @@index([userId, createdAt])
+  @@map("notification")
+}
+
+model PushSubscription {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  endpoint       String
+  p256dh         String
+  auth           String
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, endpoint])
+  @@index([userId, organizationId])
+  @@map("push_subscription")
+}
+
 model ActivityLog {
   id             String   @id @default(cuid())
   type           String   // "document_response" | "decision_vote" | "decision_closed"
@@ -587,4 +646,80 @@ model ActivityLog {
   @@index([projectId, createdAt])
   @@index([organizationId])
   @@map("activity_log")
+}
+
+// ─── Labels ───
+
+model Label {
+  id             String   @id @default(cuid())
+  name           String
+  color          String   @default("#6b7280")
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectLabels ProjectLabel[]
+  taskLabels    TaskLabel[]
+  fileLabels    FileLabel[]
+  memberLabels  MemberLabel[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("label")
+}
+
+model ProjectLabel {
+  id        String   @id @default(cuid())
+  projectId String
+  labelId   String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label   Label   @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, labelId])
+  @@index([labelId])
+  @@map("project_label")
+}
+
+model TaskLabel {
+  id        String   @id @default(cuid())
+  taskId    String
+  labelId   String
+  createdAt DateTime @default(now())
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, labelId])
+  @@index([labelId])
+  @@map("task_label")
+}
+
+model FileLabel {
+  id        String   @id @default(cuid())
+  fileId    String
+  labelId   String
+  createdAt DateTime @default(now())
+
+  file  File  @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, labelId])
+  @@index([labelId])
+  @@map("file_label")
+}
+
+model MemberLabel {
+  id        String   @id @default(cuid())
+  memberId  String
+  labelId   String
+  createdAt DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  label  Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, labelId])
+  @@index([labelId])
+  @@map("member_label")
 }

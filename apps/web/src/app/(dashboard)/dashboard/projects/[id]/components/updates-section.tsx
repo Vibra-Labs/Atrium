@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
 import { track } from "@/lib/track";
+import { CommentsSection } from "@/components/comments-section";
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -34,6 +35,7 @@ interface TimelineEntry {
   hasAttachment?: boolean;
   fileId?: string;
   author?: { id: string; name: string };
+  commentCount?: number;
   // Activity fields
   type?: string;
   action?: string;
@@ -357,6 +359,11 @@ export function UpdatesSection({
                   <Download size={14} className="text-[var(--muted-foreground)] shrink-0" />
                 </button>
               )}
+              <CommentsSection
+                targetType="update"
+                targetId={entry.id}
+                commentCount={entry.commentCount ?? 0}
+              />
             </div>
           );
         })}

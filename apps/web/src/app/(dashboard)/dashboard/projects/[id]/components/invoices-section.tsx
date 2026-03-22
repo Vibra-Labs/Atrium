@@ -9,7 +9,7 @@ import { Pagination } from "@/components/pagination";
 import { Plus, Trash2, Receipt, Download, Upload } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { track } from "@/lib/track";
-import { downloadFile } from "@/lib/download";
+import { downloadFile, downloadCsv } from "@/lib/download";
 
 interface LineItem {
   id?: string;
@@ -305,14 +305,25 @@ export function InvoicesSection({
           <Receipt size={14} />
           Invoices{invoices.length > 0 && ` (${invoices.length})`}
         </h2>
-        {!isArchived && (
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {invoices.length > 0 && (
+            <button
+              onClick={() => downloadCsv("/invoices/export")}
+              className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+              title="Export invoices as CSV"
+            >
+              <Download size={13} />
+              Export
+            </button>
+          )}
+          {!isArchived && (
+            <>
             <button
               onClick={() => setShowUpload(true)}
               className="flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
             >
               <Upload size={14} />
-              Upload<span className="hidden sm:inline"> Invoice</span>
+              <span className="hidden sm:inline">Upload Invoice</span><span className="sm:hidden">Upload</span>
             </button>
             <button
               onClick={() => setShowCreate(true)}
@@ -321,8 +332,9 @@ export function InvoicesSection({
               <Plus size={14} />
               New Invoice
             </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Stats line */}

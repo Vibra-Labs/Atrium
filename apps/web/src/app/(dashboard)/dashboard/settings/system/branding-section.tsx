@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { useToast } from "@/components/toast";
 import { Upload } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -26,6 +28,8 @@ export function BrandingSection({
 }) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const { error: showError } = useToast();
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -41,8 +45,10 @@ export function BrandingSection({
         body: formData,
       });
       onBrandingChange({ ...branding, ...updated });
+      setCacheBust(Date.now());
+      router.refresh();
     } catch (err) {
-      console.error(err);
+      showError(err instanceof Error ? err.message : "Failed to upload logo");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -55,13 +61,16 @@ export function BrandingSection({
         method: "DELETE",
       });
       onBrandingChange({ ...branding, ...updated });
+      setCacheBust(Date.now());
+      router.refresh();
     } catch (err) {
-      console.error(err);
+      showError(err instanceof Error ? err.message : "Failed to remove logo");
     }
   };
 
+  const [cacheBust, setCacheBust] = useState(() => Date.now());
   const logoSrc = branding.logoKey
-    ? `${API_URL}/api/branding/logo/${branding.organizationId}`
+    ? `${API_URL}/api/branding/logo/${branding.organizationId}?v=${cacheBust}`
     : branding.logoUrl || null;
 
   return (
@@ -70,7 +79,7 @@ export function BrandingSection({
       <div className="space-y-3">
         <label className="text-sm font-medium">Company Logo</label>
         <p className="text-xs text-[var(--muted-foreground)]">
-          PNG, JPEG, SVG, or WebP. Max 2MB. Displayed in the client portal header.
+          PNG, JPEG, SVG, or WebP. Max 5MB. Displayed in the client portal header.
         </p>
 
         {logoSrc ? (

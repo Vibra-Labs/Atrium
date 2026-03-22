@@ -21,6 +21,13 @@ A living document tracking what's been shipped and what's planned for Atrium.
 - [x] Docker Hub image (`vibralabs/atrium`)
 - [x] Unraid Community App template
 - [x] Account deletion with data cleanup
+- [x] Comments & discussions on updates and tasks
+- [x] In-app notifications with real-time polling
+- [x] Push notifications (Web Push / VAPID)
+- [x] Team members (invite admins/owners to organization)
+- [x] Tags & labels (cross-entity tagging for projects, clients, tasks, files)
+- [x] CSV data export (projects, invoices, people, tasks)
+- [x] Dynamic favicon (updates to org logo)
 
 ## Planned
 
@@ -28,11 +35,11 @@ A living document tracking what's been shipped and what's planned for Atrium.
 
 Make the portal the primary channel between agency and client.
 
-- [ ] **Comments & discussions** -- Two-way communication on updates, tasks, and files
-- [ ] **In-app notifications** -- Real-time alerts for new updates, files, and invoices
+- [x] **Comments & discussions** -- Two-way communication on updates, tasks, and files
+- [x] **In-app notifications** -- Real-time alerts for new updates, files, and invoices
 - [ ] **In-portal messaging** -- Dedicated project-scoped chat with email fallback
-- [ ] **Team members** -- Invite additional staff to your organization beyond owner/admin
-- [ ] **Tags & labels** -- Cross-entity tagging for projects, clients, tasks, and files
+- [x] **Team members** -- Invite additional staff to your organization beyond owner/admin
+- [x] **Tags & labels** -- Cross-entity tagging for projects, clients, tasks, and files
 - [ ] **Client-facing invoice payments** -- Pay invoices directly from the portal (Stripe)
 - [ ] **Recurring invoices** -- Auto-generate invoices on a schedule for retainer clients
 
@@ -45,7 +52,7 @@ Turn the portal into the system of record for client work.
 - [ ] **Client approval workflows** -- Clients can approve/reject deliverables and milestones
 - [ ] **Calendar view** -- Visualize project timelines, tasks, and deadlines
 - [ ] **Time tracking** -- Log hours against projects and tasks
-- [ ] **Data export** -- CSV/PDF export for projects, invoices, and client data
+- [x] **Data export** -- CSV/PDF export for projects, invoices, and client data
 - [ ] **Global search** -- Full-text search across projects, files, tasks, clients, and messages
 
 ### v1.5 -- Security & Intelligence (May 2026)

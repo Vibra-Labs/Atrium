@@ -10,7 +10,6 @@ test.describe("Mobile Navigation", () => {
 
   test("desktop sidebar is hidden on mobile", async ({ page }) => {
     await page.goto("/dashboard");
-    // Desktop sidebar has the sign-out button directly visible — on mobile it's inside the drawer
     const desktopSidebar = page.locator("aside.hidden.md\\:flex");
     await expect(desktopSidebar).toBeHidden();
   });
@@ -21,14 +20,15 @@ test.describe("Mobile Navigation", () => {
     // Open the drawer
     await page.getByRole("button", { name: /open menu/i }).click();
 
-    // Drawer should show nav links
-    await expect(page.getByRole("link", { name: /projects/i })).toBeVisible();
+    // Drawer should be open (has translate-x-0 class)
+    const drawer = page.locator(".fixed.z-50.w-64");
+    await expect(drawer).toHaveClass(/translate-x-0/);
 
     // Close the drawer
     await page.getByRole("button", { name: /close menu/i }).click();
 
-    // Drawer link should be hidden again
-    await expect(page.getByRole("button", { name: /close menu/i })).toBeHidden();
+    // Drawer should be closed (has -translate-x-full class)
+    await expect(drawer).toHaveClass(/-translate-x-full/, { timeout: 5000 });
   });
 
   test("drawer closes on navigation", async ({ page }) => {
@@ -37,19 +37,22 @@ test.describe("Mobile Navigation", () => {
     // Open the drawer
     await page.getByRole("button", { name: /open menu/i }).click();
 
-    // Click a nav link
-    await page.getByRole("link", { name: /projects/i }).click();
+    const drawer = page.locator(".fixed.z-50.w-64");
+    await expect(drawer).toHaveClass(/translate-x-0/);
+
+    // Click a nav link inside the drawer
+    await drawer.getByRole("link", { name: /projects/i }).click();
 
     // Should navigate and close drawer
     await expect(page).toHaveURL(/\/dashboard\/projects/);
-    await expect(page.getByRole("button", { name: /close menu/i })).toBeHidden();
+    await expect(drawer).toHaveClass(/-translate-x-full/, { timeout: 5000 });
   });
 
   test("org name is shown in top bar", async ({ page }) => {
     await page.goto("/dashboard");
-    // The top bar should show the org name or fallback "Atrium"
-    const topBar = page.locator(".md\\:hidden .fixed");
+    const topBar = page.locator(".fixed.z-40.h-14");
     await expect(topBar).toBeVisible();
+    await expect(topBar.locator("span.font-bold")).toBeVisible();
   });
 });
 

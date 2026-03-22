@@ -4,6 +4,8 @@ import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { MobileNav } from "./mobile-nav";
+import { NotificationBell } from "@/components/notification-bell";
+import { DynamicFavicon } from "@/components/dynamic-favicon";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
 
@@ -41,7 +43,7 @@ async function getBranding() {
     const cookieStore = await cookies();
     const res = await fetch(`${API_URL}/api/branding`, {
       headers: { Cookie: cookieStore.toString() },
-      next: { revalidate: 60 },
+      cache: "no-store",
     });
     if (!res.ok) return null;
     return res.json();
@@ -57,7 +59,7 @@ async function getOrgName() {
       `${API_URL}/api/auth/organization/get-full-organization`,
       {
         headers: { Cookie: cookieStore.toString() },
-        next: { revalidate: 60 },
+        cache: "no-store",
       },
     );
     if (!res.ok) return null;
@@ -70,7 +72,7 @@ async function getOrgName() {
 
 function getLogoSrc(branding: { logoKey?: string; logoUrl?: string; organizationId?: string } | null) {
   if (!branding) return null;
-  if (branding.logoKey) return `${API_URL}/api/branding/logo/${branding.organizationId}`;
+  if (branding.logoKey) return `${API_URL}/api/branding/logo/${branding.organizationId}?v=${Date.now()}`;
   if (branding.logoUrl) return branding.logoUrl;
   return null;
 }
@@ -121,6 +123,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-screen flex">
+      <DynamicFavicon href={logoSrc || "/icon.png"} />
       {/* Desktop sidebar - hidden on mobile */}
       <aside className="hidden md:flex w-64 border-r border-[var(--border)] p-4 flex-col">
         <div className="flex items-center gap-2.5 mb-6">
@@ -135,6 +138,9 @@ export default async function DashboardLayout({
           <span className="font-bold text-lg leading-none truncate">
             {orgName || "Atrium"}
           </span>
+          <div className="ml-auto">
+            <NotificationBell align="left" />
+          </div>
         </div>
         <SidebarNav />
         <div className="mt-auto pt-4">

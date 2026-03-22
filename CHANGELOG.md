@@ -2,22 +2,13 @@
 
 All notable changes to Atrium will be documented in this file.
 
-## [1.4.0] — 2026-03-22
-
-### Added
-
-- **Tags & Labels** — Create org-wide labels in System Settings and assign them to projects, tasks, files, and clients. Filter projects by label on the projects list page. Colored badges display throughout the dashboard.
-
-### Upgrade Notes
-
-New database tables: `label`, `project_label`, `task_label`, `file_label`, `member_label`. New relation columns on `project`, `task`, `file`, and `member`. Docker handles this automatically via `prisma db push` in the entrypoint; bare-metal deployments must run `bun run db:push` after updating.
-
 ## [1.3.3] — 2026-03-21
 
 ### Added
 
 - **Comments** — Reply to project updates and tasks from the dashboard or portal.
 - **Client updates** — Clients can now post updates from the portal.
+- **Tags & Labels** — Create org-wide labels in System Settings and assign them to projects, tasks, files, and clients. Filter projects by label on the projects list page. Colored badges display throughout the dashboard.
 
 ### Security
 
@@ -26,7 +17,7 @@ New database tables: `label`, `project_label`, `task_label`, `file_label`, `memb
 
 ### Upgrade Notes
 
-New `comment` table. Docker handles it automatically; manual deployments run `bun run db:push`.
+New database tables: `comment`, `label`, `project_label`, `task_label`, `file_label`, `member_label`. New relation columns on `project`, `task`, `file`, and `member`. Docker handles this automatically via `prisma db push` in the entrypoint; bare-metal deployments must run `bun run db:push` after updating.
 
 ## [1.3.2] — 2026-03-21
 

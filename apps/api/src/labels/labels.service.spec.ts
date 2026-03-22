@@ -2,6 +2,7 @@ import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
 import { LabelsService } from "./labels.service";
+import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
 
 const mockPrisma = {
   label: {
@@ -81,7 +82,7 @@ describe("LabelsService", () => {
     it("creates a label with default color", async () => {
       await service.create({ name: "Bug" }, "org-1");
       expect(mockPrisma.label.create).toHaveBeenCalledWith({
-        data: { name: "Bug", color: "#6b7280", organizationId: "org-1" },
+        data: { name: "Bug", color: DEFAULT_LABEL_COLOR, organizationId: "org-1" },
       });
     });
 

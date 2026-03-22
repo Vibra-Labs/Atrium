@@ -32,6 +32,8 @@ export type Role = (typeof ROLES)[keyof typeof ROLES];
 
 export const DELETED_USER_SENTINEL = "deleted";
 
+export const DEFAULT_LABEL_COLOR = "#6b7280";
+
 export interface OwnedOrg {
   id: string;
   name: string;

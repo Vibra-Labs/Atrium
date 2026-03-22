@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateLabelDto, UpdateLabelDto, AssignLabelDto } from "./labels.dto";
+import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
 
 function isPrismaUniqueViolation(err: unknown): boolean {
   return (
@@ -32,7 +33,7 @@ export class LabelsService {
       return await this.prisma.label.create({
         data: {
           name: dto.name,
-          color: dto.color ?? "#6b7280",
+          color: dto.color ?? DEFAULT_LABEL_COLOR,
           organizationId: orgId,
         },
       });

@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
 
 interface Label {
   id: string;
@@ -16,7 +17,7 @@ export function LabelsSection() {
   const [labels, setLabels] = useState<Label[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState("#6b7280");
+  const [newColor, setNewColor] = useState(DEFAULT_LABEL_COLOR);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -50,7 +51,7 @@ export function LabelsSection() {
         body: JSON.stringify({ name: newName.trim(), color: newColor }),
       });
       setNewName("");
-      setNewColor("#6b7280");
+      setNewColor(DEFAULT_LABEL_COLOR);
       success("Label created");
       loadLabels();
     } catch (err) {

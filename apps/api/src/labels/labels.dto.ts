@@ -29,5 +29,6 @@ export class AssignLabelDto {
   entityType!: string;
 
   @IsString()
+  @MaxLength(255)
   entityId!: string;
 }

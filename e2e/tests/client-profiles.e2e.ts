@@ -5,15 +5,14 @@ const API = "http://localhost:3001/api";
 
 test.describe("Client Profiles", () => {
   test.describe("Dashboard clients page", () => {
-    test("clients page loads", async ({ page }) => {
+    test("people page loads", async ({ page }) => {
       await page.goto("/dashboard/clients");
-      await expect(page.locator("h1", { hasText: /clients/i })).toBeVisible();
+      await expect(page.locator("h1", { hasText: /people/i })).toBeVisible();
     });
 
-    test("clients page shows member list", async ({ page }) => {
+    test("clients tab shows invite form", async ({ page }) => {
       await page.goto("/dashboard/clients");
-      await expect(page.locator("h1", { hasText: /clients/i })).toBeVisible();
-      // The invite form should be visible
+      await page.getByRole("button", { name: /clients/i }).click();
       await expect(page.getByPlaceholder(/client@/i)).toBeVisible();
     });
   });

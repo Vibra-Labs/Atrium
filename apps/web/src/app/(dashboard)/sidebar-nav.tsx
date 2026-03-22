@@ -13,7 +13,7 @@ import {
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
-  { href: "/dashboard/clients", label: "Clients", icon: Users },
+  { href: "/dashboard/clients", label: "People", icon: Users },
   { href: "/dashboard/settings/system", label: "System", icon: Settings },
   { href: "/dashboard/settings/account", label: "Account", icon: UserCog },
 ];

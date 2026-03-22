@@ -9,6 +9,8 @@ All notable changes to Atrium will be documented in this file.
 - **Comments** — Reply to project updates and tasks from the dashboard or portal.
 - **Client updates** — Clients can now post updates from the portal.
 - **Tags & Labels** — Create org-wide labels in System Settings and assign them to projects, tasks, files, and clients. Filter projects by label on the projects list page. Colored badges display throughout the dashboard.
+- **In-app notifications** — Real-time notification bell in the dashboard and portal with unread count, mark-as-read, and mark-all-read.
+- **Push notifications** — Browser push notifications for project updates, task assignments, and comments via Web Push (VAPID). Service worker included.
 
 ### Security
 
@@ -17,7 +19,7 @@ All notable changes to Atrium will be documented in this file.
 
 ### Upgrade Notes
 
-New database tables: `comment`, `label`, `project_label`, `task_label`, `file_label`, `member_label`. New relation columns on `project`, `task`, `file`, and `member`. Docker handles this automatically via `prisma db push` in the entrypoint; bare-metal deployments must run `bun run db:push` after updating.
+New database tables: `comment`, `label`, `project_label`, `task_label`, `file_label`, `member_label`, `notification`, `push_subscription`. New relation columns on `project`, `task`, `file`, and `member`. Docker handles this automatically via `prisma db push` in the entrypoint; bare-metal deployments must run `bun run db:push` after updating.
 
 ## [1.3.2] — 2026-03-21
 

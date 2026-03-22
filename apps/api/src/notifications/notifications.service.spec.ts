@@ -4,6 +4,8 @@ import type { MailService } from "../mail/mail.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { ConfigService } from "@nestjs/config";
 import type { PinoLogger } from "nestjs-pino";
+import type { InAppNotificationsService } from "./in-app-notifications.service";
+import type { PushService } from "./push.service";
 
 // --- Module mocks ---
 
@@ -44,18 +46,40 @@ function makeConfig() {
   };
 }
 
+function makeInAppService() {
+  return {
+    create: mock(() => Promise.resolve()),
+    createMany: mock(() => Promise.resolve()),
+    findByUser: mock(() => Promise.resolve({ data: [], total: 0, page: 1, limit: 10, totalPages: 0 })),
+    unreadCount: mock(() => Promise.resolve(0)),
+    markRead: mock(() => Promise.resolve()),
+    markAllRead: mock(() => Promise.resolve()),
+  };
+}
+
+function makePushService() {
+  return {
+    sendToUser: mock(() => Promise.resolve()),
+    sendToMany: mock(() => Promise.resolve()),
+    isEnabled: mock(() => Promise.resolve(false)),
+    getPublicKey: mock(() => Promise.resolve("test-key")),
+    subscribe: mock(() => Promise.resolve()),
+    unsubscribe: mock(() => Promise.resolve()),
+  };
+}
+
 function makePrisma(overrides: Record<string, unknown> = {}) {
   return {
     project: {
       findUnique: mock(() =>
-        Promise.resolve({ name: "Test Project" }),
+        Promise.resolve({ name: "Test Project", organizationId: "org-1" }),
       ),
     },
     projectClient: {
       findMany: mock(() =>
         Promise.resolve([
-          { user: { name: "Alice", email: "alice@example.com" } },
-          { user: { name: "Bob", email: "bob@example.com" } },
+          { user: { id: "user-1", name: "Alice", email: "alice@example.com" } },
+          { user: { id: "user-2", name: "Bob", email: "bob@example.com" } },
         ]),
       ),
     },
@@ -65,6 +89,8 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
           id: "inv-1",
           invoiceNumber: "INV-0001",
           projectId: "proj-1",
+          organizationId: "org-1",
+          type: "itemized",
           dueDate: new Date("2025-03-01"),
           lineItems: [
             { quantity: 2, unitPrice: 5000 },
@@ -81,14 +107,20 @@ describe("NotificationsService", () => {
   let service: NotificationsService;
   let mail: ReturnType<typeof makeMailService>;
   let prisma: ReturnType<typeof makePrisma>;
+  let inApp: ReturnType<typeof makeInAppService>;
+  let push: ReturnType<typeof makePushService>;
 
   beforeEach(() => {
     mail = makeMailService();
     prisma = makePrisma();
+    inApp = makeInAppService();
+    push = makePushService();
     service = new NotificationsService(
       mail as unknown as MailService,
       prisma as unknown as PrismaService,
       makeConfig() as unknown as ConfigService,
+      inApp as unknown as InAppNotificationsService,
+      push as unknown as PushService,
       mockLogger as unknown as PinoLogger,
     );
   });
@@ -97,7 +129,6 @@ describe("NotificationsService", () => {
 
   test("notifyProjectUpdate sends emails to all project clients in parallel", async () => {
     const sendPromise = new Promise<void>((resolve) => {
-      // Resolve after a tick so fire-and-forget has time to run
       setTimeout(resolve, 50);
     });
 
@@ -113,6 +144,26 @@ describe("NotificationsService", () => {
     expect(recipients).toContain("bob@example.com");
   });
 
+  test("notifyProjectUpdate creates in-app notifications", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyProjectUpdate("proj-1", "We finished the homepage");
+
+    await done;
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  test("notifyProjectUpdate sends push notifications", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyProjectUpdate("proj-1", "We finished the homepage");
+
+    await done;
+
+    expect(push.sendToMany).toHaveBeenCalledTimes(1);
+  });
+
   test("notifyProjectUpdate does nothing when project is not found", async () => {
     prisma.project.findUnique.mockImplementation(() => Promise.resolve(null));
 
@@ -123,6 +174,7 @@ describe("NotificationsService", () => {
     await done;
 
     expect(mail.send).not.toHaveBeenCalled();
+    expect(inApp.createMany).not.toHaveBeenCalled();
   });
 
   test("notifyProjectUpdate does nothing when project has no clients", async () => {
@@ -166,9 +218,6 @@ describe("NotificationsService", () => {
   });
 
   test("notifyTaskCreated includes due date when provided", async () => {
-    // We check this by spying on what the render mock receives.
-    // The email template (mocked) receives props — we verify no error occurs
-    // and the right subject is sent.
     const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
 
     const dueDate = new Date("2025-06-15");
@@ -240,6 +289,8 @@ describe("NotificationsService", () => {
         id: "inv-2",
         invoiceNumber: "INV-0002",
         projectId: null,
+        organizationId: "org-1",
+        type: "itemized",
         dueDate: null,
         lineItems: [],
       }),
@@ -281,5 +332,202 @@ describe("NotificationsService", () => {
 
     await done;
     expect(mockLogger.warn).toHaveBeenCalled();
+  });
+
+  // --- createInAppAndPush argument verification ---
+
+  test("notifyProjectUpdate passes correct in-app notification data", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyProjectUpdate("proj-1", "Short update");
+
+    await done;
+
+    const createCall = inApp.createMany.mock.calls[0][0];
+    expect(createCall).toHaveLength(2); // Two clients
+    expect(createCall[0]).toMatchObject({
+      userId: "user-1",
+      organizationId: "org-1",
+      type: "project_update",
+      title: "New update on Test Project",
+      message: "Short update",
+      link: "/portal/projects/proj-1",
+    });
+  });
+
+  test("notifyProjectUpdate truncates long messages to 100 chars", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+    const longContent = "A".repeat(150);
+
+    service.notifyProjectUpdate("proj-1", longContent);
+
+    await done;
+
+    const createCall = inApp.createMany.mock.calls[0][0];
+    expect(createCall[0].message).toBe("A".repeat(100) + "…");
+  });
+
+  test("notifyProjectUpdate passes correct push payload", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyProjectUpdate("proj-1", "Push test");
+
+    await done;
+
+    expect(push.sendToMany).toHaveBeenCalledTimes(1);
+    const [userIds, orgId, payload] = push.sendToMany.mock.calls[0];
+    expect(userIds).toEqual(["user-1", "user-2"]);
+    expect(orgId).toBe("org-1");
+    expect(payload).toMatchObject({
+      title: "New update on Test Project",
+      message: "Push test",
+      link: "/portal/projects/proj-1",
+    });
+  });
+
+  test("notifyTaskCreated creates in-app notifications with task title as message", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyTaskCreated("proj-1", "Design hero section");
+
+    await done;
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    expect(createCall[0]).toMatchObject({
+      type: "task_created",
+      title: "New task on Test Project",
+      message: "Design hero section",
+      link: "/portal/projects/proj-1",
+    });
+  });
+
+  test("notifyInvoiceSent creates in-app notifications with amount and due date", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-1");
+
+    await done;
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    expect(createCall[0]).toMatchObject({
+      type: "invoice_sent",
+      title: "Invoice INV-0001",
+    });
+    expect(createCall[0].message).toContain("$130.00");
+  });
+
+  // --- notifyComment ---
+
+  test("notifyComment from client notifies org owners/admins", async () => {
+    // Mock member lookup for admins
+    (prisma as any).member = {
+      findMany: mock(() =>
+        Promise.resolve([
+          { userId: "admin-1" },
+          { userId: "admin-2" },
+        ]),
+      ),
+    };
+
+    await service.notifyComment(
+      "proj-1",
+      "org-1",
+      "client-1",
+      "member",
+      "Client comment content",
+      "update",
+    );
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    expect(createCall).toHaveLength(2);
+    expect(createCall[0]).toMatchObject({
+      userId: "admin-1",
+      organizationId: "org-1",
+      type: "comment",
+      link: "/dashboard/projects/proj-1",
+    });
+    expect(createCall[0].message).toBe("Client comment content");
+  });
+
+  test("notifyComment from admin notifies project clients (excluding author)", async () => {
+    await service.notifyComment(
+      "proj-1",
+      "org-1",
+      "user-1", // admin who is also in the client list
+      "admin",
+      "Admin reply",
+      "task",
+    );
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    // user-1 is excluded because they're the author, so only user-2
+    expect(createCall).toHaveLength(1);
+    expect(createCall[0]).toMatchObject({
+      userId: "user-2",
+      type: "comment",
+      link: "/portal/projects/proj-1",
+    });
+  });
+
+  test("notifyComment does nothing when project not found", async () => {
+    prisma.project.findUnique.mockImplementation(() => Promise.resolve(null));
+
+    await service.notifyComment(
+      "nonexistent",
+      "org-1",
+      "user-1",
+      "admin",
+      "Comment",
+      "update",
+    );
+
+    expect(inApp.createMany).not.toHaveBeenCalled();
+  });
+
+  test("notifyComment truncates long content to 100 chars", async () => {
+    const longContent = "B".repeat(150);
+
+    await service.notifyComment(
+      "proj-1",
+      "org-1",
+      "user-1",
+      "admin",
+      longContent,
+      "update",
+    );
+
+    const createCall = inApp.createMany.mock.calls[0][0];
+    expect(createCall[0].message).toBe("B".repeat(100) + "…");
+  });
+
+  // --- in-app/push failure isolation ---
+
+  test("in-app failure does not prevent email sending", async () => {
+    inApp.createMany.mockImplementation(() => Promise.reject(new Error("DB error")));
+
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyProjectUpdate("proj-1", "Update despite in-app failure");
+
+    await done;
+
+    // Emails should still be sent
+    expect(mail.send).toHaveBeenCalledTimes(2);
+  });
+
+  test("push failure does not prevent email sending", async () => {
+    push.sendToMany.mockImplementation(() => Promise.reject(new Error("Push error")));
+
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyProjectUpdate("proj-1", "Update despite push failure");
+
+    await done;
+
+    expect(mail.send).toHaveBeenCalledTimes(2);
   });
 });

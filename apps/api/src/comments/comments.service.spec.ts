@@ -2,6 +2,11 @@ import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { CommentsService } from "./comments.service";
 import { NotFoundException, ForbiddenException } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
+import type { NotificationsService } from "../notifications/notifications.service";
+
+const mockNotifications = {
+  notifyComment: mock(() => Promise.resolve()),
+} as unknown as NotificationsService;
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -116,7 +121,7 @@ describe("CommentsService", () => {
     mockPrisma.comment.delete.mockReturnValue(Promise.resolve({ id: COMMENT_ID }));
     mockPrisma.user.findMany.mockReturnValue(Promise.resolve([]));
 
-    service = new CommentsService(mockPrisma as unknown as PrismaService);
+    service = new CommentsService(mockPrisma as unknown as PrismaService, mockNotifications);
   });
 
   // =========================================================================

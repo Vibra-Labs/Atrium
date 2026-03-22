@@ -14,6 +14,8 @@ import {
 } from "@atrium/email";
 import { MailService } from "../mail/mail.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { InAppNotificationsService } from "./in-app-notifications.service";
+import { PushService } from "./push.service";
 
 @Injectable()
 export class NotificationsService {
@@ -23,6 +25,8 @@ export class NotificationsService {
     private mail: MailService,
     private prisma: PrismaService,
     private config: ConfigService,
+    private inApp: InAppNotificationsService,
+    private push: PushService,
     @InjectPinoLogger(NotificationsService.name)
     private readonly logger: PinoLogger,
   ) {
@@ -86,6 +90,17 @@ export class NotificationsService {
     if (clients.length === 0) return;
 
     const portalUrl = `${this.webUrl}/portal/projects/${projectId}`;
+    const link = `/portal/projects/${projectId}`;
+
+    // In-app + push (fire-and-forget)
+    this.createInAppAndPush(
+      clients.map((c) => c.id),
+      project.organizationId,
+      "project_update",
+      `New update on ${project.name}`,
+      updateContent.length > 100 ? updateContent.slice(0, 100) + "…" : updateContent,
+      link,
+    );
 
     await Promise.allSettled(
       clients.map(async (client) => {
@@ -129,6 +144,7 @@ export class NotificationsService {
     if (clients.length === 0) return;
 
     const portalUrl = `${this.webUrl}/portal/projects/${projectId}`;
+    const link = `/portal/projects/${projectId}`;
     const formattedDueDate = dueDate
       ? dueDate.toLocaleDateString("en-US", {
           year: "numeric",
@@ -136,6 +152,16 @@ export class NotificationsService {
           day: "numeric",
         })
       : undefined;
+
+    // In-app + push
+    this.createInAppAndPush(
+      clients.map((c) => c.id),
+      project.organizationId,
+      "task_created",
+      `New task on ${project.name}`,
+      taskTitle,
+      link,
+    );
 
     await Promise.allSettled(
       clients.map(async (client) => {
@@ -214,6 +240,17 @@ export class NotificationsService {
     }
 
     const portalUrl = `${this.webUrl}/portal/projects/${task.projectId}`;
+    const link = `/portal/projects/${task.projectId}`;
+
+    // In-app + push
+    this.createInAppAndPush(
+      clients.map((c) => c.id),
+      task.project.organizationId,
+      "decision_closed",
+      `Decision closed on ${task.project.name}`,
+      task.question,
+      link,
+    );
 
     await Promise.allSettled(
       clients.map(async (client) => {
@@ -272,6 +309,17 @@ export class NotificationsService {
         })
       : "upon receipt";
     const portalUrl = `${this.webUrl}/portal/invoices`;
+    const link = `/portal/projects/${invoice.projectId}`;
+
+    // In-app + push
+    this.createInAppAndPush(
+      clients.map((c) => c.id),
+      invoice.organizationId,
+      "invoice_sent",
+      `Invoice ${invoice.invoiceNumber}`,
+      `${amount} due ${dueDate}`,
+      link,
+    );
 
     await Promise.allSettled(
       clients.map(async (client) => {
@@ -357,6 +405,17 @@ export class NotificationsService {
     if (clients.length === 0) return;
 
     const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
+    const link = `/portal/projects/${doc.projectId}`;
+
+    // In-app + push
+    this.createInAppAndPush(
+      clients.map((c) => c.id),
+      doc.organizationId,
+      "document_uploaded",
+      `New ${doc.type} on ${project.name}`,
+      doc.title,
+      link,
+    );
 
     await Promise.allSettled(
       clients.map(async (client) => {
@@ -422,12 +481,24 @@ export class NotificationsService {
         role: { in: ["owner", "admin"] },
       },
       select: {
+        userId: true,
         user: { select: { name: true, email: true } },
       },
     });
     if (admins.length === 0) return;
 
     const dashboardUrl = `${this.webUrl}/dashboard/projects/${doc.projectId}`;
+    const link = `/dashboard/projects/${doc.projectId}`;
+
+    // In-app + push
+    this.createInAppAndPush(
+      admins.map((a) => a.userId),
+      doc.organizationId,
+      "document_responded",
+      `${clientName} ${action} ${doc.type}`,
+      doc.title,
+      link,
+    );
 
     await Promise.allSettled(
       admins.map(async (admin) => {
@@ -503,6 +574,7 @@ export class NotificationsService {
     if (unrespondedClients.length === 0) return;
 
     const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
+    const link = `/portal/projects/${doc.projectId}`;
     const expiresAt = doc.expiresAt
       ? doc.expiresAt.toLocaleDateString("en-US", {
           year: "numeric",
@@ -510,6 +582,16 @@ export class NotificationsService {
           day: "numeric",
         })
       : undefined;
+
+    // In-app + push
+    this.createInAppAndPush(
+      unrespondedClients.map((c) => c.id),
+      doc.organizationId,
+      "document_reminder",
+      `Reminder: ${doc.type} awaiting response`,
+      doc.title,
+      link,
+    );
 
     await Promise.allSettled(
       unrespondedClients.map(async (client) => {
@@ -581,6 +663,17 @@ export class NotificationsService {
     if (!project || !user) return;
 
     const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
+    const link = `/portal/projects/${doc.projectId}`;
+
+    // In-app + push
+    this.createInAppAndPush(
+      [userId],
+      doc.organizationId,
+      "signing_turn",
+      `Your turn to sign: ${doc.title}`,
+      `${doc.type} on ${project.name}`,
+      link,
+    );
 
     try {
       const html = await render(
@@ -602,6 +695,100 @@ export class NotificationsService {
       this.logger.warn(
         { err, email: user.email, documentId },
         "Failed to send signing turn email",
+      );
+    }
+  }
+
+  /**
+   * Create in-app notifications and send push notifications for a set of users.
+   * Fire-and-forget — errors are swallowed.
+   */
+  private createInAppAndPush(
+    userIds: string[],
+    organizationId: string,
+    type: string,
+    title: string,
+    message: string,
+    link?: string,
+  ): void {
+    const notifications = userIds.map((userId) => ({
+      userId,
+      organizationId,
+      type,
+      title,
+      message,
+      link,
+    }));
+
+    this.inApp.createMany(notifications).catch((err) => {
+      this.logger.warn({ err }, "Failed to create in-app notifications");
+    });
+
+    this.push
+      .sendToMany(userIds, organizationId, { title, message, link })
+      .catch((err) => {
+        this.logger.warn({ err }, "Failed to send push notifications");
+      });
+  }
+
+  /**
+   * Send comment notification to relevant users.
+   * Called from CommentsService.
+   */
+  async notifyComment(
+    projectId: string,
+    organizationId: string,
+    authorId: string,
+    authorRole: string,
+    content: string,
+    targetType: "update" | "task",
+  ): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true },
+    });
+    if (!project) return;
+
+    const truncatedContent =
+      content.length > 100 ? content.slice(0, 100) + "…" : content;
+
+    const isClientComment = authorRole === "member";
+
+    if (isClientComment) {
+      // Notify org owners/admins
+      const admins = await this.prisma.member.findMany({
+        where: {
+          organizationId,
+          role: { in: ["owner", "admin"] },
+        },
+        select: { userId: true },
+      });
+      const adminIds = admins.map((a) => a.userId);
+      if (adminIds.length === 0) return;
+
+      this.createInAppAndPush(
+        adminIds,
+        organizationId,
+        "comment",
+        `New comment on ${project.name}`,
+        truncatedContent,
+        `/dashboard/projects/${projectId}`,
+      );
+    } else {
+      // Notify project clients
+      const clients = await this.getProjectClients(projectId);
+      const clientIds = clients
+        .filter((c) => c.id !== authorId)
+        .map((c) => c.id);
+      if (clientIds.length === 0) return;
+
+      this.createInAppAndPush(
+        clientIds,
+        organizationId,
+        "comment",
+        `New comment on ${project.name}`,
+        truncatedContent,
+        `/portal/projects/${projectId}`,
       );
     }
   }

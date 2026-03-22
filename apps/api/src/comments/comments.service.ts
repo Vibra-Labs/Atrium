@@ -5,10 +5,14 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse, assertProjectAccess } from "../common";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
 export class CommentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   private async resolveProjectId(
     targetType: "update" | "task",
@@ -42,7 +46,7 @@ export class CommentsService {
     const projectId = await this.resolveProjectId(targetType, targetId, orgId);
     await assertProjectAccess(this.prisma, projectId, userId, role, orgId);
 
-    return this.prisma.comment.create({
+    const comment = await this.prisma.comment.create({
       data: {
         content,
         authorId: userId,
@@ -50,6 +54,13 @@ export class CommentsService {
         ...(targetType === "update" ? { updateId: targetId } : { taskId: targetId }),
       },
     });
+
+    // Fire-and-forget comment notification
+    this.notifications
+      .notifyComment(projectId, orgId, userId, role, content, targetType)
+      .catch(() => {});
+
+    return comment;
   }
 
   async findByTarget(

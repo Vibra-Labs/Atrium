@@ -25,7 +25,9 @@
   "overrides": {
     "minimatch": ">=10.2.3",
     "serialize-javascript": ">=7.0.3",
-    "ajv": ">=8.18.0"
+    "ajv": ">=8.18.0",
+    "kysely": ">=0.28.14",
+    "fast-xml-parser": ">=5.5.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

@@ -21,13 +21,17 @@ test.describe("Mobile Navigation", () => {
     // Open the drawer
     await page.getByRole("button", { name: /open menu/i }).click();
 
-    // Drawer should show nav links
-    await expect(page.getByRole("link", { name: /projects/i })).toBeVisible();
+    // Drawer should show the close button
+    await expect(page.getByRole("button", { name: /close menu/i })).toBeVisible();
+
+    // Drawer should show nav links (use the drawer container to avoid matching hidden desktop sidebar)
+    const drawer = page.locator(".translate-x-0");
+    await expect(drawer.getByRole("link", { name: /projects/i })).toBeVisible();
 
     // Close the drawer
     await page.getByRole("button", { name: /close menu/i }).click();
 
-    // Drawer link should be hidden again
+    // Drawer close button should be hidden again (drawer slides off-screen)
     await expect(page.getByRole("button", { name: /close menu/i })).toBeHidden();
   });
 
@@ -37,8 +41,9 @@ test.describe("Mobile Navigation", () => {
     // Open the drawer
     await page.getByRole("button", { name: /open menu/i }).click();
 
-    // Click a nav link
-    await page.getByRole("link", { name: /projects/i }).click();
+    // Click a nav link inside the drawer
+    const drawer = page.locator(".translate-x-0");
+    await drawer.getByRole("link", { name: /projects/i }).click();
 
     // Should navigate and close drawer
     await expect(page).toHaveURL(/\/dashboard\/projects/);
@@ -48,8 +53,11 @@ test.describe("Mobile Navigation", () => {
   test("org name is shown in top bar", async ({ page }) => {
     await page.goto("/dashboard");
     // The top bar should show the org name or fallback "Atrium"
-    const topBar = page.locator(".md\\:hidden .fixed");
+    // The mobile top bar has a z-40 fixed div containing the org name
+    const topBar = page.locator(".md\\:hidden > .fixed.z-40");
     await expect(topBar).toBeVisible();
+    // Verify it contains some text (org name or "Atrium" fallback)
+    await expect(topBar.locator("span.font-bold")).toBeVisible();
   });
 });
 

@@ -96,9 +96,12 @@ test.describe("People (Team & Clients)", () => {
       // (canChangeRole is false for self)
       const youLabel = page.getByText("(you)");
       await expect(youLabel).toBeVisible();
-      // The owner badge should be in a role span near the (you) label
-      const memberRow = youLabel.locator("xpath=ancestor::div[contains(@class,'flex')]");
+      // The owner row is a border/rounded-lg container that includes the (you) label
+      // and a role badge span (e.g. "owner")
+      const memberRow = page.locator(".border.rounded-lg").filter({ has: youLabel });
       await expect(memberRow).toBeVisible();
+      // The role badge should be present (owner/admin)
+      await expect(memberRow.locator("span.rounded-full")).toBeVisible();
     });
 
     test("invite button is disabled while inviting", async ({ page }) => {
@@ -146,7 +149,9 @@ test.describe("People (Team & Clients)", () => {
     test("clients tab shows Clients section heading", async ({ page }) => {
       await page.goto("/dashboard/clients");
       await page.getByRole("button", { name: /^clients/i }).click();
-      await expect(page.getByText(/^clients/i)).toBeVisible();
+      // The section heading "Invite a Client" or "Clients (N)" should be visible
+      // Use a heading-specific locator to avoid matching the tab button itself
+      await expect(page.locator("h2", { hasText: /client/i }).first()).toBeVisible();
     });
 
     test("clients tab shows empty state when no clients exist", async ({

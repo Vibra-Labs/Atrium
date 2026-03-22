@@ -56,10 +56,9 @@ test.describe("Labels", () => {
     await page.getByRole("button", { name: /add/i }).click();
     await expect(page.getByText(/label created/i)).toBeVisible({ timeout: 5000 });
 
-    // Find the trash button for the label and click it
-    const labelRow = page.locator("div").filter({ hasText: /Delete Me Label/ }).first();
-    const trashButton = labelRow.locator("button").last();
-    await trashButton.click();
+    // Find the label row that contains exactly the label name text, then click the trash button
+    const labelRow = page.locator(".border.rounded-lg").filter({ hasText: "Delete Me Label" });
+    await labelRow.locator("button").nth(1).click(); // second button is trash (first is pencil/edit)
 
     // Confirm deletion
     await page.getByRole("button", { name: /delete/i }).click();
@@ -86,8 +85,8 @@ test.describe("Labels", () => {
     await page.goto("/dashboard/projects");
     await expect(page.getByRole("heading", { name: /projects/i })).toBeVisible();
 
-    // Check if there are existing projects
-    const projectLinks = page.locator('a[href*="/dashboard/projects/"]');
+    // Check if there are existing projects — look only in main content, not the sidebar nav
+    const projectLinks = page.locator('main a[href*="/dashboard/projects/"]');
     const count = await projectLinks.count();
 
     if (count > 0) {

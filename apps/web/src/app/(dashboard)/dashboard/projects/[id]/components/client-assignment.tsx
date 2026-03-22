@@ -47,14 +47,14 @@ export function ClientAssignment({
 
   return (
     <div>
-      <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-2">
+      <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-2">
         Clients{assignedIds.size > 0 && ` (${assignedIds.size})`}
       </h2>
 
       {clients.length > 0 ? (
         <div ref={containerRef} className="relative">
           <div
-            className={`flex flex-wrap gap-1.5 min-h-[42px] px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] ${disabled ? "opacity-60" : "cursor-text"}`}
+            className={`flex flex-wrap gap-1.5 min-h-[34px] px-2.5 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] ${disabled ? "opacity-60" : "cursor-text"}`}
             onClick={() => {
               if (disabled) return;
               setOpen(true);
@@ -89,7 +89,7 @@ export function ClientAssignment({
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setOpen(true)}
                 placeholder={assignedClients.length === 0 ? "Search clients..." : ""}
-                className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-[var(--muted-foreground)]"
+                className="flex-1 min-w-[100px] bg-transparent text-xs outline-none placeholder:text-[var(--muted-foreground)]"
               />
             )}
           </div>

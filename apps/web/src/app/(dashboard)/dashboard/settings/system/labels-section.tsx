@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
-import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
+import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
 
 interface Label {
   id: string;
@@ -17,7 +17,7 @@ export function LabelsSection() {
   const [labels, setLabels] = useState<Label[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState(DEFAULT_LABEL_COLOR);
+  const [newColor, setNewColor] = useState<string>(PRESET_COLORS[0].hex);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -39,10 +39,10 @@ export function LabelsSection() {
 
   useEffect(() => {
     loadLabels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreate = async () => {
     if (!newName.trim() || creating) return;
     setCreating(true);
     try {
@@ -51,7 +51,7 @@ export function LabelsSection() {
         body: JSON.stringify({ name: newName.trim(), color: newColor }),
       });
       setNewName("");
-      setNewColor(DEFAULT_LABEL_COLOR);
+      setNewColor(PRESET_COLORS[0].hex);
       success("Label created");
       loadLabels();
     } catch (err) {
@@ -104,30 +104,33 @@ export function LabelsSection() {
   return (
     <div className="space-y-4">
       {/* Create form */}
-      <form onSubmit={handleCreate} className="flex items-center gap-2">
-        <input
-          type="color"
-          value={newColor}
-          onChange={(e) => setNewColor(e.target.value)}
-          className="w-8 h-8 rounded border border-[var(--border)] cursor-pointer p-0"
-        />
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="New label name"
-          maxLength={50}
-          className="flex-1 px-3 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
-        />
-        <button
-          type="submit"
-          disabled={creating || !newName.trim()}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm font-medium disabled:opacity-50"
-        >
-          <Plus size={14} />
-          Add
-        </button>
-      </form>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span
+            className="w-7 h-7 rounded-full shrink-0 border border-[var(--border)]"
+            style={{ backgroundColor: newColor }}
+          />
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="New label name"
+            maxLength={50}
+            onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+            className="flex-1 px-3 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+          />
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating || !newName.trim()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm font-medium disabled:opacity-50"
+          >
+            <Plus size={14} />
+            Add
+          </button>
+        </div>
+        <ColorPatchGrid value={newColor} onChange={setNewColor} />
+      </div>
 
       {/* Labels list */}
       {labels.length === 0 ? (
@@ -137,43 +140,44 @@ export function LabelsSection() {
           {labels.map((label) => (
             <div
               key={label.id}
-              className="flex items-center gap-2 p-2 border border-[var(--border)] rounded-lg"
+              className="border border-[var(--border)] rounded-lg"
             >
               {editingId === label.id ? (
-                <>
-                  <input
-                    type="color"
-                    value={editColor}
-                    onChange={(e) => setEditColor(e.target.value)}
-                    className="w-6 h-6 rounded border border-[var(--border)] cursor-pointer p-0"
-                  />
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    maxLength={50}
-                    className="flex-1 px-2 py-1 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSaveEdit();
-                      if (e.key === "Escape") setEditingId(null);
-                    }}
-                  />
-                  <button
-                    onClick={handleSaveEdit}
-                    className="p-1 text-green-600 hover:text-green-700"
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button
-                    onClick={() => setEditingId(null)}
-                    className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  >
-                    <X size={14} />
-                  </button>
-                </>
+                <div className="p-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-5 h-5 rounded-full shrink-0"
+                      style={{ backgroundColor: editColor }}
+                    />
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      maxLength={50}
+                      className="flex-1 px-2 py-1 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSaveEdit();
+                        if (e.key === "Escape") setEditingId(null);
+                      }}
+                    />
+                    <button
+                      onClick={handleSaveEdit}
+                      className="p-1 text-green-600 hover:text-green-700"
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <ColorPatchGrid value={editColor} onChange={setEditColor} />
+                </div>
               ) : (
-                <>
+                <div className="flex items-center gap-2 p-2">
                   <span
                     className="w-4 h-4 rounded-full shrink-0"
                     style={{ backgroundColor: label.color }}
@@ -191,7 +195,7 @@ export function LabelsSection() {
                   >
                     <Trash2 size={13} />
                   </button>
-                </>
+                </div>
               )}
             </div>
           ))}

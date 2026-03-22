@@ -323,7 +323,7 @@ export function InvoicesSection({
               className="flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
             >
               <Upload size={14} />
-              Upload<span className="hidden sm:inline"> Invoice</span>
+              <span className="hidden sm:inline">Upload Invoice</span><span className="sm:hidden">Upload</span>
             </button>
             <button
               onClick={() => setShowCreate(true)}

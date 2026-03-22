@@ -93,7 +93,7 @@ export class TasksService {
               _count: { select: { votes: true } },
             },
           },
-          _count: { select: { votes: true } },
+          _count: { select: { votes: true, comments: true } },
         },
         orderBy: { order: "asc" },
         ...paginationArgs(page, limit),
@@ -132,7 +132,7 @@ export class TasksService {
             where: { userId },
             select: { optionId: true },
           },
-          _count: { select: { votes: true } },
+          _count: { select: { votes: true, comments: true } },
         },
         orderBy: { order: "asc" },
         ...paginationArgs(page, limit),
@@ -154,7 +154,7 @@ export class TasksService {
               ...opt,
               _count: { votes: 0 },
             })),
-            _count: { votes: 0 },
+            _count: { votes: 0, comments: task._count.comments },
           };
         }
       }

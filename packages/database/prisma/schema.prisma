@@ -200,8 +200,9 @@ model ProjectUpdate {
   authorId           String
   createdAt          DateTime @default(now())
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  file    File?   @relation(fields: [fileId], references: [id])
+  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  file     File?            @relation(fields: [fileId], references: [id])
+  comments Comment[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -226,6 +227,7 @@ model Task {
   project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   options  DecisionOption[]
   votes    DecisionVote[]
+  comments Comment[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -258,6 +260,24 @@ model DecisionVote {
   @@unique([taskId, userId])
   @@index([optionId])
   @@map("decision_vote")
+}
+
+model Comment {
+  id             String   @id @default(cuid())
+  content        String
+  authorId       String
+  organizationId String
+  updateId       String?
+  taskId         String?
+  createdAt      DateTime @default(now())
+
+  update ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  task   Task?          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([updateId])
+  @@index([taskId])
+  @@index([organizationId])
+  @@map("comment")
 }
 
 model Invoice {

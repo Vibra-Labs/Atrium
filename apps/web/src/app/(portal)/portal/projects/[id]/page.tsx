@@ -23,6 +23,8 @@ import {
   Award,
   Ban,
   Clock,
+  Plus,
+  Paperclip,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
@@ -30,6 +32,7 @@ import { downloadFile } from "@/lib/download";
 import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
 import { useToast } from "@/components/toast";
+import { CommentsSection } from "@/components/comments-section";
 
 interface FileRecord {
   id: string;
@@ -61,6 +64,7 @@ interface TimelineEntry {
   hasAttachment?: boolean;
   fileId?: string;
   author?: { id: string; name: string };
+  commentCount?: number;
   // Activity fields
   type?: string;
   action?: string;
@@ -106,7 +110,7 @@ interface TaskRecord {
     _count: { votes: number };
   }[];
   votes?: { optionId: string }[];
-  _count?: { votes: number };
+  _count?: { votes: number; comments: number };
 }
 
 interface DocumentRecord {
@@ -188,6 +192,10 @@ export default function PortalProjectDetailPage() {
   const [declineReason, setDeclineReason] = useState("");
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const [selectedDocOptions, setSelectedDocOptions] = useState<Record<string, string>>({});
+  const [showCompose, setShowCompose] = useState(false);
+  const [newContent, setNewContent] = useState("");
+  const [newAttachment, setNewAttachment] = useState<File | null>(null);
+  const [postingUpdate, setPostingUpdate] = useState(false);
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -247,6 +255,30 @@ export default function PortalProjectDetailPage() {
       loadTasks();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handlePostUpdate = async () => {
+    if (!newContent.trim()) return;
+    setPostingUpdate(true);
+    try {
+      const formData = new FormData();
+      formData.append("content", newContent);
+      if (newAttachment) {
+        formData.append("attachment", newAttachment);
+      }
+      await apiFetch(`/updates?projectId=${id}`, {
+        method: "POST",
+        body: formData,
+      });
+      setNewContent("");
+      setNewAttachment(null);
+      setShowCompose(false);
+      loadUpdates();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to post update");
+    } finally {
+      setPostingUpdate(false);
     }
   };
 
@@ -485,6 +517,84 @@ export default function PortalProjectDetailPage() {
         {/* Updates Tab */}
         {activeTab === "updates" && (
           <div>
+            <div className="mb-4">
+              <button
+                onClick={() => setShowCompose(true)}
+                className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+              >
+                <Plus size={14} />
+                Add Update
+              </button>
+            </div>
+
+            {showCompose && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    setShowCompose(false);
+                    setNewContent("");
+                    setNewAttachment(null);
+                  }
+                }}
+              >
+                <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4">
+                  <h3 className="text-lg font-semibold">Post Update</h3>
+                  <textarea
+                    value={newContent}
+                    onChange={(e) => setNewContent(e.target.value)}
+                    placeholder="Write an update..."
+                    maxLength={5000}
+                    rows={4}
+                    autoFocus
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                  />
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm cursor-pointer hover:bg-[var(--muted)] transition-colors">
+                      <Paperclip size={14} />
+                      Attach File
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => setNewAttachment(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    {newAttachment && (
+                      <span className="text-xs text-[var(--muted-foreground)] flex items-center gap-1">
+                        {newAttachment.name}
+                        <button
+                          type="button"
+                          onClick={() => setNewAttachment(null)}
+                          className="hover:text-red-500"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setShowCompose(false);
+                        setNewContent("");
+                        setNewAttachment(null);
+                      }}
+                      className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handlePostUpdate}
+                      disabled={postingUpdate || !newContent.trim()}
+                      className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                    >
+                      {postingUpdate ? "Posting..." : "Post"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               {updates.map((entry) => {
                 if (entry.kind === "activity") {
@@ -595,6 +705,11 @@ export default function PortalProjectDetailPage() {
                         <Download size={14} className="text-[var(--muted-foreground)] shrink-0" />
                       </button>
                     )}
+                    <CommentsSection
+                      targetType="update"
+                      targetId={entry.id}
+                      commentCount={entry.commentCount ?? 0}
+                    />
                   </div>
                 );
               })}
@@ -700,6 +815,11 @@ export default function PortalProjectDetailPage() {
                           {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
                         </p>
                       )}
+                      <CommentsSection
+                        targetType="task"
+                        targetId={task.id}
+                        commentCount={task._count?.comments ?? 0}
+                      />
                     </div>
                   );
                 }
@@ -708,21 +828,28 @@ export default function PortalProjectDetailPage() {
                 return (
                   <div
                     key={task.id}
-                    className="flex items-center gap-2 p-2 border border-[var(--border)] rounded-lg"
+                    className="p-2 border border-[var(--border)] rounded-lg"
                   >
-                    <span className="shrink-0 text-[var(--primary)]">
-                      {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
-                    </span>
-                    <span
-                      className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
-                    >
-                      {task.title}
-                    </span>
-                    {task.dueDate && (
-                      <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                        {formatDateDisplay(task.dueDate)}
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 text-[var(--primary)]">
+                        {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
                       </span>
-                    )}
+                      <span
+                        className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
+                      >
+                        {task.title}
+                      </span>
+                      {task.dueDate && (
+                        <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                          {formatDateDisplay(task.dueDate)}
+                        </span>
+                      )}
+                    </div>
+                    <CommentsSection
+                      targetType="task"
+                      targetId={task.id}
+                      commentCount={task._count?.comments ?? 0}
+                    />
                   </div>
                 );
               })}

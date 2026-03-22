@@ -2,6 +2,17 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.3.3] — 2026-03-21
+
+### Added
+
+- **Comments** — Reply to project updates and tasks from the dashboard or portal.
+- **Client updates** — Clients can now post updates from the portal.
+
+### Upgrade Notes
+
+New `comment` table. Docker handles it automatically; manual deployments run `bun run db:push`.
+
 ## [1.3.2] — 2026-03-21
 
 ### Added

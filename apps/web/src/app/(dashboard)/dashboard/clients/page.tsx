@@ -104,7 +104,7 @@ export default function PeoplePage() {
     setLoading(true);
     try {
       const res = await apiFetch<PaginatedResponse<MemberRecord>>(
-        `/clients?page=1&limit=250`,
+        `/clients?page=1&limit=100`,
       );
       setMembers(res.data);
     } catch (err) {

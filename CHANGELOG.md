@@ -11,6 +11,7 @@ All notable changes to Atrium will be documented in this file.
 - **Tags & Labels** — Create org-wide labels in System Settings and assign them to projects, tasks, files, and clients. Filter projects by label on the projects list page. Colored badges display throughout the dashboard.
 - **In-app notifications** — Real-time notification bell in the dashboard and portal with unread count, mark-as-read, and mark-all-read.
 - **Push notifications** — Browser push notifications for project updates, task assignments, and comments via Web Push (VAPID). Service worker included.
+- **CSV data export** — Download projects, invoices, people, and tasks as CSV files from their respective pages.
 
 ### Security
 

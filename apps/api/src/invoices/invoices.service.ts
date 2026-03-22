@@ -156,6 +156,17 @@ export class InvoicesService {
     return paginatedResponse(data, total, page, limit);
   }
 
+  async exportAll(orgId: string) {
+    return this.prisma.invoice.findMany({
+      where: { organizationId: orgId },
+      include: {
+        lineItems: true,
+        project: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
   async findOne(id: string, orgId: string) {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, organizationId: orgId },

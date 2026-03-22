@@ -248,6 +248,14 @@ export class ProjectsService {
     return { total, inProgress, completed };
   }
 
+  async exportAll(organizationId: string) {
+    return this.prisma.project.findMany({
+      where: { organizationId },
+      include: { clients: { select: { userId: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
   async archive(id: string, organizationId: string) {
     const result = await this.prisma.project.updateMany({
       where: { id, organizationId },

@@ -5,10 +5,11 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Trash2, Pencil, CheckSquare, Square, ListTodo, Vote, Lock } from "lucide-react";
+import { Trash2, Pencil, CheckSquare, Square, ListTodo, Vote, Lock, Download } from "lucide-react";
 import { track } from "@/lib/track";
 import { CommentsSection } from "@/components/comments-section";
 import { LabelBadge } from "@/components/label-badge";
+import { downloadCsv } from "@/lib/download";
 
 interface TaskRecord {
   id: string;
@@ -169,9 +170,21 @@ export function TasksSection({
 
   return (
     <div>
-      <h2 className="text-sm font-medium mb-3">
-        Tasks{tasks.length > 0 && ` (${tasks.length})`}
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-medium">
+          Tasks{tasks.length > 0 && ` (${tasks.length})`}
+        </h2>
+        {tasks.length > 0 && (
+          <button
+            onClick={() => downloadCsv(`/tasks/project/${projectId}/export`)}
+            className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+            title="Export tasks as CSV"
+          >
+            <Download size={13} />
+            Export
+          </button>
+        )}
+      </div>
 
       {!isArchived && (
         <div className="mb-3 space-y-2">

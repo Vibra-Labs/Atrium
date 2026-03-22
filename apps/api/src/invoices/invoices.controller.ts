@@ -33,7 +33,10 @@ import {
   CurrentOrg,
   PlanLimit,
   sanitizeFilename,
+  contentDisposition,
+  toCsv,
 } from "../common";
+import type { CsvColumn } from "../common";
 
 @Controller("invoices")
 @UseGuards(AuthGuard, RolesGuard)
@@ -131,6 +134,30 @@ export class InvoicesController {
       if (!res.headersSent) res.status(500).end();
     });
     stream.pipe(res);
+  }
+
+  @Get("export")
+  @Roles("owner", "admin")
+  async exportCsv(@CurrentOrg("id") orgId: string, @Res() res: Response) {
+    const data = await this.invoicesService.exportAll(orgId);
+    const columns: CsvColumn<(typeof data)[0]>[] = [
+      { header: "Invoice Number", value: (r) => r.invoiceNumber },
+      { header: "Status", value: (r) => r.status },
+      { header: "Type", value: (r) => r.type },
+      { header: "Amount", value: (r) => {
+        if (r.amount != null) return (r.amount / 100).toFixed(2);
+        const total = r.lineItems.reduce((sum, li) => sum + li.quantity * li.unitPrice, 0);
+        return (total / 100).toFixed(2);
+      }},
+      { header: "Due Date", value: (r) => r.dueDate?.toISOString().split("T")[0] },
+      { header: "Project", value: (r) => r.project?.name },
+      { header: "Notes", value: (r) => r.notes },
+      { header: "Created At", value: (r) => r.createdAt.toISOString().split("T")[0] },
+    ];
+    const csv = toCsv(columns, data);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", contentDisposition("invoices.csv"));
+    res.send(csv);
   }
 
   @Get("mine/:id")

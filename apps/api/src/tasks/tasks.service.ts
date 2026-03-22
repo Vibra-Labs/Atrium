@@ -165,6 +165,13 @@ export class TasksService {
     return paginatedResponse(sanitized, total, page, limit);
   }
 
+  async exportByProject(projectId: string, orgId: string) {
+    return this.prisma.task.findMany({
+      where: { projectId, organizationId: orgId },
+      orderBy: { order: "asc" },
+    });
+  }
+
   async vote(taskId: string, optionId: string, userId: string, orgId: string) {
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, organizationId: orgId, type: "decision" },

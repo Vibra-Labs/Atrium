@@ -5,9 +5,10 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
+import { downloadCsv } from "@/lib/download";
 
 interface Invitation {
   id: string;
@@ -268,11 +269,21 @@ export default function PeoplePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">People</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-1">
-          Manage your team and clients.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">People</h1>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">
+            Manage your team and clients.
+          </p>
+        </div>
+        <button
+          onClick={() => downloadCsv("/clients/export")}
+          className="flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
+          title="Export CSV"
+        >
+          <Download size={16} />
+          <span className="hidden sm:inline">Export</span>
+        </button>
       </div>
 
       {/* Tabs */}

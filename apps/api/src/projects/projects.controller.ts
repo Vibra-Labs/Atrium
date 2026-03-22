@@ -7,8 +7,10 @@ import {
   Body,
   Param,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import { Response } from "express";
 import { ProjectsService } from "./projects.service";
 import {
   CreateProjectDto,
@@ -23,7 +25,10 @@ import {
   PlanLimit,
   CurrentOrg,
   CurrentUser,
+  contentDisposition,
+  toCsv,
 } from "../common";
+import type { CsvColumn } from "../common";
 
 @Controller("projects")
 @UseGuards(AuthGuard, RolesGuard)
@@ -66,6 +71,26 @@ export class ProjectsController {
   @Get("statuses")
   getStatuses(@CurrentOrg("id") orgId: string) {
     return this.projectsService.getStatuses(orgId);
+  }
+
+  @Get("export")
+  @Roles("owner", "admin")
+  async exportCsv(@CurrentOrg("id") orgId: string, @Res() res: Response) {
+    const data = await this.projectsService.exportAll(orgId);
+    const columns: CsvColumn<(typeof data)[0]>[] = [
+      { header: "Name", value: (r) => r.name },
+      { header: "Status", value: (r) => r.status },
+      { header: "Description", value: (r) => r.description },
+      { header: "Start Date", value: (r) => r.startDate?.toISOString().split("T")[0] },
+      { header: "End Date", value: (r) => r.endDate?.toISOString().split("T")[0] },
+      { header: "Clients", value: (r) => r.clients.length },
+      { header: "Archived", value: (r) => r.archivedAt ? "Yes" : "No" },
+      { header: "Created At", value: (r) => r.createdAt.toISOString().split("T")[0] },
+    ];
+    const csv = toCsv(columns, data);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", contentDisposition("projects.csv"));
+    res.send(csv);
   }
 
   @Get(":id")

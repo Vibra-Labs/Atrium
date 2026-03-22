@@ -9,8 +9,10 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import { Response } from "express";
 import { TasksService } from "./tasks.service";
 import { CreateTaskDto, UpdateTaskDto, ReorderTasksDto, CastVoteDto } from "./tasks.dto";
 import {
@@ -20,7 +22,10 @@ import {
   CurrentUser,
   CurrentOrg,
   PaginationQueryDto,
+  contentDisposition,
+  toCsv,
 } from "../common";
+import type { CsvColumn } from "../common";
 
 @Controller("tasks")
 @UseGuards(AuthGuard, RolesGuard)
@@ -67,6 +72,28 @@ export class TasksController {
       pagination.page,
       pagination.limit,
     );
+  }
+
+  @Get("project/:projectId/export")
+  @Roles("owner", "admin")
+  async exportCsv(
+    @Param("projectId") projectId: string,
+    @CurrentOrg("id") orgId: string,
+    @Res() res: Response,
+  ) {
+    const data = await this.tasksService.exportByProject(projectId, orgId);
+    const columns: CsvColumn<(typeof data)[0]>[] = [
+      { header: "Title", value: (r) => r.title },
+      { header: "Type", value: (r) => r.type },
+      { header: "Status", value: (r) => r.completed ? "Completed" : "Pending" },
+      { header: "Due Date", value: (r) => r.dueDate?.toISOString().split("T")[0] },
+      { header: "Description", value: (r) => r.description },
+      { header: "Created At", value: (r) => r.createdAt.toISOString().split("T")[0] },
+    ];
+    const csv = toCsv(columns, data);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", contentDisposition("tasks.csv"));
+    res.send(csv);
   }
 
   // No @Roles — authorization is handled in the service via projectClient check

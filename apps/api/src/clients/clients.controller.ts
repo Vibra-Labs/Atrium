@@ -50,6 +50,7 @@ export class ClientsController {
           role: true,
           createdAt: true,
           user: { select: { id: true, name: true, email: true } },
+          labels: { select: { label: { select: { id: true, name: true, color: true } } } },
         },
         orderBy: { createdAt: "asc" },
         skip: (page - 1) * limit,

@@ -7,8 +7,10 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag } from "lucide-react";
 import { track } from "@/lib/track";
+import { LabelBadge } from "@/components/label-badge";
+import { LabelPicker } from "@/components/label-picker";
 import { StatusPipeline } from "./components/status-pipeline";
 import { ClientAssignment } from "./components/client-assignment";
 import { TasksSection } from "./components/tasks-section";
@@ -25,6 +27,12 @@ interface FileRecord {
   createdAt: string;
 }
 
+interface LabelRecord {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface Project {
   id: string;
   name: string;
@@ -35,6 +43,7 @@ interface Project {
   archivedAt?: string | null;
   clients?: { userId: string }[];
   files: FileRecord[];
+  labels?: { label: LabelRecord }[];
 }
 
 interface ProjectStatus {
@@ -129,6 +138,7 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("updates");
   const [currentRole, setCurrentRole] = useState<string | null>(null);
+  const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
   const isArchived = !!project?.archivedAt;
   const isOwner = currentRole === "owner";
 
@@ -151,6 +161,9 @@ export default function ProjectDetailPage() {
       .catch(console.error);
     apiFetch<{ role: string }>("/auth/organization/get-active-member")
       .then((member) => setCurrentRole(member.role))
+      .catch(console.error);
+    apiFetch<LabelRecord[]>("/labels")
+      .then(setOrgLabels)
       .catch(console.error);
   }, [loadProject, id]);
 
@@ -202,6 +215,28 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleLabelToggle = async (labelId: string) => {
+    if (!project || isArchived) return;
+    const assignedIds = (project.labels ?? []).map((l) => l.label.id);
+    const isAssigned = assignedIds.includes(labelId);
+    try {
+      if (isAssigned) {
+        await apiFetch(`/labels/${labelId}/assign`, {
+          method: "DELETE",
+          body: JSON.stringify({ entityType: "project", entityId: id }),
+        });
+      } else {
+        await apiFetch(`/labels/${labelId}/assign`, {
+          method: "POST",
+          body: JSON.stringify({ entityType: "project", entityId: id }),
+        });
+      }
+      loadProject();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update labels");
+    }
+  };
+
   const handleArchive = async () => {
     const ok = await confirm({
       title: "Archive Project",
@@ -250,8 +285,35 @@ export default function ProjectDetailPage() {
 
   const assignedIds = new Set((project.clients ?? []).map((c) => c.userId));
 
+  const projectLabelIds = (project.labels ?? []).map((l) => l.label.id);
+
   const sidebarDetails = (
     <>
+      {/* Labels */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] flex items-center gap-1.5">
+            <Tag size={12} />
+            Labels
+          </h2>
+          <LabelPicker
+            labels={orgLabels}
+            assigned={projectLabelIds}
+            onToggle={handleLabelToggle}
+            disabled={isArchived}
+          />
+        </div>
+        {projectLabelIds.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {(project.labels ?? []).map((l) => (
+              <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-[var(--border)]" />
+
       <ClientAssignment
         clients={clients}
         assignedIds={assignedIds}

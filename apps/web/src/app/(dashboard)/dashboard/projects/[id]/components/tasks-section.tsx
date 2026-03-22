@@ -8,6 +8,7 @@ import { Pagination } from "@/components/pagination";
 import { Trash2, Pencil, CheckSquare, Square, ListTodo, Vote, Lock } from "lucide-react";
 import { track } from "@/lib/track";
 import { CommentsSection } from "@/components/comments-section";
+import { LabelBadge } from "@/components/label-badge";
 
 interface TaskRecord {
   id: string;
@@ -25,6 +26,7 @@ interface TaskRecord {
     order: number;
     _count: { votes: number };
   }[];
+  labels?: { label: { id: string; name: string; color: string } }[];
   _count?: { votes: number; comments: number };
 }
 
@@ -403,6 +405,13 @@ export function TasksSection({
                     className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
                   >
                     {task.title}
+                    {task.labels && task.labels.length > 0 && (
+                      <span className="inline-flex gap-1 ml-2 align-middle">
+                        {task.labels.map((l) => (
+                          <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                        ))}
+                      </span>
+                    )}
                   </span>
                   {task.dueDate && (
                     <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">

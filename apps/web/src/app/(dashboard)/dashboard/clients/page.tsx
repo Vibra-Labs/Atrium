@@ -7,6 +7,7 @@ import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
 import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound } from "lucide-react";
 import { track } from "@/lib/track";
+import { LabelBadge } from "@/components/label-badge";
 
 interface Invitation {
   id: string;
@@ -17,11 +18,18 @@ interface Invitation {
   inviteLink: string;
 }
 
+interface LabelRecord {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface MemberRecord {
   id: string;
   userId: string;
   role: string;
   user: { id: string; name: string; email: string };
+  labels?: { label: LabelRecord }[];
 }
 
 interface ClientProfile {
@@ -574,7 +582,14 @@ export default function PeoplePage() {
                         <div className="flex items-center gap-2">
                           {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           <div>
-                            <p className="text-sm font-medium">{member.user.name}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-sm font-medium">{member.user.name}</p>
+                              {member.labels && member.labels.length > 0 &&
+                                member.labels.map((l) => (
+                                  <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                                ))
+                              }
+                            </div>
                             <p className="text-xs text-[var(--muted-foreground)]">
                               {member.user.email}
                               {savedProfile?.company && (

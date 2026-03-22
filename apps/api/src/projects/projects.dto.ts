@@ -46,6 +46,11 @@ export class ProjectListQueryDto extends ClientProjectListQueryDto {
   @IsString()
   @IsOptional()
   archived?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2000)
+  labels?: string;
 }
 
 export class UpdateProjectDto {

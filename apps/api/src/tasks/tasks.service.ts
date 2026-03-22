@@ -93,6 +93,7 @@ export class TasksService {
               _count: { select: { votes: true } },
             },
           },
+          labels: { include: { label: true } },
           _count: { select: { votes: true, comments: true } },
         },
         orderBy: { order: "asc" },

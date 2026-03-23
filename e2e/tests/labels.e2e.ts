@@ -95,7 +95,7 @@ test.describe("Labels", () => {
       await page.waitForURL(/\/dashboard\/projects\/.+/);
 
       // Check for label section in sidebar
-      await expect(page.getByText("Labels")).toBeVisible({ timeout: 5000 });
+      await expect(page.getByRole("heading", { name: "Labels" }).first()).toBeVisible({ timeout: 5000 });
     }
   });
 

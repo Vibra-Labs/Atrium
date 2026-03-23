@@ -53,6 +53,24 @@ volumes:
   atrium-uploads:
 ```
 
+## Unraid Setup
+
+1. In the Unraid Docker UI, click **Add Container**
+2. Set the **Repository** to `vibralabs/atrium:latest`
+3. Under **Port Mappings**, map your desired host port (e.g., `4747`) to container port `8080`
+4. Add the following **Environment Variables**:
+   - `BETTER_AUTH_SECRET` — a random string of at least 32 characters (generate one with `openssl rand -base64 32` in the terminal)
+   - `SECURE_COOKIES` — set to `false` (required when accessing over plain HTTP without an HTTPS reverse proxy)
+5. Add the following **Volume Mappings** (set the host paths to your appdata directory):
+   - `/mnt/user/appdata/atrium/db` → `/var/lib/postgresql/data`
+   - `/mnt/user/appdata/atrium/uploads` → `/app/uploads`
+6. Set **Network Type** to `Bridge`
+7. Click **Apply**
+
+Open `http://your-unraid-ip:4747` and create your account.
+
+> **Note:** If you later add an HTTPS reverse proxy (e.g., Nginx Proxy Manager, Caddy, Traefik), remove the `SECURE_COOKIES=false` variable or set it to `true` for better security.
+
 ## Using an External Database
 
 Disable the built-in PostgreSQL and provide your own connection string:

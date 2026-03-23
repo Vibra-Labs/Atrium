@@ -36,6 +36,9 @@ else
   echo "Using external database: ${DATABASE_URL%%@*}@***"
 fi
 
+# Ensure DIRECT_URL is set (Prisma schema references it; falls back to DATABASE_URL)
+export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
+
 # Sync database schema (skip with SKIP_DB_PUSH=true for pooled connections)
 cd /app
 if [ "${SKIP_DB_PUSH}" = "true" ]; then

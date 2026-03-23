@@ -23,6 +23,14 @@ export class AuthService {
   ) {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
 
+    // Determine cookie security: explicit SECURE_COOKIES env var takes
+    // precedence, otherwise default to secure in production.
+    const secureCookiesEnv = this.config.get("SECURE_COOKIES");
+    const secureCookies =
+      secureCookiesEnv !== undefined
+        ? secureCookiesEnv === "true"
+        : process.env.NODE_ENV === "production";
+
     this.auth = betterAuth({
       database: prismaAdapter(this.prisma, { provider: "postgresql" }),
       secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
@@ -52,7 +60,11 @@ export class AuthService {
               },
             },
           }
-        : {}),
+        : {
+            advanced: {
+              useSecureCookies: secureCookies,
+            },
+          }),
       emailAndPassword: {
         enabled: true,
         minPasswordLength: 8,

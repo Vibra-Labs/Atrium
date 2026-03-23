@@ -35,7 +35,10 @@ export class CsrfGuard implements CanActivate {
       response.cookie(CSRF_COOKIE, token, {
         httpOnly: false, // Must be readable by JS
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure:
+        process.env.SECURE_COOKIES !== undefined
+          ? process.env.SECURE_COOKIES === "true"
+          : process.env.NODE_ENV === "production",
         path: "/",
       });
       // Also store on the request so validation works on this same request cycle

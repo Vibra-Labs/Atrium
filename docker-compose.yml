@@ -20,6 +20,8 @@ services:
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-atrium}:${POSTGRES_PASSWORD:-atrium}@postgres:5432/${POSTGRES_DB:-atrium}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-change-me-to-a-random-string-at-least-32-chars}"
+      # SECURE_COOKIES: "false"  # Only if accessing over plain HTTP (no HTTPS).
+      #                          # A reverse proxy with HTTPS is strongly recommended.
     volumes:
       - uploads:/app/uploads
     depends_on:

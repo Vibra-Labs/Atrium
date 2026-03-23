@@ -80,6 +80,7 @@ environment:
 | `RESEND_API_KEY` | No | — | Resend API key for email |
 | `EMAIL_FROM` | No | `noreply@yourdomain.com` | Sender address |
 | `MAX_FILE_SIZE_MB` | No | `50` | Max upload size in MB |
+| `SECURE_COOKIES` | No | `true` | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. **A reverse proxy with HTTPS (Caddy, nginx, Traefik) is strongly recommended.** |
 | `SKIP_DB_PUSH` | No | `false` | Skip schema sync on startup |
 
 ## Volumes

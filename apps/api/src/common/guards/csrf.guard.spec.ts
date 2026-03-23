@@ -271,6 +271,121 @@ describe("CsrfGuard", () => {
     expect(cookieName).toBe("csrf-token");
   });
 
+  it("sets secure csrf cookie when SECURE_COOKIES=true", () => {
+    const original = process.env.SECURE_COOKIES;
+    process.env.SECURE_COOKIES = "true";
+    try {
+      const reflector = new Reflector();
+      const guard = new CsrfGuard(reflector);
+      let cookieOptions: Record<string, unknown> = {};
+
+      const response = {
+        cookie: (_name: string, _val: string, opts: Record<string, unknown>) => {
+          cookieOptions = opts;
+        },
+      };
+      const request = {
+        method: "GET",
+        cookies: {},
+        headers: {},
+        originalUrl: "/api/projects",
+      };
+
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => request,
+          getResponse: () => response,
+        }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      } as unknown as ExecutionContext;
+
+      guard.canActivate(context);
+      expect(cookieOptions.secure).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env.SECURE_COOKIES;
+      else process.env.SECURE_COOKIES = original;
+    }
+  });
+
+  it("sets non-secure csrf cookie when SECURE_COOKIES=false", () => {
+    const original = process.env.SECURE_COOKIES;
+    process.env.SECURE_COOKIES = "false";
+    try {
+      const reflector = new Reflector();
+      const guard = new CsrfGuard(reflector);
+      let cookieOptions: Record<string, unknown> = {};
+
+      const response = {
+        cookie: (_name: string, _val: string, opts: Record<string, unknown>) => {
+          cookieOptions = opts;
+        },
+      };
+      const request = {
+        method: "GET",
+        cookies: {},
+        headers: {},
+        originalUrl: "/api/projects",
+      };
+
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => request,
+          getResponse: () => response,
+        }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      } as unknown as ExecutionContext;
+
+      guard.canActivate(context);
+      expect(cookieOptions.secure).toBe(false);
+    } finally {
+      if (original === undefined) delete process.env.SECURE_COOKIES;
+      else process.env.SECURE_COOKIES = original;
+    }
+  });
+
+  it("falls back to NODE_ENV when SECURE_COOKIES is not set", () => {
+    const originalSecure = process.env.SECURE_COOKIES;
+    const originalNode = process.env.NODE_ENV;
+    delete process.env.SECURE_COOKIES;
+    process.env.NODE_ENV = "production";
+    try {
+      const reflector = new Reflector();
+      const guard = new CsrfGuard(reflector);
+      let cookieOptions: Record<string, unknown> = {};
+
+      const response = {
+        cookie: (_name: string, _val: string, opts: Record<string, unknown>) => {
+          cookieOptions = opts;
+        },
+      };
+      const request = {
+        method: "GET",
+        cookies: {},
+        headers: {},
+        originalUrl: "/api/projects",
+      };
+
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => request,
+          getResponse: () => response,
+        }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      } as unknown as ExecutionContext;
+
+      guard.canActivate(context);
+      expect(cookieOptions.secure).toBe(true);
+    } finally {
+      if (originalSecure === undefined) delete process.env.SECURE_COOKIES;
+      else process.env.SECURE_COOKIES = originalSecure;
+      if (originalNode === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNode;
+    }
+  });
+
   it("does not overwrite csrf cookie when one already exists", () => {
     const reflector = new Reflector();
     const guard = new CsrfGuard(reflector);

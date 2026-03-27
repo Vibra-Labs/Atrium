@@ -30,6 +30,9 @@ interface InvoiceListItem {
   uploadedFile?: { id: string; filename: string; sizeBytes: number } | null;
   lineItems: LineItem[];
   createdAt: string;
+  paidAt?: string | null;
+  paidAmount?: number | null;
+  stripePaymentIntentId?: string | null;
 }
 
 interface InvoiceStats {
@@ -616,7 +619,7 @@ export function InvoicesSection({
                           Mark as Sent
                         </button>
                       )}
-                      {(inv.status === "sent" || inv.status === "overdue") && !isArchived && (
+                      {(inv.status === "sent" || inv.status === "overdue") && !isArchived && !inv.stripePaymentIntentId && (
                         <button
                           onClick={() => handleStatusChange(inv.id, "paid")}
                           className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:opacity-90"
@@ -639,7 +642,7 @@ export function InvoicesSection({
                           Edit
                         </button>
                       )}
-                      {!isArchived && (
+                      {!isArchived && !inv.stripePaymentIntentId && (
                         <button
                           onClick={() => handleDelete(inv.id)}
                           className="ml-auto flex items-center gap-1 text-xs text-red-500 hover:underline"
@@ -810,6 +813,23 @@ export function InvoicesSection({
                             <p className="text-sm text-[var(--muted-foreground)] whitespace-pre-wrap">
                               {inv.notes}
                             </p>
+                          </div>
+                        )}
+
+                        {/* Payment details for paid invoices */}
+                        {inv.status === "paid" && inv.paidAt && (
+                          <div className="flex items-center gap-3 p-2 bg-green-50 border border-green-200 rounded-lg text-xs">
+                            <span className="text-green-700 font-medium">
+                              {inv.stripePaymentIntentId ? "Paid via Stripe" : "Marked as paid"}
+                            </span>
+                            <span className="text-green-600">
+                              {new Date(inv.paidAt).toLocaleDateString()}
+                            </span>
+                            {inv.paidAmount != null && inv.paidAmount !== total && (
+                              <span className="text-green-600">
+                                Received: {formatCurrency(inv.paidAmount)}
+                              </span>
+                            )}
                           </div>
                         )}
                       </>

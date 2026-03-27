@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Mail, HardDrive, Send, Palette, Tag } from "lucide-react";
+import { Mail, HardDrive, Send, Palette, Tag, CreditCard } from "lucide-react";
 import { BrandingSection } from "./branding-section";
 import { LabelsSection } from "./labels-section";
+import { PaymentsSection } from "./payments-section";
 
 interface SystemSettings {
   emailProvider: string | null;
@@ -413,6 +414,20 @@ export default function SystemSettingsPage() {
           {saving ? "Saving..." : "Save Settings"}
         </button>
       </form>
+
+      {/* Client Payments — outside the form since it's managed via its own OAuth flow */}
+      <div className="max-w-lg space-y-8">
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <CreditCard size={20} />
+            <h2 className="text-lg font-semibold">Client Payments</h2>
+          </div>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Accept invoice payments from clients via Stripe.
+          </p>
+          <PaymentsSection />
+        </section>
+      </div>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Receipt, Download } from "lucide-react";
+import { Receipt, Download, CreditCard } from "lucide-react";
 import { downloadFile } from "@/lib/download";
 
 interface LineItem {
@@ -36,10 +36,10 @@ interface PaginatedResponse<T> {
 }
 
 const statusColors: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "#e5e7eb", text: "#374151" },
   sent: { bg: "#dbeafe", text: "#1d4ed8" },
   paid: { bg: "#dcfce7", text: "#15803d" },
   overdue: { bg: "#fee2e2", text: "#b91c1c" },
+  cancelled: { bg: "#e5e7eb", text: "#374151" },
 };
 
 export function PortalInvoicesSection({
@@ -53,11 +53,16 @@ export function PortalInvoicesSection({
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
-  const { error: showError } = useToast();
+  const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
+  const { success, info, error: showError } = useToast();
 
   useEffect(() => {
-    apiFetch<{ paymentInstructions: string | null }>("/settings/payment-instructions")
-      .then((res) => setPaymentInstructions(res.paymentInstructions))
+    apiFetch<{ paymentInstructions: string | null; stripeConnectEnabled: boolean }>("/settings/payment-instructions")
+      .then((res) => {
+        setPaymentInstructions(res.paymentInstructions);
+        setStripeEnabled(res.stripeConnectEnabled);
+      })
       .catch(console.error);
   }, []);
 
@@ -79,6 +84,25 @@ export function PortalInvoicesSection({
   useEffect(() => {
     loadInvoices();
   }, [loadInvoices]);
+
+  // Check for payment redirect results
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentParam = params.get("payment");
+    if (paymentParam === "success") {
+      success("Payment successful! The invoice has been marked as paid.");
+      loadInvoices(); // Refresh to show updated status
+    } else if (paymentParam === "cancelled") {
+      info("Payment was not completed. You can try again below.");
+    }
+
+    if (paymentParam) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("payment");
+      window.history.replaceState({}, "", url.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFileDownload = async (fileId: string, filename: string) => {
     try {
@@ -109,6 +133,32 @@ export function PortalInvoicesSection({
     }
   };
 
+  const handlePayNow = async (e: React.MouseEvent, invoiceId: string) => {
+    e.stopPropagation(); // Prevent row expand/collapse
+    setPayingInvoiceId(invoiceId);
+    try {
+      const currentUrl = window.location.href.split("?")[0];
+      const res = await apiFetch<{ url: string }>(
+        `/payments/checkout/${invoiceId}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            successUrl: `${currentUrl}?payment=success`,
+            cancelUrl: `${currentUrl}?payment=cancelled`,
+          }),
+        },
+      );
+      if (res.url) {
+        window.location.href = res.url;
+      }
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to start payment");
+      setPayingInvoiceId(null);
+    }
+  };
+
+  const isPayable = (status: string) => ["sent", "overdue"].includes(status);
+
   if (loading) {
     return (
       <div>
@@ -129,7 +179,7 @@ export function PortalInvoicesSection({
       {invoices.length > 0 ? (
         <div className="space-y-2">
           {invoices.map((inv) => {
-            const colors = statusColors[inv.status] || statusColors.draft;
+            const colors = statusColors[inv.status] || { bg: "#e5e7eb", text: "#374151" };
             const total = inv.type === "uploaded"
               ? (inv.amount || 0)
               : inv.lineItems.reduce(
@@ -137,34 +187,50 @@ export function PortalInvoicesSection({
                   0,
                 );
             const isExpanded = expandedId === inv.id;
+            const expandedPanelId = `invoice-details-${inv.id}`;
 
             return (
               <div key={inv.id} className="border border-[var(--border)] rounded-lg">
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : inv.id)}
-                  className="flex items-center justify-between w-full p-3 text-left hover:bg-[var(--muted)] transition-colors rounded-lg"
-                >
-                  <span className="text-sm font-medium">{inv.invoiceNumber}</span>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium">
-                      {formatCurrency(total)}
-                    </span>
-                    {inv.dueDate && (
-                      <span className="text-xs text-[var(--muted-foreground)]">
-                        Due {new Date(inv.dueDate).toLocaleDateString()}
+                <div className="flex items-center w-full">
+                  <button
+                    onClick={() => setExpandedId(isExpanded ? null : inv.id)}
+                    aria-expanded={isExpanded}
+                    aria-controls={expandedPanelId}
+                    className="flex items-center justify-between flex-1 p-3 text-left hover:bg-[var(--muted)] transition-colors rounded-lg"
+                  >
+                    <span className="text-sm font-medium">{inv.invoiceNumber}</span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm font-medium">
+                        {formatCurrency(total)}
                       </span>
-                    )}
-                    <span
-                      className="text-xs px-2 py-1 rounded-full font-medium"
-                      style={{ backgroundColor: colors.bg, color: colors.text }}
+                      {inv.dueDate && (
+                        <span className="text-xs text-[var(--muted-foreground)]">
+                          Due {new Date(inv.dueDate).toLocaleDateString()}
+                        </span>
+                      )}
+                      <span
+                        className="text-xs px-2 py-1 rounded-full font-medium capitalize"
+                        style={{ backgroundColor: colors.bg, color: colors.text }}
+                      >
+                        {inv.status}
+                      </span>
+                    </div>
+                  </button>
+                  {/* Pay Now on row — visible without expanding */}
+                  {stripeEnabled && isPayable(inv.status) && (
+                    <button
+                      onClick={(e) => handlePayNow(e, inv.id)}
+                      disabled={payingInvoiceId === inv.id}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 mr-3 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity shrink-0"
                     >
-                      {inv.status}
-                    </span>
-                  </div>
-                </button>
+                      <CreditCard size={12} />
+                      {payingInvoiceId === inv.id ? "..." : "Pay"}
+                    </button>
+                  )}
+                </div>
 
                 {isExpanded && (
-                  <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)]">
+                  <div id={expandedPanelId} className="px-3 pb-3 space-y-3 border-t border-[var(--border)]">
                     <div className="flex items-center justify-between pt-3">
                       {inv.dueDate ? (
                         <p className="text-sm text-[var(--muted-foreground)]">
@@ -172,6 +238,16 @@ export function PortalInvoicesSection({
                         </p>
                       ) : <div />}
                       <div className="flex items-center gap-3">
+                        {stripeEnabled && isPayable(inv.status) && (
+                          <button
+                            onClick={(e) => handlePayNow(e, inv.id)}
+                            disabled={payingInvoiceId === inv.id}
+                            className="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity"
+                          >
+                            <CreditCard size={14} />
+                            {payingInvoiceId === inv.id ? "Redirecting..." : "Pay Now"}
+                          </button>
+                        )}
                         {inv.type === "uploaded" && inv.uploadedFile && (
                           <button
                             onClick={() =>
@@ -253,7 +329,8 @@ export function PortalInvoicesSection({
                       </div>
                     )}
 
-                    {paymentInstructions && (
+                    {/* Only show payment instructions for unpaid invoices */}
+                    {paymentInstructions && isPayable(inv.status) && (
                       <div>
                         <p className="text-xs font-medium mb-1">Payment Instructions</p>
                         <p className="text-sm text-[var(--muted-foreground)] whitespace-pre-wrap">

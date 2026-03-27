@@ -318,6 +318,12 @@ export class InvoicesService {
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
 
+    if (invoice.stripePaymentIntentId) {
+      throw new BadRequestException(
+        "Cannot delete an invoice that was paid via Stripe. The payment record must be preserved.",
+      );
+    }
+
     await this.prisma.invoice.delete({ where: { id, organizationId: orgId } });
   }
 

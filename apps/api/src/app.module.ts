@@ -16,6 +16,7 @@ import { UpdatesModule } from "./updates/updates.module";
 import { NotesModule } from "./notes/notes.module";
 import { TasksModule } from "./tasks/tasks.module";
 import { InvoicesModule } from "./invoices/invoices.module";
+import { SearchModule } from "./search/search.module";
 import { SettingsModule } from "./settings/settings.module";
 import { SetupModule } from "./setup/setup.module";
 import { BillingModule } from "./billing/billing.module";
@@ -67,6 +68,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     NotesModule,
     TasksModule,
     InvoicesModule,
+    SearchModule,
     SettingsModule,
     SetupModule,
     BillingModule,

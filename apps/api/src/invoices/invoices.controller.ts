@@ -81,7 +81,7 @@ export class InvoicesController {
       userId,
     );
 
-    return this.invoicesService.createUploadedAndNotify(dto, fileRecord.id, orgId);
+    return this.invoicesService.createUploaded(dto, fileRecord.id, orgId);
   }
 
   @Get()

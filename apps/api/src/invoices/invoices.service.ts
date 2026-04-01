@@ -198,6 +198,7 @@ export class InvoicesService {
     const where = {
       organizationId: orgId,
       projectId: { in: projectIds },
+      status: { notIn: ["draft", "cancelled"] },
     };
 
     const [data, total] = await Promise.all([

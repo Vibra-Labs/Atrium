@@ -75,12 +75,18 @@ export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) 
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
   const debouncedQuery = useDebounce(query, 300);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Only handle keyboard events for the visible instance
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setOpen((prev) => !prev);
@@ -150,6 +156,7 @@ export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) 
   return (
     <>
       <button
+        ref={triggerRef}
         onClick={() => setOpen(true)}
         aria-label="Open search (Cmd+K)"
         className={

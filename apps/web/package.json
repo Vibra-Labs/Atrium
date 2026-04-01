@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "echo 'No unit tests yet'",
+    "test": "bun test",
     "clean": "rm -rf .next"
   },
   "dependencies": {

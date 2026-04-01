@@ -8,7 +8,7 @@ import type { Invoice, InvoiceLineItem } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { paginationArgs, paginatedResponse } from "../common";
-import { CreateInvoiceDto, CreateUploadedInvoiceDto, UpdateInvoiceDto, InvoiceListQueryDto } from "./invoices.dto";
+import { CreateInvoiceDto, CreateUploadedInvoiceDto, UpdateInvoiceDto, InvoiceListQueryDto, CreateRecurringInvoiceDto, UpdateRecurringInvoiceDto, RecurringInvoiceQueryDto } from "./invoices.dto";
 
 interface InvoiceWhereInput {
   organizationId?: string;
@@ -123,15 +123,6 @@ export class InvoicesService {
       }
       throw err;
     }
-  }
-
-  // Separate method so we can call notify after createUploaded
-  async createUploadedAndNotify(dto: CreateUploadedInvoiceDto, fileId: string, orgId: string): Promise<Invoice> {
-    const invoice = await this.createUploaded(dto, fileId, orgId);
-    if (invoice.projectId) {
-      this.notifications.notifyInvoiceSent(invoice.id);
-    }
-    return invoice;
   }
 
   async findAll(orgId: string, query: InvoiceListQueryDto) {
@@ -380,5 +371,133 @@ export class InvoicesService {
     }
 
     return { totalInvoices, totalAmount, paidAmount, outstandingAmount };
+  }
+
+  // ── Recurring Invoices ──
+
+  private nextRunAt(interval: string, from = new Date()): Date {
+    const d = new Date(from);
+    if (interval === "weekly") {
+      d.setDate(d.getDate() + 7);
+    } else if (interval === "monthly") {
+      const day = d.getDate();
+      d.setMonth(d.getMonth() + 1, 1);
+      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      d.setDate(Math.min(day, daysInMonth));
+    } else if (interval === "yearly") {
+      const month = d.getMonth();
+      const day = d.getDate();
+      d.setFullYear(d.getFullYear() + 1, month, 1);
+      const daysInMonth = new Date(d.getFullYear(), month + 1, 0).getDate();
+      d.setDate(Math.min(day, daysInMonth));
+    }
+    return d;
+  }
+
+  async createRecurring(dto: CreateRecurringInvoiceDto, orgId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id: dto.projectId, organizationId: orgId },
+    });
+    if (!project) throw new ForbiddenException("Project does not belong to this organization");
+
+    return this.prisma.recurringInvoice.create({
+      data: {
+        organizationId: orgId,
+        projectId: dto.projectId,
+        interval: dto.interval,
+        nextRunAt: dto.startDate ? new Date(dto.startDate) : this.nextRunAt(dto.interval),
+        dueOffsetDays: dto.dueOffsetDays ?? null,
+        notes: dto.notes ?? null,
+        lineItems: {
+          create: dto.lineItems.map((li) => ({
+            description: li.description,
+            quantity: li.quantity,
+            unitPrice: li.unitPrice,
+          })),
+        },
+      },
+      include: { lineItems: true },
+    });
+  }
+
+  async findRecurring(orgId: string, query: RecurringInvoiceQueryDto) {
+    const where: { organizationId: string; projectId?: string } = { organizationId: orgId };
+    if (query.projectId) where.projectId = query.projectId;
+
+    return this.prisma.recurringInvoice.findMany({
+      where,
+      include: { lineItems: true },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async updateRecurring(id: string, dto: UpdateRecurringInvoiceDto, orgId: string) {
+    const existing = await this.prisma.recurringInvoice.findFirst({
+      where: { id, organizationId: orgId },
+    });
+    if (!existing) throw new NotFoundException("Recurring invoice not found");
+
+    const data: Record<string, unknown> = {};
+    if (dto.interval !== undefined) {
+      data.interval = dto.interval;
+      // Recalculate nextRunAt if interval changed
+      data.nextRunAt = this.nextRunAt(dto.interval);
+    }
+    if (dto.dueOffsetDays !== undefined) data.dueOffsetDays = dto.dueOffsetDays;
+    if (dto.notes !== undefined) data.notes = dto.notes;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.lineItems) {
+        await tx.recurringInvoiceLineItem.deleteMany({ where: { recurringInvoiceId: id } });
+        data.lineItems = {
+          create: dto.lineItems.map((li) => ({
+            description: li.description,
+            quantity: li.quantity,
+            unitPrice: li.unitPrice,
+          })),
+        };
+      }
+      return tx.recurringInvoice.update({
+        where: { id },
+        data,
+        include: { lineItems: true },
+      });
+    });
+  }
+
+  async removeRecurring(id: string, orgId: string) {
+    const existing = await this.prisma.recurringInvoice.findFirst({
+      where: { id, organizationId: orgId },
+    });
+    if (!existing) throw new NotFoundException("Recurring invoice not found");
+    await this.prisma.recurringInvoice.delete({ where: { id } });
+  }
+
+  async fireRecurringInvoice(recurring: { id: string; organizationId: string; projectId: string; interval: string; dueOffsetDays: number | null; notes: string | null; lineItems: { description: string; quantity: number; unitPrice: number }[] }) {
+    const now = new Date();
+    const dueDate = recurring.dueOffsetDays
+      ? new Date(now.getTime() + recurring.dueOffsetDays * 86400000)
+      : undefined;
+
+    // Reuse create logic to get auto-incremented invoice number
+    const invoice = await this.create(
+      {
+        projectId: recurring.projectId,
+        lineItems: recurring.lineItems,
+        dueDate: dueDate?.toISOString(),
+        notes: recurring.notes ?? undefined,
+      },
+      recurring.organizationId,
+    );
+
+    // Immediately transition to sent
+    await this.update(invoice.id, { status: "sent" }, recurring.organizationId);
+
+    // Advance nextRunAt
+    await this.prisma.recurringInvoice.update({
+      where: { id: recurring.id },
+      data: { nextRunAt: this.nextRunAt(recurring.interval, now) },
+    });
   }
 }

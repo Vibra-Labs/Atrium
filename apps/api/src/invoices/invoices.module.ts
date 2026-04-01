@@ -6,11 +6,12 @@ import { InvoicesController } from "./invoices.controller";
 import { InvoicesService } from "./invoices.service";
 import { InvoicePdfService } from "./invoice-pdf.service";
 import { InvoiceOverdueTask } from "./invoice-overdue.task";
+import { InvoiceRecurringTask } from "./invoice-recurring.task";
 
 @Module({
   imports: [ScheduleModule.forRoot(), NotificationsModule, FilesModule],
   controllers: [InvoicesController],
-  providers: [InvoicesService, InvoicePdfService, InvoiceOverdueTask],
+  providers: [InvoicesService, InvoicePdfService, InvoiceOverdueTask, InvoiceRecurringTask],
   exports: [InvoicesService],
 })
 export class InvoicesModule {}

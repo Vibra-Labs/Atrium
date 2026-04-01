@@ -140,15 +140,16 @@ model Project {
   updatedAt      DateTime  @updatedAt
   archivedAt     DateTime?
 
-  files     File[]
-  clients   ProjectClient[]
-  updates   ProjectUpdate[]
-  tasks     Task[]
-  invoices  Invoice[]
-  notes      ProjectNote[]
-  documents  Document[]
-  activities ActivityLog[]
-  labels     ProjectLabel[]
+  files              File[]
+  clients            ProjectClient[]
+  updates            ProjectUpdate[]
+  tasks              Task[]
+  invoices           Invoice[]
+  recurringInvoices  RecurringInvoice[]
+  notes              ProjectNote[]
+  documents          Document[]
+  activities         ActivityLog[]
+  labels             ProjectLabel[]
 
   @@index([organizationId])
   @@map("project")
@@ -722,4 +723,37 @@ model MemberLabel {
   @@unique([memberId, labelId])
   @@index([labelId])
   @@map("member_label")
+}
+
+model RecurringInvoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String
+  interval       String   // "weekly" | "monthly" | "yearly"
+  isActive       Boolean  @default(true)
+  nextRunAt      DateTime
+  dueOffsetDays  Int?     // days after creation the invoice is due (null = no due date)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project   Project                    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  lineItems RecurringInvoiceLineItem[]
+
+  @@index([organizationId])
+  @@index([isActive, nextRunAt])
+  @@map("recurring_invoice")
+}
+
+model RecurringInvoiceLineItem {
+  id                 String @id @default(cuid())
+  description        String
+  quantity           Int    @default(1)
+  unitPrice          Int    // cents
+  recurringInvoiceId String
+
+  recurringInvoice RecurringInvoice @relation(fields: [recurringInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([recurringInvoiceId])
+  @@map("recurring_invoice_line_item")
 }

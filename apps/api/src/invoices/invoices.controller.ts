@@ -24,6 +24,9 @@ import {
   UpdateInvoiceDto,
   InvoiceListQueryDto,
   MineInvoiceQueryDto,
+  CreateRecurringInvoiceDto,
+  UpdateRecurringInvoiceDto,
+  RecurringInvoiceQueryDto,
 } from "./invoices.dto";
 import {
   AuthGuard,
@@ -184,6 +187,45 @@ export class InvoicesController {
       if (!res.headersSent) res.status(500).end();
     });
     stream.pipe(res);
+  }
+
+  // ── Recurring Invoices ── (must be before :id routes)
+
+  @Post("recurring")
+  @Roles("owner", "admin")
+  createRecurring(
+    @Body() dto: CreateRecurringInvoiceDto,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.invoicesService.createRecurring(dto, orgId);
+  }
+
+  @Get("recurring")
+  @Roles("owner", "admin")
+  findRecurring(
+    @CurrentOrg("id") orgId: string,
+    @Query() query: RecurringInvoiceQueryDto,
+  ) {
+    return this.invoicesService.findRecurring(orgId, query);
+  }
+
+  @Put("recurring/:id")
+  @Roles("owner", "admin")
+  updateRecurring(
+    @Param("id") id: string,
+    @Body() dto: UpdateRecurringInvoiceDto,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.invoicesService.updateRecurring(id, dto, orgId);
+  }
+
+  @Delete("recurring/:id")
+  @Roles("owner", "admin")
+  removeRecurring(
+    @Param("id") id: string,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.invoicesService.removeRecurring(id, orgId);
   }
 
   @Get(":id")

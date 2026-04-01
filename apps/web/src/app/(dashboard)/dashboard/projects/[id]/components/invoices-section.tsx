@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Plus, Trash2, Receipt, Download, Upload } from "lucide-react";
+import { Plus, Trash2, Receipt, Download, Upload, RefreshCw, Pause, Play, ChevronDown } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { track } from "@/lib/track";
 import { downloadFile, downloadCsv } from "@/lib/download";
@@ -40,11 +40,29 @@ interface PaginatedResponse<T> {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
+interface RecurringLineItem {
+  id?: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+interface RecurringInvoice {
+  id: string;
+  interval: string;
+  isActive: boolean;
+  nextRunAt: string;
+  dueOffsetDays?: number | null;
+  notes?: string | null;
+  lineItems: RecurringLineItem[];
+}
+
 const statusColors: Record<string, { bg: string; text: string }> = {
   draft: { bg: "#e5e7eb", text: "#374151" },
   sent: { bg: "#dbeafe", text: "#1d4ed8" },
   paid: { bg: "#dcfce7", text: "#15803d" },
   overdue: { bg: "#fee2e2", text: "#b91c1c" },
+  cancelled: { bg: "#f3f4f6", text: "#6b7280" },
 };
 
 export function InvoicesSection({
@@ -83,6 +101,20 @@ export function InvoicesSection({
   const [uploadSavingDraft, setUploadSavingDraft] = useState(false);
   const [uploadSending, setUploadSending] = useState(false);
 
+  // Recurring state
+  const [recurringInvoices, setRecurringInvoices] = useState<RecurringInvoice[]>([]);
+  const [showRecurring, setShowRecurring] = useState(false);
+  const [recurringInterval, setRecurringInterval] = useState("monthly");
+  const [recurringStartDate, setRecurringStartDate] = useState("");
+  const [recurringDueOffset, setRecurringDueOffset] = useState("");
+  const [recurringNotes, setRecurringNotes] = useState("");
+  const [recurringLineItems, setRecurringLineItems] = useState<RecurringLineItem[]>([
+    { description: "", quantity: 1, unitPrice: 0 },
+  ]);
+  const [creatingRecurring, setCreatingRecurring] = useState(false);
+  const [showNewMenu, setShowNewMenu] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement>(null);
+
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editItems, setEditItems] = useState<LineItem[]>([]);
@@ -112,13 +144,37 @@ export function InvoicesSection({
     }
   }, [projectId, page, statusFilter]);
 
+  const loadRecurring = useCallback(async () => {
+    try {
+      const recurring = await apiFetch<RecurringInvoice[]>(`/invoices/recurring?projectId=${encodeURIComponent(projectId)}`);
+      setRecurringInvoices(recurring);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     loadInvoices();
   }, [loadInvoices]);
 
   useEffect(() => {
+    loadRecurring();
+  }, [loadRecurring]);
+
+  useEffect(() => {
     setPage(1);
   }, [statusFilter]);
+
+  useEffect(() => {
+    if (!showNewMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setShowNewMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showNewMenu]);
 
   const hasCreateDirtyState = () =>
     newDueDate !== "" ||
@@ -127,6 +183,30 @@ export function InvoicesSection({
 
   const hasUploadDirtyState = () =>
     uploadFile !== null || uploadAmount !== "" || uploadDueDate !== "" || uploadNotes !== "";
+
+  const hasRecurringDirtyState = () =>
+    recurringStartDate !== "" ||
+    recurringDueOffset !== "" ||
+    recurringNotes !== "" ||
+    recurringLineItems.some((li) => li.description.trim() || li.unitPrice > 0);
+
+  const handleCloseRecurring = async () => {
+    if (hasRecurringDirtyState()) {
+      const ok = await confirm({
+        title: "Discard changes?",
+        message: "You have unsaved changes. Closing will discard them.",
+        confirmLabel: "Discard",
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
+    setShowRecurring(false);
+    setRecurringInterval("monthly");
+    setRecurringStartDate("");
+    setRecurringDueOffset("");
+    setRecurringNotes("");
+    setRecurringLineItems([{ description: "", quantity: 1, unitPrice: 0 }]);
+  };
 
   const handleCloseCreate = async () => {
     if (hasCreateDirtyState()) {
@@ -159,6 +239,72 @@ export function InvoicesSection({
     setUploadAmount("");
     setUploadDueDate("");
     setUploadNotes("");
+  };
+
+  // Recurring handlers
+  const updateRecurringLineItem = (index: number, field: keyof RecurringLineItem, value: string | number) => {
+    setRecurringLineItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)),
+    );
+  };
+
+  const handleCreateRecurring = async () => {
+    setCreatingRecurring(true);
+    try {
+      await apiFetch("/invoices/recurring", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId,
+          interval: recurringInterval,
+          startDate: recurringStartDate || undefined,
+          lineItems: recurringLineItems.filter((li) => li.description.trim()),
+          dueOffsetDays: recurringDueOffset ? parseInt(recurringDueOffset) : undefined,
+          notes: recurringNotes || undefined,
+        }),
+      });
+      setShowRecurring(false);
+      setRecurringInterval("monthly");
+      setRecurringStartDate("");
+      setRecurringDueOffset("");
+      setRecurringNotes("");
+      setRecurringLineItems([{ description: "", quantity: 1, unitPrice: 0 }]);
+      loadRecurring();
+      success("Recurring invoice scheduled");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to create recurring invoice");
+    } finally {
+      setCreatingRecurring(false);
+    }
+  };
+
+  const handleToggleRecurring = async (id: string, isActive: boolean) => {
+    try {
+      await apiFetch(`/invoices/recurring/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ isActive: !isActive }),
+      });
+      loadRecurring();
+      success(isActive ? "Recurring invoice paused" : "Recurring invoice resumed");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update recurring invoice");
+    }
+  };
+
+  const handleDeleteRecurring = async (id: string) => {
+    const ok = await confirm({
+      title: "Delete Recurring Invoice",
+      message: "This will stop all future invoices from being generated. This cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await apiFetch(`/invoices/recurring/${id}`, { method: "DELETE" });
+      loadRecurring();
+      success("Recurring invoice deleted");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to delete recurring invoice");
+    }
   };
 
   // Create handlers
@@ -394,13 +540,34 @@ export function InvoicesSection({
               <Upload size={14} />
               <span className="hidden sm:inline">Upload Invoice</span><span className="sm:hidden">Upload</span>
             </button>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
-            >
-              <Plus size={14} />
-              New Invoice
-            </button>
+            <div ref={newMenuRef} className="relative">
+              <button
+                onClick={() => setShowNewMenu((v) => !v)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+              >
+                <Plus size={14} />
+                New Invoice
+                <ChevronDown size={13} className={`transition-transform ${showNewMenu ? "rotate-180" : ""}`} />
+              </button>
+              {showNewMenu && (
+                <div className="absolute right-0 mt-1 w-44 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-20 py-1 overflow-hidden">
+                  <button
+                    onClick={() => { setShowCreate(true); setShowNewMenu(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--muted)] text-left"
+                  >
+                    <Plus size={14} />
+                    One-time
+                  </button>
+                  <button
+                    onClick={() => { setShowRecurring(true); setShowNewMenu(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--muted)] text-left"
+                  >
+                    <RefreshCw size={14} />
+                    Recurring
+                  </button>
+                </div>
+              )}
+            </div>
             </>
           )}
         </div>
@@ -643,6 +810,151 @@ export function InvoicesSection({
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
               >
                 {uploadSending ? "Sending..." : "Send to Client"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recurring modal */}
+      {showRecurring && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseRecurring();
+          }}
+        >
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-2xl mx-4 p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold">New Recurring Invoice</h3>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Interval</label>
+              <select
+                value={recurringInterval}
+                onChange={(e) => setRecurringInterval(e.target.value)}
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+              >
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">First Invoice Date</label>
+              <input
+                type="date"
+                value={recurringStartDate}
+                onChange={(e) => setRecurringStartDate(e.target.value)}
+                min={new Date().toISOString().split("T")[0]}
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+              />
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                Leave blank to start from today. Subsequent invoices send every {recurringInterval}.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Due Days After Issue</label>
+              <input
+                type="number"
+                value={recurringDueOffset}
+                onChange={(e) => setRecurringDueOffset(e.target.value)}
+                min={0}
+                placeholder="e.g. 30 (optional)"
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)] mb-2 block">Line Items</label>
+              <div className="space-y-2">
+                {recurringLineItems.map((item, index) => (
+                  <div key={index} className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={item.description}
+                        onChange={(e) => updateRecurringLineItem(index, "description", e.target.value)}
+                        placeholder="Description"
+                        className="flex-1 min-w-0 px-3 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                      />
+                      {recurringLineItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setRecurringLineItems((prev) => prev.filter((_, i) => i !== index))}
+                          className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 shrink-0"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={item.quantity}
+                        onChange={(e) => updateRecurringLineItem(index, "quantity", parseInt(e.target.value) || 0)}
+                        min={1}
+                        placeholder="Qty"
+                        className="w-16 px-2 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                      />
+                      <div className="relative flex-1 min-w-0">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">$</span>
+                        <input
+                          type="number"
+                          value={item.unitPrice / 100 || ""}
+                          onChange={(e) =>
+                            updateRecurringLineItem(index, "unitPrice", Math.round(parseFloat(e.target.value || "0") * 100))
+                          }
+                          step="0.01"
+                          min={0}
+                          placeholder="0.00"
+                          className="w-full pl-7 pr-3 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                        />
+                      </div>
+                      <span className="text-sm font-medium shrink-0">
+                        {formatCurrency(item.quantity * item.unitPrice)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setRecurringLineItems((prev) => [...prev, { description: "", quantity: 1, unitPrice: 0 }])}
+                className="mt-2 flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+              >
+                <Plus size={14} />
+                Add Line Item
+              </button>
+            </div>
+
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Notes</label>
+              <textarea
+                value={recurringNotes}
+                onChange={(e) => setRecurringNotes(e.target.value)}
+                rows={2}
+                placeholder="Additional notes..."
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCloseRecurring}
+                disabled={creatingRecurring}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={handleCreateRecurring}
+                disabled={creatingRecurring || recurringLineItems.every((li) => !li.description.trim())}
+                className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {creatingRecurring ? "Scheduling..." : "Schedule Recurring Invoice"}
               </button>
             </div>
           </div>
@@ -940,6 +1252,61 @@ export function InvoicesSection({
       <div className="mt-3">
         <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
+
+      {/* Recurring templates list */}
+      {recurringInvoices.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-medium flex items-center gap-2 mb-3">
+            <RefreshCw size={14} />
+            Recurring Invoices
+          </h3>
+          <div className="space-y-2">
+            {recurringInvoices.map((rec) => {
+              const recTotal = rec.lineItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
+              return (
+                <div
+                  key={rec.id}
+                  className="border border-[var(--border)] rounded-lg p-3 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium capitalize">{rec.interval}</span>
+                      <span className="text-sm">{formatCurrency(recTotal)}</span>
+                      {!rec.isActive && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)]">
+                          Paused
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                      Next run: {new Date(rec.nextRunAt).toLocaleDateString()}
+                      {rec.dueOffsetDays ? ` · due +${rec.dueOffsetDays}d` : ""}
+                    </p>
+                  </div>
+                  {!isArchived && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleToggleRecurring(rec.id, rec.isActive)}
+                        className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                        title={rec.isActive ? "Pause" : "Resume"}
+                      >
+                        {rec.isActive ? <Pause size={14} /> : <Play size={14} />}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRecurring(rec.id)}
+                        className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

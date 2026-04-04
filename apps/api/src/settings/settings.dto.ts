@@ -9,6 +9,7 @@ import {
   Max,
   MaxLength,
   ValidateIf,
+  Matches,
 } from "class-validator";
 import { Type, Transform } from "class-transformer";
 
@@ -76,4 +77,13 @@ export class UpdateSettingsDto {
   @IsString()
   @MaxLength(2000)
   paymentDetails?: string;
+}
+
+export class SaveCustomDomainDto {
+  @IsString()
+  @MaxLength(253)
+  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$/, {
+    message: "domain must be a valid hostname (e.g. portal.example.com)",
+  })
+  domain!: string;
 }

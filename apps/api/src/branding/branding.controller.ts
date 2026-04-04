@@ -7,6 +7,7 @@ import {
   Body,
   Res,
   Param,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -109,6 +110,33 @@ export class BrandingController {
   }
 
   @Public()
+  @Get("public/:slug")
+  async findBySlug(@Param("slug") slug: string, @Res() res: Response) {
+    const data = await this.brandingService.findBySlug(slug);
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.json(data);
+  }
+
+  @Public()
+  @Get("domain")
+  async findByDomain(@Query("host") host: string, @Res() res: Response) {
+    if (!host) { res.status(400).send(); return; }
+    const data = await this.brandingService.findByDomain(host);
+    if (!data) { res.status(204).send(); return; }
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json(data);
+  }
+
+  @Public()
+  @Get("instance")
+  async findInstanceBranding(@Res() res: Response) {
+    const data = await this.brandingService.findInstanceBranding();
+    if (!data) { res.status(204).send(); return; }
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json(data);
+  }
+
+  @Public()
   @Get("logo/:orgId")
   async serveLogo(
     @Param("orgId") orgId: string,
@@ -123,7 +151,7 @@ export class BrandingController {
 
     const { body, contentType } = await this.storage.download(branding.logoKey);
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("Cache-Control", "public, max-age=60");
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     body.pipe(res);
   }

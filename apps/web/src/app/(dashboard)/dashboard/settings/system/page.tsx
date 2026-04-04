@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Mail, HardDrive, Send, Palette, Tag, CreditCard } from "lucide-react";
+import { Mail, HardDrive, Send, Palette, Tag, CreditCard, Globe } from "lucide-react";
 import { BrandingSection } from "./branding-section";
 import { LabelsSection } from "./labels-section";
 import { PaymentsSection } from "./payments-section";
+import { CustomDomainSection } from "./custom-domain-section";
 
 interface SystemSettings {
   emailProvider: string | null;
@@ -51,6 +52,7 @@ export default function SystemSettingsPage() {
     accentColor: "#ff6b5c",
   });
   const [orgName, setOrgName] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
@@ -82,6 +84,7 @@ export default function SystemSettingsPage() {
         setSettings(settingsData);
         setBranding(brandingData);
         if (org?.name) setOrgName(org.name);
+        if (org?.slug) setOrgSlug(org.slug);
         setLoading(false);
       })
       .catch((err) => {
@@ -196,7 +199,7 @@ export default function SystemSettingsPage() {
               Displayed in the sidebar and client portal header.
             </p>
           </div>
-          <BrandingSection branding={branding} onBrandingChange={setBranding} orgName={orgName} />
+          <BrandingSection branding={branding} onBrandingChange={setBranding} orgName={orgName} orgSlug={orgSlug} />
         </section>
 
         {/* Labels */}
@@ -415,8 +418,19 @@ export default function SystemSettingsPage() {
         </button>
       </form>
 
-      {/* Client Payments — outside the form since it's managed via its own OAuth flow */}
+      {/* Sections outside the form (managed independently) */}
       <div className="max-w-lg space-y-8">
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Globe size={20} />
+            <h2 className="text-lg font-semibold">Custom Domain</h2>
+          </div>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Let your clients access the portal at your own domain (e.g. portal.yourcompany.com).
+          </p>
+          <CustomDomainSection />
+        </section>
+
         <section className="space-y-4">
           <div className="flex items-center gap-2">
             <CreditCard size={20} />

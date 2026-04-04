@@ -3,9 +3,18 @@ import { HttpException } from "@nestjs/common";
 import { HealthController } from "./health.controller";
 import type { PrismaService } from "./prisma/prisma.service";
 
+const makePrisma = (opts: { dbOk: boolean }) => ({
+  $queryRaw: opts.dbOk
+    ? mock(() => Promise.resolve([1]))
+    : mock(() => Promise.reject(new Error("Connection refused"))),
+  organization: {
+    findFirst: mock(() => Promise.resolve(null)),
+  },
+});
+
 describe("HealthController", () => {
   it("returns ok status when DB is connected", async () => {
-    const mockPrisma = { $queryRaw: mock(() => Promise.resolve([1])) };
+    const mockPrisma = makePrisma({ dbOk: true });
     const controller = new HealthController(mockPrisma as unknown as PrismaService);
 
     const result = await controller.check();
@@ -16,9 +25,7 @@ describe("HealthController", () => {
   });
 
   it("throws 503 when DB fails", async () => {
-    const mockPrisma = {
-      $queryRaw: mock(() => Promise.reject(new Error("Connection refused"))),
-    };
+    const mockPrisma = makePrisma({ dbOk: false });
     const controller = new HealthController(mockPrisma as unknown as PrismaService);
 
     try {

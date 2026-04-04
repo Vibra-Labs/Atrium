@@ -174,6 +174,30 @@ export class SettingsService {
     return 50;
   }
 
+  async saveCustomDomain(organizationId: string, domain: string) {
+    return this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { customDomain: domain },
+      select: { customDomain: true },
+    });
+  }
+
+  async removeCustomDomain(organizationId: string) {
+    return this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { customDomain: null },
+      select: { customDomain: true },
+    });
+  }
+
+  async getCustomDomain(organizationId: string) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { customDomain: true },
+    });
+    return { customDomain: org?.customDomain ?? null };
+  }
+
   async testEmailConfig(organizationId: string, recipientEmail: string) {
     const emailConfig = await this.getEffectiveEmailConfig(organizationId);
 

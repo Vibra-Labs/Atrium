@@ -6,6 +6,7 @@ import {
   ProjectUpdateEmail,
   TaskAssignedEmail,
   InvoiceSentEmail,
+  InvoicePaidEmail,
   DecisionClosedEmail,
   DocumentUploadedEmail,
   DocumentRespondedEmail,
@@ -16,6 +17,7 @@ import { MailService } from "../mail/mail.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { InAppNotificationsService } from "./in-app-notifications.service";
 import { PushService } from "./push.service";
+import { calculateInvoiceTotal } from "../payments/invoice-total";
 
 @Injectable()
 export class NotificationsService {
@@ -74,6 +76,110 @@ export class NotificationsService {
         "Failed to send invoice sent notifications",
       );
     });
+  }
+
+  /**
+   * Notify org owners/admins that an invoice was paid via Stripe.
+   * Fire-and-forget: errors are logged but never thrown.
+   */
+  notifyInvoicePaid(invoiceId: string): void {
+    this.sendInvoicePaidEmails(invoiceId).catch((err) => {
+      this.logger.error(
+        { err, invoiceId },
+        "Failed to send invoice paid notifications",
+      );
+    });
+  }
+
+  private async sendInvoicePaidEmails(invoiceId: string): Promise<void> {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        lineItems: { select: { quantity: true, unitPrice: true } },
+        project: { select: { id: true, name: true } },
+      },
+    });
+    if (!invoice) return;
+
+    const totalCents = calculateInvoiceTotal(invoice);
+    const amount = `$${(totalCents / 100).toFixed(2)}`;
+    const projectName = invoice.project?.name ?? "Unknown project";
+
+    const admins = await this.getOrgAdmins(invoice.organizationId, true);
+    if (admins.length === 0) return;
+
+    const dashboardUrl = invoice.project
+      ? `${this.webUrl}/dashboard/projects/${invoice.project.id}`
+      : `${this.webUrl}/dashboard`;
+    const link = invoice.project
+      ? `/dashboard/projects/${invoice.project.id}`
+      : `/dashboard`;
+
+    // In-app + push
+    this.createInAppAndPush(
+      admins.map((a) => a.userId),
+      invoice.organizationId,
+      "invoice_paid",
+      `Invoice ${invoice.invoiceNumber} paid`,
+      `${amount} received for ${projectName}`,
+      link,
+    );
+
+    await Promise.allSettled(
+      admins.map(async (admin) => {
+        try {
+          const html = await render(
+            InvoicePaidEmail({
+              recipientName: admin.user.name,
+              invoiceNumber: invoice.invoiceNumber,
+              amount,
+              projectName,
+              dashboardUrl,
+            }),
+          );
+          await this.mail.send(
+            admin.user.email,
+            `Invoice ${invoice.invoiceNumber} paid — ${amount}`,
+            html,
+            invoice.organizationId,
+          );
+        } catch (err) {
+          this.logger.warn(
+            { err, email: admin.user.email, invoiceId },
+            "Failed to send invoice paid email to admin",
+          );
+        }
+      }),
+    );
+  }
+
+  /**
+   * Notify org owners that their Stripe account was disconnected externally.
+   * Fire-and-forget.
+   */
+  notifyStripeDisconnected(organizationId: string): void {
+    this.sendStripeDisconnectedNotifications(organizationId).catch((err) => {
+      this.logger.error(
+        { err, organizationId },
+        "Failed to send Stripe disconnected notifications",
+      );
+    });
+  }
+
+  private async sendStripeDisconnectedNotifications(
+    organizationId: string,
+  ): Promise<void> {
+    const admins = await this.getOrgAdmins(organizationId);
+    if (admins.length === 0) return;
+
+    this.createInAppAndPush(
+      admins.map((a) => a.userId),
+      organizationId,
+      "stripe_disconnected",
+      "Stripe account disconnected",
+      "Your Stripe account was disconnected. Clients can no longer pay invoices online. Reconnect from Settings.",
+      "/dashboard/settings/system",
+    );
   }
 
   private async sendProjectUpdateEmails(
@@ -292,14 +398,7 @@ export class NotificationsService {
     const clients = await this.getProjectClients(invoice.projectId);
     if (clients.length === 0) return;
 
-    const totalCents =
-      invoice.type === "uploaded" && invoice.amount != null
-        ? invoice.amount
-        : invoice.lineItems.reduce(
-            (sum: number, item: { quantity: number; unitPrice: number }) =>
-              sum + item.quantity * item.unitPrice,
-            0,
-          );
+    const totalCents = calculateInvoiceTotal(invoice);
     const amount = `$${(totalCents / 100).toFixed(2)}`;
     const dueDate = invoice.dueDate
       ? invoice.dueDate.toLocaleDateString("en-US", {
@@ -475,16 +574,7 @@ export class NotificationsService {
 
     const clientName = respondent?.name || "A client";
 
-    const admins = await this.prisma.member.findMany({
-      where: {
-        organizationId: doc.organizationId,
-        role: { in: ["owner", "admin"] },
-      },
-      select: {
-        userId: true,
-        user: { select: { name: true, email: true } },
-      },
-    });
+    const admins = await this.getOrgAdmins(doc.organizationId, true);
     if (admins.length === 0) return;
 
     const dashboardUrl = `${this.webUrl}/dashboard/projects/${doc.projectId}`;
@@ -755,14 +845,7 @@ export class NotificationsService {
     const isClientComment = authorRole === "member";
 
     if (isClientComment) {
-      // Notify org owners/admins
-      const admins = await this.prisma.member.findMany({
-        where: {
-          organizationId,
-          role: { in: ["owner", "admin"] },
-        },
-        select: { userId: true },
-      });
+      const admins = await this.getOrgAdmins(organizationId);
       const adminIds = admins.map((a) => a.userId);
       if (adminIds.length === 0) return;
 
@@ -793,9 +876,27 @@ export class NotificationsService {
     }
   }
 
-  /**
-   * Fetch all client users assigned to a project with their name + email.
-   */
+  private async getOrgAdmins(
+    organizationId: string,
+    includeDetails?: false,
+  ): Promise<Array<{ userId: string }>>;
+  private async getOrgAdmins(
+    organizationId: string,
+    includeDetails: true,
+  ): Promise<Array<{ userId: string; user: { name: string; email: string } }>>;
+  private async getOrgAdmins(organizationId: string, includeDetails = false) {
+    return this.prisma.member.findMany({
+      where: {
+        organizationId,
+        role: { in: ["owner", "admin"] },
+      },
+      select: {
+        userId: true,
+        ...(includeDetails && { user: { select: { name: true, email: true } } }),
+      },
+    });
+  }
+
   private async getProjectClients(
     projectId: string,
   ): Promise<Array<{ id: string; name: string; email: string }>> {

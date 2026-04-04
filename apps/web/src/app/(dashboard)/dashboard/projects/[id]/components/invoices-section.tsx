@@ -35,6 +35,12 @@ interface InvoiceListItem {
   stripePaymentIntentId?: string | null;
 }
 
+interface InvoiceStats {
+  outstandingAmount: number;
+  totalInvoices: number;
+  paidAmount: number;
+}
+
 interface PaginatedResponse<T> {
   data: T[];
   meta: { total: number; page: number; limit: number; totalPages: number };

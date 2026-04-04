@@ -40,7 +40,7 @@ Make the portal the primary channel between agency and client.
 - [ ] **In-portal messaging** -- Dedicated project-scoped chat with email fallback
 - [x] **Team members** -- Invite additional staff to your organization beyond owner/admin
 - [x] **Tags & labels** -- Cross-entity tagging for projects, clients, tasks, and files
-- [ ] **Client-facing invoice payments** -- Pay invoices directly from the portal (Stripe)
+- [x] **Client-facing invoice payments** -- Pay invoices directly from the portal (Stripe Connect)
 - [ ] **Recurring invoices** -- Auto-generate invoices on a schedule for retainer clients
 
 ### v1.4 -- Contracts, Approvals & Scheduling (April 2026)

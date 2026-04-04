@@ -299,6 +299,12 @@ model Invoice {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
+  // Stripe Connect payment tracking
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
+  paidAt                  DateTime?
+  paidAmount              Int?      // Amount actually paid (cents)
+
   project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
   uploadedFile File?             @relation("UploadedInvoiceFile", fields: [uploadedFileId], references: [id])
   lineItems    InvoiceLineItem[]
@@ -385,6 +391,13 @@ model SystemSettings {
   paymentInstructions String?  // Displayed on invoices in the portal
   paymentMethod       String?  // "bank_transfer", "paypal", "stripe_link", "other"
   paymentDetails      String?  // Encrypted — bank account, PayPal email, etc.
+
+  // Stripe payments (direct keys or Connect)
+  stripeSecretKey        String?   // encrypted — agency's own Stripe secret key (direct mode)
+  stripeWebhookSecret    String?   // encrypted — auto-registered webhook signing secret
+  stripeConnectAccountId String?   // Connected Stripe account ID (Connect mode)
+  stripeConnectEnabled   Boolean   @default(false) // true when payments are configured (either mode)
+  stripeConnectLivemode  Boolean   @default(false)
 
   // File settings
   maxFileSizeMb  Int      @default(50)

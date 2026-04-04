@@ -24,7 +24,7 @@ export class SettingsService {
     );
   }
 
-  private encrypt(plaintext: string): string {
+  encrypt(plaintext: string): string {
     const iv = randomBytes(16);
     const cipher = createCipheriv(ENCRYPTION_ALGORITHM, this.encryptionKey, iv);
     const encrypted = Buffer.concat([
@@ -36,7 +36,7 @@ export class SettingsService {
     return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted.toString("hex")}`;
   }
 
-  private decrypt(encryptedValue: string): string {
+  decrypt(encryptedValue: string): string {
     try {
       const [ivHex, authTagHex, ciphertextHex] = encryptedValue.split(":");
       const iv = Buffer.from(ivHex, "hex");
@@ -67,6 +67,8 @@ export class SettingsService {
       resendApiKey: settings.resendApiKey ? "••••••••" : null,
       smtpPass: settings.smtpPass ? "••••••••" : null,
       paymentDetails: settings.paymentDetails ? "••••••••" : null,
+      stripeSecretKey: settings.stripeSecretKey ? "••••••••" : null,
+      stripeWebhookSecret: settings.stripeWebhookSecret ? "••••••••" : null,
     };
   }
 
@@ -106,6 +108,8 @@ export class SettingsService {
       resendApiKey: settings.resendApiKey ? "••••••••" : null,
       smtpPass: settings.smtpPass ? "••••••••" : null,
       paymentDetails: settings.paymentDetails ? "••••••••" : null,
+      stripeSecretKey: settings.stripeSecretKey ? "••••••••" : null,
+      stripeWebhookSecret: settings.stripeWebhookSecret ? "••••••••" : null,
     };
   }
 
@@ -117,6 +121,7 @@ export class SettingsService {
     return {
       paymentInstructions: settings?.paymentInstructions ?? null,
       paymentMethod: settings?.paymentMethod ?? null,
+      stripeConnectEnabled: settings?.stripeConnectEnabled ?? false,
     };
   }
 

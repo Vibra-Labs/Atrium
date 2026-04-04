@@ -25,6 +25,7 @@ import { DocumentsModule } from "./documents/documents.module";
 import { ActivityModule } from "./activity/activity.module";
 import { CommentsModule } from "./comments/comments.module";
 import { LabelsModule } from "./labels/labels.module";
+import { PaymentsModule } from "./payments/payments.module";
 import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
 import { AllExceptionsFilter } from "./common";
@@ -77,6 +78,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     ActivityModule,
     CommentsModule,
     LabelsModule,
+    PaymentsModule,
   ],
   controllers: [HealthController],
   providers: [

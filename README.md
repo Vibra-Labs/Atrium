@@ -25,6 +25,9 @@ Most agencies juggle shared drives, spreadsheets, and scattered emails to keep c
 
 - **Project management** -- Customizable status pipeline per organization
 - **File sharing** -- Upload and deliver files via S3, MinIO, Cloudflare R2, or local storage
+- **Invoicing** -- Create and send invoices to clients with draft/send workflow
+- **Client payments** -- Clients pay invoices directly via Stripe Checkout (Direct Keys or Connect)
+- **Global search** -- Full-text search across projects, files, clients, and updates
 - **White-label branding** -- Custom colors and logo applied to the client portal
 - **Role-based access** -- Owner/admin roles for your team, member role for clients
 - **Authentication** -- Magic link and email/password auth via Better Auth
@@ -95,6 +98,7 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 
 - [Docker Deployment](docs/docker.md)
 - [Configuration & Environment Variables](docs/configuration.md)
+- [Stripe Payments Setup](docs/stripe.md)
 - [Development Guide & Scripts](docs/development.md)
 - [Security](docs/security.md)
 

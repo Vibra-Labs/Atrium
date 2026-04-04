@@ -36,6 +36,10 @@ export class AuthService {
       secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
       baseURL: this.config.get("BETTER_AUTH_URL", "http://localhost:3001"),
       basePath: "/api/auth",
+      session: {
+        expiresIn: 60 * 60 * 24 * 30,   // 30 days
+        updateAge: 60 * 60 * 24,         // refresh if older than 1 day
+      },
       trustedOrigins: [
         webUrl,
         this.config.get("BETTER_AUTH_URL", "http://localhost:3001"),

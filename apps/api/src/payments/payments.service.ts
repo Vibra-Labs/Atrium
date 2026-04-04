@@ -22,6 +22,19 @@ interface StripeConfig {
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
+
+  private readonly CAPABILITY_MAP: Record<string, string> = {
+    card_payments: "card",
+    link_payments: "link",
+    us_bank_account_ach_payments: "us_bank_account",
+    sepa_debit_payments: "sepa_debit",
+    ideal_payments: "ideal",
+    bacs_debit_payments: "bacs_debit",
+    klarna_payments: "klarna",
+    afterpay_clearpay_payments: "afterpay_clearpay",
+    affirm_payments: "affirm",
+    cashapp_payments: "cashapp",
+  };
   private readonly webUrl: string;
   private readonly apiUrl: string;
   private readonly appOrigin: string;
@@ -130,6 +143,7 @@ export class PaymentsService {
         mode: "connect" as const,
         enabled: settings.stripeConnectEnabled,
         livemode: settings.stripeConnectLivemode,
+        paymentMethods: settings?.stripePaymentMethods ?? [],
       };
     }
 
@@ -138,6 +152,7 @@ export class PaymentsService {
         mode: "direct" as const,
         enabled: settings.stripeConnectEnabled,
         livemode: settings.stripeConnectLivemode,
+        paymentMethods: settings?.stripePaymentMethods ?? [],
       };
     }
 
@@ -145,6 +160,7 @@ export class PaymentsService {
       mode: connectMode ? ("connect" as const) : ("direct" as const),
       enabled: false,
       livemode: false,
+      paymentMethods: settings?.stripePaymentMethods ?? [],
     };
   }
 
@@ -264,6 +280,50 @@ export class PaymentsService {
     this.logger.log(`Removed direct Stripe key for org ${orgId}`);
   }
 
+  async getAvailablePaymentMethods(orgId: string) {
+    try {
+      const config = await this.getStripeConfig(orgId);
+      const accountId = config.stripeAccount ?? "me";
+
+      const account = await config.stripe.accounts.retrieve(
+        accountId,
+        { expand: ["capabilities"] },
+      );
+
+      const capabilities = (account as any).capabilities ?? {};
+      const methods = Object.entries(this.CAPABILITY_MAP).map(([capKey, methodId]) => ({
+        id: methodId,
+        active: capabilities[capKey] === "active",
+      }));
+
+      return { methods };
+    } catch {
+      // Payments not configured or Stripe error — return all inactive
+      const methods = Object.values(this.CAPABILITY_MAP).map((methodId) => ({
+        id: methodId,
+        active: false,
+      }));
+      return { methods };
+    }
+  }
+
+  async savePaymentMethods(orgId: string, methods: string[]) {
+    const deduped = [...new Set(methods)];
+    if (deduped.includes("link") && !deduped.includes("card")) {
+      deduped.push("card");
+    }
+    const filtered = this.currency !== "usd"
+      ? deduped.filter((m) => m !== "us_bank_account")
+      : deduped;
+
+    await this.prisma.systemSettings.upsert({
+      where: { organizationId: orgId },
+      create: { organizationId: orgId, stripePaymentMethods: filtered },
+      update: { stripePaymentMethods: filtered },
+    });
+    return { paymentMethods: filtered };
+  }
+
   // ── Stripe Connect OAuth ──
 
   async getConnectAuthorizeUrl(orgId: string, returnUrl: string) {
@@ -375,11 +435,15 @@ export class PaymentsService {
     this.validateAppUrl(successUrl);
     this.validateAppUrl(cancelUrl);
 
-    const [config, invoice] = await Promise.all([
+    const [config, invoice, settings] = await Promise.all([
       this.getStripeConfig(orgId),
       this.prisma.invoice.findFirst({
         where: { id: invoiceId, organizationId: orgId },
         include: { lineItems: true },
+      }),
+      this.prisma.systemSettings.findUnique({
+        where: { organizationId: orgId },
+        select: { stripePaymentMethods: true },
       }),
     ]);
 
@@ -437,25 +501,37 @@ export class PaymentsService {
             quantity: li.quantity,
           }));
 
-    const session = await config.stripe.checkout.sessions.create(
-      {
-        mode: "payment",
-        line_items: lineItems,
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        metadata: {
-          invoiceId: invoice.id,
-          organizationId: orgId,
-        },
-        payment_intent_data: {
-          metadata: {
-            invoiceId: invoice.id,
-            organizationId: orgId,
-          },
-        },
-      },
-      config.stripeAccount ? { stripeAccount: config.stripeAccount } : undefined,
-    );
+    const rawMethods = settings?.stripePaymentMethods ?? [];
+    const paymentMethodTypes = (rawMethods.length > 0 ? rawMethods : ["card"]) as Stripe.Checkout.SessionCreateParams.PaymentMethodType[];
+
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      mode: "payment",
+      payment_method_types: paymentMethodTypes,
+      line_items: lineItems,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: { invoiceId: invoice.id, organizationId: orgId },
+      payment_intent_data: { metadata: { invoiceId: invoice.id, organizationId: orgId } },
+    };
+
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await config.stripe.checkout.sessions.create(
+        sessionParams,
+        config.stripeAccount ? { stripeAccount: config.stripeAccount } : undefined,
+      );
+    } catch (err: any) {
+      // If Stripe rejects the payment methods (e.g. capability lost), retry with card only
+      if (err?.type === "invalid_request_error" && paymentMethodTypes.length > 1) {
+        this.logger.warn(`Checkout failed with methods [${paymentMethodTypes}], retrying with card only`);
+        session = await config.stripe.checkout.sessions.create(
+          { ...sessionParams, payment_method_types: ["card"] },
+          config.stripeAccount ? { stripeAccount: config.stripeAccount } : undefined,
+        );
+      } else {
+        throw err;
+      }
+    }
 
     await this.prisma.invoice.updateMany({
       where: {

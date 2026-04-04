@@ -398,6 +398,7 @@ model SystemSettings {
   stripeConnectAccountId String?   // Connected Stripe account ID (Connect mode)
   stripeConnectEnabled   Boolean   @default(false) // true when payments are configured (either mode)
   stripeConnectLivemode  Boolean   @default(false)
+  stripePaymentMethods   String[]  @default([])
 
   // File settings
   maxFileSizeMb  Int      @default(50)

@@ -10,7 +10,7 @@ import {
 } from "@nestjs/common";
 import { Response } from "express";
 import { PaymentsService } from "./payments.service";
-import { CreateCheckoutDto, ConnectAuthorizeDto, SaveDirectKeysDto } from "./payments.dto";
+import { CreateCheckoutDto, ConnectAuthorizeDto, SaveDirectKeysDto, SavePaymentMethodsDto } from "./payments.dto";
 import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, Public } from "../common";
 
 @Controller("payments")
@@ -24,6 +24,12 @@ export class PaymentsController {
   @Roles("owner")
   getPaymentStatus(@CurrentOrg("id") orgId: string) {
     return this.paymentsService.getPaymentStatus(orgId);
+  }
+
+  @Get("available-methods")
+  @Roles("owner")
+  getAvailablePaymentMethods(@CurrentOrg("id") orgId: string) {
+    return this.paymentsService.getAvailablePaymentMethods(orgId);
   }
 
   @Get("enabled")
@@ -47,6 +53,15 @@ export class PaymentsController {
   @Roles("owner")
   removeDirectKey(@CurrentOrg("id") orgId: string) {
     return this.paymentsService.removeDirectKeys(orgId);
+  }
+
+  @Post("payment-methods")
+  @Roles("owner")
+  savePaymentMethods(
+    @CurrentOrg("id") orgId: string,
+    @Body() dto: SavePaymentMethodsDto,
+  ) {
+    return this.paymentsService.savePaymentMethods(orgId, dto.paymentMethods);
   }
 
   // ── Connect OAuth mode ──

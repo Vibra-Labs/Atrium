@@ -94,6 +94,9 @@ The database schema is automatically applied on startup. To skip this (e.g. when
 | `SECURE_COOKIES` | No | `true` | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. See [Unraid / Plain HTTP Setup](#unraid--plain-http-setup). |
 | `SKIP_DB_PUSH` | No | `false` | Skip automatic schema sync on startup |
 | `DIRECT_URL` | No | -- | Direct (non-pooled) database URL for schema sync |
+| `STRIPE_CONNECT_CLIENT_ID` | No | -- | Stripe Connect platform client ID (`ca_...`). Enables the OAuth "Connect with Stripe" flow for client invoice payments. See [Stripe setup](stripe.md). |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | No | -- | Signing secret for the Stripe Connect webhook endpoint (`whsec_...`) |
+| `STRIPE_CURRENCY` | No | `usd` | ISO 4217 currency code for invoice payments (e.g. `eur`, `gbp`) |
 
 ## Volumes
 

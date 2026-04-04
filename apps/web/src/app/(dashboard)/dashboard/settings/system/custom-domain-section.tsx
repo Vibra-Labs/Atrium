@@ -38,8 +38,6 @@ interface ProviderInstructions {
 }
 
 function getInstructions(provider: ProviderId, domain: string, target: string): ProviderInstructions {
-  const record = `Type: CNAME  |  Name: ${domain}  |  Value: ${target}`;
-
   switch (provider) {
     case "cloudflare":
       return {
@@ -47,7 +45,7 @@ function getInstructions(provider: ProviderId, domain: string, target: string): 
         steps: [
           "Open the Cloudflare dashboard and select your domain.",
           "Go to DNS → Records → Add record.",
-          `Add: ${record}`,
+          `Add: Type: CNAME  |  Name: ${domain}  |  Value: ${target}`,
           "Set Proxy status to DNS only (grey cloud).",
           "Click Save.",
         ],
@@ -236,7 +234,6 @@ export function CustomDomainSection() {
 
   return (
     <div className="space-y-4">
-      {/* Domain input */}
       <div className="flex gap-2">
         <input
           type="text"
@@ -267,10 +264,8 @@ export function CustomDomainSection() {
         )}
       </div>
 
-      {/* DNS setup card — shown once domain is saved */}
       {savedDomain && (
         <div className="rounded-lg border border-[var(--border)] overflow-hidden">
-          {/* Provider picker header */}
           <div className="flex items-center justify-between gap-3 px-4 py-3 bg-[var(--muted)] border-b border-[var(--border)]">
             <p className="text-xs font-medium">DNS Setup</p>
             <select
@@ -285,14 +280,12 @@ export function CustomDomainSection() {
           </div>
 
           <div className="p-4 space-y-4">
-            {/* DNS records to copy */}
             <div className="space-y-1.5">
               <DnsRecord label="Type" value="CNAME" />
               <DnsRecord label="Name" value={savedDomain} />
               <DnsRecord label="Value" value={MAIN_DOMAIN} />
             </div>
 
-            {/* Provider warning */}
             {instructions?.warning && (
               <div className="flex gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2">
                 <span className="text-amber-600 shrink-0 mt-0.5">⚠</span>
@@ -300,12 +293,10 @@ export function CustomDomainSection() {
               </div>
             )}
 
-            {/* Provider note */}
             {instructions?.note && (
               <p className="text-xs text-[var(--muted-foreground)]">{instructions.note}</p>
             )}
 
-            {/* Step-by-step */}
             <ol className="space-y-1.5">
               {instructions?.steps.map((step, i) => (
                 <li key={i} className="flex gap-2.5 text-xs text-[var(--muted-foreground)]">

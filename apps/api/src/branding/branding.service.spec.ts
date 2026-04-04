@@ -14,7 +14,7 @@ const mockPrisma = {
   organization: {
     findUnique: mock(() => Promise.resolve(null)),
     findFirst: mock(() => Promise.resolve(null)),
-    count: mock(() => Promise.resolve(0)),
+    findMany: mock(() => Promise.resolve([])),
   },
 };
 
@@ -143,15 +143,16 @@ describe("BrandingService", () => {
 
   describe("findInstanceBranding", () => {
     it("returns null when multiple orgs exist (hosted)", async () => {
-      mockPrisma.organization.count.mockReturnValue(Promise.resolve(2));
+      mockPrisma.organization.findMany.mockReturnValue(
+        Promise.resolve([{ id: "org-1", name: "A" }, { id: "org-2", name: "B" }]),
+      );
       const result = await service.findInstanceBranding();
       expect(result).toBeNull();
     });
 
     it("returns null when single org has no logo", async () => {
-      mockPrisma.organization.count.mockReturnValue(Promise.resolve(1));
-      mockPrisma.organization.findFirst.mockReturnValue(
-        Promise.resolve({ id: "org-1", name: "Solo Corp" }),
+      mockPrisma.organization.findMany.mockReturnValue(
+        Promise.resolve([{ id: "org-1", name: "Solo Corp" }]),
       );
       mockPrisma.branding.findUnique.mockReturnValue(Promise.resolve(null));
 
@@ -160,9 +161,8 @@ describe("BrandingService", () => {
     });
 
     it("returns branding when single org has a logo", async () => {
-      mockPrisma.organization.count.mockReturnValue(Promise.resolve(1));
-      mockPrisma.organization.findFirst.mockReturnValue(
-        Promise.resolve({ id: "org-1", name: "Solo Corp" }),
+      mockPrisma.organization.findMany.mockReturnValue(
+        Promise.resolve([{ id: "org-1", name: "Solo Corp" }]),
       );
       mockPrisma.branding.findUnique.mockReturnValue(
         Promise.resolve({

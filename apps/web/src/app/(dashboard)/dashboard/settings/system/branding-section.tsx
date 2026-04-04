@@ -78,7 +78,6 @@ export function BrandingSection({
 
   return (
     <div className="space-y-4">
-      {/* Logo Upload */}
       <div className="space-y-3">
         <label className="text-sm font-medium">Company Logo</label>
         <p className="text-xs text-[var(--muted-foreground)]">
@@ -136,7 +135,6 @@ export function BrandingSection({
         )}
       </div>
 
-      {/* Hide Logo Toggle */}
       <div className="space-y-2">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -155,7 +153,6 @@ export function BrandingSection({
         </p>
       </div>
 
-      {/* Branded Login URL */}
       {orgSlug && (
         <div className="p-3 bg-[var(--muted)] rounded-lg space-y-1.5">
           <p className="text-xs font-medium">Branded login URL</p>
@@ -183,7 +180,6 @@ export function BrandingSection({
         </div>
       )}
 
-      {/* Colors */}
       <div className="space-y-2">
         <label className="text-sm font-medium">Primary Color</label>
         <div className="flex items-center gap-3">
@@ -228,7 +224,6 @@ export function BrandingSection({
         </div>
       </div>
 
-      {/* Preview */}
       <div className="p-4 rounded-lg border border-[var(--border)]">
         <p className="text-sm font-medium mb-3">Preview</p>
         <div className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]">

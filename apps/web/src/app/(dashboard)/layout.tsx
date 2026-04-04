@@ -5,6 +5,7 @@ import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { MobileNav } from "./mobile-nav";
 import { NotificationBell } from "@/components/notification-bell";
+import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
@@ -138,7 +139,8 @@ export default async function DashboardLayout({
           <span className="font-bold text-lg leading-none truncate">
             {orgName || "Atrium"}
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <GlobalSearch iconOnly />
             <NotificationBell align="left" />
           </div>
         </div>

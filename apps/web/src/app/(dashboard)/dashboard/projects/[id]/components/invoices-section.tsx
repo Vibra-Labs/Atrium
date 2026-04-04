@@ -69,6 +69,7 @@ export function InvoicesSection({
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [outstandingAmount, setOutstandingAmount] = useState(0);
 
   // Create form state
   const [newDueDate, setNewDueDate] = useState("");
@@ -76,7 +77,8 @@ export function InvoicesSection({
   const [newLineItems, setNewLineItems] = useState<LineItem[]>([
     { description: "", quantity: 1, unitPrice: 0 },
   ]);
-  const [submitting, setSubmitting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [sending, setSending] = useState(false);
 
   // Upload state
   const [showUpload, setShowUpload] = useState(false);
@@ -84,6 +86,8 @@ export function InvoicesSection({
   const [uploadAmount, setUploadAmount] = useState("");
   const [uploadDueDate, setUploadDueDate] = useState("");
   const [uploadNotes, setUploadNotes] = useState("");
+  const [uploadSavingDraft, setUploadSavingDraft] = useState(false);
+  const [uploadSending, setUploadSending] = useState(false);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -100,11 +104,13 @@ export function InvoicesSection({
       params.set("limit", "10");
       params.set("projectId", projectId);
       if (statusFilter) params.set("status", statusFilter);
-      const res = await apiFetch<PaginatedResponse<InvoiceListItem>>(
-        `/invoices?${params.toString()}`,
-      );
+      const [res, stats] = await Promise.all([
+        apiFetch<PaginatedResponse<InvoiceListItem>>(`/invoices?${params.toString()}`),
+        apiFetch<{ outstandingAmount: number }>(`/invoices/stats?projectId=${encodeURIComponent(projectId)}`),
+      ]);
       setInvoices(res.data);
       setTotalPages(res.meta.totalPages);
+      setOutstandingAmount(stats.outstandingAmount);
     } catch (err) {
       console.error(err);
     } finally {
@@ -120,15 +126,46 @@ export function InvoicesSection({
     setPage(1);
   }, [statusFilter]);
 
-  const outstanding = invoices
-    .filter((i) => i.status === "sent" || i.status === "overdue")
-    .reduce(
-      (sum, inv) =>
-        sum + (inv.type === "uploaded"
-          ? (inv.amount || 0)
-          : inv.lineItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0)),
-      0,
-    );
+  const hasCreateDirtyState = () =>
+    newDueDate !== "" ||
+    newNotes !== "" ||
+    newLineItems.some((li) => li.description.trim() || li.unitPrice > 0);
+
+  const hasUploadDirtyState = () =>
+    uploadFile !== null || uploadAmount !== "" || uploadDueDate !== "" || uploadNotes !== "";
+
+  const handleCloseCreate = async () => {
+    if (hasCreateDirtyState()) {
+      const ok = await confirm({
+        title: "Discard changes?",
+        message: "You have unsaved changes. Closing will discard them.",
+        confirmLabel: "Discard",
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
+    setShowCreate(false);
+    setNewDueDate("");
+    setNewNotes("");
+    setNewLineItems([{ description: "", quantity: 1, unitPrice: 0 }]);
+  };
+
+  const handleCloseUpload = async () => {
+    if (hasUploadDirtyState()) {
+      const ok = await confirm({
+        title: "Discard changes?",
+        message: "You have unsaved changes. Closing will discard them.",
+        confirmLabel: "Discard",
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
+    setShowUpload(false);
+    setUploadFile(null);
+    setUploadAmount("");
+    setUploadDueDate("");
+    setUploadNotes("");
+  };
 
   // Create handlers
   const updateNewLineItem = (index: number, field: keyof LineItem, value: string | number) => {
@@ -137,10 +174,11 @@ export function InvoicesSection({
     );
   };
 
-  const handleCreate = async () => {
-    setSubmitting(true);
+  const handleCreate = async (sendImmediately = false) => {
+    if (sendImmediately) setSending(true);
+    else setSavingDraft(true);
     try {
-      await apiFetch("/invoices", {
+      const invoice = await apiFetch<{ id: string }>("/invoices", {
         method: "POST",
         body: JSON.stringify({
           projectId,
@@ -149,23 +187,39 @@ export function InvoicesSection({
           lineItems: newLineItems.filter((li) => li.description.trim()),
         }),
       });
+      let sent = false;
+      if (sendImmediately) {
+        try {
+          await apiFetch(`/invoices/${invoice.id}`, {
+            method: "PUT",
+            body: JSON.stringify({ status: "sent" }),
+          });
+          sent = true;
+        } catch {
+          showError("Invoice was saved as a draft but could not be sent. You can send it from the invoice list.");
+        }
+      }
       track("invoice_created", { amount: newTotal });
       setShowCreate(false);
       setNewDueDate("");
       setNewNotes("");
       setNewLineItems([{ description: "", quantity: 1, unitPrice: 0 }]);
       loadInvoices();
-      success("Invoice created");
+      if (!sendImmediately || sent) {
+        success(sent ? "Invoice sent to client" : "Invoice saved as draft");
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to create invoice");
     } finally {
-      setSubmitting(false);
+      setSending(false);
+      setSavingDraft(false);
     }
   };
 
-  const handleUploadInvoice = async () => {
+  const handleUploadInvoice = async (sendImmediately = false) => {
     if (!uploadFile) return;
-    setSubmitting(true);
+    if (sendImmediately) setUploadSending(true);
+    else setUploadSavingDraft(true);
     try {
       const formData = new FormData();
       formData.append("file", uploadFile);
@@ -174,10 +228,22 @@ export function InvoicesSection({
       if (uploadDueDate) formData.append("dueDate", uploadDueDate);
       if (uploadNotes) formData.append("notes", uploadNotes);
 
-      await apiFetch("/invoices/upload", {
+      const invoice = await apiFetch<{ id: string }>("/invoices/upload", {
         method: "POST",
         body: formData,
       });
+      let sent = false;
+      if (sendImmediately) {
+        try {
+          await apiFetch(`/invoices/${invoice.id}`, {
+            method: "PUT",
+            body: JSON.stringify({ status: "sent" }),
+          });
+          sent = true;
+        } catch {
+          showError("Invoice was saved as a draft but could not be sent. You can send it from the invoice list.");
+        }
+      }
       track("invoice_uploaded");
       setShowUpload(false);
       setUploadFile(null);
@@ -185,11 +251,14 @@ export function InvoicesSection({
       setUploadDueDate("");
       setUploadNotes("");
       loadInvoices();
-      success("Invoice uploaded");
+      if (!sendImmediately || sent) {
+        success(sent ? "Invoice sent to client" : "Invoice saved as draft");
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to upload invoice");
     } finally {
-      setSubmitting(false);
+      setUploadSending(false);
+      setUploadSavingDraft(false);
     }
   };
 
@@ -301,12 +370,15 @@ export function InvoicesSection({
     0,
   );
 
+  const isCreateSubmitting = savingDraft || sending;
+  const isUploadSubmitting = uploadSavingDraft || uploadSending;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-medium flex items-center gap-2">
           <Receipt size={14} />
-          Invoices{invoices.length > 0 && ` (${invoices.length})`}
+          Invoices
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           {invoices.length > 0 && (
@@ -344,7 +416,7 @@ export function InvoicesSection({
       {invoices.length > 0 && (
         <p className="text-xs text-[var(--muted-foreground)] mb-3">
           {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
-          {outstanding > 0 && ` \u2014 ${formatCurrency(outstanding)} outstanding`}
+          {outstandingAmount > 0 && ` \u2014 ${formatCurrency(outstandingAmount)} outstanding`}
         </p>
       )}
 
@@ -368,7 +440,7 @@ export function InvoicesSection({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowCreate(false);
+            if (e.target === e.currentTarget) handleCloseCreate();
           }}
         >
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-2xl mx-4 p-6 space-y-4 max-h-[80vh] overflow-y-auto">
@@ -465,19 +537,28 @@ export function InvoicesSection({
               />
             </div>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowCreate(false)}
-                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+                onClick={handleCloseCreate}
+                disabled={isCreateSubmitting}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] disabled:opacity-50"
               >
                 Cancel
               </button>
+              <div className="flex-1" />
               <button
-                onClick={handleCreate}
-                disabled={submitting || newLineItems.every((li) => !li.description.trim())}
+                onClick={() => handleCreate(false)}
+                disabled={isCreateSubmitting || newLineItems.every((li) => !li.description.trim())}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] disabled:opacity-50"
+              >
+                {savingDraft ? "Saving..." : "Save as Draft"}
+              </button>
+              <button
+                onClick={() => handleCreate(true)}
+                disabled={isCreateSubmitting || newLineItems.every((li) => !li.description.trim())}
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
               >
-                {submitting ? "Creating..." : "Create Invoice"}
+                {sending ? "Sending..." : "Send to Client"}
               </button>
             </div>
           </div>
@@ -489,7 +570,7 @@ export function InvoicesSection({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowUpload(false);
+            if (e.target === e.currentTarget) handleCloseUpload();
           }}
         >
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md mx-4 p-6 space-y-4">
@@ -542,19 +623,32 @@ export function InvoicesSection({
               />
             </div>
 
-            <div className="flex justify-end gap-2">
+            {!uploadFile && (
+              <p className="text-xs text-[var(--muted-foreground)]">Select a file to continue</p>
+            )}
+
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowUpload(false)}
-                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+                onClick={handleCloseUpload}
+                disabled={isUploadSubmitting}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] disabled:opacity-50"
               >
                 Cancel
               </button>
+              <div className="flex-1" />
               <button
-                onClick={handleUploadInvoice}
-                disabled={submitting || !uploadFile}
+                onClick={() => handleUploadInvoice(false)}
+                disabled={isUploadSubmitting || !uploadFile}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] disabled:opacity-50"
+              >
+                {uploadSavingDraft ? "Saving..." : "Save as Draft"}
+              </button>
+              <button
+                onClick={() => handleUploadInvoice(true)}
+                disabled={isUploadSubmitting || !uploadFile}
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
               >
-                {submitting ? "Uploading..." : "Upload"}
+                {uploadSending ? "Sending..." : "Send to Client"}
               </button>
             </div>
           </div>
@@ -598,7 +692,7 @@ export function InvoicesSection({
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-sm font-medium">{formatCurrency(total)}</span>
                     <span
-                      className="text-xs px-2 py-1 rounded-full font-medium"
+                      className="text-xs px-2 py-1 rounded-full font-medium capitalize"
                       style={{ backgroundColor: colors.bg, color: colors.text }}
                     >
                       {inv.status}
@@ -642,7 +736,7 @@ export function InvoicesSection({
                           Edit
                         </button>
                       )}
-                      {!isArchived && !inv.stripePaymentIntentId && (
+                      {!isArchived && ["draft", "sent"].includes(inv.status) && !inv.stripePaymentIntentId && (
                         <button
                           onClick={() => handleDelete(inv.id)}
                           className="ml-auto flex items-center gap-1 text-xs text-red-500 hover:underline"

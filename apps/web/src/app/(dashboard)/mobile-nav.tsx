@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutButton } from "./sign-out-button";
 import { NotificationBell } from "@/components/notification-bell";
+import { GlobalSearch } from "@/components/global-search";
 
 interface MobileNavProps {
   logoSrc: string | null;
@@ -56,7 +57,8 @@ export function MobileNav({ logoSrc, orgName, hideLogo }: MobileNavProps) {
         <span className="font-bold text-sm truncate">
           {orgName || "Atrium"}
         </span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <GlobalSearch iconOnly />
           <NotificationBell align="left" />
         </div>
       </div>

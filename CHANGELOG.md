@@ -2,6 +2,13 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.3.4] — 2026-04-01
+
+### Added
+
+- **Global search** — Press `⌘K` (or `Ctrl+K`) anywhere in the dashboard to open a command palette that searches across projects, tasks, files, and people in real time. Results are grouped by type with keyboard navigation (arrow keys + Enter). A search icon in the top-right sidebar header provides a mouse-accessible trigger.
+- **Content embedding** — Paste a YouTube, Loom, Figma, or Google Docs/Sheets/Slides link into any project update and an inline preview will automatically appear below the text. Up to 3 embeds per update. A fallback "Open in …" link is shown for providers that require login.
+
 ## [1.3.3] — 2026-03-21
 
 ### Added

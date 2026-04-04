@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
+import { getEmbeds, EmbedPreview } from "@/lib/embeds";
 import { downloadFile } from "@/lib/download";
 import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
@@ -684,6 +685,9 @@ export default function PortalProjectDetailPage() {
                       </span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
+                    {getEmbeds(entry.content || "").map((embed) => (
+                      <EmbedPreview key={embed.embedUrl} embed={embed} />
+                    ))}
                     {entry.hasAttachment && isImage && (
                       <img
                         src={attachmentSrc}

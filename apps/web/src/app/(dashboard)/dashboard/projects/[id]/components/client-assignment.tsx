@@ -138,7 +138,7 @@ export function ClientAssignment({
           )}
         </div>
       ) : (
-        <p className="text-sm text-[var(--muted-foreground)]">
+        <p className="text-sm text-[var(--muted-foreground)] pb-4">
           No clients yet. Invite clients from the{" "}
           <a
             href="/dashboard/clients"

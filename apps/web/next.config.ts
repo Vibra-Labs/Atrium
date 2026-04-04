@@ -15,6 +15,19 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true, // CVE-2026-27980: disable image optimization (not used in this app)
   },
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-src https://www.youtube.com https://www.loom.com https://www.figma.com https://docs.google.com;",
+          },
+        ],
+      },
+    ];
+  },
   webpack: (config) => {
     config.module.rules.push({
       test: /CHANGELOG\.md$/,

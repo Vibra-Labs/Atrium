@@ -170,6 +170,56 @@ test.describe("Invoice Payments", () => {
     });
   });
 
+  // ── API: Payment methods ──
+
+  test.describe("API — Payment methods", () => {
+    test("POST /payments/payment-methods rejects unknown method", async ({
+      request,
+    }) => {
+      const csrfToken = getCsrfToken();
+      const res = await request.post(`${API}/payments/payment-methods`, {
+        data: { paymentMethods: ["paypal"] },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.status()).toBe(400);
+    });
+
+    test("POST /payments/payment-methods rejects empty array", async ({
+      request,
+    }) => {
+      const csrfToken = getCsrfToken();
+      const res = await request.post(`${API}/payments/payment-methods`, {
+        data: { paymentMethods: [] },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.status()).toBe(400);
+    });
+
+    test("POST /payments/payment-methods saves valid methods", async ({
+      request,
+    }) => {
+      const csrfToken = getCsrfToken();
+      const res = await request.post(`${API}/payments/payment-methods`, {
+        data: { paymentMethods: ["card"] },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.status()).toBe(201);
+      const body = await res.json();
+      expect(body).toHaveProperty("paymentMethods");
+      expect(body.paymentMethods).toContain("card");
+    });
+
+    test("GET /payments/status response includes paymentMethods array", async ({
+      request,
+    }) => {
+      const res = await request.get(`${API}/payments/status`);
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      expect(body).toHaveProperty("paymentMethods");
+      expect(Array.isArray(body.paymentMethods)).toBe(true);
+    });
+  });
+
   // ── Portal: Pay Now visibility ──
 
   test.describe("Portal — Pay Now visibility", () => {

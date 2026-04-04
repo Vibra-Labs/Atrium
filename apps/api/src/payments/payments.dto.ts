@@ -1,4 +1,4 @@
-import { IsString, IsUrl, MaxLength, MinLength } from "class-validator";
+import { IsString, IsUrl, MaxLength, MinLength, IsArray, ArrayMinSize, ArrayMaxSize, IsIn } from "class-validator";
 
 const urlOptions = {
   protocols: ["https", "http"],
@@ -27,4 +27,18 @@ export class SaveDirectKeysDto {
   @MinLength(20)
   @MaxLength(500)
   stripeSecretKey!: string;
+}
+
+const ALLOWED_METHODS = [
+  "card", "us_bank_account", "link",
+  "sepa_debit", "ideal", "bacs_debit",
+  "klarna", "afterpay_clearpay", "affirm", "cashapp",
+] as const;
+
+export class SavePaymentMethodsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(10)
+  @IsIn(ALLOWED_METHODS, { each: true })
+  paymentMethods!: string[];
 }

@@ -12,23 +12,26 @@ export interface BrandingData {
 async function fetchBranding(url: string): Promise<BrandingData | null> {
   try {
     const res = await fetch(url, { next: { revalidate: 60 } });
-    if (!res.ok) return null;
+    if (res.status === 404 || res.status === 204) return null;
+    if (!res.ok) throw new Error(`Branding fetch failed: ${res.status}`);
     return res.json();
-  } catch {
-    return null;
+  } catch (err) {
+    // Re-throw so callers can distinguish "not found" (null) from "API error" (thrown)
+    throw err;
   }
 }
 
 export function getBrandingByDomain(host: string) {
-  return fetchBranding(`${API_URL}/api/branding/domain?host=${encodeURIComponent(host)}`);
+  return fetchBranding(`${API_URL}/api/branding/domain?host=${encodeURIComponent(host)}`).catch(() => null);
 }
 
+// Throws on 5xx so the caller can show a proper 404 vs error page
 export function getBrandingBySlug(slug: string) {
   return fetchBranding(`${API_URL}/api/branding/public/${slug}`);
 }
 
 export function getInstanceBranding() {
-  return fetchBranding(`${API_URL}/api/branding/instance`);
+  return fetchBranding(`${API_URL}/api/branding/instance`).catch(() => null);
 }
 
 export function buildBrandingStyle(branding: BrandingData | null): React.CSSProperties {

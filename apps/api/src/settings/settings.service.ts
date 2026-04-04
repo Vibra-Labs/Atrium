@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, ConflictException, BadRequestException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PrismaService } from "../prisma/prisma.service";
@@ -175,11 +175,23 @@ export class SettingsService {
   }
 
   async saveCustomDomain(organizationId: string, domain: string) {
-    return this.prisma.organization.update({
-      where: { id: organizationId },
-      data: { customDomain: domain },
-      select: { customDomain: true },
-    });
+    const mainDomain = this.config.get<string>("MAIN_DOMAIN") ?? "";
+    if (mainDomain && domain === mainDomain) {
+      throw new BadRequestException("Cannot use the main application domain as a custom domain.");
+    }
+
+    try {
+      return await this.prisma.organization.update({
+        where: { id: organizationId },
+        data: { customDomain: domain },
+        select: { customDomain: true },
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "P2002") {
+        throw new ConflictException("This domain is already in use by another organization.");
+      }
+      throw err;
+    }
   }
 
   async removeCustomDomain(organizationId: string) {

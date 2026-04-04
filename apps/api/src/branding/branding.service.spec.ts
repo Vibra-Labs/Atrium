@@ -104,13 +104,13 @@ describe("BrandingService", () => {
 
   describe("findByDomain", () => {
     it("returns null when domain not registered", async () => {
-      mockPrisma.organization.findFirst.mockReturnValue(Promise.resolve(null));
+      mockPrisma.organization.findUnique.mockReturnValue(Promise.resolve(null));
       const result = await service.findByDomain("unknown.example.com");
       expect(result).toBeNull();
     });
 
     it("returns branding for a registered custom domain", async () => {
-      mockPrisma.organization.findFirst.mockReturnValue(
+      mockPrisma.organization.findUnique.mockReturnValue(
         Promise.resolve({ id: "org-1", name: "Acme Corp" }),
       );
       mockPrisma.branding.findUnique.mockReturnValue(
@@ -131,7 +131,7 @@ describe("BrandingService", () => {
     });
 
     it("returns null logoSrc when org has no logo", async () => {
-      mockPrisma.organization.findFirst.mockReturnValue(
+      mockPrisma.organization.findUnique.mockReturnValue(
         Promise.resolve({ id: "org-2", name: "No Logo" }),
       );
       mockPrisma.branding.findUnique.mockReturnValue(Promise.resolve(null));

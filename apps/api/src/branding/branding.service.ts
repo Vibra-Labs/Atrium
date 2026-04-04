@@ -61,7 +61,7 @@ export class BrandingService {
   }
 
   async findByDomain(host: string) {
-    const org = await this.prisma.organization.findFirst({ where: { customDomain: host } });
+    const org = await this.prisma.organization.findUnique({ where: { customDomain: host } });
     if (!org) return null;
     const branding = await this.findByOrg(org.id);
     return this.buildBrandingShape(org, branding);

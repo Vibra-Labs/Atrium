@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Lock, Sparkles, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -13,10 +13,7 @@ interface CustomDomainData {
   customDomain: string | null;
 }
 
-const MAIN_DOMAIN =
-  typeof window !== "undefined"
-    ? window.location.host
-    : (process.env.NEXT_PUBLIC_DOMAIN ?? "");
+const MAIN_DOMAIN = process.env.NEXT_PUBLIC_DOMAIN ?? "";
 
 // DNS provider metadata
 const PROVIDERS = [
@@ -110,10 +107,13 @@ function getInstructions(provider: ProviderId, domain: string, target: string): 
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   const copy = () => {
     navigator.clipboard.writeText(value);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 2000);
   };
   return (
     <button

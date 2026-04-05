@@ -39,8 +39,6 @@ test.describe("Labels", () => {
     const editInput = page.locator('input[type="text"][maxlength="50"]').last();
     await editInput.fill("Edited Label");
 
-    // Click the check button to save
-    const checkBtn = page.locator("button").filter({ has: page.locator("svg") }).nth(-2);
     await page.keyboard.press("Enter");
 
     // Should see success toast

@@ -19,3 +19,4 @@ firebase.json
 public_empty/
 *.pem
 *.key
+e2e/e2e/

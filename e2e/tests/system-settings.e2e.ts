@@ -10,13 +10,17 @@ test.describe("System Settings", () => {
 
   test("shows email configuration section", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
-    await expect(page.getByText(/email configuration/i)).toBeVisible();
+    // Email config is on the General tab
+    await page.getByRole("button", { name: /^general$/i }).click();
+    await expect(page.getByRole("heading", { name: /^email$/i })).toBeVisible();
     await expect(page.getByText(/email provider/i)).toBeVisible();
   });
 
   test("shows file settings section", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
-    await expect(page.getByText(/file settings/i)).toBeVisible();
+    // File settings are on the General tab
+    await page.getByRole("button", { name: /^general$/i }).click();
+    await expect(page.getByRole("heading", { name: /^files$/i })).toBeVisible();
     await expect(page.getByText(/maximum file size/i)).toBeVisible();
   });
 
@@ -30,6 +34,9 @@ test.describe("System Settings", () => {
 
   test("email provider selector works", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
+    // Email config is on the General tab
+    await page.getByRole("button", { name: /^general$/i }).click();
+
     const select = page.locator("select");
     await expect(select).toBeVisible();
 
@@ -55,12 +62,18 @@ test.describe("System Settings", () => {
 
   test("save settings button exists and is clickable", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
-    const saveButton = page.getByRole("button", { name: /save settings/i });
+    // Save button is in the General tab configuration form
+    await page.getByRole("button", { name: /^general$/i }).click();
+    // The configuration form's save button is before the Custom Domain section
+    await expect(page.getByText(/maximum file size/i)).toBeVisible();
+    const saveButton = page.getByRole("button", { name: /^save$/i }).first();
     await expect(saveButton).toBeVisible();
   });
 
   test("can update max file size", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
+    // Slider is on the General tab
+    await page.getByRole("button", { name: /^general$/i }).click();
     const slider = page.locator('input[type="range"]');
     await expect(slider).toBeVisible();
 
@@ -72,6 +85,8 @@ test.describe("System Settings", () => {
 
   test("test email button appears when provider is selected", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
+    // Email config is on the General tab
+    await page.getByRole("button", { name: /^general$/i }).click();
 
     // No test email button when no provider is selected
     await expect(
@@ -87,24 +102,26 @@ test.describe("System Settings", () => {
 
   test("settings API returns data", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
+    // Navigate to General tab
+    await page.getByRole("button", { name: /^general$/i }).click();
 
     // Wait for settings to load (loading text should disappear)
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
-    // The page should show the save button (meaning data loaded)
-    await expect(
-      page.getByRole("button", { name: /save settings/i }),
-    ).toBeVisible();
+    // The slider being visible confirms settings loaded
+    await expect(page.locator('input[type="range"]')).toBeVisible();
   });
 
   test("can save settings without errors", async ({ page }) => {
     await page.goto("/dashboard/settings/system");
+    await page.getByRole("button", { name: /^general$/i }).click();
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.locator('input[type="range"]')).toBeVisible();
 
-    // Click save
-    await page.getByRole("button", { name: /save settings/i }).click();
+    // Click the configuration form's Save button (first Save button in tab)
+    await page.getByRole("button", { name: /^save$/i }).first().click();
 
     // Should see success toast
-    await expect(page.getByText(/settings saved/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 5000 });
   });
 });

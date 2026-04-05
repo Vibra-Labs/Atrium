@@ -34,7 +34,12 @@ export class AuthService {
     this.auth = betterAuth({
       database: prismaAdapter(this.prisma, { provider: "postgresql" }),
       secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
-      baseURL: this.config.get("BETTER_AUTH_URL", "http://localhost:3001"),
+      // API_URL is the canonical var; BETTER_AUTH_URL is kept as a fallback for
+      // existing deployments that set it before the rename in v1.4.
+      baseURL:
+        this.config.get("API_URL") ??
+        this.config.get("BETTER_AUTH_URL") ??
+        "http://localhost:3001",
       basePath: "/api/auth",
       session: {
         expiresIn: 60 * 60 * 24 * 30,   // 30 days
@@ -42,7 +47,9 @@ export class AuthService {
       },
       trustedOrigins: [
         webUrl,
-        this.config.get("BETTER_AUTH_URL", "http://localhost:3001"),
+        this.config.get("API_URL") ??
+          this.config.get("BETTER_AUTH_URL") ??
+          "http://localhost:3001",
       ],
       // Firebase Hosting strips all cookies except "__session".
       // When FIREBASE_HOSTING=true, override the cookie name.

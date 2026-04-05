@@ -28,11 +28,7 @@ RUN packages/database/node_modules/.bin/prisma generate --schema=packages/databa
 RUN bun run --filter @atrium/email build
 RUN bun run --filter @atrium/api build
 ARG NEXT_PUBLIC_API_URL=
-ARG NEXT_PUBLIC_BILLING_ENABLED=true
-ARG NEXT_PUBLIC_STRIPE_MODE=test
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-ENV NEXT_PUBLIC_BILLING_ENABLED=${NEXT_PUBLIC_BILLING_ENABLED}
-ENV NEXT_PUBLIC_STRIPE_MODE=${NEXT_PUBLIC_STRIPE_MODE}
 RUN bun run --filter @atrium/web build
 
 # Production runner

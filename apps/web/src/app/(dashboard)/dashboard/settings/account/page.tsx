@@ -6,13 +6,14 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { BillingSection } from "../billing/billing-section";
+import { useAppConfig } from "@/lib/app-config";
 import type { DeletionInfo } from "@atrium/shared";
-
-const billingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
 
 type Tab = "profile" | "billing";
 
 export default function AccountSettingsPage() {
+  const config = useAppConfig();
+  const billingEnabled = config?.billingEnabled ?? false;
   const searchParams = useSearchParams();
   const { success, error: showError } = useToast();
   const confirm = useConfirm();

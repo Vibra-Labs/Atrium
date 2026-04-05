@@ -1,9 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, ConflictException, BadRequestException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateSettingsDto } from "./settings.dto";
 import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto";
+import dns from "node:dns/promises";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 
@@ -172,6 +173,70 @@ export class SettingsService {
     if (envMax) return parseInt(envMax, 10);
 
     return 50;
+  }
+
+  async saveCustomDomain(organizationId: string, domain: string) {
+    const webUrl = this.config.get<string>("WEB_URL") ?? "";
+    const mainHostname = webUrl ? new URL(webUrl).hostname : "";
+    if (mainHostname && domain === mainHostname) {
+      throw new BadRequestException("Cannot use the main application domain as a custom domain.");
+    }
+
+    try {
+      return await this.prisma.organization.update({
+        where: { id: organizationId },
+        data: { customDomain: domain },
+        select: { customDomain: true },
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "P2002") {
+        throw new ConflictException("This domain is already in use by another organization.");
+      }
+      throw err;
+    }
+  }
+
+  async removeCustomDomain(organizationId: string) {
+    return this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { customDomain: null },
+      select: { customDomain: true },
+    });
+  }
+
+  async getCustomDomain(organizationId: string) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { customDomain: true },
+    });
+    return { customDomain: org?.customDomain ?? null };
+  }
+
+  async verifyCustomDomain(organizationId: string) {
+    const { customDomain: domain } = await this.getCustomDomain(organizationId);
+    if (!domain) return { verified: false, reason: "No domain configured" };
+
+    const webUrl = this.config.get<string>("WEB_URL") ?? "";
+    const mainDomain = webUrl ? new URL(webUrl).hostname.toLowerCase() : "";
+    if (!mainDomain) return { verified: false, domain, reason: "MAIN_DOMAIN not configured on this instance" };
+
+    const normalize = (s: string) => s.replace(/\.$/, "").toLowerCase();
+
+    try {
+      const cnames = await dns.resolveCname(domain);
+      const verified = cnames.some((c) => normalize(c) === mainDomain);
+      return {
+        verified,
+        domain,
+        reason: verified ? undefined : `CNAME points to ${cnames[0] ?? "unknown"}, expected ${mainDomain}`,
+      };
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === "ENODATA" || code === "ENOTFOUND" || code === "ESERVFAIL") {
+        return { verified: false, domain, reason: "No CNAME record found — DNS may still be propagating" };
+      }
+      throw err;
+    }
   }
 
   async testEmailConfig(organizationId: string, recipientEmail: string) {

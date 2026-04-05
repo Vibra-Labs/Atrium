@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Upload } from "lucide-react";
+import { Upload, Copy, Check } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -21,12 +21,15 @@ export function BrandingSection({
   branding,
   onBrandingChange,
   orgName,
+  orgSlug,
 }: {
   branding: Branding;
   onBrandingChange: (branding: Branding) => void;
   orgName?: string;
+  orgSlug?: string;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { error: showError } = useToast();
@@ -75,7 +78,6 @@ export function BrandingSection({
 
   return (
     <div className="space-y-4">
-      {/* Logo Upload */}
       <div className="space-y-3">
         <label className="text-sm font-medium">Company Logo</label>
         <p className="text-xs text-[var(--muted-foreground)]">
@@ -107,7 +109,7 @@ export function BrandingSection({
               <button
                 type="button"
                 onClick={handleLogoDelete}
-                className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-sm hover:bg-red-50"
+                className="px-3 py-1.5 text-red-600 rounded-lg text-sm hover:bg-red-50"
               >
                 Remove
               </button>
@@ -133,7 +135,6 @@ export function BrandingSection({
         )}
       </div>
 
-      {/* Hide Logo Toggle */}
       <div className="space-y-2">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -152,7 +153,33 @@ export function BrandingSection({
         </p>
       </div>
 
-      {/* Colors */}
+      {orgSlug && (
+        <div className="p-3 bg-[var(--muted)] rounded-lg space-y-1.5">
+          <p className="text-xs font-medium">Branded login URL</p>
+          <div className="flex items-center gap-2">
+            <code className="text-xs text-[var(--muted-foreground)] flex-1 truncate">
+              {typeof window !== "undefined" ? window.location.origin : ""}/login/{orgSlug}
+            </code>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/login/${orgSlug}`);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className="flex items-center gap-1 text-xs px-2 py-1 border border-[var(--border)] rounded hover:bg-[var(--background)] transition-colors"
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Share this with your team and clients for a branded sign-in page.
+            On self-hosted instances, uploading a logo automatically shows it on <code className="text-[10px]">/login</code>.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-2">
         <label className="text-sm font-medium">Primary Color</label>
         <div className="flex items-center gap-3">
@@ -197,7 +224,6 @@ export function BrandingSection({
         </div>
       </div>
 
-      {/* Preview */}
       <div className="p-4 rounded-lg border border-[var(--border)]">
         <p className="text-sm font-medium mb-3">Preview</p>
         <div className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]">

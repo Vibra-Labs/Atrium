@@ -42,6 +42,32 @@ If you are using the Atrium-hosted service (run by the maintainers), error repor
 
 Self-hosters who prefer to guarantee no data ever leaves their environment can omit the `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` environment variables entirely. Without a DSN configured, Sentry is not initialized and no data is ever sent, regardless of the in-app setting.
 
+## Disabling at the source code level
+
+If you are building from source and want a hard guarantee that Sentry is never bundled, you can remove the integration entirely:
+
+1. **Uninstall the packages:**
+   ```bash
+   bun remove @sentry/nestjs @sentry/nextjs --filter @atrium/api --filter @atrium/web
+   ```
+
+2. **Delete the Sentry config files:**
+   ```
+   apps/api/src/instrument.ts
+   apps/web/sentry.client.config.ts
+   apps/web/sentry.server.config.ts
+   apps/web/sentry.edge.config.ts
+   apps/web/src/lib/sentry.ts
+   ```
+
+3. **Revert `apps/web/next.config.ts`** — remove the `withSentryConfig()` wrapper and return the plain `nextConfig` object.
+
+4. **Remove `captureException` call sites** — search for `Sentry.captureException` in `apps/api/src/` and delete those lines.
+
+5. **Remove the telemetry consent banner** — delete `apps/web/src/components/telemetry-consent-banner.tsx` and remove its import from `apps/web/src/app/(dashboard)/layout.tsx`.
+
+After these steps, no Sentry code will be present in the build at all.
+
 ## Data retention and access
 
 Error reports are stored in Sentry and accessible only to the Atrium maintainers. Reports are used solely to identify and fix bugs in the Atrium codebase. Data is retained according to Sentry's default retention policy (90 days on the free tier).

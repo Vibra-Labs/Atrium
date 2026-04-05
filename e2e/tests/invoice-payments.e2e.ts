@@ -16,20 +16,22 @@ test.describe("Invoice Payments", () => {
       ).toBeVisible({ timeout: 5000 });
     });
 
-    test("shows Stripe key input in direct mode (default)", async ({ page }) => {
+    test("shows Stripe connection UI (direct key input or OAuth button)", async ({ page }) => {
       await page.goto("/dashboard/settings/system");
       await page.getByRole("button", { name: /^payments$/i }).click();
-      await expect(
-        page.getByPlaceholder(/sk_test_/i),
-      ).toBeVisible({ timeout: 5000 });
+      // Direct mode shows sk_test_ input; Connect mode shows "Connect with Stripe" button
+      const directInput = page.getByPlaceholder(/sk_test_/i);
+      const connectBtn = page.getByRole("button", { name: /connect with stripe/i });
+      await expect(directInput.or(connectBtn)).toBeVisible({ timeout: 5000 });
     });
 
-    test("shows Save & Connect button", async ({ page }) => {
+    test("shows Stripe action button (Save & Connect or Connect with Stripe)", async ({ page }) => {
       await page.goto("/dashboard/settings/system");
       await page.getByRole("button", { name: /^payments$/i }).click();
-      await expect(
-        page.getByRole("button", { name: /save.*connect/i }),
-      ).toBeVisible({ timeout: 5000 });
+      // Direct mode shows "Save & Connect"; Connect mode shows "Connect with Stripe"
+      const saveConnect = page.getByRole("button", { name: /save.*connect/i });
+      const connectStripe = page.getByRole("button", { name: /connect with stripe/i });
+      await expect(saveConnect.or(connectStripe)).toBeVisible({ timeout: 5000 });
     });
   });
 

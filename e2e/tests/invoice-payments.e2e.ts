@@ -9,6 +9,8 @@ test.describe("Invoice Payments", () => {
   test.describe("Settings page", () => {
     test("system settings shows Client Payments section", async ({ page }) => {
       await page.goto("/dashboard/settings/system");
+      // Payments section is on the Payments tab
+      await page.getByRole("button", { name: /^payments$/i }).click();
       await expect(
         page.getByRole("heading", { name: /client payments/i }),
       ).toBeVisible({ timeout: 5000 });
@@ -16,6 +18,7 @@ test.describe("Invoice Payments", () => {
 
     test("shows Stripe key input in direct mode (default)", async ({ page }) => {
       await page.goto("/dashboard/settings/system");
+      await page.getByRole("button", { name: /^payments$/i }).click();
       await expect(
         page.getByPlaceholder(/sk_test_/i),
       ).toBeVisible({ timeout: 5000 });
@@ -23,6 +26,7 @@ test.describe("Invoice Payments", () => {
 
     test("shows Save & Connect button", async ({ page }) => {
       await page.goto("/dashboard/settings/system");
+      await page.getByRole("button", { name: /^payments$/i }).click();
       await expect(
         page.getByRole("button", { name: /save.*connect/i }),
       ).toBeVisible({ timeout: 5000 });

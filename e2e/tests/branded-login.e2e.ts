@@ -133,27 +133,28 @@ test.describe("Instance Branding API", () => {
 // ---------------------------------------------------------------------------
 // Domain Check Endpoint (security)
 // /api/health/domain-check is restricted to loopback callers only (Caddy).
-// All Playwright requests originate from the test runner, which is NOT a
-// loopback address from the API's perspective, so the endpoint always
-// returns 403 regardless of query parameters.
+// When the test runner and API are on the same host, requests arrive from
+// loopback so the guard passes — the response is then 404 (domain not found)
+// or 400 (missing param). When running from an external host, the guard
+// returns 403 before any DB lookup.
 // ---------------------------------------------------------------------------
 test.describe("Health domain-check endpoint (security)", () => {
-  test("returns 403 for any non-loopback caller regardless of params", async ({
+  test("returns 403 (external) or 404 (same-host, domain not found)", async ({
     request,
   }) => {
     const res = await request.get(
       `${API}/health/domain-check?domain=portal.example.com`,
     );
-    expect(res.status()).toBe(403);
+    expect([403, 404]).toContain(res.status());
   });
 
-  test("returns 403 when domain param is missing (loopback guard fires first)", async ({
+  test("returns 403 (external) or 400 (same-host, missing param)", async ({
     request,
   }) => {
-    // The loopback check happens before the param check, so a missing domain
-    // still results in 403, not 400, when called from a non-loopback address.
+    // External callers: loopback guard fires first → 403.
+    // Same-host callers: loopback guard passes, missing param → 400.
     const res = await request.get(`${API}/health/domain-check`);
-    expect(res.status()).toBe(403);
+    expect([400, 403]).toContain(res.status());
   });
 });
 

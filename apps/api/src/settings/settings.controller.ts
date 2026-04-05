@@ -68,7 +68,7 @@ export class SettingsController {
     const billingEnabled = this.config.get("BILLING_ENABLED") === "true";
     if (billingEnabled) {
       const sub = await this.billingService.getSubscription(orgId);
-      if (sub.plan.slug === "free") {
+      if (!sub || sub.plan.slug === "free") {
         throw new ForbiddenException("Custom domains require a paid plan.");
       }
     }
@@ -79,5 +79,11 @@ export class SettingsController {
   @Roles("owner")
   removeCustomDomain(@CurrentOrg("id") orgId: string) {
     return this.settingsService.removeCustomDomain(orgId);
+  }
+
+  @Get("custom-domain/verify")
+  @Roles("owner")
+  verifyCustomDomain(@CurrentOrg("id") orgId: string) {
+    return this.settingsService.verifyCustomDomain(orgId);
   }
 }

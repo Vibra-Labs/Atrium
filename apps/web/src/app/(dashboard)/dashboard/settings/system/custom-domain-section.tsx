@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, Lock, Sparkles, X } from "lucide-react";
+import { Check, Copy, ExternalLink, Lock, RefreshCw, Sparkles, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 
@@ -13,7 +13,9 @@ interface CustomDomainData {
   customDomain: string | null;
 }
 
-const MAIN_DOMAIN = process.env.NEXT_PUBLIC_DOMAIN ?? "";
+// The admin is always on the main domain when in settings, so we can use
+// window.location.hostname as the CNAME target rather than a build-time env var.
+const MAIN_DOMAIN = typeof window !== "undefined" ? window.location.hostname : "";
 
 // DNS provider metadata
 const PROVIDERS = [
@@ -127,13 +129,34 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-function DnsRecord({ label, value }: { label: string; value: string }) {
+function DnsTable({ domain, target }: { domain: string; target: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 px-2 py-1.5 bg-[var(--background)] border border-[var(--border)] rounded font-mono text-xs">
-      <span className="text-[var(--muted-foreground)] shrink-0">{label}</span>
-      <span className="truncate">{value}</span>
-      <CopyButton value={value} />
-    </div>
+    <table className="w-full text-xs font-mono border border-[var(--border)] rounded-lg overflow-hidden">
+      <thead>
+        <tr className="bg-[var(--muted)] text-[var(--muted-foreground)]">
+          <th className="px-3 py-2 text-left font-medium w-16">Field</th>
+          <th className="px-3 py-2 text-left font-medium">Value</th>
+          <th className="w-8" />
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-[var(--border)]">
+        <tr>
+          <td className="px-3 py-2 text-[var(--muted-foreground)]">Type</td>
+          <td className="px-3 py-2">CNAME</td>
+          <td />
+        </tr>
+        <tr>
+          <td className="px-3 py-2 text-[var(--muted-foreground)]">Name</td>
+          <td className="px-3 py-2 truncate max-w-0">{domain}</td>
+          <td className="px-2"><CopyButton value={domain} /></td>
+        </tr>
+        <tr>
+          <td className="px-3 py-2 text-[var(--muted-foreground)]">Value</td>
+          <td className="px-3 py-2 truncate max-w-0">{target}</td>
+          <td className="px-2"><CopyButton value={target} /></td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -145,6 +168,8 @@ export function CustomDomainSection() {
   const [provider, setProvider] = useState<ProviderId>("cloudflare");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [domainError, setDomainError] = useState<string | null>(null);
+  const [verifyStatus, setVerifyStatus] = useState<null | "checking" | { verified: boolean; reason?: string }>(null);
   const { success, error: showError } = useToast();
 
   useEffect(() => {
@@ -152,7 +177,7 @@ export function CustomDomainSection() {
       apiFetch<Subscription>("/billing/subscription").catch(() => null),
       apiFetch<CustomDomainData>("/settings/custom-domain").catch(() => null),
     ]).then(([sub, domainData]) => {
-      setIsPaid(!sub || sub.plan.slug !== "free");
+      setIsPaid(!sub || sub.plan?.slug !== "free");
       if (domainData?.customDomain) {
         setSavedDomain(domainData.customDomain);
         setDomain(domainData.customDomain);
@@ -164,6 +189,8 @@ export function CustomDomainSection() {
   const handleSave = async () => {
     if (!domain.trim()) return;
     setSaving(true);
+    setDomainError(null);
+    setVerifyStatus(null);
     try {
       const result = await apiFetch<CustomDomainData>("/settings/custom-domain", {
         method: "PUT",
@@ -172,7 +199,13 @@ export function CustomDomainSection() {
       setSavedDomain(result.customDomain);
       success("Custom domain saved");
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to save domain");
+      const message = err instanceof Error ? err.message : "Failed to save domain";
+      // Show conflict inline rather than as a toast so it's easier to act on
+      if (message.toLowerCase().includes("already in use")) {
+        setDomainError(message);
+      } else {
+        showError(message);
+      }
     } finally {
       setSaving(false);
     }
@@ -180,6 +213,8 @@ export function CustomDomainSection() {
 
   const handleRemove = async () => {
     setRemoving(true);
+    setDomainError(null);
+    setVerifyStatus(null);
     try {
       await apiFetch("/settings/custom-domain", { method: "DELETE" });
       setSavedDomain(null);
@@ -189,6 +224,16 @@ export function CustomDomainSection() {
       showError(err instanceof Error ? err.message : "Failed to remove domain");
     } finally {
       setRemoving(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setVerifyStatus("checking");
+    try {
+      const result = await apiFetch<{ verified: boolean; reason?: string }>("/settings/custom-domain/verify");
+      setVerifyStatus(result);
+    } catch {
+      setVerifyStatus({ verified: false, reason: "Verification request failed" });
     }
   };
 
@@ -234,35 +279,61 @@ export function CustomDomainSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="portal.yourcompany.com"
-          value={domain}
-          onChange={(e) => setDomain(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSave()}
-          className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
-        />
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || !domain.trim() || domain.trim() === savedDomain}
-          className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium disabled:opacity-50 shrink-0"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        {savedDomain && (
+      <div className="space-y-1.5">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="portal.yourcompany.com"
+            value={domain}
+            onChange={(e) => { setDomain(e.target.value); setDomainError(null); }}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+            className={`flex-1 px-3 py-2 border rounded-lg bg-[var(--background)] text-sm ${domainError ? "border-red-400" : "border-[var(--border)]"}`}
+          />
           <button
             type="button"
-            onClick={handleRemove}
-            disabled={removing}
-            title="Remove custom domain"
-            className="px-2.5 py-2 border border-[var(--border)] rounded-lg text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 shrink-0"
+            onClick={handleSave}
+            disabled={saving || !domain.trim() || domain.trim() === savedDomain}
+            className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium disabled:opacity-50 shrink-0"
           >
-            {removing ? "…" : <X size={15} />}
+            {saving ? "Saving…" : "Save"}
           </button>
+          {savedDomain && (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={removing}
+              title="Remove custom domain"
+              className="px-2.5 py-2 border border-[var(--border)] rounded-lg text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 shrink-0"
+            >
+              {removing ? "…" : <X size={15} />}
+            </button>
+          )}
+        </div>
+        {domainError && (
+          <p className="text-xs text-red-600">{domainError}</p>
         )}
       </div>
+
+      {savedDomain && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleVerify}
+            disabled={verifyStatus === "checking"}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-[var(--border)] rounded-md hover:bg-[var(--muted)] disabled:opacity-50"
+          >
+            <RefreshCw size={11} className={verifyStatus === "checking" ? "animate-spin" : ""} />
+            {verifyStatus === "checking" ? "Checking DNS…" : "Verify DNS"}
+          </button>
+          {verifyStatus && verifyStatus !== "checking" && (
+            <span className={`flex items-center gap-1 text-xs ${verifyStatus.verified ? "text-green-600" : "text-[var(--muted-foreground)]"}`}>
+              {verifyStatus.verified
+                ? <><Check size={11} /> DNS verified</>
+                : <>{verifyStatus.reason}</>}
+            </span>
+          )}
+        </div>
+      )}
 
       {savedDomain && (
         <div className="rounded-lg border border-[var(--border)] overflow-hidden">
@@ -280,11 +351,7 @@ export function CustomDomainSection() {
           </div>
 
           <div className="p-4 space-y-4">
-            <div className="space-y-1.5">
-              <DnsRecord label="Type" value="CNAME" />
-              <DnsRecord label="Name" value={savedDomain} />
-              <DnsRecord label="Value" value={MAIN_DOMAIN} />
-            </div>
+            <DnsTable domain={savedDomain} target={MAIN_DOMAIN} />
 
             {instructions?.warning && (
               <div className="flex gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2">

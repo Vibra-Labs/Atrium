@@ -4,11 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Check, Zap, Crown } from "lucide-react";
 import { track } from "@/lib/track";
+import { useAppConfig } from "@/lib/app-config";
 
-const BILLING_ENABLED =
-  process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface Plan {
   id: string;
@@ -165,20 +163,29 @@ function PlanSelectionStep({
 }
 
 export default function SignupPage() {
+  const config = useAppConfig();
+  const billingEnabled = config?.billingEnabled ?? false;
+
   const searchParams = new URLSearchParams(
     typeof window !== "undefined" ? window.location.search : "",
   );
   const planFromUrl = searchParams.get("plan");
 
-  const [step, setStep] = useState<"plan" | "account">(
-    BILLING_ENABLED ? "plan" : "account",
-  );
+  const [step, setStep] = useState<"plan" | "account">("account");
   const [selectedPlan, setSelectedPlan] = useState(planFromUrl || "free");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [lifetimeSeatsRemaining, setLifetimeSeatsRemaining] = useState<
     number | null
   >(null);
-  const [plansLoading, setPlansLoading] = useState(BILLING_ENABLED);
+  const [plansLoading, setPlansLoading] = useState(false);
+
+  // Switch to plan step once we know billing is enabled
+  useEffect(() => {
+    if (billingEnabled) {
+      setStep("plan");
+      setPlansLoading(true);
+    }
+  }, [billingEnabled]);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -188,7 +195,7 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!BILLING_ENABLED) return;
+    if (!billingEnabled) return;
     fetch(`${API_URL}/api/billing/plans`)
       .then((res) => res.json())
       .then((data) => {
@@ -200,7 +207,7 @@ export default function SignupPage() {
         setStep("account");
       })
       .finally(() => setPlansLoading(false));
-  }, []);
+  }, [billingEnabled]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,7 +249,7 @@ export default function SignupPage() {
           email,
           password,
           orgName,
-          ...(BILLING_ENABLED && selectedPlan !== "free"
+          ...(billingEnabled && selectedPlan !== "free"
             ? { planSlug: selectedPlan }
             : {}),
         }),
@@ -462,7 +469,7 @@ export default function SignupPage() {
         </form>
 
         <div className="flex justify-center gap-4 text-sm text-[var(--muted-foreground)]">
-          {BILLING_ENABLED && (
+          {billingEnabled && (
             <button
               type="button"
               onClick={() => setStep("plan")}

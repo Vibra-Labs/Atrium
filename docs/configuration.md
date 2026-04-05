@@ -8,7 +8,6 @@ All configuration lives in a single `.env` file. See [`.env.example`](../.env.ex
 |----------------------|--------------------------------------------------|----------------------------------|
 | `DATABASE_URL`       | PostgreSQL connection string                     | `postgresql://atrium:atrium@localhost:5432/atrium` |
 | `BETTER_AUTH_SECRET` | Secret key for auth token signing (min 32 chars) | `change-me-in-production`        |
-| `BETTER_AUTH_URL`    | API base URL (used by Better Auth)               | `http://localhost:3001`          |
 | `API_URL`            | API URL (internal, server-to-server)             | `http://localhost:3001`          |
 | `WEB_URL`            | Web app URL (used for CORS)                      | `http://localhost:3000`          |
 | `NEXT_PUBLIC_API_URL`| Browser-facing API URL (Next.js client-side)     | `http://localhost:3001`          |
@@ -22,9 +21,12 @@ All configuration lives in a single `.env` file. See [`.env.example`](../.env.ex
 | `RESEND_API_KEY`     | Resend API key for transactional email           | --                               |
 | `EMAIL_FROM`         | Sender address for outbound email                | `noreply@atrium.local`           |
 | `MAX_FILE_SIZE_MB`   | Maximum upload size in megabytes                 | `50`                             |
+| `BILLING_ENABLED`    | Set to `true` to enable billing/plan gates (hosted only) | --                        |
 | `LOG_LEVEL`          | Pino log level                                   | `info`                           |
 
 `DATABASE_URL` and `BETTER_AUTH_SECRET` are required -- the API will refuse to start without them.
+
+> **Upgrading from v1.3 or earlier?** `BETTER_AUTH_URL` has been renamed to `API_URL`. The old name still works as a fallback but will be removed in a future release.
 
 ## Storage Providers
 

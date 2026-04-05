@@ -276,6 +276,23 @@ test.describe("Custom Domain API", () => {
     expect(data.customDomain).toBeNull();
   });
 
+  test("GET /verify returns verified:false when no domain is configured", async ({
+    request,
+  }) => {
+    // Ensure no domain is set first
+    const csrf = getCsrfToken();
+    await request.delete(`${API}/settings/custom-domain`, {
+      headers: { "x-csrf-token": csrf },
+    });
+
+    const res = await request.get(`${API}/settings/custom-domain/verify`);
+    expect(res.status()).toBe(200);
+
+    const data = await res.json();
+    expect(data.verified).toBe(false);
+    expect(typeof data.reason).toBe("string");
+  });
+
   test("mutating endpoints require authentication (no session = 401 or 403)", async ({
     browser,
   }) => {

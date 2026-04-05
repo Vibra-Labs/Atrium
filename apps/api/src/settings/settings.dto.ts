@@ -80,6 +80,9 @@ export class UpdateSettingsDto {
 }
 
 export class SaveCustomDomainDto {
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.replace(/\.$/, "").toLowerCase() : value,
+  )
   @IsString()
   @MaxLength(253)
   @Matches(/^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$/, {

@@ -2,6 +2,47 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.4.1] — 2026-04-05
+
+### Added
+
+- **Custom domains** — Point your own domain (e.g. `portal.yourcompany.com`) to the client portal. Caddy provisions SSL automatically on first visit. Includes DNS setup instructions for Cloudflare, Route 53, GoDaddy, Namecheap, and more. On hosted plans this is a paid feature; self-hosters get it for free.
+- **Branded login page** — The `/login` page now automatically shows your logo and brand colors on single-org (self-hosted) instances. No configuration needed — upload a logo in Settings and it appears. Hosted users can find their `/login/[slug]` URL with a copy button in Branding settings.
+
+### Changed
+
+- **Settings page redesigned** — System Settings reorganised into three tabs (Branding, General, Payments) instead of a single long scroll. Save buttons are scoped to each section.
+- **Runtime billing config** — `BILLING_ENABLED` is now read at runtime via `GET /api/health/config` instead of being baked into the Next.js build. Changing billing state no longer requires a rebuild.
+- **Env var cleanup** — `BETTER_AUTH_URL` consolidated into `API_URL`. `NEXT_PUBLIC_DOMAIN` and `MAIN_DOMAIN` removed — the app now derives the hostname from `WEB_URL`. Existing deployments using `BETTER_AUTH_URL` continue to work via a backwards-compatible fallback.
+
+### Fixed
+
+- Settings page crashing with `Cannot read properties of undefined (reading 'slug')` when billing subscription response was missing the `plan` field.
+- Billing plan selection not loading plans on the signup page when `billingEnabled` resolved asynchronously.
+
+### Upgrade Notes
+
+If you set `BETTER_AUTH_URL` in your `.env`, rename it to `API_URL`. The old name still works as a fallback but will be removed in a future release.
+
+## [1.4.0] — 2026-04-04
+
+### Added
+
+- **Client invoice payments via Stripe** — Clients can now pay invoices directly from the portal with a "Pay Now" button. Supports Direct Keys (paste your Stripe secret key) or Stripe Connect OAuth for a white-labeled experience. Invoices are automatically marked as paid when the Stripe webhook fires.
+- **Global search** — Full-text search across projects, files, clients, and updates. Open with `Cmd+K` from anywhere in the dashboard.
+
+### Changed
+
+- **Invoice draft/send UX** — Invoice creation modal now has separate "Save as Draft" and "Send to Client" buttons, replacing the previous two-step flow. Draft invoices are hidden from the client portal.
+- Docker deployment guide updated with Stripe Connect environment variables (`STRIPE_CONNECT_CLIENT_ID`, `STRIPE_CONNECT_WEBHOOK_SECRET`, `STRIPE_CURRENCY`).
+- New `docs/stripe.md` covering both Direct Keys and Connect modes with step-by-step setup instructions.
+
+### Fixed
+
+- Duplicate search dialog appearing when both GlobalSearch instances received `Cmd+K` simultaneously.
+- Hardcoded `X-Forwarded-Proto: https` in Caddyfile that caused issues behind certain reverse proxies.
+- `DIRECT_URL` fallback in Docker entrypoint to prevent Prisma validation errors on startup.
+
 ## [1.3.4] — 2026-04-01
 
 ### Added

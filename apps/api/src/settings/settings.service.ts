@@ -86,6 +86,7 @@ export class SettingsService {
     if (dto.maxFileSizeMb !== undefined) data.maxFileSizeMb = dto.maxFileSizeMb;
     if (dto.paymentInstructions !== undefined) data.paymentInstructions = dto.paymentInstructions;
     if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
+    if (dto.telemetryEnabled !== undefined) data.telemetryEnabled = dto.telemetryEnabled;
 
     // Encrypt sensitive fields
     if (dto.resendApiKey !== undefined) {

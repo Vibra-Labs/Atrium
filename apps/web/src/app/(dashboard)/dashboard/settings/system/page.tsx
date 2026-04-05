@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Mail, HardDrive, Send, Globe, CreditCard } from "lucide-react";
+import { Mail, HardDrive, Send, Globe, CreditCard, BarChart2 } from "lucide-react";
+import { enableSentry } from "@/lib/sentry";
 import { BrandingSection } from "./branding-section";
 import { LabelsSection } from "./labels-section";
 import { PaymentsSection } from "./payments-section";
@@ -23,6 +24,7 @@ interface SystemSettings {
   smtpSecure: boolean;
   maxFileSizeMb: number;
   setupCompleted: boolean;
+  telemetryEnabled: boolean | null;
 }
 
 interface Branding {
@@ -45,6 +47,7 @@ const defaultSettings: SystemSettings = {
   smtpSecure: true,
   maxFileSizeMb: 50,
   setupCompleted: false,
+  telemetryEnabled: null,
 };
 
 export default function SystemSettingsPage() {
@@ -153,6 +156,20 @@ export default function SystemSettingsPage() {
       showError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSavingConfig(false);
+    }
+  };
+
+  const handleTelemetryToggle = async (enabled: boolean) => {
+    try {
+      const updated = await apiFetch<SystemSettings>("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ telemetryEnabled: enabled }),
+      });
+      setSettings((prev) => ({ ...prev, telemetryEnabled: updated.telemetryEnabled }));
+      if (enabled) enableSentry();
+      success(enabled ? "Error reporting enabled" : "Error reporting disabled");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update telemetry setting");
     }
   };
 
@@ -426,6 +443,31 @@ export default function SystemSettingsPage() {
                   <span>500 MB</span>
                 </div>
               </div>
+            </section>
+
+            <section className="space-y-4 py-8">
+              <div className="flex items-center gap-2">
+                <BarChart2 size={18} />
+                <h2 className="text-base font-semibold">Error Reporting</h2>
+              </div>
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Share anonymous crash reports and error data with the Atrium team to help fix bugs and improve the product. No personal data or client information is ever included.
+              </p>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.telemetryEnabled === true}
+                  onChange={(e) => handleTelemetryToggle(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm font-medium">
+                  {settings.telemetryEnabled === true
+                    ? "Anonymous error reporting is enabled"
+                    : settings.telemetryEnabled === false
+                      ? "Anonymous error reporting is disabled"
+                      : "Enable anonymous error reporting"}
+                </span>
+              </label>
             </section>
 
             <div className="py-8">

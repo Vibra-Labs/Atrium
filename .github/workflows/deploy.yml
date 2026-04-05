@@ -32,6 +32,9 @@ jobs:
             NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_URL }}
             NEXT_PUBLIC_BILLING_ENABLED=true
             NEXT_PUBLIC_STRIPE_MODE=${{ vars.STRIPE_MODE || 'test' }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SENTRY_ENABLED=${{ vars.NEXT_PUBLIC_SENTRY_ENABLED || 'false' }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: |
             vibralabs/atrium:${{ github.sha }}
             vibralabs/atrium:latest

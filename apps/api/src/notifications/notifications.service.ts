@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nestjs";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
@@ -144,6 +145,7 @@ export class NotificationsService {
             invoice.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: admin.user.email, invoiceId },
             "Failed to send invoice paid email to admin",
@@ -226,6 +228,7 @@ export class NotificationsService {
             project.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: client.email, projectId },
             "Failed to send project update email to client",
@@ -288,6 +291,7 @@ export class NotificationsService {
             project.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: client.email, projectId },
             "Failed to send task created email to client",
@@ -377,6 +381,7 @@ export class NotificationsService {
             task.project.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: client.email, taskId },
             "Failed to send decision closed email to client",
@@ -439,6 +444,7 @@ export class NotificationsService {
             invoice.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: client.email, invoiceId },
             "Failed to send invoice email to client",
@@ -535,6 +541,7 @@ export class NotificationsService {
             doc.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: client.email, documentId },
             "Failed to send document uploaded email to client",
@@ -611,6 +618,7 @@ export class NotificationsService {
             doc.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: admin.user.email, documentId },
             "Failed to send document responded email to admin",
@@ -703,6 +711,7 @@ export class NotificationsService {
             doc.organizationId,
           );
         } catch (err) {
+          Sentry.captureException(err);
           this.logger.warn(
             { err, email: client.email, documentId },
             "Failed to send document reminder email to client",
@@ -782,6 +791,7 @@ export class NotificationsService {
         doc.organizationId,
       );
     } catch (err) {
+      Sentry.captureException(err);
       this.logger.warn(
         { err, email: user.email, documentId },
         "Failed to send signing turn email",

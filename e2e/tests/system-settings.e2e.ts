@@ -124,4 +124,72 @@ test.describe("System Settings", () => {
     // Should see success toast
     await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 5000 });
   });
+
+  test("shows error reporting section in general tab", async ({ page }) => {
+    await page.goto("/dashboard/settings/system");
+    await page.getByRole("button", { name: /^general$/i }).click();
+    await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
+
+    await expect(page.getByRole("heading", { name: /error reporting/i })).toBeVisible();
+    await expect(page.getByText(/share anonymous crash reports/i)).toBeVisible();
+  });
+
+  test("can toggle error reporting on and off", async ({ page }) => {
+    await page.goto("/dashboard/settings/system");
+    await page.getByRole("button", { name: /^general$/i }).click();
+    await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
+
+    const checkbox = page.locator('section:has(h2:text-is("Error Reporting")) input[type="checkbox"]');
+    await expect(checkbox).toBeVisible();
+
+    // Record initial state and toggle
+    const initial = await checkbox.isChecked();
+    await checkbox.click();
+    await expect(page.getByText(initial ? /error reporting disabled/i : /error reporting enabled/i)).toBeVisible({ timeout: 5000 });
+
+    // Toggle back
+    await checkbox.click();
+    await expect(page.getByText(initial ? /error reporting enabled/i : /error reporting disabled/i)).toBeVisible({ timeout: 5000 });
+  });
+
+  test("telemetry consent banner appears when preference not yet set", async ({ page, request }) => {
+    // Reset telemetryEnabled to null via the settings API
+    await request.patch("http://localhost:3001/api/settings", {
+      data: { telemetryEnabled: null },
+    });
+
+    await page.goto("/dashboard");
+    await expect(page.getByText(/help improve atrium/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("button", { name: /share anonymously/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /no thanks/i })).toBeVisible();
+  });
+
+  test("accepting telemetry consent banner dismisses it", async ({ page, request }) => {
+    await request.patch("http://localhost:3001/api/settings", {
+      data: { telemetryEnabled: null },
+    });
+
+    await page.goto("/dashboard");
+    await page.getByRole("button", { name: /share anonymously/i }).click();
+    await expect(page.getByText(/help improve atrium/i)).not.toBeVisible({ timeout: 5000 });
+  });
+
+  test("declining telemetry consent banner dismisses it", async ({ page, request }) => {
+    await request.patch("http://localhost:3001/api/settings", {
+      data: { telemetryEnabled: null },
+    });
+
+    await page.goto("/dashboard");
+    await page.getByRole("button", { name: /no thanks/i }).click();
+    await expect(page.getByText(/help improve atrium/i)).not.toBeVisible({ timeout: 5000 });
+  });
+
+  test("consent banner does not appear when preference already set", async ({ page, request }) => {
+    await request.patch("http://localhost:3001/api/settings", {
+      data: { telemetryEnabled: false },
+    });
+
+    await page.goto("/dashboard");
+    await expect(page.getByText(/help improve atrium/i)).not.toBeVisible({ timeout: 3000 });
+  });
 });

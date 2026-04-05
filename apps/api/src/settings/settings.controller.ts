@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Post,
   Delete,
   Body,
@@ -32,6 +33,15 @@ export class SettingsController {
   @Put()
   @Roles("owner")
   updateSettings(
+    @CurrentOrg("id") orgId: string,
+    @Body() dto: UpdateSettingsDto,
+  ) {
+    return this.settingsService.updateSettings(orgId, dto);
+  }
+
+  @Patch()
+  @Roles("owner")
+  patchSettings(
     @CurrentOrg("id") orgId: string,
     @Body() dto: UpdateSettingsDto,
   ) {

@@ -33,5 +33,9 @@
     "@playwright/test": "^1.58.2",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@sentry/nestjs": "^10.47.0",
+    "@sentry/nextjs": "^10.47.0"
   }
 }

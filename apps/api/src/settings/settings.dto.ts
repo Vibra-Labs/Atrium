@@ -77,6 +77,11 @@ export class UpdateSettingsDto {
   @IsString()
   @MaxLength(2000)
   paymentDetails?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === "" ? null : value))
+  @IsIn([true, false, null])
+  telemetryEnabled?: boolean | null;
 }
 
 export class SaveCustomDomainDto {

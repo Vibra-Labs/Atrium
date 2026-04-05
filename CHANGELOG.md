@@ -8,12 +8,14 @@ All notable changes to Atrium will be documented in this file.
 
 - **Custom domains** — Point your own domain (e.g. `portal.yourcompany.com`) to the client portal. Caddy provisions SSL automatically on first visit. Includes DNS setup instructions for Cloudflare, Route 53, GoDaddy, Namecheap, and more. On hosted plans this is a paid feature; self-hosters get it for free.
 - **Branded login page** — The `/login` page now automatically shows your logo and brand colors on single-org (self-hosted) instances. No configuration needed — upload a logo in Settings and it appears. Hosted users can find their `/login/[slug]` URL with a copy button in Branding settings.
+- **Dynamic payment methods** — The Payments settings section now fetches your Stripe account's active capabilities and shows only the payment methods available to you (Card, ACH, SEPA, iDEAL, Klarna, Affirm, Afterpay, and more). Inactive BNPL methods link directly to the Stripe dashboard to enable them. Selected methods are persisted and used when generating Stripe Checkout sessions.
 
 ### Changed
 
 - **Settings page redesigned** — System Settings reorganised into three tabs (Branding, General, Payments) instead of a single long scroll. Save buttons are scoped to each section.
 - **Runtime billing config** — `BILLING_ENABLED` is now read at runtime via `GET /api/health/config` instead of being baked into the Next.js build. Changing billing state no longer requires a rebuild.
 - **Env var cleanup** — `BETTER_AUTH_URL` consolidated into `API_URL`. `NEXT_PUBLIC_DOMAIN` and `MAIN_DOMAIN` removed — the app now derives the hostname from `WEB_URL`. Existing deployments using `BETTER_AUTH_URL` continue to work via a backwards-compatible fallback.
+- Better Auth sessions now persist for 30 days instead of expiring at the end of the browser session.
 
 ### Fixed
 

@@ -56,7 +56,6 @@ test.describe("Email Verification", () => {
     // The global setup user's emailVerified is false by default
     await page.goto("/dashboard");
     // The banner should be visible for unverified users
-    const banner = page.getByText(/email address is not verified/i);
     // Banner may or may not show depending on whether the test user got verified
     // during setup. We check it's either visible or the page loaded correctly.
     const heading = page.getByRole("heading", { name: /dashboard/i });

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { resolve, join } from "path";
+import { join } from "path";
 import { $ } from "bun";
 
 const root = join(import.meta.dirname, "..");

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { NotificationsService } from "./notifications.service";
 import type { MailService } from "../mail/mail.service";
 import type { PrismaService } from "../prisma/prisma.service";

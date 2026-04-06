@@ -1,4 +1,22 @@
 import * as Sentry from "@sentry/nextjs";
+import type { Event } from "@sentry/nextjs";
+
+function scrubEvent(event: Event): Event {
+  if (event.request) {
+    delete event.request.cookies;
+    if (event.request.headers) {
+      delete event.request.headers["cookie"];
+      delete event.request.headers["authorization"];
+      delete event.request.headers["set-cookie"];
+    }
+  }
+  if (event.user) {
+    delete event.user.email;
+    delete event.user.username;
+    delete event.user.ip_address;
+  }
+  return event;
+}
 
 // Only initialize if DSN is provided (it won't be in most dev environments)
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
@@ -14,5 +32,6 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
       "ResizeObserver loop limit exceeded",
       "Non-Error promise rejection captured",
     ],
+    beforeSend: scrubEvent,
   });
 }

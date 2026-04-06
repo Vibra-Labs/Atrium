@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateSettingsDto } from "./settings.dto";
+import { setSentryEnabled } from "../instrument";
 import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto";
 import dns from "node:dns/promises";
 
@@ -86,7 +87,14 @@ export class SettingsService {
     if (dto.maxFileSizeMb !== undefined) data.maxFileSizeMb = dto.maxFileSizeMb;
     if (dto.paymentInstructions !== undefined) data.paymentInstructions = dto.paymentInstructions;
     if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
-    if (dto.telemetryEnabled !== undefined) data.telemetryEnabled = dto.telemetryEnabled;
+    if (dto.telemetryEnabled !== undefined) {
+      data.telemetryEnabled = dto.telemetryEnabled;
+      // Keep the in-process Sentry client in sync so errors are captured
+      // immediately without requiring a restart.
+      if (dto.telemetryEnabled === true || dto.telemetryEnabled === false) {
+        setSentryEnabled(dto.telemetryEnabled);
+      }
+    }
 
     // Encrypt sensitive fields
     if (dto.resendApiKey !== undefined) {

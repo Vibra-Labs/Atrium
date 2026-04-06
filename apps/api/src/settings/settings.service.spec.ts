@@ -306,4 +306,54 @@ describe("SettingsService", () => {
 
     expect(storedKey).toBeNull();
   });
+
+  // --- telemetryEnabled ---
+
+  test("updateSettings stores telemetryEnabled: true", async () => {
+    let stored: boolean | null = null;
+
+    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+      const data = args.update ?? args.create ?? {};
+      if ("telemetryEnabled" in data) stored = data.telemetryEnabled as boolean | null;
+      return Promise.resolve(baseSettings({ telemetryEnabled: stored }));
+    });
+
+    await service.updateSettings("org-1", { telemetryEnabled: true });
+
+    expect(stored).toBe(true);
+  });
+
+  test("updateSettings stores telemetryEnabled: false", async () => {
+    let stored: boolean | null = null;
+
+    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+      const data = args.update ?? args.create ?? {};
+      if ("telemetryEnabled" in data) stored = data.telemetryEnabled as boolean | null;
+      return Promise.resolve(baseSettings({ telemetryEnabled: stored }));
+    });
+
+    await service.updateSettings("org-1", { telemetryEnabled: false });
+
+    expect(stored).toBe(false);
+  });
+
+  test("getSettings returns telemetryEnabled value from DB", async () => {
+    prisma.systemSettings.upsert.mockImplementation(() =>
+      Promise.resolve(baseSettings({ telemetryEnabled: true })),
+    );
+
+    const result = await service.getSettings("org-1");
+
+    expect(result.telemetryEnabled).toBe(true);
+  });
+
+  test("getSettings returns null for telemetryEnabled when not yet set", async () => {
+    prisma.systemSettings.upsert.mockImplementation(() =>
+      Promise.resolve(baseSettings({ telemetryEnabled: null })),
+    );
+
+    const result = await service.getSettings("org-1");
+
+    expect(result.telemetryEnabled).toBeNull();
+  });
 });

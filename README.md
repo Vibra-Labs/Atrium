@@ -33,6 +33,7 @@ Most agencies juggle shared drives, spreadsheets, and scattered emails to keep c
 - **Role-based access** -- Owner/admin roles for your team, member role for clients
 - **Authentication** -- Magic link and email/password auth via Better Auth
 - **Multi-tenant** -- Each agency operates as its own isolated organization
+- **Optional telemetry** -- Self-hosters can opt in to share anonymous crash reports to help improve Atrium (see [Telemetry](docs/telemetry.md))
 
 ## Tech Stack
 

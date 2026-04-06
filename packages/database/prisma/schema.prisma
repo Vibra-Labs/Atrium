@@ -408,6 +408,9 @@ model SystemSettings {
   vapidPublicKey  String?  // encrypted, auto-generated
   vapidPrivateKey String?  // encrypted, auto-generated
 
+  // Telemetry
+  telemetryEnabled Boolean?  // null = not yet asked, true = opted in, false = opted out
+
   // General
   setupCompleted Boolean  @default(false)
 

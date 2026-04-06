@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
+import { TelemetryConsentBanner } from "@/components/telemetry-consent-banner";
 import { MobileNav } from "./mobile-nav";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
@@ -92,6 +93,21 @@ async function getSetupStatus() {
   }
 }
 
+async function getTelemetryStatus(): Promise<boolean | null> {
+  try {
+    const cookieStore = await cookies();
+    const res = await fetch(`${API_URL}/api/settings`, {
+      headers: { Cookie: cookieStore.toString() },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const settings = await res.json();
+    return settings?.telemetryEnabled ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -113,11 +129,17 @@ export default async function DashboardLayout({
   }
 
   // Redirect owners to setup wizard if setup is not completed
+  let telemetryEnabled: boolean | null = null;
+  const isHostedDeployment = process.env.NEXT_PUBLIC_SENTRY_ENABLED === "true";
   if (session.role === "owner") {
-    const setupStatus = await getSetupStatus();
+    const [setupStatus, telemetry] = await Promise.all([
+      getSetupStatus(),
+      isHostedDeployment ? Promise.resolve(null) : getTelemetryStatus(),
+    ]);
     if (setupStatus && !setupStatus.completed) {
       redirect("/setup");
     }
+    telemetryEnabled = telemetry;
   }
 
   const logoSrc = getLogoSrc(branding);
@@ -157,6 +179,9 @@ export default async function DashboardLayout({
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-md:pt-[4.5rem]">
         {!session.user?.emailVerified && (
           <EmailVerificationBanner email={session.user?.email} />
+        )}
+        {session.role === "owner" && telemetryEnabled === null && (
+          <TelemetryConsentBanner />
         )}
         {children}
       </main>

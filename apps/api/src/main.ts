@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
+import { initSentry } from "./instrument";
 
 // Load root .env before NestJS bootstraps (Turbo runs from apps/api/)
 function loadEnv(filePath: string) {
@@ -27,6 +28,9 @@ function loadEnv(filePath: string) {
 }
 loadEnv(resolve(process.cwd(), "../../.env"));
 loadEnv(resolve(process.cwd(), ".env"));
+
+// Initialize Sentry after env vars are loaded and before NestJS bootstrap
+initSentry();
 
 const required = ["DATABASE_URL", "BETTER_AUTH_SECRET"];
 for (const key of required) {

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nestjs";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
@@ -174,6 +175,8 @@ export class PushService {
           // Remove expired/invalid subscriptions
           if (err?.statusCode === 410 || err?.statusCode === 404) {
             await this.prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+          } else {
+            Sentry.captureException(err);
           }
           this.logger.warn(
             { err: err?.message, endpoint: sub.endpoint },

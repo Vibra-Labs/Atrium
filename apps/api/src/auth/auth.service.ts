@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nestjs";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
@@ -124,6 +125,7 @@ export class AuthService {
               try {
                 await this.billingService.initializeFreePlan(organization.id);
               } catch (err) {
+                Sentry.captureException(err);
                 this.logger.error("Failed to initialize free plan", err);
               }
             },

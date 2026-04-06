@@ -8,6 +8,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { createHmac, timingSafeEqual } from "crypto";
 import Stripe from "stripe";
+import * as Sentry from "@sentry/nestjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { StripeService } from "../billing/stripe.service";
 import { SettingsService } from "../settings/settings.service";
@@ -389,6 +390,7 @@ export class PaymentsService {
       return { returnUrl };
     } catch (err) {
       if (err instanceof BadRequestException || err instanceof ForbiddenException) throw err;
+      Sentry.captureException(err);
       this.logger.error("Stripe Connect OAuth failed", err);
       throw new BadRequestException("Failed to connect Stripe account");
     }

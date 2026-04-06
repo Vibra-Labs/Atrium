@@ -2,6 +2,16 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.4.2] — 2026-04-05
+
+### Added
+
+- **Optional telemetry** — Self-hosters are prompted on first login to opt in to anonymous crash reporting via Sentry. Owners can change their preference at any time in Settings → General → Error Reporting. No personal data, client data, or identifiable information is ever included. See [docs/telemetry.md](docs/telemetry.md) for a full breakdown of what is and isn't collected.
+
+### Security
+
+- **Sentry `beforeSend` scrubber** — All Sentry configs (browser, Next.js server, edge, API) strip cookies, `Authorization` headers, and any user identity fields before events are transmitted, making the "no PII" guarantee enforceable at the code level.
+
 ## [1.4.1] — 2026-04-05
 
 ### Added

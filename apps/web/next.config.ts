@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import { copyFileSync, existsSync } from "fs";
 import { join } from "path";
+import { withSentryConfig } from "@sentry/nextjs";
 
 // Copy CHANGELOG.md into the web app directory at config load time so webpack can resolve it
 const changelogSrc = join(__dirname, "../../CHANGELOG.md");
@@ -37,4 +38,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Suppress Sentry CLI output during builds unless a DSN/auth token is set
+  silent: !process.env.SENTRY_AUTH_TOKEN,
+  // Upload source maps only when an auth token is provided (CI/CD or production builds)
+  sourcemaps: {
+    disable: !process.env.SENTRY_AUTH_TOKEN,
+  },
+  // Disable the Sentry telemetry for the SDK itself
+  telemetry: false,
+});

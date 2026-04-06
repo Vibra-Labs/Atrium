@@ -1,18 +1,5 @@
-# NOTE: The on_demand_tls block enables automatic SSL for custom domains.
-# This is intended for hosted deployments (atriumapp.vibralabs.co).
-# Self-hosters: remove the on_demand_tls block and "tls { on_demand }" directive,
-# and change ":443, :8080" back to ":8080".
-{
-	on_demand_tls {
-		ask http://localhost:3001/api/health/domain-check
-	}
-}
-
-:443, :8080 {
-	tls {
-		on_demand
-	}
-
+# Shared routing logic used by both site blocks
+(common) {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -32,4 +19,24 @@
 	handle {
 		reverse_proxy 127.0.0.1:3000
 	}
+}
+
+# :8080 — plain HTTP, for traffic proxied by Coolify/Cloudflare (TLS terminated upstream)
+:8080 {
+	import common
+}
+
+# :443 — HTTPS with on-demand TLS for custom org domains connecting directly
+{
+	on_demand_tls {
+		ask http://localhost:3001/api/health/domain-check
+	}
+}
+
+:443 {
+	tls {
+		on_demand
+	}
+
+	import common
 }

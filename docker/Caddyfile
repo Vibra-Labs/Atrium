@@ -1,3 +1,10 @@
+# Global options — must be first
+{
+	on_demand_tls {
+		ask http://localhost:3001/api/health/domain-check
+	}
+}
+
 # Shared routing logic used by both site blocks
 (common) {
 	header {
@@ -27,12 +34,6 @@
 }
 
 # :443 — HTTPS with on-demand TLS for custom org domains connecting directly
-{
-	on_demand_tls {
-		ask http://localhost:3001/api/health/domain-check
-	}
-}
-
 :443 {
 	tls {
 		on_demand

@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/nestjs";
-import type { Event } from "@sentry/nestjs";
+import type { ErrorEvent, EventHint } from "@sentry/nestjs";
 
-function scrubEvent(event: Event): Event {
+function scrubEvent(event: ErrorEvent, _hint: EventHint): ErrorEvent {
   if (event.request) {
     delete event.request.cookies;
     if (event.request.headers) {

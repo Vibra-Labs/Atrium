@@ -2,7 +2,7 @@
 
 All notable changes to Atrium will be documented in this file.
 
-## [Unreleased]
+## [1.4.2] — 2026-04-05
 
 ### Added
 
@@ -11,8 +11,6 @@ All notable changes to Atrium will be documented in this file.
 ### Security
 
 - **Sentry `beforeSend` scrubber** — All Sentry configs (browser, Next.js server, edge, API) strip cookies, `Authorization` headers, and any user identity fields before events are transmitted, making the "no PII" guarantee enforceable at the code level.
-
----
 
 ## [1.4.1] — 2026-04-05
 

@@ -134,7 +134,7 @@ export default async function DashboardLayout({
   if (session.role === "owner") {
     const [setupStatus, telemetry] = await Promise.all([
       getSetupStatus(),
-      isHostedDeployment ? Promise.resolve(null) : getTelemetryStatus(),
+      isHostedDeployment ? Promise.resolve(true) : getTelemetryStatus(),
     ]);
     if (setupStatus && !setupStatus.completed) {
       redirect("/setup");

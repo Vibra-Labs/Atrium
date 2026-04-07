@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, RefreshCw, Sparkles, X } from "lucide-react";
+import { Check, Copy, RefreshCw, Sparkles, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 

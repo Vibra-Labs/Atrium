@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, Lock, RefreshCw, Sparkles, X } from "lucide-react";
+import { Check, Copy, ExternalLink, RefreshCw, Sparkles, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 
 interface Subscription {
-  plan: { slug: string };
+  subscription: { plan: { slug: string } } | null;
 }
 
 interface CustomDomainData {
@@ -177,7 +177,7 @@ export function CustomDomainSection() {
       apiFetch<Subscription>("/billing/subscription").catch(() => null),
       apiFetch<CustomDomainData>("/settings/custom-domain").catch(() => null),
     ]).then(([sub, domainData]) => {
-      setIsPaid(!sub || sub.plan?.slug !== "free");
+      setIsPaid(!sub || sub.subscription?.plan?.slug !== "free");
       if (domainData?.customDomain) {
         setSavedDomain(domainData.customDomain);
         setDomain(domainData.customDomain);
@@ -242,33 +242,25 @@ export function CustomDomainSection() {
   // Free plan — premium feature gate
   if (!isPaid) {
     return (
-      <div className="relative overflow-hidden rounded-lg border border-[var(--border)] p-5">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--muted)]">
-            <Lock size={15} className="text-[var(--muted-foreground)]" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-semibold">Custom Domain</p>
-            <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">
-              Point your own domain (e.g. <span className="font-mono">portal.yourcompany.com</span>) to
-              your client portal so clients never see our URL.
-            </p>
-          </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 border border-amber-200">
-            <Sparkles size={11} />
-            Pro
-          </div>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="portal.yourcompany.com"
+            disabled
+            className="w-full px-3 py-2 pr-16 border border-[var(--border)] rounded-lg bg-[var(--muted)] text-sm text-[var(--muted-foreground)] cursor-not-allowed select-none"
+          />
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 text-[10px] font-semibold tracking-wide">
+            <Sparkles size={9} />
+            PRO
+          </span>
         </div>
-        <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between">
-          <p className="text-xs text-[var(--muted-foreground)]">Includes automatic SSL — no extra setup.</p>
-          <a
-            href="/dashboard/settings/billing"
-            className="flex items-center gap-1 text-xs font-medium text-[var(--primary)] hover:underline"
-          >
-            Upgrade to Pro
-            <ExternalLink size={11} />
-          </a>
-        </div>
+        <a
+          href="/dashboard/settings/account?tab=billing&reason=custom-domain"
+          className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+        >
+          Upgrade to Pro
+        </a>
       </div>
     );
   }

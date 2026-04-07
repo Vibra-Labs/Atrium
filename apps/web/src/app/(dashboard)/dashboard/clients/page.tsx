@@ -5,10 +5,12 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
+import Link from "next/link";
+import { useAppConfig } from "@/lib/app-config";
 
 interface Invitation {
   id: string;
@@ -60,9 +62,14 @@ const roleColor = (role: string) => {
 type TabId = "team" | "clients";
 
 export default function PeoplePage() {
+  const config = useAppConfig();
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>("team");
+  const [planLimits, setPlanLimits] = useState<{
+    maxMembers: number; membersUsed: number;
+    maxClients: number; clientsUsed: number;
+  } | null>(null);
 
   // Shared state
   const [members, setMembers] = useState<MemberRecord[]>([]);
@@ -124,6 +131,26 @@ export default function PeoplePage() {
     loadMembers();
     loadInvitations();
   }, [loadMembers, loadInvitations]);
+
+  useEffect(() => {
+    if (!config?.billingEnabled) return;
+    Promise.all([
+      apiFetch<{ subscription: { plan: { maxMembers: number; maxClients: number } } | null }>("/billing/subscription").catch(() => null),
+      apiFetch<{ members: number; clients: number }>("/billing/usage").catch(() => null),
+    ]).then(([sub, usage]) => {
+      if (sub?.subscription?.plan && usage != null) {
+        setPlanLimits({
+          maxMembers: sub.subscription.plan.maxMembers,
+          membersUsed: usage.members,
+          maxClients: sub.subscription.plan.maxClients,
+          clientsUsed: usage.clients,
+        });
+      }
+    });
+  }, [config?.billingEnabled]);
+
+  const atMemberLimit = planLimits !== null && planLimits.maxMembers !== -1 && planLimits.membersUsed >= planLimits.maxMembers;
+  const atClientLimit = planLimits !== null && planLimits.maxClients !== -1 && planLimits.clientsUsed >= planLimits.maxClients;
 
   const copyLink = (link: string) => {
     navigator.clipboard.writeText(link);
@@ -322,7 +349,36 @@ export default function PeoplePage() {
           )}
           {isOwner && (
             <div className="max-w-lg">
-              <h2 className="text-sm font-medium mb-3">Invite a Team Member</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-medium">Invite a Team Member</h2>
+                {planLimits && planLimits.maxMembers !== -1 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    atMemberLimit ? "bg-red-100 text-red-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                  }`}>
+                    {planLimits.membersUsed}/{planLimits.maxMembers} members
+                  </span>
+                )}
+              </div>
+              {atMemberLimit ? (
+                <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--background)] border border-[var(--border)] shadow-sm">
+                    <Sparkles size={15} className="text-amber-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">Team member limit reached</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                      Upgrade to Pro for up to 5 team members, or Lifetime for 100.
+                    </p>
+                  </div>
+                  <Link
+                    href="/dashboard/settings/account?tab=billing&reason=clients"
+                    className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+                  >
+                    Upgrade
+                    <ExternalLink size={11} />
+                  </Link>
+                </div>
+              ) : (
               <form onSubmit={handleTeamInvite} className="space-y-3">
                 {teamError && (
                   <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{teamError}</div>
@@ -354,6 +410,7 @@ export default function PeoplePage() {
                   </button>
                 </div>
               </form>
+              )}
 
               {teamInviteLink && (
                 <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -487,7 +544,36 @@ export default function PeoplePage() {
         <div className="space-y-6">
           {/* Client Invite */}
           <div className="max-w-lg">
-            <h2 className="text-sm font-medium mb-3">Invite a Client</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-medium">Invite a Client</h2>
+              {planLimits && planLimits.maxClients !== -1 && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  atClientLimit ? "bg-red-100 text-red-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                }`}>
+                  {planLimits.clientsUsed}/{planLimits.maxClients} clients
+                </span>
+              )}
+            </div>
+            {atClientLimit ? (
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--background)] border border-[var(--border)] shadow-sm">
+                  <Sparkles size={15} className="text-amber-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">Client limit reached</p>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                    Upgrade to Pro for unlimited clients.
+                  </p>
+                </div>
+                <Link
+                  href="/dashboard/settings/account?tab=billing&reason=clients"
+                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+                >
+                  Upgrade
+                  <ExternalLink size={11} />
+                </Link>
+              </div>
+            ) : (
             <form onSubmit={handleClientInvite} className="space-y-3">
               {clientError && (
                 <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{clientError}</div>
@@ -511,6 +597,7 @@ export default function PeoplePage() {
                 </button>
               </div>
             </form>
+            )}
 
             {clientInviteLink && (
               <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">

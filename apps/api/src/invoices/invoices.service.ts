@@ -325,7 +325,7 @@ export class InvoicesService {
       );
     }
 
-    await this.prisma.invoice.delete({ where: { id, organizationId: orgId } });
+    await this.prisma.invoice.delete({ where: { id } });
   }
 
   async getStats(orgId: string, projectId?: string) {

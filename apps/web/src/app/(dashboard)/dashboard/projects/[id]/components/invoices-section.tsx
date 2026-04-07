@@ -736,7 +736,7 @@ export function InvoicesSection({
                           Edit
                         </button>
                       )}
-                      {!isArchived && ["draft", "sent"].includes(inv.status) && !inv.stripePaymentIntentId && (
+                      {!isArchived && inv.status !== "paid" && !inv.stripePaymentIntentId && (
                         <button
                           onClick={() => handleDelete(inv.id)}
                           className="ml-auto flex items-center gap-1 text-xs text-red-500 hover:underline"

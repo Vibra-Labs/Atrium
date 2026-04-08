@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { getCsrfToken } from "./helpers";
 
 test.describe("System Settings", () => {
   test("system settings page loads", async ({ page }) => {
@@ -131,7 +132,9 @@ test.describe("System Settings", () => {
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
     await expect(page.getByRole("heading", { name: /error reporting/i })).toBeVisible();
-    await expect(page.getByText(/share anonymous crash reports/i)).toBeVisible();
+    await expect(
+      page.locator("section").filter({ hasText: /error reporting/i }).getByText(/share anonymous crash reports/i)
+    ).toBeVisible();
   });
 
   test("can toggle error reporting on and off", async ({ page }) => {
@@ -154,8 +157,10 @@ test.describe("System Settings", () => {
 
   test("telemetry consent banner appears when preference not yet set", async ({ page, request }) => {
     // Reset telemetryEnabled to null via the settings API
+    const csrfToken = getCsrfToken();
     await request.patch("http://localhost:3001/api/settings", {
       data: { telemetryEnabled: null },
+      headers: { "x-csrf-token": csrfToken },
     });
 
     await page.goto("/dashboard");
@@ -165,8 +170,10 @@ test.describe("System Settings", () => {
   });
 
   test("accepting telemetry consent banner dismisses it", async ({ page, request }) => {
+    const csrfToken = getCsrfToken();
     await request.patch("http://localhost:3001/api/settings", {
       data: { telemetryEnabled: null },
+      headers: { "x-csrf-token": csrfToken },
     });
 
     await page.goto("/dashboard");
@@ -175,8 +182,10 @@ test.describe("System Settings", () => {
   });
 
   test("declining telemetry consent banner dismisses it", async ({ page, request }) => {
+    const csrfToken = getCsrfToken();
     await request.patch("http://localhost:3001/api/settings", {
       data: { telemetryEnabled: null },
+      headers: { "x-csrf-token": csrfToken },
     });
 
     await page.goto("/dashboard");
@@ -185,8 +194,10 @@ test.describe("System Settings", () => {
   });
 
   test("consent banner does not appear when preference already set", async ({ page, request }) => {
+    const csrfToken = getCsrfToken();
     await request.patch("http://localhost:3001/api/settings", {
       data: { telemetryEnabled: false },
+      headers: { "x-csrf-token": csrfToken },
     });
 
     await page.goto("/dashboard");

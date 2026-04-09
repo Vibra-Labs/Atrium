@@ -170,6 +170,11 @@ export default function PeoplePage() {
       await apiFetch(`/clients/${memberId}`, { method: "DELETE" });
       success(`${memberName} removed`);
       loadMembers();
+      if (isTeam) {
+        setPlanLimits((prev) => prev ? { ...prev, membersUsed: Math.max(0, prev.membersUsed - 1) } : prev);
+      } else {
+        setPlanLimits((prev) => prev ? { ...prev, clientsUsed: Math.max(0, prev.clientsUsed - 1) } : prev);
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to remove");
     }
@@ -203,6 +208,7 @@ export default function PeoplePage() {
       const submittedEmail = teamEmail;
       setTeamEmail("");
       success("Invitation sent");
+      setPlanLimits((prev) => prev ? { ...prev, membersUsed: prev.membersUsed + 1 } : prev);
 
       const updated = await apiFetch<Invitation[]>("/clients/invitations");
       setInvitations(updated);
@@ -233,6 +239,7 @@ export default function PeoplePage() {
       const submittedEmail = clientEmail;
       setClientEmail("");
       success("Invitation sent");
+      setPlanLimits((prev) => prev ? { ...prev, clientsUsed: prev.clientsUsed + 1 } : prev);
 
       const updated = await apiFetch<Invitation[]>("/clients/invitations");
       setInvitations(updated);
@@ -371,7 +378,7 @@ export default function PeoplePage() {
                     </p>
                   </div>
                   <Link
-                    href="/dashboard/settings/account?tab=billing&reason=clients"
+                    href="/dashboard/settings/account?tab=billing&reason=members"
                     className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
                   >
                     Upgrade

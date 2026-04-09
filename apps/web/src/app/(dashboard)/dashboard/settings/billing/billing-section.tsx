@@ -70,7 +70,7 @@ function UsageMeter({
   format?: "number" | "storage";
 }) {
   const isUnlimited = max === -1;
-  const pct = isUnlimited ? 0 : Math.min(100, (current / max) * 100);
+  const pct = (isUnlimited || max === 0) ? 0 : Math.min(100, (current / max) * 100);
   const displayMax = format === "storage" ? formatStorage(max) : formatLimit(max);
   const displayCurrent = format === "storage" ? formatStorage(current) : String(current);
   const color = pct >= 90 ? "var(--destructive, #ef4444)" : pct >= 70 ? "#f59e0b" : "var(--primary)";
@@ -102,6 +102,11 @@ const REASON_BANNER: Record<string, { icon: React.ElementType; text: string; sub
     icon: Users,
     text: "Free plan is limited to 3 clients and 1 team member.",
     sub: "Pro gives you unlimited clients and up to 5 team members.",
+  },
+  members: {
+    icon: Users,
+    text: "You've reached your team member limit on the Free plan.",
+    sub: "Upgrade to Pro for up to 5 team members, or Lifetime for 100.",
   },
   "custom-domain": {
     icon: Globe,
@@ -195,7 +200,7 @@ function PlanCard({
           <div className="h-1 bg-[var(--muted)] rounded-full overflow-hidden">
             <div
               className="h-full rounded-full bg-amber-500 transition-all"
-              style={{ width: `${Math.min(100, (seatsLeft / plan.maxSeats) * 100)}%` }}
+              style={{ width: `${Math.min(100, ((plan.maxSeats - seatsLeft) / plan.maxSeats) * 100)}%` }}
             />
           </div>
         </div>
@@ -252,9 +257,14 @@ export function BillingSection() {
   const [checkoutLoadingSlug, setCheckoutLoadingSlug] = useState<string | null>(null);
   const { success, error: showError } = useToast();
 
-  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const checkoutSuccess = searchParams?.get("success") === "true";
-  const reason = searchParams?.get("reason") ?? null;
+  // Capture URL params once at mount — replaceState later clears them from the URL
+  // so we must not re-derive these on every render.
+  const [checkoutSuccess] = useState(() =>
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("success") === "true" : false,
+  );
+  const [reason] = useState(() =>
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("reason") ?? null : null,
+  );
   const reasonBanner = reason ? REASON_BANNER[reason] ?? null : null;
 
   useEffect(() => {

@@ -191,6 +191,45 @@ test.describe("Invoices", () => {
       expect(body).toHaveProperty("totalInvoices");
       expect(body).toHaveProperty("paidAmount");
     });
+
+    test("delete draft invoice via API", async ({ request }) => {
+      const csrfToken = getCsrfToken();
+      const invoiceId = await createTestInvoice(request);
+
+      const res = await request.delete(`${API}/invoices/${invoiceId}`, {
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.ok()).toBeTruthy();
+
+      // Verify the invoice is gone
+      const getRes = await request.get(`${API}/invoices/${invoiceId}`);
+      expect(getRes.status()).toBe(404);
+    });
+
+    test("delete sent invoice via API", async ({ request }) => {
+      const csrfToken = getCsrfToken();
+      const invoiceId = await createTestInvoice(request);
+
+      // Transition to sent
+      await request.put(`${API}/invoices/${invoiceId}`, {
+        data: { status: "sent" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+
+      const res = await request.delete(`${API}/invoices/${invoiceId}`, {
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.ok()).toBeTruthy();
+    });
+
+    test("cannot delete nonexistent invoice", async ({ request }) => {
+      const csrfToken = getCsrfToken();
+      const res = await request.delete(
+        `${API}/invoices/00000000-0000-0000-0000-000000000000`,
+        { headers: { "x-csrf-token": csrfToken } },
+      );
+      expect(res.status()).toBe(404);
+    });
   });
 
   // -------------------------------------------------------------------------

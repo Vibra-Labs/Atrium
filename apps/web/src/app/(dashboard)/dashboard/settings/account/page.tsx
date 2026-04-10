@@ -44,13 +44,13 @@ export default function AccountSettingsPage() {
       .catch(() => {});
   }, []);
 
-  // Sync tab with URL param changes
+  // Sync tab with URL param changes (also re-runs when billingEnabled loads)
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (tab === "billing" && billingEnabled) {
       setActiveTab("billing");
     }
-  }, [searchParams]);
+  }, [searchParams, billingEnabled]);
 
   const switchTab = (tab: Tab) => {
     setActiveTab(tab);

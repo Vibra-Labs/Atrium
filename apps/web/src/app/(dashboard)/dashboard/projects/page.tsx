@@ -6,10 +6,11 @@ import { apiFetch } from "@/lib/api";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
 import { ProjectCardSkeleton } from "@/components/skeletons";
-import { Plus, Search, FolderOpen, Archive, Tag, Download } from "lucide-react";
+import { Plus, Search, FolderOpen, Archive, Tag, Download, Sparkles, ExternalLink } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
+import { useAppConfig } from "@/lib/app-config";
 
 interface LabelRecord {
   id: string;
@@ -40,12 +41,14 @@ interface PaginatedResponse<T> {
 }
 
 export default function ProjectsPage() {
+  const config = useAppConfig();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
+  const [planLimits, setPlanLimits] = useState<{ maxProjects: number; projectsUsed: number } | null>(null);
 
   // Pagination & filters
   const [page, setPage] = useState(1);
@@ -109,7 +112,22 @@ export default function ProjectsPage() {
     setPage(1);
   }, [debouncedSearch, statusFilter, showArchived, labelFilter]);
 
+  useEffect(() => {
+    if (!config?.billingEnabled) return;
+    Promise.all([
+      apiFetch<{ subscription: { plan: { maxProjects: number } } | null }>("/billing/subscription").catch(() => null),
+      apiFetch<{ projects: number }>("/billing/usage").catch(() => null),
+    ]).then(([sub, usage]) => {
+      if (sub?.subscription?.plan && usage != null) {
+        setPlanLimits({ maxProjects: sub.subscription.plan.maxProjects, projectsUsed: usage.projects });
+      }
+    });
+  }, [config?.billingEnabled]);
+
   const [creating, setCreating] = useState(false);
+
+  const atProjectLimit = planLimits !== null && planLimits.maxProjects !== -1 && planLimits.projectsUsed >= planLimits.maxProjects;
+  const oneProjectLeft = planLimits !== null && planLimits.maxProjects !== -1 && !atProjectLimit && planLimits.maxProjects - planLimits.projectsUsed === 1;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,8 +143,11 @@ export default function ProjectsPage() {
       setDescription("");
       setShowCreate(false);
       loadProjects();
+      if (planLimits) {
+        setPlanLimits((prev) => prev ? { ...prev, projectsUsed: prev.projectsUsed + 1 } : prev);
+      }
     } catch (err) {
-      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {
       setCreating(false);
     }
@@ -137,6 +158,17 @@ export default function ProjectsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Projects</h1>
         <div className="flex items-center gap-2">
+          {planLimits && planLimits.maxProjects !== -1 && (
+            <span className={`hidden sm:inline text-xs px-2 py-1 rounded-full font-medium ${
+              atProjectLimit
+                ? "bg-red-100 text-red-700"
+                : oneProjectLeft
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+            }`}>
+              {planLimits.projectsUsed}/{planLimits.maxProjects} projects
+            </span>
+          )}
           <button
             onClick={() => downloadCsv("/projects/export")}
             className="flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
@@ -147,9 +179,13 @@ export default function ProjectsPage() {
           </button>
           <button
             onClick={() => setShowCreate(!showCreate)}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium hover:opacity-90"
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-colors ${
+              atProjectLimit
+                ? "bg-amber-500 text-white"
+                : "bg-[var(--primary)] text-white"
+            }`}
           >
-            <Plus size={16} />
+            {atProjectLimit ? <Sparkles size={16} /> : <Plus size={16} />}
             New Project
           </button>
         </div>
@@ -159,11 +195,55 @@ export default function ProjectsPage() {
         <div className="mb-6 p-4 text-sm text-red-600 bg-red-50 rounded-lg">{error}</div>
       )}
 
-      {showCreate && (
+      {showCreate && atProjectLimit && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] px-4 py-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--background)] border border-[var(--border)] shadow-sm">
+            <Sparkles size={16} className="text-amber-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">
+              You&apos;ve used all {planLimits?.maxProjects} free projects
+            </p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+              Upgrade to Pro for unlimited projects, 10 GB storage, custom domain, and more.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/dashboard/settings/account?tab=billing&reason=projects"
+              className="flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+            >
+              Upgrade to Pro
+              <ExternalLink size={12} />
+            </Link>
+            <button
+              onClick={() => setShowCreate(false)}
+              className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] whitespace-nowrap"
+            >
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showCreate && !atProjectLimit && (
         <form
           onSubmit={handleCreate}
           className="mb-6 p-4 border border-[var(--border)] rounded-lg space-y-3"
         >
+          {oneProjectLeft && (
+            <div className="flex items-center justify-between rounded-lg bg-[var(--muted)] border border-[var(--border)] px-3 py-2">
+              <p className="text-xs text-[var(--muted-foreground)]">
+                <span className="font-medium text-[var(--foreground)]">Last free project.</span> Upgrade to Pro for unlimited.
+              </p>
+              <Link
+                href="/dashboard/settings/account?tab=billing&reason=projects"
+                className="text-xs font-medium text-[var(--primary)] hover:opacity-80 whitespace-nowrap ml-3"
+              >
+                Upgrade →
+              </Link>
+            </div>
+          )}
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}

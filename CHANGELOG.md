@@ -2,6 +2,22 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.4.3] — 2026-04-07
+
+### Added
+
+- **Plan limit upsell prompts** — Free-plan users now see contextual upgrade prompts at the point of friction: a usage counter and upgrade card on the Projects page, member/client limit banners on the People page, and a locked input with inline `PRO` badge on the Custom Domain setting.
+- **Billing page redesign** — Plans section is now the primary focus (moved above current plan details). Pro card is visually highlighted with a teal border and "Most Popular" badge. Lifetime card includes a founding member spots meter and a "Become a Founding Member" CTA. Usage meters are compact (2-column, small text).
+- **Contextual upgrade banner** — Arriving at the billing page via an upsell prompt now shows a banner explaining why you're there (projects limit, clients limit, or custom domain).
+- **Founder Discord access** — Added as a feature bullet on the Lifetime plan.
+
+### Fixed
+
+- Invoice delete button was hidden for `overdue` and `cancelled` invoices — now any non-`paid` invoice without a Stripe payment intent can be deleted.
+- Upsell components were reading `sub.plan` directly but the billing API wraps it as `sub.subscription.plan`, causing plan limits to never apply.
+- Billing tab not opening when navigating to `/dashboard/settings/account?tab=billing` — `billingEnabled` wasn't in the sync effect's dependency array, so the tab stayed on Profile until a second interaction.
+- Upgrade links redirected through `/dashboard/settings/billing` (which itself redirected) — all links now point directly to `?tab=billing`.
+
 ## [1.4.2] — 2026-04-05
 
 ### Added

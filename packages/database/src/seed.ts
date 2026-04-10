@@ -67,6 +67,7 @@ const plans = [
       "25 GB storage",
       "100 team members",
       "Unlimited clients",
+      "Founder Discord access",
       "Limited to 100 total seats",
     ],
     description: "One-time payment, lifetime access",

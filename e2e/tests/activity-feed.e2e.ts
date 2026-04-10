@@ -233,8 +233,8 @@ test.describe("Activity Feed", () => {
       // Wait for timeline to load - check for either update content or activity entries
       await page.waitForTimeout(1000);
 
-      // The page should load without errors
-      await expect(page.locator("body")).not.toContainText("error", {
+      // The page should load without an error state (project failed to load)
+      await expect(page.locator(".bg-red-50")).not.toBeVisible({
         timeout: 3000,
       });
     });

@@ -219,7 +219,9 @@ model Task {
   title          String
   description    String?
   dueDate        DateTime?
-  completed      Boolean   @default(false)
+  status         String    @default("open") // "open" | "in_progress" | "done" | "cancelled"
+  requestedById  String?
+  assigneeId     String?
   order          Int       @default(0)
   type           String    @default("checkbox") // "checkbox" | "decision"
   question       String?

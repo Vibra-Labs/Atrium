@@ -240,6 +240,8 @@ model Task {
   @@index([projectId])
   @@index([organizationId])
   @@index([projectId, status])
+  @@index([requestedById])
+  @@index([assigneeId])
   @@map("task")
 }
 

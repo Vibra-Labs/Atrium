@@ -980,6 +980,11 @@ export default function PortalProjectDetailPage() {
                         </button>
                       )}
                     </div>
+                    {task.description && (
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1 ml-0 px-1">
+                        {task.description}
+                      </p>
+                    )}
                     <CommentsSection
                       targetType="task"
                       targetId={task.id}

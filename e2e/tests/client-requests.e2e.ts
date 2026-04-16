@@ -78,24 +78,24 @@ test.describe("Client Requests", () => {
     test("tasks section shows status filter bar", async ({ page }) => {
       await page.goto("/dashboard/projects");
       const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await expect(page.getByRole("button", { name: /active/i })).toBeVisible({ timeout: 5000 });
-        await expect(page.getByRole("button", { name: /all/i })).toBeVisible({ timeout: 5000 });
-      }
+      const hasProject = await projectLink.isVisible({ timeout: 5000 }).catch(() => false);
+      test.skip(!hasProject, "No project link visible — skipping UI assertion");
+      await projectLink.click();
+      await expect(page.getByRole("button", { name: /active/i })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByRole("button", { name: /all/i })).toBeVisible({ timeout: 5000 });
     });
   });
 
   test.describe("Portal — New Request button", () => {
     test("portal tasks tab shows New Request button", async ({ page }) => {
-      // Navigate to portal as the test user — relies on global setup auth
+      // Relies on global setup auth — test user may not be a portal client
       await page.goto("/portal/projects");
       const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /tasks/i }).click();
-        await expect(page.getByRole("button", { name: /new request/i })).toBeVisible({ timeout: 5000 });
-      }
+      const hasProject = await projectLink.isVisible({ timeout: 5000 }).catch(() => false);
+      test.skip(!hasProject, "No portal project link visible — test user may not be a portal client");
+      await projectLink.click();
+      await page.getByRole("button", { name: /tasks/i }).click();
+      await expect(page.getByRole("button", { name: /new request/i })).toBeVisible({ timeout: 5000 });
     });
   });
 });

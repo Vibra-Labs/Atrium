@@ -202,6 +202,7 @@ export default function PortalProjectDetailPage() {
   const [newRequestTitle, setNewRequestTitle] = useState("");
   const [newRequestDesc, setNewRequestDesc] = useState("");
   const [postingRequest, setPostingRequest] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -368,6 +369,12 @@ export default function PortalProjectDetailPage() {
       console.error(err);
     }
   };
+
+  useEffect(() => {
+    apiFetch<{ user: { id: string } }>("/auth/get-session")
+      .then((s) => setCurrentUserId(s.user.id))
+      .catch(console.error);
+  }, []);
 
   useEffect(() => {
     loadProject();
@@ -940,7 +947,7 @@ export default function PortalProjectDetailPage() {
                   done: "Done",
                   cancelled: "Cancelled",
                 };
-                const isOwnRequest = task.requestedById !== null && task.requestedById !== undefined;
+                const isOwnRequest = currentUserId !== null && task.requestedById === currentUserId;
                 const canCancel = isOwnRequest && task.status === "open";
 
                 return (

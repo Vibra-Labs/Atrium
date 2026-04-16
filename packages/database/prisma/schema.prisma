@@ -239,6 +239,7 @@ model Task {
 
   @@index([projectId])
   @@index([organizationId])
+  @@index([projectId, status])
   @@map("task")
 }
 

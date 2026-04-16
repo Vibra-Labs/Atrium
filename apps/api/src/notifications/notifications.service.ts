@@ -1007,9 +1007,10 @@ export class NotificationsService {
     requestedById: string | null,
     assigneeId: string | null,
   ): Promise<void> {
-    const userIds = [requestedById, assigneeId].filter(
-      (id): id is string => id !== null && id !== undefined,
-    );
+    // Deduplicate: if requester and assignee are the same person, notify once
+    const userIds = [...new Set(
+      [requestedById, assigneeId].filter((id): id is string => id !== null && id !== undefined),
+    )];
     if (userIds.length === 0) return;
 
     const statusLabel: Record<string, string> = {
@@ -1019,25 +1020,27 @@ export class NotificationsService {
       cancelled: "Cancelled",
     };
 
-    await Promise.all(
-      userIds.map(async (userId) => {
-        const member = await this.prisma.member.findFirst({
-          where: { userId, organizationId: orgId },
-        });
-        const isClient = member === null;
-        const link = isClient
-          ? `/portal/projects/${projectId}`
-          : `/dashboard/projects/${projectId}`;
-        this.createInAppAndPush(
-          [userId],
-          orgId,
-          "task_status_changed",
-          `"${taskTitle}" is now ${statusLabel[newStatus] ?? newStatus}`,
-          taskTitle,
-          link,
-        );
-      }),
-    );
+    // Single DB query instead of one per user
+    const members = await this.prisma.member.findMany({
+      where: { userId: { in: userIds }, organizationId: orgId },
+      select: { userId: true },
+    });
+    const memberUserIds = new Set(members.map((m) => m.userId));
+
+    for (const userId of userIds) {
+      const isClient = !memberUserIds.has(userId);
+      const link = isClient
+        ? `/portal/projects/${projectId}`
+        : `/dashboard/projects/${projectId}`;
+      this.createInAppAndPush(
+        [userId],
+        orgId,
+        "task_status_changed",
+        `"${taskTitle}" is now ${statusLabel[newStatus] ?? newStatus}`,
+        taskTitle,
+        link,
+      );
+    }
   }
 
   private async sendTaskAssignedNotification(

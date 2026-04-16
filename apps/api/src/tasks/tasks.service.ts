@@ -9,7 +9,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ActivityService } from "../activity/activity.service";
 import { paginationArgs, paginatedResponse } from "../common";
-import { CreateTaskDto, UpdateTaskDto } from "./tasks.dto";
+import { CreateTaskDto, CreateClientTaskDto, UpdateTaskDto } from "./tasks.dto";
 
 @Injectable()
 export class TasksService {
@@ -20,7 +20,7 @@ export class TasksService {
     @InjectPinoLogger(TasksService.name) private readonly logger: PinoLogger,
   ) {}
 
-  async create(dto: CreateTaskDto, projectId: string, orgId: string) {
+  async create(dto: CreateTaskDto, projectId: string, orgId: string, requestedById?: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId: orgId },
     });
@@ -46,6 +46,8 @@ export class TasksService {
         title: dto.title,
         description: dto.description,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        status: "open",
+        requestedById: requestedById ?? null,
         order,
         type: isDecision ? "decision" : "checkbox",
         question: isDecision ? dto.question : undefined,
@@ -76,12 +78,69 @@ export class TasksService {
     return task;
   }
 
+  /**
+   * Create a task on behalf of a portal client.
+   * Validates that the caller is assigned to the project.
+   * Only checkbox tasks allowed.
+   */
+  async createForClient(
+    dto: CreateClientTaskDto,
+    projectId: string,
+    userId: string,
+    orgId: string,
+  ) {
+    const assignment = await this.prisma.projectClient.findFirst({
+      where: { projectId, userId, project: { organizationId: orgId } },
+      include: { user: { select: { name: true } } },
+    });
+    if (!assignment) throw new ForbiddenException("Not assigned to this project");
+
+    const maxOrder = await this.prisma.task.aggregate({
+      where: { projectId, organizationId: orgId },
+      _max: { order: true },
+    });
+    const order = (maxOrder._max.order ?? -1) + 1;
+
+    const task = await this.prisma.task.create({
+      data: {
+        title: dto.title,
+        description: dto.description,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        status: "open",
+        requestedById: userId,
+        order,
+        type: "checkbox",
+        projectId,
+        organizationId: orgId,
+      },
+    });
+
+    this.notifications.notifyClientRequestCreated(
+      projectId,
+      orgId,
+      dto.title,
+      assignment.user.name,
+    );
+
+    return task;
+  }
+
   async findByProject(
     projectId: string,
     orgId: string,
     page = 1,
     limit = 20,
   ) {
+    // Load org member userIds once to compute isClientRequest
+    const memberUserIds = new Set(
+      (
+        await this.prisma.member.findMany({
+          where: { organizationId: orgId },
+          select: { userId: true },
+        })
+      ).map((m) => m.userId),
+    );
+
     const where = { projectId, organizationId: orgId };
     const [data, total] = await Promise.all([
       this.prisma.task.findMany({
@@ -101,7 +160,13 @@ export class TasksService {
       }),
       this.prisma.task.count({ where }),
     ]);
-    return paginatedResponse(data, total, page, limit);
+
+    const enriched = data.map((task) => ({
+      ...task,
+      isClientRequest: task.requestedById ? !memberUserIds.has(task.requestedById) : false,
+    }));
+
+    return paginatedResponse(enriched, total, page, limit);
   }
 
   async findByProjectForClient(
@@ -141,10 +206,8 @@ export class TasksService {
       this.prisma.task.count({ where }),
     ]);
 
-    // Count assigned clients to determine if all have voted
     const clientCount = await this.prisma.projectClient.count({ where: { projectId } });
 
-    // Hide vote counts from clients until all clients have voted or voting is closed
     const sanitized = data.map((task) => {
       if (task.type === "decision" && !task.closedAt && task.options) {
         const allVoted = task._count.votes >= clientCount;
@@ -180,7 +243,6 @@ export class TasksService {
     if (!task) throw new NotFoundException("Decision task not found");
     if (task.closedAt) throw new BadRequestException("Voting is closed");
 
-    // Verify client is assigned to project
     const assignment = await this.prisma.projectClient.findFirst({
       where: { projectId: task.projectId, userId },
     });
@@ -188,7 +250,6 @@ export class TasksService {
       throw new ForbiddenException("Not assigned to this project");
     }
 
-    // Verify option belongs to this task
     const option = task.options.find((o) => o.id === optionId);
     if (!option) throw new BadRequestException("Invalid option");
 
@@ -223,7 +284,7 @@ export class TasksService {
 
     const updated = await this.prisma.task.update({
       where: { id: taskId },
-      data: { closedAt: new Date(), completed: true },
+      data: { closedAt: new Date(), status: "done" },
       include: {
         options: {
           orderBy: { order: "asc" },
@@ -257,14 +318,56 @@ export class TasksService {
     });
     if (!task) throw new NotFoundException("Task not found");
 
-    return this.prisma.task.update({
+    const updated = await this.prisma.task.update({
       where: { id },
       data: {
         title: dto.title,
         description: dto.description,
         dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : undefined,
-        completed: dto.completed,
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.assigneeId !== undefined ? { assigneeId: dto.assigneeId } : {}),
       },
+    });
+
+    if (dto.status && dto.status !== task.status) {
+      this.notifications.notifyTaskStatusChanged(
+        task.id,
+        task.title,
+        task.projectId,
+        orgId,
+        dto.status,
+        task.requestedById,
+        updated.assigneeId,
+      );
+    }
+
+    if (dto.assigneeId && dto.assigneeId !== task.assigneeId) {
+      this.notifications.notifyTaskAssigned(
+        task.title,
+        task.projectId,
+        orgId,
+        dto.assigneeId,
+      );
+    }
+
+    return updated;
+  }
+
+  /**
+   * Cancel a task that the client originally requested.
+   * Only the requesting user can cancel their own open tasks.
+   */
+  async cancelClientTask(taskId: string, userId: string, orgId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, organizationId: orgId },
+    });
+    if (!task) throw new NotFoundException("Task not found");
+    if (task.requestedById !== userId) throw new ForbiddenException("Cannot cancel this task");
+    if (task.status !== "open") throw new BadRequestException("Only open tasks can be cancelled");
+
+    return this.prisma.task.update({
+      where: { id: taskId },
+      data: { status: "cancelled" },
     });
   }
 

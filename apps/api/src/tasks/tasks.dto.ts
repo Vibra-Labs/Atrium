@@ -93,6 +93,7 @@ export class UpdateTaskDto {
   status?: string;
 
   // null = unassign, string = assign to userId
+  @ValidateIf((o: UpdateTaskDto) => o.assigneeId !== null && o.assigneeId !== undefined)
   @IsString()
   @IsOptional()
   assigneeId?: string | null;

@@ -74,6 +74,104 @@ test.describe("Client Requests", () => {
     });
   });
 
+  test.describe("Agency task requestedById", () => {
+    test("POST /tasks creates a task with requestedById=null", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Agency Owned Task" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(res.status()).toBe(201);
+      const body = await res.json();
+      expect(body.requestedById).toBeNull();
+    });
+  });
+
+  test.describe("Status filter", () => {
+    let openTaskId: string;
+    let doneTaskId: string;
+
+    test.beforeAll(async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+
+      const openRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Filter Open Task" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      if (openRes.ok()) {
+        openTaskId = (await openRes.json()).id;
+      }
+
+      const doneRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Filter Done Task" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      if (doneRes.ok()) {
+        doneTaskId = (await doneRes.json()).id;
+        await request.put(`${API}/tasks/${doneTaskId}`, {
+          data: { status: "done" },
+          headers: { "x-csrf-token": csrfToken },
+        });
+      }
+    });
+
+    test("GET /tasks/project/:id?status=active returns only open/in_progress tasks", async ({ request }) => {
+      test.skip(!projectId || !openTaskId, "No project or task available");
+      const res = await request.get(`${API}/tasks/project/${projectId}?status=active`);
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      expect(body.data).toBeInstanceOf(Array);
+      for (const task of body.data) {
+        expect(["open", "in_progress"]).toContain(task.status);
+      }
+    });
+
+    test("GET /tasks/project/:id?status=done returns only done tasks", async ({ request }) => {
+      test.skip(!projectId || !doneTaskId, "No project or task available");
+      const res = await request.get(`${API}/tasks/project/${projectId}?status=done`);
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      expect(body.data).toBeInstanceOf(Array);
+      for (const task of body.data) {
+        expect(task.status).toBe("done");
+      }
+    });
+
+    test("GET /tasks/project/:id?status=all returns tasks of all statuses", async ({ request }) => {
+      test.skip(!projectId || !openTaskId || !doneTaskId, "No project or tasks available");
+      const res = await request.get(`${API}/tasks/project/${projectId}?status=all`);
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      expect(body.data).toBeInstanceOf(Array);
+      const statuses = new Set<string>(body.data.map((t: { status: string }) => t.status));
+      // Both open and done tasks were created — both statuses must appear
+      expect(statuses.has("open")).toBeTruthy();
+      expect(statuses.has("done")).toBeTruthy();
+    });
+  });
+
+  test.describe("assigneeId validation", () => {
+    test("PUT /tasks/:id with a non-member assigneeId returns 400", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+
+      const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Assignee Validation Task" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(createRes.status()).toBe(201);
+      const task = await createRes.json();
+
+      const updateRes = await request.put(`${API}/tasks/${task.id}`, {
+        data: { assigneeId: "00000000-0000-0000-0000-000000000000" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(updateRes.status()).toBe(400);
+    });
+  });
+
   test.describe("Dashboard tasks UI", () => {
     test("tasks section shows status filter bar", async ({ page }) => {
       await page.goto("/dashboard/projects");

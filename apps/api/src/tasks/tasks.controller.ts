@@ -44,10 +44,9 @@ export class TasksController {
     @Body() dto: CreateTaskDto,
     @Query("projectId") projectId: string,
     @CurrentOrg("id") orgId: string,
-    @CurrentUser("id") userId: string,
   ) {
     if (!projectId) throw new BadRequestException("projectId is required");
-    return this.tasksService.create(dto, projectId, orgId, userId);
+    return this.tasksService.create(dto, projectId, orgId);
   }
 
   // Client-facing endpoint — no @Roles, authorization handled in service
@@ -68,12 +67,14 @@ export class TasksController {
     @Param("projectId") projectId: string,
     @CurrentOrg("id") orgId: string,
     @Query() pagination: PaginationQueryDto,
+    @Query("status") status?: string,
   ) {
     return this.tasksService.findByProject(
       projectId,
       orgId,
       pagination.page,
       pagination.limit,
+      status,
     );
   }
 

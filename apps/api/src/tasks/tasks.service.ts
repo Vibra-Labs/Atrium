@@ -130,8 +130,15 @@ export class TasksService {
     orgId: string,
     page = 1,
     limit = 20,
+    status?: string,
   ) {
-    const where = { projectId, organizationId: orgId };
+    const statusFilter =
+      status === "active"
+        ? { status: { in: ["open", "in_progress"] } }
+        : status && status !== "all"
+        ? { status }
+        : {};
+    const where = { projectId, organizationId: orgId, ...statusFilter };
     const [data, total, members] = await Promise.all([
       this.prisma.task.findMany({
         where,
@@ -313,6 +320,13 @@ export class TasksService {
       where: { id, organizationId: orgId },
     });
     if (!task) throw new NotFoundException("Task not found");
+
+    if (dto.assigneeId) {
+      const member = await this.prisma.member.findFirst({
+        where: { userId: dto.assigneeId, organizationId: orgId },
+      });
+      if (!member) throw new BadRequestException("Assignee is not an organization member");
+    }
 
     const updated = await this.prisma.task.update({
       where: { id },

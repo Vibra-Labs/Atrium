@@ -93,14 +93,14 @@ export function TasksSection({
 
   const loadTasks = useCallback(() => {
     apiFetch<PaginatedResponse<TaskRecord>>(
-      `/tasks/project/${projectId}?page=${page}&limit=20`,
+      `/tasks/project/${projectId}?page=${page}&limit=20&status=${statusFilter}`,
     )
       .then((res) => {
         setTasks(res.data);
         setTotalPages(res.meta.totalPages);
       })
       .catch(console.error);
-  }, [projectId, page]);
+  }, [projectId, page, statusFilter]);
 
   useEffect(() => {
     loadTasks();
@@ -111,13 +111,6 @@ export function TasksSection({
       .then((res) => setMembers(res.data))
       .catch(console.error);
   }, []);
-
-  const visibleTasks = tasks.filter((t) => {
-    if (statusFilter === "active") return t.status === "open" || t.status === "in_progress";
-    if (statusFilter === "done") return t.status === "done";
-    if (statusFilter === "cancelled") return t.status === "cancelled";
-    return true; // "all"
-  });
 
   const handleAdd = async () => {
     if (taskType === "checkbox") {
@@ -255,7 +248,7 @@ export function TasksSection({
         ].map((f) => (
           <button
             key={f.key}
-            onClick={() => setStatusFilter(f.key)}
+            onClick={() => { setStatusFilter(f.key); setPage(1); }}
             className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
               statusFilter === f.key
                 ? "bg-[var(--primary)] text-white"
@@ -368,7 +361,7 @@ export function TasksSection({
       )}
 
       <div className="space-y-1">
-        {visibleTasks.map((task) => {
+        {tasks.map((task) => {
           if (task.type === "decision") {
             const totalVotes = task.options?.reduce((s, o) => s + o._count.votes, 0) || 0;
             const isClosed = !!task.closedAt;
@@ -573,7 +566,7 @@ export function TasksSection({
             </div>
           );
         })}
-        {visibleTasks.length === 0 && (
+        {tasks.length === 0 && (
           <div className="text-center py-6">
             <ListTodo size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
             <p className="text-sm text-[var(--muted-foreground)]">

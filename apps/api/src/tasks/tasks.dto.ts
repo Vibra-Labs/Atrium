@@ -3,7 +3,6 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsBoolean,
   IsDateString,
   IsArray,
   IsIn,
@@ -55,6 +54,23 @@ export class CreateTaskDto {
   options?: DecisionOptionDto[];
 }
 
+// Used by clients creating requests from the portal — no type/question/options
+export class CreateClientTaskDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  title!: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(5000)
+  description?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+}
+
 export class UpdateTaskDto {
   @IsString()
   @IsOptional()
@@ -66,14 +82,20 @@ export class UpdateTaskDto {
   @MaxLength(5000)
   description?: string;
 
-  @ValidateIf((o) => o.dueDate !== null)
+  @ValidateIf((o: UpdateTaskDto) => o.dueDate !== null)
   @IsDateString()
   @IsOptional()
   dueDate?: string | null;
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  completed?: boolean;
+  @IsIn(["open", "in_progress", "done", "cancelled"])
+  status?: string;
+
+  // null = unassign, string = assign to userId
+  @IsString()
+  @IsOptional()
+  assigneeId?: string | null;
 }
 
 export class ReorderTasksDto {

@@ -5,7 +5,15 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Trash2, Pencil, CheckSquare, Square, ListTodo, Vote, Lock, Download } from "lucide-react";
+import {
+  Trash2,
+  Pencil,
+  ListTodo,
+  Vote,
+  Lock,
+  Download,
+  UserCircle,
+} from "lucide-react";
 import { track } from "@/lib/track";
 import { CommentsSection } from "@/components/comments-section";
 import { LabelBadge } from "@/components/label-badge";
@@ -16,7 +24,10 @@ interface TaskRecord {
   title: string;
   description?: string;
   dueDate?: string | null;
-  completed: boolean;
+  status: string;
+  requestedById?: string | null;
+  assigneeId?: string | null;
+  isClientRequest: boolean;
   order: number;
   type: string;
   question?: string;
@@ -31,9 +42,30 @@ interface TaskRecord {
   _count?: { votes: number; comments: number };
 }
 
+interface OrgMember {
+  userId: string;
+  user: { id: string; name: string; email: string };
+}
+
 interface PaginatedResponse<T> {
   data: T[];
   meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+const STATUS_OPTIONS = [
+  { value: "open", label: "Open", color: "bg-gray-100 text-gray-700" },
+  { value: "in_progress", label: "In Progress", color: "bg-blue-100 text-blue-700" },
+  { value: "done", label: "Done", color: "bg-green-100 text-green-700" },
+  { value: "cancelled", label: "Cancelled", color: "bg-red-50 text-red-600" },
+];
+
+function StatusBadge({ status }: { status: string }) {
+  const opt = STATUS_OPTIONS.find((s) => s.value === status);
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${opt?.color ?? "bg-gray-100 text-gray-700"}`}>
+      {opt?.label ?? status}
+    </span>
+  );
 }
 
 export function TasksSection({
@@ -48,6 +80,8 @@ export function TasksSection({
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [members, setMembers] = useState<OrgMember[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string>("active"); // "active" | "all" | "done" | "cancelled"
   const [newTitle, setNewTitle] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -71,6 +105,19 @@ export function TasksSection({
   useEffect(() => {
     loadTasks();
   }, [loadTasks]);
+
+  useEffect(() => {
+    apiFetch<PaginatedResponse<OrgMember>>("/clients?limit=100")
+      .then((res) => setMembers(res.data))
+      .catch(console.error);
+  }, []);
+
+  const visibleTasks = tasks.filter((t) => {
+    if (statusFilter === "active") return t.status === "open" || t.status === "in_progress";
+    if (statusFilter === "done") return t.status === "done";
+    if (statusFilter === "cancelled") return t.status === "cancelled";
+    return true; // "all"
+  });
 
   const handleAdd = async () => {
     if (taskType === "checkbox") {
@@ -122,16 +169,28 @@ export function TasksSection({
     }
   };
 
-  const handleToggle = async (task: TaskRecord) => {
+  const handleStatusChange = async (task: TaskRecord, newStatus: string) => {
     try {
       await apiFetch(`/tasks/${task.id}`, {
         method: "PUT",
-        body: JSON.stringify({ completed: !task.completed }),
+        body: JSON.stringify({ status: newStatus }),
       });
-      if (!task.completed) track("task_completed");
+      if (newStatus === "done") track("task_completed");
       loadTasks();
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to update task");
+      showError(err instanceof Error ? err.message : "Failed to update task status");
+    }
+  };
+
+  const handleAssigneeChange = async (taskId: string, assigneeId: string | null) => {
+    try {
+      await apiFetch(`/tasks/${taskId}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigneeId }),
+      });
+      loadTasks();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update assignee");
     }
   };
 
@@ -184,6 +243,28 @@ export function TasksSection({
             Export
           </button>
         )}
+      </div>
+
+      {/* Status filter bar */}
+      <div className="flex gap-1 mb-3 flex-wrap">
+        {[
+          { key: "active", label: "Active" },
+          { key: "all", label: "All" },
+          { key: "done", label: "Done" },
+          { key: "cancelled", label: "Cancelled" },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setStatusFilter(f.key)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+              statusFilter === f.key
+                ? "bg-[var(--primary)] text-white"
+                : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {!isArchived && (
@@ -287,7 +368,7 @@ export function TasksSection({
       )}
 
       <div className="space-y-1">
-        {tasks.map((task) => {
+        {visibleTasks.map((task) => {
           if (task.type === "decision") {
             const totalVotes = task.options?.reduce((s, o) => s + o._count.votes, 0) || 0;
             const isClosed = !!task.closedAt;
@@ -364,109 +445,139 @@ export function TasksSection({
             );
           }
 
+          // Checkbox / request task
           return (
-          <div
-            key={task.id}
-            className="p-2 border border-[var(--border)] rounded-lg"
-          >
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleToggle(task)}
-                disabled={isArchived}
-                className="shrink-0 text-[var(--primary)] disabled:opacity-50"
-              >
-                {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
-              </button>
+            <div
+              key={task.id}
+              className="p-2 border border-[var(--border)] rounded-lg"
+            >
+              <div className="flex items-center gap-2">
+                {/* Status dropdown */}
+                <select
+                  value={task.status}
+                  disabled={isArchived}
+                  onChange={(e) => handleStatusChange(task, e.target.value)}
+                  className="shrink-0 text-xs border border-[var(--border)] rounded bg-[var(--background)] px-1 py-0.5 cursor-pointer disabled:opacity-50"
+                  title="Change status"
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
 
-              {editingId === task.id ? (
-                <div className="flex-1 flex flex-col gap-2 min-w-0">
-                  <input
-                    type="text"
-                    value={editingTitle}
-                    onChange={(e) => setEditingTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleUpdate(task.id);
-                      if (e.key === "Escape") setEditingId(null);
-                    }}
-                    autoFocus
-                    className="w-full px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
-                  />
-                  <div className="flex items-center gap-2">
+                {editingId === task.id ? (
+                  <div className="flex-1 flex flex-col gap-2 min-w-0">
                     <input
-                      type="date"
-                      value={editingDueDate}
-                      onChange={(e) => setEditingDueDate(e.target.value)}
-                      className="flex-1 min-w-0 px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleUpdate(task.id);
+                        if (e.key === "Escape") setEditingId(null);
+                      }}
+                      autoFocus
+                      className="w-full px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
                     />
-                    <button
-                      onClick={() => handleUpdate(task.id)}
-                      className="px-3 py-1.5 text-sm text-[var(--primary)] hover:underline"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="px-1 py-1.5 text-sm text-[var(--muted-foreground)] hover:underline"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <span
-                    className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
-                  >
-                    {task.title}
-                    {task.labels && task.labels.length > 0 && (
-                      <span className="inline-flex gap-1 ml-2 align-middle">
-                        {task.labels.map((l) => (
-                          <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
-                        ))}
-                      </span>
-                    )}
-                  </span>
-                  {task.dueDate && (
-                    <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                      {new Date(task.dueDate).toLocaleDateString()}
-                    </span>
-                  )}
-                  {!isArchived && (
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={editingDueDate}
+                        onChange={(e) => setEditingDueDate(e.target.value)}
+                        className="flex-1 min-w-0 px-2 py-1.5 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
+                      />
                       <button
-                        onClick={() => {
-                          setEditingId(task.id);
-                          setEditingTitle(task.title);
-                          setEditingDueDate(task.dueDate ? task.dueDate.split("T")[0] : "");
-                        }}
-                        className="p-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                        onClick={() => handleUpdate(task.id)}
+                        className="px-3 py-1.5 text-sm text-[var(--primary)] hover:underline"
                       >
-                        <Pencil size={14} />
+                        Save
                       </button>
                       <button
-                        onClick={() => handleDelete(task.id)}
-                        className="p-2 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                        onClick={() => setEditingId(null)}
+                        className="px-1 py-1.5 text-sm text-[var(--muted-foreground)] hover:underline"
                       >
-                        <Trash2 size={14} />
+                        Cancel
                       </button>
                     </div>
-                  )}
-                </>
-              )}
+                  </div>
+                ) : (
+                  <>
+                    <span
+                      className={`flex-1 text-sm ${task.status === "done" || task.status === "cancelled" ? "line-through text-[var(--muted-foreground)]" : ""}`}
+                    >
+                      {task.title}
+                      {task.isClientRequest && (
+                        <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium align-middle">
+                          <UserCircle size={10} />
+                          Client
+                        </span>
+                      )}
+                      {task.labels && task.labels.length > 0 && (
+                        <span className="inline-flex gap-1 ml-2 align-middle">
+                          {task.labels.map((l) => (
+                            <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                    {task.dueDate && (
+                      <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                        {new Date(task.dueDate).toLocaleDateString()}
+                      </span>
+                    )}
+                    {/* Assignee picker */}
+                    {!isArchived && members.length > 0 && (
+                      <select
+                        value={task.assigneeId ?? ""}
+                        onChange={(e) =>
+                          handleAssigneeChange(task.id, e.target.value || null)
+                        }
+                        className="text-xs border border-[var(--border)] rounded bg-[var(--background)] px-1 py-0.5 max-w-[120px] truncate cursor-pointer"
+                        title="Assign to"
+                      >
+                        <option value="">Unassigned</option>
+                        {members.map((m) => (
+                          <option key={m.userId} value={m.userId}>
+                            {m.user.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {!isArchived && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => {
+                            setEditingId(task.id);
+                            setEditingTitle(task.title);
+                            setEditingDueDate(task.dueDate ? task.dueDate.split("T")[0] : "");
+                          }}
+                          className="p-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(task.id)}
+                          className="p-2 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <CommentsSection
+                targetType="task"
+                targetId={task.id}
+                commentCount={task._count?.comments ?? 0}
+              />
             </div>
-            <CommentsSection
-              targetType="task"
-              targetId={task.id}
-              commentCount={task._count?.comments ?? 0}
-            />
-          </div>
           );
         })}
-        {tasks.length === 0 && (
+        {visibleTasks.length === 0 && (
           <div className="text-center py-6">
             <ListTodo size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
             <p className="text-sm text-[var(--muted-foreground)]">
-              No tasks yet.
+              {statusFilter === "active" ? "No active tasks." : "No tasks."}
             </p>
           </div>
         )}

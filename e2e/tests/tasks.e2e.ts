@@ -51,7 +51,7 @@ test.describe("Tasks", () => {
       expect(res.status()).toBe(201);
       const body = await res.json();
       expect(body.title).toBe("E2E Test Task");
-      expect(body.completed).toBe(false);
+      expect(body.status).toBe("open");
     });
 
     test("list tasks via API", async ({ request }) => {
@@ -73,12 +73,12 @@ test.describe("Tasks", () => {
       const task = await createRes.json();
 
       const res = await request.put(`${API}/tasks/${task.id}`, {
-        data: { completed: true },
+        data: { status: "done" },
         headers: { "x-csrf-token": csrfToken },
       });
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
-      expect(body.completed).toBe(true);
+      expect(body.status).toBe("done");
     });
 
     test("delete task via API", async ({ request }) => {

@@ -131,18 +131,8 @@ export class TasksService {
     page = 1,
     limit = 20,
   ) {
-    // Load org member userIds once to compute isClientRequest
-    const memberUserIds = new Set(
-      (
-        await this.prisma.member.findMany({
-          where: { organizationId: orgId },
-          select: { userId: true },
-        })
-      ).map((m) => m.userId),
-    );
-
     const where = { projectId, organizationId: orgId };
-    const [data, total] = await Promise.all([
+    const [data, total, members] = await Promise.all([
       this.prisma.task.findMany({
         where,
         include: {
@@ -159,7 +149,13 @@ export class TasksService {
         ...paginationArgs(page, limit),
       }),
       this.prisma.task.count({ where }),
+      this.prisma.member.findMany({
+        where: { organizationId: orgId },
+        select: { userId: true },
+      }),
     ]);
+
+    const memberUserIds = new Set(members.map((m) => m.userId));
 
     const enriched = data.map((task) => ({
       ...task,

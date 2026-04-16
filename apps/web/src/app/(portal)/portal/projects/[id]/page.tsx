@@ -99,7 +99,8 @@ interface TaskRecord {
   title: string;
   description?: string;
   dueDate?: string | null;
-  completed: boolean;
+  status: string;
+  requestedById?: string | null;
   order: number;
   type: string;
   question?: string;
@@ -197,6 +198,10 @@ export default function PortalProjectDetailPage() {
   const [newContent, setNewContent] = useState("");
   const [newAttachment, setNewAttachment] = useState<File | null>(null);
   const [postingUpdate, setPostingUpdate] = useState(false);
+  const [showNewRequest, setShowNewRequest] = useState(false);
+  const [newRequestTitle, setNewRequestTitle] = useState("");
+  const [newRequestDesc, setNewRequestDesc] = useState("");
+  const [postingRequest, setPostingRequest] = useState(false);
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -280,6 +285,37 @@ export default function PortalProjectDetailPage() {
       toast.error(err instanceof Error ? err.message : "Failed to post update");
     } finally {
       setPostingUpdate(false);
+    }
+  };
+
+  const handlePostRequest = async () => {
+    if (!newRequestTitle.trim()) return;
+    setPostingRequest(true);
+    try {
+      await apiFetch(`/tasks/mine?projectId=${id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          title: newRequestTitle,
+          description: newRequestDesc || undefined,
+        }),
+      });
+      setNewRequestTitle("");
+      setNewRequestDesc("");
+      setShowNewRequest(false);
+      loadTasks();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit request");
+    } finally {
+      setPostingRequest(false);
+    }
+  };
+
+  const handleCancelRequest = async (taskId: string) => {
+    try {
+      await apiFetch(`/tasks/${taskId}/cancel`, { method: "PATCH" });
+      loadTasks();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel request");
     }
   };
 
@@ -735,6 +771,69 @@ export default function PortalProjectDetailPage() {
         {/* Tasks Tab */}
         {activeTab === "tasks" && (
           <div>
+            <div className="mb-4">
+              <button
+                onClick={() => setShowNewRequest(true)}
+                className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+              >
+                <Plus size={14} />
+                New Request
+              </button>
+            </div>
+
+            {showNewRequest && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    setShowNewRequest(false);
+                    setNewRequestTitle("");
+                    setNewRequestDesc("");
+                  }
+                }}
+              >
+                <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4">
+                  <h3 className="text-lg font-semibold">New Request</h3>
+                  <input
+                    type="text"
+                    value={newRequestTitle}
+                    onChange={(e) => setNewRequestTitle(e.target.value)}
+                    placeholder="What do you need?"
+                    maxLength={255}
+                    autoFocus
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                  />
+                  <textarea
+                    value={newRequestDesc}
+                    onChange={(e) => setNewRequestDesc(e.target.value)}
+                    placeholder="More details (optional)..."
+                    maxLength={5000}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setShowNewRequest(false);
+                        setNewRequestTitle("");
+                        setNewRequestDesc("");
+                      }}
+                      className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handlePostRequest}
+                      disabled={postingRequest || !newRequestTitle.trim()}
+                      className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                    >
+                      {postingRequest ? "Submitting..." : "Submit"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               {tasks.map((task) => {
                 if (task.type === "decision") {
@@ -828,18 +927,35 @@ export default function PortalProjectDetailPage() {
                   );
                 }
 
-                // Checkbox task (default)
+                // Checkbox / request task
+                const statusColors: Record<string, string> = {
+                  open: "bg-gray-100 text-gray-600",
+                  in_progress: "bg-blue-100 text-blue-700",
+                  done: "bg-green-100 text-green-700",
+                  cancelled: "bg-red-50 text-red-500",
+                };
+                const statusLabels: Record<string, string> = {
+                  open: "Open",
+                  in_progress: "In Progress",
+                  done: "Done",
+                  cancelled: "Cancelled",
+                };
+                const isOwnRequest = task.requestedById !== null && task.requestedById !== undefined;
+                const canCancel = isOwnRequest && task.status === "open";
+
                 return (
                   <div
                     key={task.id}
                     className="p-2 border border-[var(--border)] rounded-lg"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="shrink-0 text-[var(--primary)]">
-                        {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
+                      <span
+                        className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[task.status] ?? "bg-gray-100 text-gray-600"}`}
+                      >
+                        {statusLabels[task.status] ?? task.status}
                       </span>
                       <span
-                        className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
+                        className={`flex-1 text-sm ${task.status === "done" || task.status === "cancelled" ? "line-through text-[var(--muted-foreground)]" : ""}`}
                       >
                         {task.title}
                       </span>
@@ -847,6 +963,14 @@ export default function PortalProjectDetailPage() {
                         <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
                           {formatDateDisplay(task.dueDate)}
                         </span>
+                      )}
+                      {canCancel && (
+                        <button
+                          onClick={() => handleCancelRequest(task.id)}
+                          className="text-xs text-red-500 hover:underline shrink-0"
+                        >
+                          Cancel
+                        </button>
                       )}
                     </div>
                     <CommentsSection

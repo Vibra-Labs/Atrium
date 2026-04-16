@@ -67,6 +67,64 @@ export class NotificationsService {
   }
 
   /**
+   * Notify org owners/admins that a client submitted a new request.
+   * Fire-and-forget.
+   */
+  notifyClientRequestCreated(
+    projectId: string,
+    orgId: string,
+    taskTitle: string,
+    clientName: string,
+  ): void {
+    this.sendClientRequestCreatedNotifications(projectId, orgId, taskTitle, clientName).catch(
+      (err) => {
+        this.logger.error({ err, projectId }, "Failed to send client request notifications");
+      },
+    );
+  }
+
+  /**
+   * Notify relevant users when a task's status changes.
+   * Fire-and-forget.
+   */
+  notifyTaskStatusChanged(
+    taskId: string,
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    newStatus: string,
+    requestedById: string | null,
+    assigneeId: string | null,
+  ): void {
+    this.sendTaskStatusChangedNotifications(
+      taskId,
+      taskTitle,
+      projectId,
+      orgId,
+      newStatus,
+      requestedById,
+      assigneeId,
+    ).catch((err) => {
+      this.logger.error({ err, taskId }, "Failed to send task status changed notifications");
+    });
+  }
+
+  /**
+   * Notify an agency member that they have been assigned to a task.
+   * Fire-and-forget.
+   */
+  notifyTaskAssigned(
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    assigneeId: string,
+  ): void {
+    this.sendTaskAssignedNotification(taskTitle, projectId, orgId, assigneeId).catch((err) => {
+      this.logger.error({ err, assigneeId }, "Failed to send task assigned notification");
+    });
+  }
+
+  /**
    * Notify all clients assigned to the invoice's project about the invoice.
    * Fire-and-forget: errors are logged but never thrown.
    */
@@ -918,6 +976,84 @@ export class NotificationsService {
     });
     return assignments.map(
       (a: { user: { id: string; name: string; email: string } }) => a.user,
+    );
+  }
+
+  private async sendClientRequestCreatedNotifications(
+    projectId: string,
+    orgId: string,
+    taskTitle: string,
+    clientName: string,
+  ): Promise<void> {
+    const admins = await this.getOrgAdmins(orgId);
+    if (admins.length === 0) return;
+    const link = `/dashboard/projects/${projectId}`;
+    this.createInAppAndPush(
+      admins.map((a) => a.userId),
+      orgId,
+      "client_request_created",
+      `New request from ${clientName}`,
+      taskTitle,
+      link,
+    );
+  }
+
+  private async sendTaskStatusChangedNotifications(
+    taskId: string,
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    newStatus: string,
+    requestedById: string | null,
+    assigneeId: string | null,
+  ): Promise<void> {
+    const userIds = [requestedById, assigneeId].filter(
+      (id): id is string => id !== null && id !== undefined,
+    );
+    if (userIds.length === 0) return;
+
+    const statusLabel: Record<string, string> = {
+      open: "Open",
+      in_progress: "In Progress",
+      done: "Done",
+      cancelled: "Cancelled",
+    };
+
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const member = await this.prisma.member.findFirst({
+          where: { userId, organizationId: orgId },
+        });
+        const isClient = member === null;
+        const link = isClient
+          ? `/portal/projects/${projectId}`
+          : `/dashboard/projects/${projectId}`;
+        this.createInAppAndPush(
+          [userId],
+          orgId,
+          "task_status_changed",
+          `"${taskTitle}" is now ${statusLabel[newStatus] ?? newStatus}`,
+          taskTitle,
+          link,
+        );
+      }),
+    );
+  }
+
+  private async sendTaskAssignedNotification(
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    assigneeId: string,
+  ): Promise<void> {
+    const link = `/dashboard/projects/${projectId}`;
+    this.createInAppAndPush(
+      [assigneeId],
+      orgId,
+      "task_assigned",
+      `You've been assigned: ${taskTitle}`,
+      taskTitle,
+      link,
     );
   }
 }

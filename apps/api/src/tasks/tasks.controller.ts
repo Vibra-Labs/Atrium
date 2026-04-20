@@ -12,6 +12,7 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { Response } from "express";
 import { TasksService } from "./tasks.service";
 import {
@@ -20,6 +21,7 @@ import {
   UpdateTaskDto,
   ReorderTasksDto,
   CastVoteDto,
+  TaskListQueryDto,
 } from "./tasks.dto";
 import {
   AuthGuard,
@@ -51,6 +53,7 @@ export class TasksController {
 
   // Client-facing endpoint — no @Roles, authorization handled in service
   @Post("mine")
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   createForClient(
     @Body() dto: CreateClientTaskDto,
     @Query("projectId") projectId: string,
@@ -66,15 +69,14 @@ export class TasksController {
   findByProject(
     @Param("projectId") projectId: string,
     @CurrentOrg("id") orgId: string,
-    @Query() pagination: PaginationQueryDto,
-    @Query("status") status?: string,
+    @Query() query: TaskListQueryDto,
   ) {
     return this.tasksService.findByProject(
       projectId,
       orgId,
-      pagination.page,
-      pagination.limit,
-      status,
+      query.page,
+      query.limit,
+      query.status,
     );
   }
 

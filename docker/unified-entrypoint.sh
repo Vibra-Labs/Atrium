@@ -53,6 +53,7 @@ else
   # Migrate legacy document data from file table to document table
   echo "Running data migrations..."
   DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/migrate-file-documents.ts || true
+  DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/migrate-task-completed-to-status.ts || true
 
   # Now push schema with accept-data-loss to drop old columns
   echo "Syncing database schema..."

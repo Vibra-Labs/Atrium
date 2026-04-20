@@ -105,7 +105,7 @@ test.describe("Decision Tasks", () => {
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
       expect(body.closedAt).toBeTruthy();
-      expect(body.completed).toBe(true);
+      expect(body.status).toBe("done");
     });
 
     test("cannot close voting twice", async ({ request }) => {

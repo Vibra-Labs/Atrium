@@ -12,6 +12,7 @@ import {
   ValidateNested,
   ValidateIf,
 } from "class-validator";
+import { PaginationQueryDto } from "../common";
 
 export class DecisionOptionDto {
   @IsString()
@@ -110,4 +111,11 @@ export class CastVoteDto {
   @IsString()
   @IsNotEmpty()
   optionId!: string;
+}
+
+export class TaskListQueryDto extends PaginationQueryDto {
+  @IsString()
+  @IsOptional()
+  @IsIn(["active", "all", "open", "in_progress", "done", "cancelled"])
+  status?: string;
 }

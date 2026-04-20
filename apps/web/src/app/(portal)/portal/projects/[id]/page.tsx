@@ -966,6 +966,11 @@ export default function PortalProjectDetailPage() {
                       >
                         {task.title}
                       </span>
+                      {isOwnRequest && (
+                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                          Your request
+                        </span>
+                      )}
                       {task.dueDate && (
                         <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
                           {formatDateDisplay(task.dueDate)}

@@ -241,6 +241,32 @@ describe("TasksService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it("restricts assigneeId to owner/admin roles (not member)", async () => {
+      // Simulate a portal-client user: member.findFirst with the role filter returns null
+      const memberFindFirst = mock(() => Promise.resolve(null));
+      const mockPrisma = {
+        task: {
+          findFirst: mock(() => Promise.resolve(baseTask)),
+          update: mock(() => Promise.resolve(baseTask)),
+        },
+        member: { findFirst: memberFindFirst },
+      };
+      const svc = new TasksService(
+        mockPrisma as never,
+        mockNotifications as never,
+        mockActivity as never,
+        mockLogger as never,
+      );
+
+      await expect(
+        svc.update("task1", { assigneeId: "portal-client-user" }, "org1"),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      // Verify the query was role-restricted
+      const call = memberFindFirst.mock.calls[0][0];
+      expect(call.where.role).toEqual({ in: ["owner", "admin"] });
+    });
+
     it("accepts a valid assigneeId that is an org member", async () => {
       const updated = { ...baseTask, assigneeId: "user2" };
       const svc = makeUpdateService(baseTask, true, updated);

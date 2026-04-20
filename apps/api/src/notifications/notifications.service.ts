@@ -900,6 +900,7 @@ export class NotificationsService {
     authorRole: string,
     content: string,
     targetType: "update" | "task",
+    taskContext?: { requestedById: string | null; assigneeId: string | null },
   ): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -911,6 +912,44 @@ export class NotificationsService {
       content.length > 100 ? content.slice(0, 100) + "…" : content;
 
     const isClientComment = authorRole === "member";
+    const isTask = targetType === "task";
+
+    if (isTask && taskContext) {
+      let recipientIds: string[];
+      let link: string;
+
+      if (isClientComment) {
+        const admins = await this.getOrgAdmins(organizationId);
+        const targets = new Set<string>(admins.map((a) => a.userId));
+        if (taskContext.assigneeId) targets.add(taskContext.assigneeId);
+        targets.delete(authorId);
+        if (targets.size === 0) return;
+        recipientIds = Array.from(targets);
+        link = `/dashboard/projects/${projectId}`;
+      } else {
+        const requesterId = taskContext.requestedById;
+        if (!requesterId || requesterId === authorId) return;
+        const member = await this.prisma.member.findFirst({
+          where: { userId: requesterId, organizationId },
+          select: { role: true },
+        });
+        const isRequesterClient = !member || member.role === "member";
+        recipientIds = [requesterId];
+        link = isRequesterClient
+          ? `/portal/projects/${projectId}`
+          : `/dashboard/projects/${projectId}`;
+      }
+
+      this.createInAppAndPush(
+        recipientIds,
+        organizationId,
+        "comment",
+        `New comment on ${project.name}`,
+        truncatedContent,
+        link,
+      );
+      return;
+    }
 
     if (isClientComment) {
       const admins = await this.getOrgAdmins(organizationId);

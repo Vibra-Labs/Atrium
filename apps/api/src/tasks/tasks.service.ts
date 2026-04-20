@@ -323,9 +323,13 @@ export class TasksService {
 
     if (dto.assigneeId) {
       const member = await this.prisma.member.findFirst({
-        where: { userId: dto.assigneeId, organizationId: orgId },
+        where: {
+          userId: dto.assigneeId,
+          organizationId: orgId,
+          role: { in: ["owner", "admin"] },
+        },
       });
-      if (!member) throw new BadRequestException("Assignee is not an organization member");
+      if (!member) throw new BadRequestException("Assignee must be an agency member (owner or admin)");
     }
 
     const updated = await this.prisma.task.update({

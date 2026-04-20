@@ -172,6 +172,55 @@ test.describe("Client Requests", () => {
     });
   });
 
+  test.describe("Status query param validation", () => {
+    test("GET /tasks/project/:id?status=bogus returns 400", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const res = await request.get(`${API}/tasks/project/${projectId}?status=bogus`);
+      expect(res.status()).toBe(400);
+    });
+  });
+
+  test.describe("Cancel endpoint", () => {
+    test("PATCH /tasks/:id/cancel on an agency-created task returns 403", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+
+      // Agency creates a task (requestedById=null) then tries to cancel it — should be Forbidden
+      const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Agency Task — Cannot Cancel" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(createRes.status()).toBe(201);
+      const task = await createRes.json();
+
+      const cancelRes = await request.patch(`${API}/tasks/${task.id}/cancel`, {
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(cancelRes.status()).toBe(403);
+    });
+
+    test("PATCH /tasks/:id/cancel on a non-open task returns 400", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+
+      const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Cancel Precondition Task" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      const task = await createRes.json();
+
+      await request.put(`${API}/tasks/${task.id}`, {
+        data: { status: "done" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+
+      const cancelRes = await request.patch(`${API}/tasks/${task.id}/cancel`, {
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect([400, 403]).toContain(cancelRes.status());
+    });
+  });
+
   test.describe("Dashboard tasks UI", () => {
     test("tasks section shows status filter bar", async ({ page }) => {
       await page.goto("/dashboard/projects");

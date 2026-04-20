@@ -44,6 +44,7 @@ interface TaskRecord {
 
 interface OrgMember {
   userId: string;
+  role: string;
   user: { id: string; name: string; email: string };
 }
 
@@ -58,15 +59,6 @@ const STATUS_OPTIONS = [
   { value: "done", label: "Done", color: "bg-green-100 text-green-700" },
   { value: "cancelled", label: "Cancelled", color: "bg-red-50 text-red-600" },
 ];
-
-function StatusBadge({ status }: { status: string }) {
-  const opt = STATUS_OPTIONS.find((s) => s.value === status);
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${opt?.color ?? "bg-gray-100 text-gray-700"}`}>
-      {opt?.label ?? status}
-    </span>
-  );
-}
 
 export function TasksSection({
   projectId,
@@ -108,7 +100,7 @@ export function TasksSection({
 
   useEffect(() => {
     apiFetch<PaginatedResponse<OrgMember>>("/clients?limit=100")
-      .then((res) => setMembers(res.data))
+      .then((res) => setMembers(res.data.filter((m) => m.role === "owner" || m.role === "admin")))
       .catch(console.error);
   }, []);
 

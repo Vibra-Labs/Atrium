@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
@@ -34,6 +34,8 @@ import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
 import { useToast } from "@/components/toast";
 import { CommentsSection } from "@/components/comments-section";
+import { Avatar } from "@/components/avatar";
+import { TaskDetailModal } from "@/components/task-detail-modal";
 
 interface FileRecord {
   id: string;
@@ -101,10 +103,14 @@ interface TaskRecord {
   dueDate?: string | null;
   status: string;
   requestedById?: string | null;
+  assigneeId?: string | null;
+  requester?: { id: string; name: string; image?: string | null } | null;
+  assignee?: { id: string; name: string; image?: string | null } | null;
   order: number;
   type: string;
   question?: string;
   closedAt?: string | null;
+  createdAt?: string;
   options?: {
     id: string;
     label: string;
@@ -112,6 +118,7 @@ interface TaskRecord {
     _count: { votes: number };
   }[];
   votes?: { optionId: string }[];
+  labels?: { label: { id: string; name: string; color: string } }[];
   _count?: { votes: number; comments: number };
 }
 
@@ -172,6 +179,8 @@ interface PendingDocAction {
 
 export default function PortalProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
@@ -205,6 +214,33 @@ export default function PortalProjectDetailPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  // Deep-link sync for task modal
+  useEffect(() => {
+    const t = searchParams.get("task");
+    if (t) setOpenTaskId(t);
+  }, [searchParams]);
+
+  const updateTaskInUrl = useCallback(
+    (taskId: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (taskId) params.set("task", taskId);
+      else params.delete("task");
+      const qs = params.toString();
+      router.replace(qs ? `?${qs}` : "?", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const openTaskModal = (taskId: string) => {
+    setOpenTaskId(taskId);
+    updateTaskInUrl(taskId);
+  };
+  const closeTaskModal = () => {
+    setOpenTaskId(null);
+    updateTaskInUrl(null);
+  };
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -310,15 +346,6 @@ export default function PortalProjectDetailPage() {
       toast.error(err instanceof Error ? err.message : "Failed to submit request");
     } finally {
       setPostingRequest(false);
-    }
-  };
-
-  const handleCancelRequest = async (taskId: string) => {
-    try {
-      await apiFetch(`/tasks/${taskId}/cancel`, { method: "PATCH" });
-      loadTasks();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to cancel request");
     }
   };
 
@@ -957,7 +984,7 @@ export default function PortalProjectDetailPage() {
                   );
                 }
 
-                // Checkbox / request task
+                // Checkbox / request task — clickable row opens detail modal
                 const statusColors: Record<string, string> = {
                   open: "bg-gray-100 text-gray-600",
                   in_progress: "bg-blue-100 text-blue-700",
@@ -971,12 +998,21 @@ export default function PortalProjectDetailPage() {
                   cancelled: "Cancelled",
                 };
                 const isOwnRequest = sessionLoaded && currentUserId !== null && task.requestedById === currentUserId;
-                const canCancel = isOwnRequest && task.status === "open";
 
                 return (
                   <div
                     key={task.id}
-                    className="p-2 border border-[var(--border)] rounded-lg"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openTaskModal(task.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openTaskModal(task.id);
+                      }
+                    }}
+                    data-testid={`task-row-${task.id}`}
+                    className="p-2 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
                   >
                     <div className="flex items-center gap-2">
                       <span
@@ -985,39 +1021,41 @@ export default function PortalProjectDetailPage() {
                         {statusLabels[task.status] ?? task.status}
                       </span>
                       <span
-                        className={`flex-1 text-sm ${task.status === "done" || task.status === "cancelled" ? "line-through text-[var(--muted-foreground)]" : ""}`}
+                        className={`flex-1 text-sm min-w-0 ${task.status === "done" || task.status === "cancelled" ? "line-through text-[var(--muted-foreground)]" : ""}`}
                       >
-                        {task.title}
+                        <span className="break-words">{task.title}</span>
+                        {isOwnRequest && (
+                          <span className="ml-2 shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium align-middle">
+                            Your request
+                          </span>
+                        )}
+                        {!isOwnRequest && task.requester && (
+                          <span className="ml-2 text-xs text-[var(--muted-foreground)] align-middle">
+                            • {task.requester.name}
+                          </span>
+                        )}
                       </span>
-                      {isOwnRequest && (
-                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
-                          Your request
+                      {task._count && task._count.comments > 0 && (
+                        <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                          <MessageSquare size={12} />
+                          {task._count.comments}
                         </span>
                       )}
                       {task.dueDate && (
-                        <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                        <span className="shrink-0 text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
                           {formatDateDisplay(task.dueDate)}
                         </span>
                       )}
-                      {canCancel && (
-                        <button
-                          onClick={() => handleCancelRequest(task.id)}
-                          className="text-xs text-red-500 hover:underline shrink-0"
-                        >
-                          Cancel
-                        </button>
+                      {task.assignee && (
+                        <span className="shrink-0" title={task.assignee.name}>
+                          <Avatar
+                            name={task.assignee.name}
+                            image={task.assignee.image}
+                            size={22}
+                          />
+                        </span>
                       )}
                     </div>
-                    {task.description && (
-                      <p className="text-xs text-[var(--muted-foreground)] mt-1 ml-0 px-1">
-                        {task.description}
-                      </p>
-                    )}
-                    <CommentsSection
-                      targetType="task"
-                      targetId={task.id}
-                      commentCount={task._count?.comments ?? 0}
-                    />
                   </div>
                 );
               })}
@@ -1332,6 +1370,21 @@ export default function PortalProjectDetailPage() {
           <PortalInvoicesSection projectId={id} />
         )}
       </div>
+
+      {/* Task Detail Modal */}
+      {openTaskId && (() => {
+        const t = tasks.find((x) => x.id === openTaskId);
+        if (!t || t.type !== "checkbox") return null;
+        return (
+          <TaskDetailModal
+            task={t}
+            viewer="client"
+            currentUserId={currentUserId}
+            onClose={closeTaskModal}
+            onChange={loadTasks}
+          />
+        );
+      })()}
 
       {/* Signing Viewer Modal */}
       {signingDocId && (

@@ -72,6 +72,25 @@ test.describe("Client Requests", () => {
         expect(typeof task.isClientRequest).toBe("boolean");
       }
     });
+
+    test("task list includes requester and assignee shape", async ({ request }) => {
+      test.skip(!projectId, "No project available");
+      const res = await request.get(`${API}/tasks/project/${projectId}`);
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      expect(body.data).toBeInstanceOf(Array);
+      for (const task of body.data) {
+        // requester/assignee may be null, but when present must be { id, name }
+        if (task.requester) {
+          expect(typeof task.requester.id).toBe("string");
+          expect(typeof task.requester.name).toBe("string");
+        }
+        if (task.assignee) {
+          expect(typeof task.assignee.id).toBe("string");
+          expect(typeof task.assignee.name).toBe("string");
+        }
+      }
+    });
   });
 
   test.describe("Agency task requestedById", () => {
@@ -230,6 +249,51 @@ test.describe("Client Requests", () => {
       await projectLink.click();
       await expect(page.getByRole("button", { name: /active/i })).toBeVisible({ timeout: 5000 });
       await expect(page.getByRole("button", { name: /all/i })).toBeVisible({ timeout: 5000 });
+    });
+
+    test("clicking a task row opens the detail modal and ?task= deep link", async ({ page, request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      // Seed a task we can definitely locate
+      const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Modal Deep-Link Task" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(createRes.status()).toBe(201);
+      const createdTask = await createRes.json();
+
+      await page.goto(`/dashboard/projects/${projectId}`);
+      const row = page.getByTestId(`task-row-${createdTask.id}`);
+      await expect(row).toBeVisible({ timeout: 10000 });
+      await row.click();
+
+      await expect(page.getByTestId("task-detail-modal")).toBeVisible();
+      await expect(page.getByTestId("task-title")).toContainText("Modal Deep-Link Task");
+      await expect(page).toHaveURL(new RegExp(`task=${createdTask.id}`));
+    });
+
+    test("status change inside modal persists via API", async ({ page, request }) => {
+      test.skip(!projectId, "No project available");
+      const csrfToken = getCsrfToken();
+      const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: "Modal Status Change Task" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(createRes.status()).toBe(201);
+      const createdTask = await createRes.json();
+
+      await page.goto(`/dashboard/projects/${projectId}?task=${createdTask.id}`);
+      await expect(page.getByTestId("task-detail-modal")).toBeVisible({ timeout: 10000 });
+
+      await page.getByTestId("task-status-select").selectOption("done");
+
+      await expect
+        .poll(async () => {
+          const r = await request.get(`${API}/tasks/project/${projectId}?status=all`);
+          const body = await r.json();
+          return body.data.find((t: { id: string; status: string }) => t.id === createdTask.id)?.status;
+        }, { timeout: 5000 })
+        .toBe("done");
     });
   });
 

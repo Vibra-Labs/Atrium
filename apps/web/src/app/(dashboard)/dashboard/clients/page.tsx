@@ -360,7 +360,7 @@ export default function PeoplePage() {
                 <h2 className="text-sm font-medium">Invite a Team Member</h2>
                 {planLimits && planLimits.maxMembers !== -1 && (
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    atMemberLimit ? "bg-red-100 text-red-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                    atMemberLimit ? "bg-rose-500/20 text-rose-700 dark:text-rose-300" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                   }`}>
                     {planLimits.membersUsed}/{planLimits.maxMembers} members
                   </span>
@@ -555,7 +555,7 @@ export default function PeoplePage() {
               <h2 className="text-sm font-medium">Invite a Client</h2>
               {planLimits && planLimits.maxClients !== -1 && (
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  atClientLimit ? "bg-red-100 text-red-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                  atClientLimit ? "bg-rose-500/20 text-rose-700 dark:text-rose-300" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                 }`}>
                   {planLimits.clientsUsed}/{planLimits.maxClients} clients
                 </span>

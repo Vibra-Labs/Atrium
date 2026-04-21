@@ -3,11 +3,22 @@ export interface CsvColumn<T> {
   value: (row: T) => string | number | boolean | null | undefined;
 }
 
+// Neutralize CSV formula-injection: spreadsheet apps evaluate cells starting
+// with = @ + - (and tab/CR) as formulas. Prefixing with a single quote renders
+// them as literal text without changing the visible value meaningfully.
+const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r"];
+
 function escapeField(val: string): string {
-  if (val.includes('"') || val.includes(",") || val.includes("\n") || val.includes("\r")) {
-    return `"${val.replace(/"/g, '""')}"`;
+  const escaped = FORMULA_PREFIXES.includes(val.charAt(0)) ? `'${val}` : val;
+  if (
+    escaped.includes('"') ||
+    escaped.includes(",") ||
+    escaped.includes("\n") ||
+    escaped.includes("\r")
+  ) {
+    return `"${escaped.replace(/"/g, '""')}"`;
   }
-  return val;
+  return escaped;
 }
 
 export function toCsv<T>(columns: CsvColumn<T>[], rows: T[]): string {

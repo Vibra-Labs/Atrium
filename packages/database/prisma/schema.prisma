@@ -25,6 +25,8 @@ model User {
   projectClients     ProjectClient[]
   documentResponses  DocumentResponse[]
   documentVersions   DocumentVersion[]
+  tasksRequested     Task[]              @relation("TaskRequester")
+  tasksAssigned      Task[]              @relation("TaskAssignee")
 
   @@map("user")
 }
@@ -219,7 +221,9 @@ model Task {
   title          String
   description    String?
   dueDate        DateTime?
-  completed      Boolean   @default(false)
+  status         String    @default("open") // "open" | "in_progress" | "done" | "cancelled"
+  requestedById  String?
+  assigneeId     String?
   order          Int       @default(0)
   type           String    @default("checkbox") // "checkbox" | "decision"
   question       String?
@@ -229,14 +233,19 @@ model Task {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  options  DecisionOption[]
-  votes    DecisionVote[]
-  comments Comment[]
-  labels   TaskLabel[]
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requester User?            @relation("TaskRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  assignee  User?            @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  options   DecisionOption[]
+  votes     DecisionVote[]
+  comments  Comment[]
+  labels    TaskLabel[]
 
   @@index([projectId])
   @@index([organizationId])
+  @@index([projectId, status])
+  @@index([requestedById])
+  @@index([assigneeId])
   @@map("task")
 }
 

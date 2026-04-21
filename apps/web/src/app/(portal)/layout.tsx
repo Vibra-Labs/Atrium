@@ -46,7 +46,7 @@ async function getOrgName() {
 function getLogoSrc(branding: { logoKey?: string; logoUrl?: string; organizationId?: string } | null) {
   if (!branding) return null;
   if (branding.logoKey) {
-    return `${API_URL}/api/branding/logo/${branding.organizationId}?v=${Date.now()}`;
+    return `${API_URL}/api/branding/logo/${branding.organizationId}?k=${encodeURIComponent(branding.logoKey)}`;
   }
   if (branding.logoUrl) {
     return branding.logoUrl;

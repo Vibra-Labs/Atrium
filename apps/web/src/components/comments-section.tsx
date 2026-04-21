@@ -58,16 +58,18 @@ export function CommentsSection({
   targetType,
   targetId,
   commentCount: initialCount,
+  alwaysExpanded = false,
 }: {
   targetType: "update" | "task";
   targetId: string;
   commentCount: number;
+  alwaysExpanded?: boolean;
 }) {
   const session = useSession();
   const [comments, setComments] = useState<CommentRecord[]>([]);
   const [newComment, setNewComment] = useState("");
   const [posting, setPosting] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(alwaysExpanded);
   const [count, setCount] = useState(initialCount);
   const [loaded, setLoaded] = useState(false);
 
@@ -126,19 +128,21 @@ export function CommentsSection({
   };
 
   return (
-    <div className="mt-2">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
-        data-testid={`comments-toggle-${targetId}`}
-      >
-        <MessageSquare size={12} />
-        {expanded
-          ? "Hide comments"
-          : count > 0
-            ? `${count} comment${count !== 1 ? "s" : ""}`
-            : "Reply"}
-      </button>
+    <div className={alwaysExpanded ? "" : "mt-2"}>
+      {!alwaysExpanded && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+          data-testid={`comments-toggle-${targetId}`}
+        >
+          <MessageSquare size={12} />
+          {expanded
+            ? "Hide comments"
+            : count > 0
+              ? `${count} comment${count !== 1 ? "s" : ""}`
+              : "Reply"}
+        </button>
+      )}
 
       {expanded && (
         <div className="mt-2 space-y-2" data-testid={`comments-list-${targetId}`}>

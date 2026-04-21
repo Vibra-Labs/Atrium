@@ -15,25 +15,18 @@ async function getSessionWithRole() {
   try {
     const cookieStore = await cookies();
     const cookieHeader = cookieStore.toString();
+    const init = { headers: { Cookie: cookieHeader }, cache: "no-store" as const };
 
-    const res = await fetch(`${API_URL}/api/auth/get-session`, {
-      headers: { Cookie: cookieHeader },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const session = await res.json();
+    const [sessionRes, memberRes] = await Promise.all([
+      fetch(`${API_URL}/api/auth/get-session`, init),
+      fetch(`${API_URL}/api/auth/organization/get-active-member`, init),
+    ]);
+
+    if (!sessionRes.ok) return null;
+    const session = await sessionRes.json();
     if (!session) return null;
 
-    // Get the user's role in the active org
-    const memberRes = await fetch(
-      `${API_URL}/api/auth/organization/get-active-member`,
-      {
-        headers: { Cookie: cookieHeader },
-        cache: "no-store",
-      },
-    );
-    if (!memberRes.ok) return { ...session, role: null };
-    const member = await memberRes.json();
+    const member = memberRes.ok ? await memberRes.json() : null;
     return { ...session, role: member?.role || null };
   } catch {
     return null;
@@ -74,7 +67,7 @@ async function getOrgName() {
 
 function getLogoSrc(branding: { logoKey?: string; logoUrl?: string; organizationId?: string } | null) {
   if (!branding) return null;
-  if (branding.logoKey) return `${API_URL}/api/branding/logo/${branding.organizationId}?v=${Date.now()}`;
+  if (branding.logoKey) return `${API_URL}/api/branding/logo/${branding.organizationId}?k=${encodeURIComponent(branding.logoKey)}`;
   if (branding.logoUrl) return branding.logoUrl;
   return null;
 }

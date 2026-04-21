@@ -452,14 +452,14 @@ describe("NotificationsService", () => {
     expect(createCall[0].message).toBe("Client comment content");
   });
 
-  test("notifyComment from admin notifies project clients (excluding author)", async () => {
+  test("notifyComment from admin on an update notifies project clients (excluding author)", async () => {
     await service.notifyComment(
       "proj-1",
       "org-1",
       "user-1", // admin who is also in the client list
       "admin",
       "Admin reply",
-      "task",
+      "update",
     );
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
@@ -470,6 +470,82 @@ describe("NotificationsService", () => {
       userId: "user-2",
       type: "comment",
       link: "/portal/projects/proj-1",
+    });
+  });
+
+  test("notifyComment from admin on a task notifies the task requester only", async () => {
+    (prisma as any).member = {
+      findFirst: mock(() =>
+        Promise.resolve({ role: "member" }), // requester is a portal client
+      ),
+    };
+
+    await service.notifyComment(
+      "proj-1",
+      "org-1",
+      "admin-1",
+      "admin",
+      "Admin reply on task",
+      "task",
+      { requestedById: "client-1", assigneeId: null },
+    );
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    expect(createCall).toHaveLength(1);
+    expect(createCall[0]).toMatchObject({
+      userId: "client-1",
+      type: "comment",
+      link: "/portal/projects/proj-1",
+    });
+  });
+
+  test("notifyComment from admin on a task with no requester falls back to project clients", async () => {
+    await service.notifyComment(
+      "proj-1",
+      "org-1",
+      "admin-1",
+      "admin",
+      "Reply on agency-owned task",
+      "task",
+      { requestedById: null, assigneeId: null },
+    );
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    const recipientIds = createCall.map((n: { userId: string }) => n.userId).sort();
+    expect(recipientIds).toEqual(["user-1", "user-2"]);
+    expect(createCall[0]).toMatchObject({
+      type: "comment",
+      link: "/portal/projects/proj-1",
+    });
+  });
+
+  test("notifyComment from client on a task notifies assignee + admins (dedup, exclude author)", async () => {
+    (prisma as any).member = {
+      findMany: mock(() =>
+        Promise.resolve([{ userId: "admin-1" }, { userId: "admin-2" }]),
+      ),
+    };
+
+    await service.notifyComment(
+      "proj-1",
+      "org-1",
+      "client-1",
+      "member",
+      "Client comment on task",
+      "task",
+      { requestedById: "client-1", assigneeId: "admin-1" },
+    );
+
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    const userIds = createCall.map((n: { userId: string }) => n.userId);
+    // assignee + admins, deduplicated, author excluded
+    expect(userIds.sort()).toEqual(["admin-1", "admin-2"]);
+    expect(createCall[0]).toMatchObject({
+      type: "comment",
+      link: "/dashboard/projects/proj-1",
     });
   });
 

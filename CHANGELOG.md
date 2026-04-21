@@ -2,6 +2,34 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.4.4] — 2026-04-21
+
+### Added
+
+- **Client task requests** — Clients can submit task requests directly from the project portal via a "New Request" button. Requests appear in the agency's task list with a "Client Request" badge and requester attribution. Clients can cancel their own pending requests; agency members can assign, update status, and resolve them.
+- **Task status workflow** — Tasks now have an explicit status (`todo`, `in_progress`, `in_review`, `done`, `cancelled`) instead of a boolean `completed` flag. Dashboard task list supports server-side status filtering. Status changes trigger in-app notifications for the assignee and requester.
+- **Task assignee picker** — Agency members can assign tasks to any org member from the dashboard task row. Assignment changes send a notification to the new assignee.
+- **Ticket-style task detail modal** — Clicking a task opens a detail modal with description, status, assignee, requester, and an inline label picker. Deep-linking via `?task=<id>` auto-opens the modal and switches to the Tasks tab on both dashboard and portal.
+- **Task notifications** — New notification types for client requests, task assignments, and status changes (deduplicated to avoid spamming on rapid edits).
+
+### Changed
+
+- `POST /tasks/mine` endpoint added for client request creation; `PATCH /tasks/:id/cancel` added for client self-cancellation. Existing `POST /tasks` strips `requestedById` from agency-side creates and validates `assigneeId` org membership.
+- CSV export of tasks now includes status, assignee, and requester columns.
+- Dashboard task list status filter moved to the server; the page now resets to page 1 when the filter changes.
+
+### Fixed
+
+- Task creation modal label picker was clipped by modal overflow — replaced the popover with an inline picker.
+- Dashboard task list no longer issues N+1 member lookups when rendering assignees and requesters.
+- Playwright `NEXT_PUBLIC_API_URL` was not inlined into the dev web bundle because Next.js only auto-loads envs from its own package directory; the e2e config now pre-loads the monorepo root `.env` before spawning servers.
+
+### Database
+
+- Replaced `task.completed` boolean with `task.status` enum.
+- Added `task.requestedById` and `task.assigneeId` with indexes.
+- Added composite index on `task(projectId, status)` for filtered list queries.
+
 ## [1.4.3] — 2026-04-07
 
 ### Added

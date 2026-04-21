@@ -19,20 +19,29 @@ export class CommentsService {
     targetId: string,
     orgId: string,
   ): Promise<string> {
+    const resolved = await this.resolveTarget(targetType, targetId, orgId);
+    return resolved.projectId;
+  }
+
+  private async resolveTarget(
+    targetType: "update" | "task",
+    targetId: string,
+    orgId: string,
+  ): Promise<{ projectId: string; requestedById: string | null; assigneeId: string | null }> {
     if (targetType === "update") {
       const update = await this.prisma.projectUpdate.findFirst({
         where: { id: targetId, organizationId: orgId },
         select: { projectId: true },
       });
       if (!update) throw new NotFoundException("Update not found");
-      return update.projectId;
+      return { projectId: update.projectId, requestedById: null, assigneeId: null };
     }
     const task = await this.prisma.task.findFirst({
       where: { id: targetId, organizationId: orgId },
-      select: { projectId: true },
+      select: { projectId: true, requestedById: true, assigneeId: true },
     });
     if (!task) throw new NotFoundException("Task not found");
-    return task.projectId;
+    return { projectId: task.projectId, requestedById: task.requestedById, assigneeId: task.assigneeId };
   }
 
   async create(
@@ -43,8 +52,8 @@ export class CommentsService {
     userId: string,
     role: string,
   ) {
-    const projectId = await this.resolveProjectId(targetType, targetId, orgId);
-    await assertProjectAccess(this.prisma, projectId, userId, role, orgId);
+    const target = await this.resolveTarget(targetType, targetId, orgId);
+    await assertProjectAccess(this.prisma, target.projectId, userId, role, orgId);
 
     const comment = await this.prisma.comment.create({
       data: {
@@ -57,7 +66,10 @@ export class CommentsService {
 
     // Fire-and-forget comment notification
     this.notifications
-      .notifyComment(projectId, orgId, userId, role, content, targetType)
+      .notifyComment(target.projectId, orgId, userId, role, content, targetType, {
+        requestedById: target.requestedById,
+        assigneeId: target.assigneeId,
+      })
       .catch(() => {});
 
     return comment;

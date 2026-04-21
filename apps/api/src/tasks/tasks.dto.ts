@@ -3,7 +3,6 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsBoolean,
   IsDateString,
   IsArray,
   IsIn,
@@ -13,6 +12,7 @@ import {
   ValidateNested,
   ValidateIf,
 } from "class-validator";
+import { PaginationQueryDto } from "../common";
 
 export class DecisionOptionDto {
   @IsString()
@@ -55,6 +55,23 @@ export class CreateTaskDto {
   options?: DecisionOptionDto[];
 }
 
+// Used by clients creating requests from the portal — no type/question/options
+export class CreateClientTaskDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  title!: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(5000)
+  description?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+}
+
 export class UpdateTaskDto {
   @IsString()
   @IsOptional()
@@ -66,14 +83,21 @@ export class UpdateTaskDto {
   @MaxLength(5000)
   description?: string;
 
-  @ValidateIf((o) => o.dueDate !== null)
+  @ValidateIf((o: UpdateTaskDto) => o.dueDate !== null)
   @IsDateString()
   @IsOptional()
   dueDate?: string | null;
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  completed?: boolean;
+  @IsIn(["open", "in_progress", "done", "cancelled"])
+  status?: string;
+
+  // null = unassign, string = assign to userId
+  @ValidateIf((o: UpdateTaskDto) => o.assigneeId !== null && o.assigneeId !== undefined)
+  @IsString()
+  @IsOptional()
+  assigneeId?: string | null;
 }
 
 export class ReorderTasksDto {
@@ -87,4 +111,11 @@ export class CastVoteDto {
   @IsString()
   @IsNotEmpty()
   optionId!: string;
+}
+
+export class TaskListQueryDto extends PaginationQueryDto {
+  @IsString()
+  @IsOptional()
+  @IsIn(["active", "all", "open", "in_progress", "done", "cancelled"])
+  status?: string;
 }

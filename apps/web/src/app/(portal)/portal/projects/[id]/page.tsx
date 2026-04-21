@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
@@ -34,6 +34,9 @@ import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
 import { useToast } from "@/components/toast";
 import { CommentsSection } from "@/components/comments-section";
+import { Avatar } from "@/components/avatar";
+import { TaskDetailModal } from "@/components/task-detail-modal";
+import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
 
 interface FileRecord {
   id: string;
@@ -99,11 +102,16 @@ interface TaskRecord {
   title: string;
   description?: string;
   dueDate?: string | null;
-  completed: boolean;
+  status: string;
+  requestedById?: string | null;
+  assigneeId?: string | null;
+  requester?: { id: string; name: string; image?: string | null } | null;
+  assignee?: { id: string; name: string; image?: string | null } | null;
   order: number;
   type: string;
   question?: string;
   closedAt?: string | null;
+  createdAt?: string;
   options?: {
     id: string;
     label: string;
@@ -111,6 +119,7 @@ interface TaskRecord {
     _count: { votes: number };
   }[];
   votes?: { optionId: string }[];
+  labels?: { label: { id: string; name: string; color: string } }[];
   _count?: { votes: number; comments: number };
 }
 
@@ -171,6 +180,8 @@ interface PendingDocAction {
 
 export default function PortalProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
@@ -184,9 +195,16 @@ export default function PortalProjectDetailPage() {
   const [docsPage, setDocsPage] = useState(1);
   const [docsTotalPages, setDocsTotalPages] = useState(1);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>("updates");
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    searchParams.get("task") ? "tasks" : "updates",
+  );
+
+  // When a ?task=<id> deep link is set, jump to the Tasks tab so the detail
+  // modal can open (it's rendered inside the tasks tab).
+  useEffect(() => {
+    if (searchParams.get("task")) setActiveTab("tasks");
+  }, [searchParams]);
   const [uploading, setUploading] = useState(false);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [signingDocId, setSigningDocId] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<DocumentRecord | null>(null);
   const [pendingDocAction, setPendingDocAction] = useState<PendingDocAction | null>(null);
@@ -197,6 +215,40 @@ export default function PortalProjectDetailPage() {
   const [newContent, setNewContent] = useState("");
   const [newAttachment, setNewAttachment] = useState<File | null>(null);
   const [postingUpdate, setPostingUpdate] = useState(false);
+  const [showNewRequest, setShowNewRequest] = useState(false);
+  const [newRequestTitle, setNewRequestTitle] = useState("");
+  const [newRequestDesc, setNewRequestDesc] = useState("");
+  const [postingRequest, setPostingRequest] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [showCompletedTasks, setShowCompletedTasks] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  // Deep-link sync for task modal
+  useEffect(() => {
+    const t = searchParams.get("task");
+    if (t) setOpenTaskId(t);
+  }, [searchParams]);
+
+  const updateTaskInUrl = useCallback(
+    (taskId: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (taskId) params.set("task", taskId);
+      else params.delete("task");
+      const qs = params.toString();
+      router.replace(qs ? `?${qs}` : "?", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const openTaskModal = (taskId: string) => {
+    setOpenTaskId(taskId);
+    updateTaskInUrl(taskId);
+  };
+  const closeTaskModal = () => {
+    setOpenTaskId(null);
+    updateTaskInUrl(null);
+  };
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -240,25 +292,6 @@ export default function PortalProjectDetailPage() {
       .catch(console.error);
   }, [id, docsPage]);
 
-  const handleVote = async (taskId: string) => {
-    const optionId = selectedOptions[taskId];
-    if (!optionId) return;
-    try {
-      await apiFetch(`/tasks/${taskId}/vote`, {
-        method: "POST",
-        body: JSON.stringify({ optionId }),
-      });
-      setSelectedOptions((prev) => {
-        const next = { ...prev };
-        delete next[taskId];
-        return next;
-      });
-      loadTasks();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handlePostUpdate = async () => {
     if (!newContent.trim()) return;
     setPostingUpdate(true);
@@ -280,6 +313,28 @@ export default function PortalProjectDetailPage() {
       toast.error(err instanceof Error ? err.message : "Failed to post update");
     } finally {
       setPostingUpdate(false);
+    }
+  };
+
+  const handlePostRequest = async () => {
+    if (!newRequestTitle.trim()) return;
+    setPostingRequest(true);
+    try {
+      await apiFetch(`/tasks/mine?projectId=${id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          title: newRequestTitle,
+          description: newRequestDesc || undefined,
+        }),
+      });
+      setNewRequestTitle("");
+      setNewRequestDesc("");
+      setShowNewRequest(false);
+      loadTasks();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit request");
+    } finally {
+      setPostingRequest(false);
     }
   };
 
@@ -332,6 +387,16 @@ export default function PortalProjectDetailPage() {
       console.error(err);
     }
   };
+
+  useEffect(() => {
+    apiFetch<{ user: { id: string } }>("/auth/get-session")
+      .then((s) => setCurrentUserId(s.user.id))
+      .catch((err) => {
+        console.error(err);
+        toast.error("Could not load your session. Some actions may be unavailable.");
+      })
+      .finally(() => setSessionLoaded(true));
+  }, [toast]);
 
   useEffect(() => {
     loadProject();
@@ -733,135 +798,213 @@ export default function PortalProjectDetailPage() {
         )}
 
         {/* Tasks Tab */}
-        {activeTab === "tasks" && (
+        {activeTab === "tasks" && (() => {
+          const hiddenCount = tasks.filter(
+            (t) => t.status === "done" || t.status === "cancelled",
+          ).length;
+          const visibleTasks = showCompletedTasks
+            ? tasks
+            : tasks.filter((t) => t.status !== "done" && t.status !== "cancelled");
+          return (
           <div>
+            <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
+              <button
+                onClick={() => setShowNewRequest(true)}
+                className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+              >
+                <Plus size={14} />
+                New Request
+              </button>
+              {hiddenCount > 0 && (
+                <button
+                  onClick={() => setShowCompletedTasks((v) => !v)}
+                  className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] underline"
+                >
+                  {showCompletedTasks
+                    ? `Hide done/cancelled (${hiddenCount})`
+                    : `Show done/cancelled (${hiddenCount})`}
+                </button>
+              )}
+            </div>
+
+            {showNewRequest && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    setShowNewRequest(false);
+                    setNewRequestTitle("");
+                    setNewRequestDesc("");
+                  }
+                }}
+              >
+                <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4">
+                  <h3 className="text-lg font-semibold">New Request</h3>
+                  <input
+                    type="text"
+                    value={newRequestTitle}
+                    onChange={(e) => setNewRequestTitle(e.target.value)}
+                    placeholder="What do you need?"
+                    maxLength={255}
+                    autoFocus
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                  />
+                  <textarea
+                    value={newRequestDesc}
+                    onChange={(e) => setNewRequestDesc(e.target.value)}
+                    placeholder="More details (optional)..."
+                    maxLength={5000}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setShowNewRequest(false);
+                        setNewRequestTitle("");
+                        setNewRequestDesc("");
+                      }}
+                      className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handlePostRequest}
+                      disabled={postingRequest || !newRequestTitle.trim()}
+                      className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                    >
+                      {postingRequest ? "Submitting..." : "Submit"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
-              {tasks.map((task) => {
+              {visibleTasks.map((task) => {
                 if (task.type === "decision") {
-                  const userVote = task.votes?.[0];
                   const isClosed = !!task.closedAt;
                   const totalVotes = task._count?.votes ?? 0;
-                  const hasResults = totalVotes > 0 && task.options?.some((o) => o._count.votes > 0);
+                  const hasVoted = !!task.votes?.[0];
 
                   return (
                     <div
                       key={task.id}
-                      className="border border-[var(--border)] rounded-lg p-4 space-y-3"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openTaskModal(task.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openTaskModal(task.id);
+                        }
+                      }}
+                      data-testid={`task-row-${task.id}`}
+                      className="p-2 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
                     >
                       <div className="flex items-center gap-2">
-                        <Vote size={18} className="text-[var(--primary)] shrink-0" />
-                        <span className="text-sm font-medium flex-1">
+                        <span className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--primary)]/10 text-[var(--primary)]">
+                          <Vote size={12} />
+                        </span>
+                        <span className="flex-1 text-sm min-w-0 break-words">
                           {task.question || task.title}
                         </span>
-                        {isClosed && (
-                          <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)] flex items-center gap-1">
+                        {isClosed ? (
+                          <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
                             <Lock size={10} />
                             Closed
                           </span>
+                        ) : !hasVoted ? (
+                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium">
+                            Needs vote
+                          </span>
+                        ) : null}
+                        {totalVotes > 0 && (
+                          <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                            {totalVotes} vote{totalVotes !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {task._count && task._count.comments > 0 && (
+                          <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                            <MessageSquare size={12} />
+                            {task._count.comments}
+                          </span>
                         )}
                       </div>
-
-                      {task.options && task.options.length > 0 && (
-                        <div className="space-y-1.5">
-                          {task.options.map((opt) => {
-                            const isSelected =
-                              selectedOptions[task.id]
-                                ? selectedOptions[task.id] === opt.id
-                                : userVote?.optionId === opt.id;
-
-                            return (
-                              <label
-                                key={opt.id}
-                                className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
-                                  isSelected
-                                    ? "border-[var(--primary)] bg-[var(--primary)]/5"
-                                    : "border-[var(--border)] hover:bg-[var(--muted)]"
-                                } ${isClosed && !isSelected ? "opacity-60" : ""}`}
-                                style={isSelected ? { borderColor: "var(--primary)", backgroundColor: "color-mix(in srgb, var(--primary) 5%, transparent)" } : undefined}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`vote-${task.id}`}
-                                  value={opt.id}
-                                  checked={isSelected}
-                                  disabled={isClosed}
-                                  onChange={() => {
-                                    setSelectedOptions((prev) => ({ ...prev, [task.id]: opt.id }));
-                                  }}
-                                  className="accent-[var(--primary)]"
-                                />
-                                <span className="text-sm flex-1">{opt.label}</span>
-                                {(isClosed || hasResults) && (
-                                  <span className="text-xs text-[var(--muted-foreground)]">
-                                    {opt._count.votes} vote{opt._count.votes !== 1 ? "s" : ""}
-                                  </span>
-                                )}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {!isClosed && (
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => handleVote(task.id)}
-                            disabled={!selectedOptions[task.id]}
-                            className="px-4 py-1.5 text-sm rounded-lg bg-[var(--primary)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
-                          >
-                            {userVote ? "Change Vote" : "Vote"}
-                          </button>
-                        </div>
-                      )}
-
-                      {(isClosed || hasResults) && totalVotes > 0 && (
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
-                        </p>
-                      )}
-                      <CommentsSection
-                        targetType="task"
-                        targetId={task.id}
-                        commentCount={task._count?.comments ?? 0}
-                      />
                     </div>
                   );
                 }
 
-                // Checkbox task (default)
+                // Checkbox / request task — clickable row opens detail modal
+                const isOwnRequest = sessionLoaded && currentUserId !== null && task.requestedById === currentUserId;
+
                 return (
                   <div
                     key={task.id}
-                    className="p-2 border border-[var(--border)] rounded-lg"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openTaskModal(task.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openTaskModal(task.id);
+                      }
+                    }}
+                    data-testid={`task-row-${task.id}`}
+                    className="p-2 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="shrink-0 text-[var(--primary)]">
-                        {task.completed ? <CheckSquare size={18} /> : <Square size={18} />}
+                      <span
+                        className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${getTaskStatusBadge(task.status)}`}
+                      >
+                        {getTaskStatusLabel(task.status)}
                       </span>
                       <span
-                        className={`flex-1 text-sm ${task.completed ? "line-through text-[var(--muted-foreground)]" : ""}`}
+                        className={`flex-1 text-sm min-w-0 ${task.status === "done" || task.status === "cancelled" ? "line-through text-[var(--muted-foreground)]" : ""}`}
                       >
-                        {task.title}
+                        <span className="break-words">{task.title}</span>
+                        {isOwnRequest && (
+                          <span className="ml-2 shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium align-middle">
+                            Your request
+                          </span>
+                        )}
+                        {!isOwnRequest && task.requester && (
+                          <span className="ml-2 text-xs text-[var(--muted-foreground)] align-middle">
+                            • {task.requester.name}
+                          </span>
+                        )}
                       </span>
+                      {task._count && task._count.comments > 0 && (
+                        <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                          <MessageSquare size={12} />
+                          {task._count.comments}
+                        </span>
+                      )}
                       {task.dueDate && (
-                        <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
+                        <span className="shrink-0 text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
                           {formatDateDisplay(task.dueDate)}
                         </span>
                       )}
+                      {task.assignee && (
+                        <span className="shrink-0" title={task.assignee.name}>
+                          <Avatar
+                            name={task.assignee.name}
+                            image={task.assignee.image}
+                            size={22}
+                          />
+                        </span>
+                      )}
                     </div>
-                    <CommentsSection
-                      targetType="task"
-                      targetId={task.id}
-                      commentCount={task._count?.comments ?? 0}
-                    />
                   </div>
                 );
               })}
-              {tasks.length === 0 && (
+              {visibleTasks.length === 0 && (
                 <div className="text-center py-8">
                   <ListTodo size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
                   <p className="text-sm text-[var(--muted-foreground)]">
-                    No tasks yet.
+                    {tasks.length === 0
+                      ? "No tasks yet."
+                      : "No active tasks."}
                   </p>
                 </div>
               )}
@@ -870,7 +1013,8 @@ export default function PortalProjectDetailPage() {
               <Pagination page={tasksPage} totalPages={tasksTotalPages} onPageChange={setTasksPage} />
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Files Tab */}
         {activeTab === "files" && (() => {
@@ -1165,6 +1309,21 @@ export default function PortalProjectDetailPage() {
           <PortalInvoicesSection projectId={id} />
         )}
       </div>
+
+      {/* Task Detail Modal */}
+      {openTaskId && (() => {
+        const t = tasks.find((x) => x.id === openTaskId);
+        if (!t) return null;
+        return (
+          <TaskDetailModal
+            task={t}
+            viewer="client"
+            currentUserId={currentUserId}
+            onClose={closeTaskModal}
+            onChange={loadTasks}
+          />
+        );
+      })()}
 
       {/* Signing Viewer Modal */}
       {signingDocId && (

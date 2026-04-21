@@ -12,9 +12,17 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { Response } from "express";
 import { TasksService } from "./tasks.service";
-import { CreateTaskDto, UpdateTaskDto, ReorderTasksDto, CastVoteDto } from "./tasks.dto";
+import {
+  CreateTaskDto,
+  CreateClientTaskDto,
+  UpdateTaskDto,
+  ReorderTasksDto,
+  CastVoteDto,
+  TaskListQueryDto,
+} from "./tasks.dto";
 import {
   AuthGuard,
   RolesGuard,
@@ -43,18 +51,32 @@ export class TasksController {
     return this.tasksService.create(dto, projectId, orgId);
   }
 
+  // Client-facing endpoint — no @Roles, authorization handled in service
+  @Post("mine")
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  createForClient(
+    @Body() dto: CreateClientTaskDto,
+    @Query("projectId") projectId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.tasksService.createForClient(dto, projectId, userId, orgId);
+  }
+
   @Get("project/:projectId")
   @Roles("owner", "admin")
   findByProject(
     @Param("projectId") projectId: string,
     @CurrentOrg("id") orgId: string,
-    @Query() pagination: PaginationQueryDto,
+    @Query() query: TaskListQueryDto,
   ) {
     return this.tasksService.findByProject(
       projectId,
       orgId,
-      pagination.page,
-      pagination.limit,
+      query.page,
+      query.limit,
+      query.status,
     );
   }
 
@@ -85,7 +107,7 @@ export class TasksController {
     const columns: CsvColumn<(typeof data)[0]>[] = [
       { header: "Title", value: (r) => r.title },
       { header: "Type", value: (r) => r.type },
-      { header: "Status", value: (r) => r.completed ? "Completed" : "Pending" },
+      { header: "Status", value: (r) => r.status },
       { header: "Due Date", value: (r) => r.dueDate?.toISOString().split("T")[0] },
       { header: "Description", value: (r) => r.description },
       { header: "Created At", value: (r) => r.createdAt.toISOString().split("T")[0] },
@@ -96,7 +118,6 @@ export class TasksController {
     res.send(csv);
   }
 
-  // No @Roles — authorization is handled in the service via projectClient check
   @Post(":id/vote")
   vote(
     @Param("id") id: string,
@@ -114,6 +135,16 @@ export class TasksController {
     @CurrentOrg("id") orgId: string,
   ) {
     return this.tasksService.closeVoting(id, orgId);
+  }
+
+  // Client cancels their own open request
+  @Patch(":id/cancel")
+  cancelClientTask(
+    @Param("id") id: string,
+    @CurrentUser("id") userId: string,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.tasksService.cancelClientTask(id, userId, orgId);
   }
 
   @Put("reorder")

@@ -67,6 +67,64 @@ export class NotificationsService {
   }
 
   /**
+   * Notify org owners/admins that a client submitted a new request.
+   * Fire-and-forget.
+   */
+  notifyClientRequestCreated(
+    projectId: string,
+    orgId: string,
+    taskTitle: string,
+    clientName: string,
+  ): void {
+    this.sendClientRequestCreatedNotifications(projectId, orgId, taskTitle, clientName).catch(
+      (err) => {
+        this.logger.error({ err, projectId }, "Failed to send client request notifications");
+      },
+    );
+  }
+
+  /**
+   * Notify relevant users when a task's status changes.
+   * Fire-and-forget.
+   */
+  notifyTaskStatusChanged(
+    taskId: string,
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    newStatus: string,
+    requestedById: string | null,
+    assigneeId: string | null,
+  ): void {
+    this.sendTaskStatusChangedNotifications(
+      taskId,
+      taskTitle,
+      projectId,
+      orgId,
+      newStatus,
+      requestedById,
+      assigneeId,
+    ).catch((err) => {
+      this.logger.error({ err, taskId }, "Failed to send task status changed notifications");
+    });
+  }
+
+  /**
+   * Notify an agency member that they have been assigned to a task.
+   * Fire-and-forget.
+   */
+  notifyTaskAssigned(
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    assigneeId: string,
+  ): void {
+    this.sendTaskAssignedNotification(taskTitle, projectId, orgId, assigneeId).catch((err) => {
+      this.logger.error({ err, assigneeId }, "Failed to send task assigned notification");
+    });
+  }
+
+  /**
    * Notify all clients assigned to the invoice's project about the invoice.
    * Fire-and-forget: errors are logged but never thrown.
    */
@@ -842,6 +900,7 @@ export class NotificationsService {
     authorRole: string,
     content: string,
     targetType: "update" | "task",
+    taskContext?: { requestedById: string | null; assigneeId: string | null },
   ): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -853,6 +912,85 @@ export class NotificationsService {
       content.length > 100 ? content.slice(0, 100) + "…" : content;
 
     const isClientComment = authorRole === "member";
+    const isTask = targetType === "task";
+
+    if (isTask && taskContext) {
+      const title = `New comment on ${project.name}`;
+
+      if (isClientComment) {
+        // Client commented: notify agency admins + assignee (all dashboard)
+        const admins = await this.getOrgAdmins(organizationId);
+        const targets = new Set<string>(admins.map((a) => a.userId));
+        if (taskContext.assigneeId) targets.add(taskContext.assigneeId);
+        targets.delete(authorId);
+        if (targets.size === 0) return;
+
+        this.createInAppAndPush(
+          Array.from(targets),
+          organizationId,
+          "comment",
+          title,
+          truncatedContent,
+          `/dashboard/projects/${projectId}`,
+        );
+        return;
+      }
+
+      // Agency member commented: split recipients by audience.
+      // Dashboard: assignee + agency-member requesters.
+      // Portal: client requesters, or fallback to project clients when no requester.
+      const dashboardTargets = new Set<string>();
+      const portalTargets = new Set<string>();
+
+      if (taskContext.assigneeId && taskContext.assigneeId !== authorId) {
+        dashboardTargets.add(taskContext.assigneeId);
+      }
+
+      const requesterId = taskContext.requestedById;
+      if (requesterId && requesterId !== authorId) {
+        const member = await this.prisma.member.findFirst({
+          where: { userId: requesterId, organizationId },
+          select: { role: true },
+        });
+        const isRequesterClient = !member || member.role === "member";
+        if (isRequesterClient) {
+          portalTargets.add(requesterId);
+        } else {
+          dashboardTargets.add(requesterId);
+        }
+      } else if (!requesterId) {
+        // Agency-created task — broadcast to all project clients
+        const clients = await this.getProjectClients(projectId);
+        for (const c of clients) {
+          if (c.id !== authorId) portalTargets.add(c.id);
+        }
+      }
+
+      // Dedup across audiences: dashboard takes precedence (agency members)
+      for (const id of dashboardTargets) portalTargets.delete(id);
+
+      if (dashboardTargets.size > 0) {
+        this.createInAppAndPush(
+          Array.from(dashboardTargets),
+          organizationId,
+          "comment",
+          title,
+          truncatedContent,
+          `/dashboard/projects/${projectId}`,
+        );
+      }
+      if (portalTargets.size > 0) {
+        this.createInAppAndPush(
+          Array.from(portalTargets),
+          organizationId,
+          "comment",
+          title,
+          truncatedContent,
+          `/portal/projects/${projectId}`,
+        );
+      }
+      return;
+    }
 
     if (isClientComment) {
       const admins = await this.getOrgAdmins(organizationId);
@@ -918,6 +1056,87 @@ export class NotificationsService {
     });
     return assignments.map(
       (a: { user: { id: string; name: string; email: string } }) => a.user,
+    );
+  }
+
+  private async sendClientRequestCreatedNotifications(
+    projectId: string,
+    orgId: string,
+    taskTitle: string,
+    clientName: string,
+  ): Promise<void> {
+    const admins = await this.getOrgAdmins(orgId);
+    if (admins.length === 0) return;
+    const link = `/dashboard/projects/${projectId}`;
+    this.createInAppAndPush(
+      admins.map((a) => a.userId),
+      orgId,
+      "client_request_created",
+      `New request from ${clientName}`,
+      taskTitle,
+      link,
+    );
+  }
+
+  private async sendTaskStatusChangedNotifications(
+    taskId: string,
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    newStatus: string,
+    requestedById: string | null,
+    assigneeId: string | null,
+  ): Promise<void> {
+    // Deduplicate: if requester and assignee are the same person, notify once
+    const userIds = [...new Set(
+      [requestedById, assigneeId].filter((id): id is string => id !== null && id !== undefined),
+    )];
+    if (userIds.length === 0) return;
+
+    const statusLabel: Record<string, string> = {
+      open: "Open",
+      in_progress: "In Progress",
+      done: "Done",
+      cancelled: "Cancelled",
+    };
+
+    // Single DB query instead of one per user
+    const members = await this.prisma.member.findMany({
+      where: { userId: { in: userIds }, organizationId: orgId },
+      select: { userId: true },
+    });
+    const memberUserIds = new Set(members.map((m) => m.userId));
+
+    for (const userId of userIds) {
+      const isClient = !memberUserIds.has(userId);
+      const link = isClient
+        ? `/portal/projects/${projectId}`
+        : `/dashboard/projects/${projectId}`;
+      this.createInAppAndPush(
+        [userId],
+        orgId,
+        "task_status_changed",
+        `"${taskTitle}" is now ${statusLabel[newStatus] ?? newStatus}`,
+        taskTitle,
+        link,
+      );
+    }
+  }
+
+  private async sendTaskAssignedNotification(
+    taskTitle: string,
+    projectId: string,
+    orgId: string,
+    assigneeId: string,
+  ): Promise<void> {
+    const link = `/dashboard/projects/${projectId}`;
+    this.createInAppAndPush(
+      [assigneeId],
+      orgId,
+      "task_assigned",
+      `You've been assigned: ${taskTitle}`,
+      taskTitle,
+      link,
     );
   }
 }

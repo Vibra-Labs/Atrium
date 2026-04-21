@@ -55,4 +55,16 @@ describe("toCsv", () => {
     const lines = csv.trim().split("\r\n");
     expect(lines[1]).toBe("Test,0,");
   });
+
+  it("neutralizes formula-injection prefixes (= + - @ tab CR)", () => {
+    const csv = toCsv(columns, [
+      { name: "=SUM(A1:A9)", age: 1, note: "+1" },
+      { name: "-2+3", age: 2, note: "@cmd" },
+      { name: "\tevil", age: 3, note: "\rnope" },
+    ]);
+    const lines = csv.trim().split("\r\n");
+    expect(lines[1]).toBe("'=SUM(A1:A9),1,'+1");
+    expect(lines[2]).toBe("'-2+3,2,'@cmd");
+    expect(lines[3]).toBe(`'\tevil,3,"'\rnope"`);
+  });
 });

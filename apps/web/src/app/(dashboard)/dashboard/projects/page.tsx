@@ -161,9 +161,9 @@ export default function ProjectsPage() {
           {planLimits && planLimits.maxProjects !== -1 && (
             <span className={`hidden sm:inline text-xs px-2 py-1 rounded-full font-medium ${
               atProjectLimit
-                ? "bg-red-100 text-red-700"
+                ? "bg-rose-500/20 text-rose-700 dark:text-rose-300"
                 : oneProjectLeft
-                  ? "bg-amber-100 text-amber-700"
+                  ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
                   : "bg-[var(--muted)] text-[var(--muted-foreground)]"
             }`}>
               {planLimits.projectsUsed}/{planLimits.maxProjects} projects
@@ -386,7 +386,7 @@ export default function ProjectsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-medium">{project.name}</h3>
                       {project.archivedAt && (
-                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-full">
                           <Archive size={12} />
                           Archived
                         </span>

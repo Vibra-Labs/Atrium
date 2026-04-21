@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { X, Link2, Trash2, Pencil, Check } from "lucide-react";
+import { X, Link2, Trash2, Check, Plus } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { CommentsSection } from "@/components/comments-section";
-import { LabelPicker } from "@/components/label-picker";
 import { LabelBadge } from "@/components/label-badge";
 import { Avatar } from "@/components/avatar";
+import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
 
 export interface TaskDetailRecord {
   id: string;
@@ -89,6 +89,12 @@ export function TaskDetailModal({
     task.labels?.map((l) => l.label.id) ?? [],
   );
   const [saving, setSaving] = useState(false);
+  const [labelMenuOpen, setLabelMenuOpen] = useState(false);
+  const [creatingLabel, setCreatingLabel] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState<string>(PRESET_COLORS[0].hex);
+  const [savingLabel, setSavingLabel] = useState(false);
+  const [labelError, setLabelError] = useState("");
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -197,6 +203,30 @@ export function TaskDetailModal({
     } catch (err) {
       setAssignedLabels(previous);
       showError(err instanceof Error ? err.message : "Failed to update labels");
+    }
+  };
+
+  const handleCreateLabel = async () => {
+    if (!newLabelName.trim() || savingLabel) return;
+    setSavingLabel(true);
+    setLabelError("");
+    try {
+      const created = await apiFetch<TaskDetailLabel>("/labels", {
+        method: "POST",
+        body: JSON.stringify({ name: newLabelName.trim(), color: newLabelColor }),
+      });
+      if (onLabelsChange) {
+        const updated = await apiFetch<TaskDetailLabel[]>("/labels");
+        onLabelsChange(updated);
+      }
+      await handleToggleLabel(created.id);
+      setNewLabelName("");
+      setNewLabelColor(PRESET_COLORS[0].hex);
+      setCreatingLabel(false);
+    } catch (err) {
+      setLabelError(err instanceof Error ? err.message : "Failed to create label");
+    } finally {
+      setSavingLabel(false);
     }
   };
 
@@ -529,13 +559,17 @@ export function TaskDetailModal({
                     <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
                       Labels
                     </label>
-                    {!readOnlyLabels && onLabelsChange && (
-                      <LabelPicker
-                        labels={labels}
-                        assigned={assignedLabels}
-                        onToggle={handleToggleLabel}
-                        onLabelsChange={onLabelsChange}
-                      />
+                    {!readOnlyLabels && (
+                      <button
+                        onClick={() => {
+                          setLabelMenuOpen((v) => !v);
+                          if (labelMenuOpen) setCreatingLabel(false);
+                        }}
+                        className="text-xs text-[var(--primary)] hover:underline"
+                        aria-expanded={labelMenuOpen}
+                      >
+                        {labelMenuOpen ? "Done" : "Edit"}
+                      </button>
                     )}
                   </div>
                   {assignedLabelObjects.length > 0 ? (
@@ -546,6 +580,90 @@ export function TaskDetailModal({
                     </div>
                   ) : (
                     <p className="text-xs text-[var(--muted-foreground)] italic">None</p>
+                  )}
+                  {labelMenuOpen && !readOnlyLabels && (
+                    <div className="mt-2 border border-[var(--border)] rounded-lg bg-[var(--background)] overflow-hidden">
+                      <div className="max-h-40 overflow-y-auto py-1">
+                        {labels.length === 0 && !creatingLabel && (
+                          <p className="px-3 py-2 text-xs text-[var(--muted-foreground)]">
+                            No labels yet.
+                          </p>
+                        )}
+                        {labels.map((l) => {
+                          const checked = assignedLabels.includes(l.id);
+                          return (
+                            <button
+                              key={l.id}
+                              onClick={() => handleToggleLabel(l.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-[var(--muted)] transition-colors text-left"
+                            >
+                              <span
+                                className="w-3 h-3 rounded-full shrink-0"
+                                style={{ backgroundColor: l.color }}
+                              />
+                              <span className="flex-1 truncate">{l.name}</span>
+                              <span
+                                className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                                  checked
+                                    ? "bg-[var(--primary)] border-[var(--primary)] text-white"
+                                    : "border-[var(--border)]"
+                                }`}
+                              >
+                                {checked && "\u2713"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {creatingLabel ? (
+                        <div className="border-t border-[var(--border)] px-3 py-2 space-y-2">
+                          <input
+                            type="text"
+                            value={newLabelName}
+                            onChange={(e) => setNewLabelName(e.target.value)}
+                            placeholder="Label name"
+                            maxLength={50}
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleCreateLabel();
+                              if (e.key === "Escape") {
+                                setCreatingLabel(false);
+                                setLabelError("");
+                              }
+                            }}
+                            className="w-full px-2 py-1 border border-[var(--border)] rounded bg-[var(--background)] text-sm"
+                          />
+                          <ColorPatchGrid value={newLabelColor} onChange={setNewLabelColor} />
+                          {labelError && <p className="text-xs text-red-500">{labelError}</p>}
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={handleCreateLabel}
+                              disabled={!newLabelName.trim() || savingLabel}
+                              className="flex-1 px-2 py-1 bg-[var(--primary)] text-white rounded text-xs font-medium disabled:opacity-50"
+                            >
+                              {savingLabel ? "Creating..." : "Create"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setCreatingLabel(false);
+                                setLabelError("");
+                              }}
+                              className="px-2 py-1 border border-[var(--border)] rounded text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setCreatingLabel(true)}
+                          className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors border-t border-[var(--border)]"
+                        >
+                          <Plus size={12} />
+                          Create new label
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

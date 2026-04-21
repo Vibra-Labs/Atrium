@@ -18,12 +18,14 @@ export function LabelPicker({
   onToggle,
   onLabelsChange,
   disabled,
+  align = "left",
 }: {
   labels: Label[];
   assigned: string[];
   onToggle: (labelId: string) => void;
   onLabelsChange?: (labels: Label[]) => void;
   disabled?: boolean;
+  align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -88,7 +90,7 @@ export function LabelPicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 w-64 bg-[var(--background)] border border-[var(--border)] rounded-xl shadow-lg z-50 flex flex-col overflow-hidden">
+        <div className={`absolute ${align === "right" ? "right-0" : "left-0"} top-full mt-1 w-64 bg-[var(--background)] border border-[var(--border)] rounded-xl shadow-lg z-50 flex flex-col overflow-hidden`}>
           {/* Existing labels */}
           <div className="max-h-48 overflow-y-auto py-1" role="listbox" aria-multiselectable="true">
             {labels.length === 0 && !creating && (

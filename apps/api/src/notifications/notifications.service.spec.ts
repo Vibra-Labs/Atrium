@@ -500,7 +500,7 @@ describe("NotificationsService", () => {
     });
   });
 
-  test("notifyComment from admin on a task with no requester does not notify", async () => {
+  test("notifyComment from admin on a task with no requester falls back to project clients", async () => {
     await service.notifyComment(
       "proj-1",
       "org-1",
@@ -511,7 +511,14 @@ describe("NotificationsService", () => {
       { requestedById: null, assigneeId: null },
     );
 
-    expect(inApp.createMany).not.toHaveBeenCalled();
+    expect(inApp.createMany).toHaveBeenCalledTimes(1);
+    const createCall = inApp.createMany.mock.calls[0][0];
+    const recipientIds = createCall.map((n: { userId: string }) => n.userId).sort();
+    expect(recipientIds).toEqual(["user-1", "user-2"]);
+    expect(createCall[0]).toMatchObject({
+      type: "comment",
+      link: "/portal/projects/proj-1",
+    });
   });
 
   test("notifyComment from client on a task notifies assignee + admins (dedup, exclude author)", async () => {

@@ -32,6 +32,25 @@ export type Role = (typeof ROLES)[keyof typeof ROLES];
 
 export const DELETED_USER_SENTINEL = "deleted";
 
+export const TASK_STATUSES = {
+  OPEN: "open",
+  IN_PROGRESS: "in_progress",
+  DONE: "done",
+  CANCELLED: "cancelled",
+} as const;
+
+export type TaskStatusValue =
+  (typeof TASK_STATUSES)[keyof typeof TASK_STATUSES];
+
+export const TASK_STATUS_VALUES = Object.values(TASK_STATUSES);
+
+export const TASK_TYPES = {
+  CHECKBOX: "checkbox",
+  DECISION: "decision",
+} as const;
+
+export type TaskTypeValue = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
+
 export const DEFAULT_LABEL_COLOR = "#6b7280";
 
 export interface OwnedOrg {

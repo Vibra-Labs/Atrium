@@ -915,39 +915,80 @@ export class NotificationsService {
     const isTask = targetType === "task";
 
     if (isTask && taskContext) {
-      let recipientIds: string[];
-      let link: string;
+      const title = `New comment on ${project.name}`;
 
       if (isClientComment) {
+        // Client commented: notify agency admins + assignee (all dashboard)
         const admins = await this.getOrgAdmins(organizationId);
         const targets = new Set<string>(admins.map((a) => a.userId));
         if (taskContext.assigneeId) targets.add(taskContext.assigneeId);
         targets.delete(authorId);
         if (targets.size === 0) return;
-        recipientIds = Array.from(targets);
-        link = `/dashboard/projects/${projectId}`;
-      } else {
-        const requesterId = taskContext.requestedById;
-        if (!requesterId || requesterId === authorId) return;
+
+        this.createInAppAndPush(
+          Array.from(targets),
+          organizationId,
+          "comment",
+          title,
+          truncatedContent,
+          `/dashboard/projects/${projectId}`,
+        );
+        return;
+      }
+
+      // Agency member commented: split recipients by audience.
+      // Dashboard: assignee + agency-member requesters.
+      // Portal: client requesters, or fallback to project clients when no requester.
+      const dashboardTargets = new Set<string>();
+      const portalTargets = new Set<string>();
+
+      if (taskContext.assigneeId && taskContext.assigneeId !== authorId) {
+        dashboardTargets.add(taskContext.assigneeId);
+      }
+
+      const requesterId = taskContext.requestedById;
+      if (requesterId && requesterId !== authorId) {
         const member = await this.prisma.member.findFirst({
           where: { userId: requesterId, organizationId },
           select: { role: true },
         });
         const isRequesterClient = !member || member.role === "member";
-        recipientIds = [requesterId];
-        link = isRequesterClient
-          ? `/portal/projects/${projectId}`
-          : `/dashboard/projects/${projectId}`;
+        if (isRequesterClient) {
+          portalTargets.add(requesterId);
+        } else {
+          dashboardTargets.add(requesterId);
+        }
+      } else if (!requesterId) {
+        // Agency-created task — broadcast to all project clients
+        const clients = await this.getProjectClients(projectId);
+        for (const c of clients) {
+          if (c.id !== authorId) portalTargets.add(c.id);
+        }
       }
 
-      this.createInAppAndPush(
-        recipientIds,
-        organizationId,
-        "comment",
-        `New comment on ${project.name}`,
-        truncatedContent,
-        link,
-      );
+      // Dedup across audiences: dashboard takes precedence (agency members)
+      for (const id of dashboardTargets) portalTargets.delete(id);
+
+      if (dashboardTargets.size > 0) {
+        this.createInAppAndPush(
+          Array.from(dashboardTargets),
+          organizationId,
+          "comment",
+          title,
+          truncatedContent,
+          `/dashboard/projects/${projectId}`,
+        );
+      }
+      if (portalTargets.size > 0) {
+        this.createInAppAndPush(
+          Array.from(portalTargets),
+          organizationId,
+          "comment",
+          title,
+          truncatedContent,
+          `/portal/projects/${projectId}`,
+        );
+      }
       return;
     }
 

@@ -139,7 +139,7 @@ export class TasksService {
         ? { status }
         : {};
     const where = { projectId, organizationId: orgId, ...statusFilter };
-    const [data, total, members] = await Promise.all([
+    const [data, total] = await Promise.all([
       this.prisma.task.findMany({
         where,
         include: {
@@ -156,12 +156,18 @@ export class TasksService {
         ...paginationArgs(page, limit),
       }),
       this.prisma.task.count({ where }),
-      this.prisma.member.findMany({
-        where: { organizationId: orgId },
-        select: { userId: true },
-      }),
     ]);
 
+    // Only look up memberships for requesters actually present on this page
+    const requesterIds = Array.from(
+      new Set(data.map((t) => t.requestedById).filter((id): id is string => !!id)),
+    );
+    const members = requesterIds.length
+      ? await this.prisma.member.findMany({
+          where: { organizationId: orgId, userId: { in: requesterIds } },
+          select: { userId: true },
+        })
+      : [];
     const memberUserIds = new Set(members.map((m) => m.userId));
 
     const enriched = data.map((task) => ({
@@ -284,6 +290,7 @@ export class TasksService {
     });
     if (!task) throw new NotFoundException("Decision task not found");
     if (task.closedAt) throw new BadRequestException("Voting is already closed");
+    if (task.status === "cancelled") throw new BadRequestException("Cannot close voting on a cancelled task");
 
     const updated = await this.prisma.task.update({
       where: { id: taskId },
@@ -321,6 +328,10 @@ export class TasksService {
     });
     if (!task) throw new NotFoundException("Task not found");
 
+    // assigneeId: null = unassign, non-empty string = assign, empty string = reject
+    if (dto.assigneeId === "") {
+      throw new BadRequestException("assigneeId cannot be empty");
+    }
     if (dto.assigneeId) {
       const member = await this.prisma.member.findFirst({
         where: {
@@ -377,12 +388,25 @@ export class TasksService {
     });
     if (!task) throw new NotFoundException("Task not found");
     if (task.requestedById !== userId) throw new ForbiddenException("Cannot cancel this task");
+    if (task.type !== "checkbox") throw new BadRequestException("Only checkbox tasks can be cancelled");
     if (task.status !== "open") throw new BadRequestException("Only open tasks can be cancelled");
 
-    return this.prisma.task.update({
+    const updated = await this.prisma.task.update({
       where: { id: taskId },
       data: { status: "cancelled" },
     });
+
+    this.notifications.notifyTaskStatusChanged(
+      task.id,
+      task.title,
+      task.projectId,
+      orgId,
+      "cancelled",
+      task.requestedById,
+      task.assigneeId,
+    );
+
+    return updated;
   }
 
   async reorder(taskIds: string[], orgId: string) {

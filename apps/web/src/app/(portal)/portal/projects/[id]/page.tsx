@@ -203,6 +203,8 @@ export default function PortalProjectDetailPage() {
   const [newRequestDesc, setNewRequestDesc] = useState("");
   const [postingRequest, setPostingRequest] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [showCompletedTasks, setShowCompletedTasks] = useState(false);
 
   const loadProject = useCallback(() => {
     apiFetch<Project>(`/projects/mine/${id}`)
@@ -373,8 +375,12 @@ export default function PortalProjectDetailPage() {
   useEffect(() => {
     apiFetch<{ user: { id: string } }>("/auth/get-session")
       .then((s) => setCurrentUserId(s.user.id))
-      .catch(console.error);
-  }, []);
+      .catch((err) => {
+        console.error(err);
+        toast.error("Could not load your session. Some actions may be unavailable.");
+      })
+      .finally(() => setSessionLoaded(true));
+  }, [toast]);
 
   useEffect(() => {
     loadProject();
@@ -776,9 +782,16 @@ export default function PortalProjectDetailPage() {
         )}
 
         {/* Tasks Tab */}
-        {activeTab === "tasks" && (
+        {activeTab === "tasks" && (() => {
+          const hiddenCount = tasks.filter(
+            (t) => t.status === "done" || t.status === "cancelled",
+          ).length;
+          const visibleTasks = showCompletedTasks
+            ? tasks
+            : tasks.filter((t) => t.status !== "done" && t.status !== "cancelled");
+          return (
           <div>
-            <div className="mb-4">
+            <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
               <button
                 onClick={() => setShowNewRequest(true)}
                 className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
@@ -786,6 +799,16 @@ export default function PortalProjectDetailPage() {
                 <Plus size={14} />
                 New Request
               </button>
+              {hiddenCount > 0 && (
+                <button
+                  onClick={() => setShowCompletedTasks((v) => !v)}
+                  className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] underline"
+                >
+                  {showCompletedTasks
+                    ? `Hide done/cancelled (${hiddenCount})`
+                    : `Show done/cancelled (${hiddenCount})`}
+                </button>
+              )}
             </div>
 
             {showNewRequest && (
@@ -842,7 +865,7 @@ export default function PortalProjectDetailPage() {
             )}
 
             <div className="space-y-2">
-              {tasks.map((task) => {
+              {visibleTasks.map((task) => {
                 if (task.type === "decision") {
                   const userVote = task.votes?.[0];
                   const isClosed = !!task.closedAt;
@@ -947,7 +970,7 @@ export default function PortalProjectDetailPage() {
                   done: "Done",
                   cancelled: "Cancelled",
                 };
-                const isOwnRequest = currentUserId !== null && task.requestedById === currentUserId;
+                const isOwnRequest = sessionLoaded && currentUserId !== null && task.requestedById === currentUserId;
                 const canCancel = isOwnRequest && task.status === "open";
 
                 return (
@@ -998,11 +1021,13 @@ export default function PortalProjectDetailPage() {
                   </div>
                 );
               })}
-              {tasks.length === 0 && (
+              {visibleTasks.length === 0 && (
                 <div className="text-center py-8">
                   <ListTodo size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
                   <p className="text-sm text-[var(--muted-foreground)]">
-                    No tasks yet.
+                    {tasks.length === 0
+                      ? "No tasks yet."
+                      : "No active tasks."}
                   </p>
                 </div>
               )}
@@ -1011,7 +1036,8 @@ export default function PortalProjectDetailPage() {
               <Pagination page={tasksPage} totalPages={tasksTotalPages} onPageChange={setTasksPage} />
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Files Tab */}
         {activeTab === "files" && (() => {

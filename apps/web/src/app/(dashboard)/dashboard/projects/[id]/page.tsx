@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
@@ -136,7 +136,16 @@ export default function ProjectDetailPage() {
   const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
   const [clients, setClients] = useState<ClientMember[]>([]);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>("updates");
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    searchParams.get("task") ? "tasks" : "updates",
+  );
+
+  // When a ?task=<id> deep link is set (e.g. from a notification or
+  // cross-tab share), jump to the Tasks tab so the detail modal can open.
+  useEffect(() => {
+    if (searchParams.get("task")) setActiveTab("tasks");
+  }, [searchParams]);
   const [currentRole, setCurrentRole] = useState<string | null>(null);
   const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
   const isArchived = !!project?.archivedAt;
@@ -321,7 +330,7 @@ export default function ProjectDetailPage() {
         disabled={isArchived}
       />
 
-      <div className="space-y-2">
+      <div className="space-y-2 pt-4">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] flex items-center gap-1.5">
           <Calendar size={12} />
           Timeline
@@ -345,16 +354,16 @@ export default function ProjectDetailPage() {
           const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
           if (diffDays < 0) {
             return (
-              <p className="text-xs text-red-500 font-medium">
+              <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
                 {Math.abs(diffDays)} day{Math.abs(diffDays) !== 1 ? "s" : ""} overdue
               </p>
             );
           }
           if (diffDays === 0) {
-            return <p className="text-xs text-amber-600 font-medium">Due today</p>;
+            return <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Due today</p>;
           }
           return (
-            <p className={`text-xs font-medium ${diffDays <= 7 ? "text-amber-600" : "text-[var(--muted-foreground)]"}`}>
+            <p className={`text-xs font-medium ${diffDays <= 7 ? "text-amber-600 dark:text-amber-400" : "text-[var(--muted-foreground)]"}`}>
               {diffDays} day{diffDays !== 1 ? "s" : ""} left
             </p>
           );
@@ -430,7 +439,7 @@ export default function ProjectDetailPage() {
       {/* Left sidebar — project metadata */}
       <aside className="w-full lg:w-72 lg:shrink-0 lg:sticky lg:top-8 space-y-5 lg:space-y-6">
         {error && (
-          <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{error}</div>
+          <div className="p-3 text-sm text-rose-700 dark:text-rose-300 bg-rose-500/15 rounded-lg">{error}</div>
         )}
 
         {isArchived && (

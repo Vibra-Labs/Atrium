@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
@@ -14,9 +14,12 @@ import {
   Download,
   UserCircle,
   MessageSquare,
+  Plus,
+  ChevronDown,
+  CheckSquare,
+  Calendar,
 } from "lucide-react";
 import { track } from "@/lib/track";
-import { CommentsSection } from "@/components/comments-section";
 import { LabelBadge } from "@/components/label-badge";
 import { Avatar } from "@/components/avatar";
 import {
@@ -24,6 +27,7 @@ import {
   type TaskDetailLabel,
 } from "@/components/task-detail-modal";
 import { downloadCsv } from "@/lib/download";
+import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
 
 interface TaskRecord {
   id: string;
@@ -62,20 +66,6 @@ interface PaginatedResponse<T> {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  open: "bg-gray-100 text-gray-700",
-  in_progress: "bg-blue-100 text-blue-700",
-  done: "bg-green-100 text-green-700",
-  cancelled: "bg-red-50 text-red-600",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  open: "Open",
-  in_progress: "In Progress",
-  done: "Done",
-  cancelled: "Cancelled",
-};
-
 export function TasksSection({
   projectId,
   isArchived,
@@ -96,6 +86,9 @@ export function TasksSection({
   const [newTitle, setNewTitle] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
   const [taskType, setTaskType] = useState<"checkbox" | "decision">("checkbox");
+  const [creating, setCreating] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const createMenuRef = useRef<HTMLDivElement>(null);
   const [newQuestion, setNewQuestion] = useState("");
   const [newOptions, setNewOptions] = useState<string[]>(["", ""]);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
@@ -129,6 +122,32 @@ export function TasksSection({
     const taskParam = searchParams.get("task");
     if (taskParam) setOpenTaskId(taskParam);
   }, [searchParams]);
+
+  // Close the create-type dropdown when clicking outside
+  useEffect(() => {
+    if (!createMenuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (createMenuRef.current && !createMenuRef.current.contains(e.target as Node)) {
+        setCreateMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [createMenuOpen]);
+
+  const startCreating = (type: "checkbox" | "decision") => {
+    setTaskType(type);
+    setCreating(true);
+    setCreateMenuOpen(false);
+  };
+
+  const cancelCreating = () => {
+    setCreating(false);
+    setNewTitle("");
+    setNewDueDate("");
+    setNewQuestion("");
+    setNewOptions(["", ""]);
+  };
 
   const updateTaskInUrl = useCallback(
     (id: string | null) => {
@@ -165,6 +184,7 @@ export function TasksSection({
         track("task_created");
         setNewTitle("");
         setNewDueDate("");
+        setCreating(false);
         loadTasks();
       } catch (err) {
         showError(err instanceof Error ? err.message : "Failed to add task");
@@ -184,20 +204,11 @@ export function TasksSection({
         track("task_created", { type: "decision" });
         setNewQuestion("");
         setNewOptions(["", ""]);
+        setCreating(false);
         loadTasks();
       } catch (err) {
         showError(err instanceof Error ? err.message : "Failed to add decision task");
       }
-    }
-  };
-
-  const handleCloseVoting = async (taskId: string) => {
-    try {
-      await apiFetch(`/tasks/${taskId}/close`, { method: "POST" });
-      loadTasks();
-      success("Voting closed");
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to close voting");
     }
   };
 
@@ -262,30 +273,48 @@ export function TasksSection({
 
       {!isArchived && (
         <div className="mb-3 space-y-2">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setTaskType("checkbox")}
-              className={`px-3 py-2 rounded-lg text-sm border ${taskType === "checkbox" ? "bg-[var(--primary)] text-white border-[var(--primary)]" : "border-[var(--border)] hover:bg-[var(--muted)]"}`}
-            >
-              Checkbox
-            </button>
-            <button
-              onClick={() => setTaskType("decision")}
-              className={`px-3 py-2 rounded-lg text-sm border ${taskType === "decision" ? "bg-[var(--primary)] text-white border-[var(--primary)]" : "border-[var(--border)] hover:bg-[var(--muted)]"}`}
-            >
-              Decision
-            </button>
-          </div>
+          {!creating && (
+            <div ref={createMenuRef} className="relative inline-block">
+              <button
+                onClick={() => setCreateMenuOpen((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-[var(--border)] hover:bg-[var(--muted)]"
+              >
+                <Plus size={14} />
+                Create
+                <ChevronDown size={14} className="text-[var(--muted-foreground)]" />
+              </button>
+              {createMenuOpen && (
+                <div className="absolute left-0 top-full mt-1 w-44 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-10 overflow-hidden">
+                  <button
+                    onClick={() => startCreating("checkbox")}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--muted)] text-left"
+                  >
+                    <CheckSquare size={14} className="text-[var(--muted-foreground)]" />
+                    Task
+                  </button>
+                  <button
+                    onClick={() => startCreating("decision")}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--muted)] text-left"
+                  >
+                    <Vote size={14} className="text-[var(--muted-foreground)]" />
+                    Decision
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-          {taskType === "checkbox" ? (
+          {creating && taskType === "checkbox" && (
             <div className="flex flex-col gap-2">
               <input
                 type="text"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="Add a task..."
+                autoFocus
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleAdd();
+                  if (e.key === "Escape") cancelCreating();
                 }}
                 className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
               />
@@ -297,6 +326,12 @@ export function TasksSection({
                   className="flex-1 min-w-0 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                 />
                 <button
+                  onClick={cancelCreating}
+                  className="px-3 py-2 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+                >
+                  Cancel
+                </button>
+                <button
                   onClick={handleAdd}
                   disabled={!newTitle.trim()}
                   className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
@@ -305,7 +340,9 @@ export function TasksSection({
                 </button>
               </div>
             </div>
-          ) : (
+          )}
+
+          {creating && taskType === "decision" && (
             <div className="space-y-2 p-3 border border-[var(--border)] rounded-lg">
               <input
                 type="text"
@@ -347,13 +384,21 @@ export function TasksSection({
                 >
                   + Add Option
                 </button>
-                <button
-                  onClick={handleAdd}
-                  disabled={!newQuestion.trim() || newOptions.filter((o) => o.trim()).length < 2}
-                  className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
-                >
-                  Add Decision
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={cancelCreating}
+                    className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAdd}
+                    disabled={!newQuestion.trim() || newOptions.filter((o) => o.trim()).length < 2}
+                    className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                  >
+                    Add Decision
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -369,78 +414,69 @@ export function TasksSection({
             return (
               <div
                 key={task.id}
-                className={`p-3 border border-[var(--border)] rounded-lg space-y-2 ${isClosed ? "opacity-75" : ""}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => openTask(task.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openTask(task.id);
+                  }
+                }}
+                data-testid={`task-row-${task.id}`}
+                className="p-2 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Vote size={16} className="text-[var(--primary)] shrink-0" />
-                    <span className={`text-sm font-medium break-words ${isClosed ? "line-through text-[var(--muted-foreground)]" : ""}`}>
-                      {task.question || task.title}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isClosed ? (
-                      <span className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                        <Lock size={12} />
-                        Closed
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--primary)]/10 text-[var(--primary)]">
+                    <Vote size={12} />
+                  </span>
+                  <span className={`flex-1 text-sm min-w-0 ${isClosed ? "text-[var(--muted-foreground)]" : ""}`}>
+                    <span className="break-words">{task.question || task.title}</span>
+                    {task.labels && task.labels.length > 0 && (
+                      <span className="inline-flex gap-1 ml-2 align-middle">
+                        {task.labels.map((l) => (
+                          <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                        ))}
                       </span>
-                    ) : (
-                      !isArchived && (
-                        <button
-                          onClick={() => handleCloseVoting(task.id)}
-                          className="flex items-center gap-1 px-2 py-1.5 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]"
-                        >
-                          <Lock size={12} />
-                          Close Voting
-                        </button>
-                      )
                     )}
-                    {!isArchived && (
-                      <button
-                        onClick={() => handleDelete(task.id)}
-                        className="p-2 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
+                  </span>
+                  {isClosed && (
+                    <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                      <Lock size={10} />
+                      Closed
+                    </span>
+                  )}
+                  {totalVotes > 0 && (
+                    <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                      {totalVotes} vote{totalVotes !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {task._count && task._count.comments > 0 && (
+                    <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                      <MessageSquare size={12} />
+                      {task._count.comments}
+                    </span>
+                  )}
+                  {!isArchived && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(task.id);
+                      }}
+                      className="shrink-0 p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                      aria-label="Delete decision"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
-                <div className="space-y-1">
-                  {task.options?.map((opt) => {
-                    const pct = totalVotes > 0 ? (opt._count.votes / totalVotes) * 100 : 0;
-                    return (
-                      <div key={opt.id} className="relative">
-                        <div
-                          className="absolute inset-0 rounded bg-[var(--primary)] opacity-10"
-                          style={{ width: `${pct}%` }}
-                        />
-                        <div className="relative flex items-center justify-between px-3 py-1.5 text-sm">
-                          <span>{opt.label}</span>
-                          <span className="text-xs text-[var(--muted-foreground)]">
-                            {opt._count.votes} vote{opt._count.votes !== 1 ? "s" : ""} ({Math.round(pct)}%)
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {totalVotes > 0 && (
-                  <p className="text-xs text-[var(--muted-foreground)]">
-                    {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
-                  </p>
-                )}
-                <CommentsSection
-                  targetType="task"
-                  targetId={task.id}
-                  commentCount={task._count?.comments ?? 0}
-                />
               </div>
             );
           }
 
           // Checkbox / request task — clickable row opening the detail modal
-          const statusBadgeClass = STATUS_BADGE[task.status] ?? STATUS_BADGE.open;
-          const statusText = STATUS_LABEL[task.status] ?? task.status;
+          const statusBadgeClass = getTaskStatusBadge(task.status);
+          const statusText = getTaskStatusLabel(task.status);
           const strike = task.status === "done" || task.status === "cancelled";
 
           return (
@@ -470,7 +506,7 @@ export function TasksSection({
                 >
                   <span className="break-words">{task.title}</span>
                   {task.isClientRequest && (
-                    <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium align-middle">
+                    <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium align-middle">
                       <UserCircle size={10} />
                       {task.requester?.name ?? "Client"}
                     </span>
@@ -491,11 +527,27 @@ export function TasksSection({
                   </span>
                 )}
 
-                {task.dueDate && (
-                  <span className="shrink-0 text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                    {new Date(task.dueDate).toLocaleDateString()}
-                  </span>
-                )}
+                {task.dueDate && (() => {
+                  const due = new Date(task.dueDate);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const dueDay = new Date(due);
+                  dueDay.setHours(0, 0, 0, 0);
+                  const active = task.status !== "done" && task.status !== "cancelled";
+                  const overdue = active && dueDay.getTime() < today.getTime();
+                  const dueToday = active && dueDay.getTime() === today.getTime();
+                  const tone = overdue
+                    ? "bg-rose-500/20 text-rose-700 dark:text-rose-300"
+                    : dueToday
+                      ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)]";
+                  return (
+                    <span className={`shrink-0 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${tone}`}>
+                      <Calendar size={10} />
+                      {due.toLocaleDateString()}
+                    </span>
+                  );
+                })()}
 
                 <span className="shrink-0" title={task.assignee?.name ?? "Unassigned"}>
                   {task.assignee ? (
@@ -549,7 +601,10 @@ export function TasksSection({
           onLabelsChange={setLabels}
           onClose={closeTask}
           onChange={loadTasks}
-          onDelete={loadTasks}
+          onDelete={() => {
+            closeTask();
+            loadTasks();
+          }}
         />
       )}
     </div>

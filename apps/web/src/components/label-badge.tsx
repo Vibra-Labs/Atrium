@@ -12,7 +12,7 @@ function textColorForBackground(hex: string): string {
 export function LabelBadge({ name, color }: { name: string; color: string }) {
   return (
     <span
-      className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
+      className="inline-flex px-1.5 py-px rounded-full text-[10px] font-medium leading-4"
       style={{ backgroundColor: color, color: textColorForBackground(color) }}
     >
       {name}

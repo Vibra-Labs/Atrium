@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { X, Link2, Trash2, Check, Plus } from "lucide-react";
+import { X, Link2, Trash2, Check, Plus, Vote, Lock } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
@@ -9,6 +9,7 @@ import { CommentsSection } from "@/components/comments-section";
 import { LabelBadge } from "@/components/label-badge";
 import { Avatar } from "@/components/avatar";
 import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
+import { TASK_STATUS_OPTIONS } from "@/lib/task-status";
 
 export interface TaskDetailRecord {
   id: string;
@@ -24,7 +25,11 @@ export interface TaskDetailRecord {
   isClientRequest?: boolean;
   labels?: { label: { id: string; name: string; color: string } }[];
   createdAt?: string;
-  _count?: { comments: number };
+  question?: string;
+  closedAt?: string | null;
+  options?: { id: string; label: string; order: number; _count: { votes: number } }[];
+  votes?: { optionId: string }[];
+  _count?: { comments: number; votes?: number };
 }
 
 export interface TaskDetailMember {
@@ -40,12 +45,7 @@ export interface TaskDetailLabel {
 
 export type TaskDetailViewer = "agency" | "client";
 
-const STATUS_OPTIONS = [
-  { value: "open", label: "Open", color: "bg-gray-100 text-gray-700" },
-  { value: "in_progress", label: "In Progress", color: "bg-blue-100 text-blue-700" },
-  { value: "done", label: "Done", color: "bg-green-100 text-green-700" },
-  { value: "cancelled", label: "Cancelled", color: "bg-red-50 text-red-600" },
-];
+const STATUS_OPTIONS = TASK_STATUS_OPTIONS;
 
 export function TaskDetailModal({
   task,
@@ -277,6 +277,46 @@ export function TaskDetailModal({
     }
   };
 
+  const isDecision = task.type === "decision";
+  const decisionClosed = !!task.closedAt;
+  const currentVoteOptionId = task.votes?.[0]?.optionId ?? null;
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(currentVoteOptionId);
+  const [voting, setVoting] = useState(false);
+
+  const handleVote = async () => {
+    if (!selectedOptionId || decisionClosed || voting) return;
+    setVoting(true);
+    try {
+      await apiFetch(`/tasks/${task.id}/vote`, {
+        method: "POST",
+        body: JSON.stringify({ optionId: selectedOptionId }),
+      });
+      success("Vote recorded");
+      onChange();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to vote");
+    } finally {
+      setVoting(false);
+    }
+  };
+
+  const handleCloseVoting = async () => {
+    if (decisionClosed) return;
+    const ok = await confirm({
+      title: "Close Voting",
+      message: "Close voting on this decision? No further votes can be cast.",
+      confirmLabel: "Close Voting",
+    });
+    if (!ok) return;
+    try {
+      await apiFetch(`/tasks/${task.id}/close`, { method: "POST" });
+      success("Voting closed");
+      onChange();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to close voting");
+    }
+  };
+
   const statusOption = STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
   const assignedLabelObjects = labels?.filter((l) => assignedLabels.includes(l.id)) ?? [];
   const readOnlyLabels = !isAgency;
@@ -429,6 +469,90 @@ export function TaskDetailModal({
                   Add a description...
                 </button>
               ) : null}
+
+              {/* Decision voting */}
+              {isDecision && task.options && task.options.length > 0 && (() => {
+                const totalVotes = task.options.reduce((s, o) => s + o._count.votes, 0);
+                const hasResults = totalVotes > 0;
+                return (
+                  <div className="pt-2 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] flex items-center gap-1.5">
+                        <Vote size={12} />
+                        Decision
+                      </h3>
+                      {decisionClosed ? (
+                        <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)] flex items-center gap-1">
+                          <Lock size={10} />
+                          Closed
+                        </span>
+                      ) : isAgency ? (
+                        <button
+                          onClick={handleCloseVoting}
+                          className="flex items-center gap-1 px-2 py-1 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]"
+                        >
+                          <Lock size={10} />
+                          Close Voting
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="space-y-1.5">
+                      {task.options.map((opt) => {
+                        const pct = totalVotes > 0 ? (opt._count.votes / totalVotes) * 100 : 0;
+                        const isSelected = selectedOptionId === opt.id;
+                        const canVote = !isAgency && !decisionClosed;
+                        return (
+                          <label
+                            key={opt.id}
+                            className={`relative flex items-center gap-3 p-2 rounded-lg border transition-colors ${
+                              isSelected ? "border-[var(--primary)]" : "border-[var(--border)]"
+                            } ${canVote ? "cursor-pointer hover:bg-[var(--muted)]/40" : "cursor-default"} ${decisionClosed && !isSelected ? "opacity-60" : ""}`}
+                          >
+                            {hasResults && (
+                              <div
+                                className="absolute inset-0 rounded-lg bg-[var(--primary)] opacity-10 pointer-events-none"
+                                style={{ width: `${pct}%` }}
+                              />
+                            )}
+                            {canVote && (
+                              <input
+                                type="radio"
+                                name={`vote-${task.id}`}
+                                value={opt.id}
+                                checked={isSelected}
+                                onChange={() => setSelectedOptionId(opt.id)}
+                                className="accent-[var(--primary)] relative z-10"
+                              />
+                            )}
+                            <span className="text-sm flex-1 relative z-10">{opt.label}</span>
+                            {hasResults && (
+                              <span className="text-xs text-[var(--muted-foreground)] relative z-10">
+                                {opt._count.votes} ({Math.round(pct)}%)
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {!isAgency && !decisionClosed && (
+                      <div className="flex justify-end">
+                        <button
+                          onClick={handleVote}
+                          disabled={!selectedOptionId || voting || selectedOptionId === currentVoteOptionId}
+                          className="px-4 py-1.5 text-sm rounded-lg bg-[var(--primary)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+                        >
+                          {currentVoteOptionId ? "Change Vote" : "Vote"}
+                        </button>
+                      </div>
+                    )}
+                    {hasResults && (
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Comments */}
               <div className="pt-2">
@@ -678,7 +802,7 @@ export function TaskDetailModal({
                     <Avatar name={task.requester.name} image={task.requester.image} size={20} />
                     <span>{task.requester.name}</span>
                     {task.isClientRequest && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium">
                         Client
                       </span>
                     )}

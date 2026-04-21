@@ -196,8 +196,8 @@ export function PaymentsSection() {
           <span
             className={`text-xs px-2 py-0.5 rounded-full ml-auto ${
               status.livemode
-                ? "bg-green-100 text-green-700"
-                : "bg-yellow-100 text-yellow-700"
+                ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
             }`}
           >
             {status.livemode ? "Live" : "Test mode"}

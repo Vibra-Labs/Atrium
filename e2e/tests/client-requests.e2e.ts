@@ -241,6 +241,24 @@ test.describe("Client Requests", () => {
   });
 
   test.describe("Dashboard tasks UI", () => {
+    // Use a dedicated project so the tasks list stays small and new tasks are
+    // guaranteed to appear on page 1 (tasks list sorts by `order` asc with a
+    // limit of 20, so sharing a project across many tests can paginate the
+    // newly-created task off-screen).
+    let uiProjectId: string | null = null;
+
+    test.beforeAll(async ({ request }) => {
+      const csrfToken = getCsrfToken();
+      const res = await request.post(`${API}/projects`, {
+        data: { name: "Client Requests Dashboard UI Project" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      if (res.ok()) {
+        const body = await res.json();
+        uiProjectId = body.id;
+      }
+    });
+
     test("tasks section shows status filter bar", async ({ page }) => {
       await page.goto("/dashboard/projects");
       const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
@@ -252,17 +270,20 @@ test.describe("Client Requests", () => {
     });
 
     test("clicking a task row opens the detail modal and ?task= deep link", async ({ page, request }) => {
-      test.skip(!projectId, "No project available");
+      test.skip(!uiProjectId, "No project available");
       const csrfToken = getCsrfToken();
       // Seed a task we can definitely locate
-      const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+      const createRes = await request.post(`${API}/tasks?projectId=${uiProjectId}`, {
         data: { title: "Modal Deep-Link Task" },
         headers: { "x-csrf-token": csrfToken },
       });
       expect(createRes.status()).toBe(201);
       const createdTask = await createRes.json();
 
-      await page.goto(`/dashboard/projects/${projectId}`);
+      await page.goto(`/dashboard/projects/${uiProjectId}`);
+      // Project detail defaults to the Updates tab — switch to Tasks so the
+      // TasksSection (and the task row) is mounted.
+      await page.getByRole("button", { name: /^tasks$/i }).click();
       const row = page.getByTestId(`task-row-${createdTask.id}`);
       await expect(row).toBeVisible({ timeout: 10000 });
       await row.click();
@@ -273,23 +294,23 @@ test.describe("Client Requests", () => {
     });
 
     test("status change inside modal persists via API", async ({ page, request }) => {
-      test.skip(!projectId, "No project available");
+      test.skip(!uiProjectId, "No project available");
       const csrfToken = getCsrfToken();
-      const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
+      const createRes = await request.post(`${API}/tasks?projectId=${uiProjectId}`, {
         data: { title: "Modal Status Change Task" },
         headers: { "x-csrf-token": csrfToken },
       });
       expect(createRes.status()).toBe(201);
       const createdTask = await createRes.json();
 
-      await page.goto(`/dashboard/projects/${projectId}?task=${createdTask.id}`);
+      await page.goto(`/dashboard/projects/${uiProjectId}?task=${createdTask.id}`);
       await expect(page.getByTestId("task-detail-modal")).toBeVisible({ timeout: 10000 });
 
       await page.getByTestId("task-status-select").selectOption("done");
 
       await expect
         .poll(async () => {
-          const r = await request.get(`${API}/tasks/project/${projectId}?status=all`);
+          const r = await request.get(`${API}/tasks/project/${uiProjectId}?status=all`);
           const body = await r.json();
           return body.data.find((t: { id: string; status: string }) => t.id === createdTask.id)?.status;
         }, { timeout: 5000 })

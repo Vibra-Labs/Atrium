@@ -36,6 +36,7 @@ import { useToast } from "@/components/toast";
 import { CommentsSection } from "@/components/comments-section";
 import { Avatar } from "@/components/avatar";
 import { TaskDetailModal } from "@/components/task-detail-modal";
+import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
 
 interface FileRecord {
   id: string;
@@ -194,9 +195,16 @@ export default function PortalProjectDetailPage() {
   const [docsPage, setDocsPage] = useState(1);
   const [docsTotalPages, setDocsTotalPages] = useState(1);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>("updates");
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    searchParams.get("task") ? "tasks" : "updates",
+  );
+
+  // When a ?task=<id> deep link is set, jump to the Tasks tab so the detail
+  // modal can open (it's rendered inside the tasks tab).
+  useEffect(() => {
+    if (searchParams.get("task")) setActiveTab("tasks");
+  }, [searchParams]);
   const [uploading, setUploading] = useState(false);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [signingDocId, setSigningDocId] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<DocumentRecord | null>(null);
   const [pendingDocAction, setPendingDocAction] = useState<PendingDocAction | null>(null);
@@ -283,25 +291,6 @@ export default function PortalProjectDetailPage() {
       })
       .catch(console.error);
   }, [id, docsPage]);
-
-  const handleVote = async (taskId: string) => {
-    const optionId = selectedOptions[taskId];
-    if (!optionId) return;
-    try {
-      await apiFetch(`/tasks/${taskId}/vote`, {
-        method: "POST",
-        body: JSON.stringify({ optionId }),
-      });
-      setSelectedOptions((prev) => {
-        const next = { ...prev };
-        delete next[taskId];
-        return next;
-      });
-      loadTasks();
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const handlePostUpdate = async () => {
     if (!newContent.trim()) return;
@@ -894,109 +883,59 @@ export default function PortalProjectDetailPage() {
             <div className="space-y-2">
               {visibleTasks.map((task) => {
                 if (task.type === "decision") {
-                  const userVote = task.votes?.[0];
                   const isClosed = !!task.closedAt;
                   const totalVotes = task._count?.votes ?? 0;
-                  const hasResults = totalVotes > 0 && task.options?.some((o) => o._count.votes > 0);
+                  const hasVoted = !!task.votes?.[0];
 
                   return (
                     <div
                       key={task.id}
-                      className="border border-[var(--border)] rounded-lg p-4 space-y-3"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openTaskModal(task.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openTaskModal(task.id);
+                        }
+                      }}
+                      data-testid={`task-row-${task.id}`}
+                      className="p-2 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
                     >
                       <div className="flex items-center gap-2">
-                        <Vote size={18} className="text-[var(--primary)] shrink-0" />
-                        <span className="text-sm font-medium flex-1">
+                        <span className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--primary)]/10 text-[var(--primary)]">
+                          <Vote size={12} />
+                        </span>
+                        <span className="flex-1 text-sm min-w-0 break-words">
                           {task.question || task.title}
                         </span>
-                        {isClosed && (
-                          <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)] flex items-center gap-1">
+                        {isClosed ? (
+                          <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
                             <Lock size={10} />
                             Closed
                           </span>
+                        ) : !hasVoted ? (
+                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium">
+                            Needs vote
+                          </span>
+                        ) : null}
+                        {totalVotes > 0 && (
+                          <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                            {totalVotes} vote{totalVotes !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {task._count && task._count.comments > 0 && (
+                          <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                            <MessageSquare size={12} />
+                            {task._count.comments}
+                          </span>
                         )}
                       </div>
-
-                      {task.options && task.options.length > 0 && (
-                        <div className="space-y-1.5">
-                          {task.options.map((opt) => {
-                            const isSelected =
-                              selectedOptions[task.id]
-                                ? selectedOptions[task.id] === opt.id
-                                : userVote?.optionId === opt.id;
-
-                            return (
-                              <label
-                                key={opt.id}
-                                className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
-                                  isSelected
-                                    ? "border-[var(--primary)] bg-[var(--primary)]/5"
-                                    : "border-[var(--border)] hover:bg-[var(--muted)]"
-                                } ${isClosed && !isSelected ? "opacity-60" : ""}`}
-                                style={isSelected ? { borderColor: "var(--primary)", backgroundColor: "color-mix(in srgb, var(--primary) 5%, transparent)" } : undefined}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`vote-${task.id}`}
-                                  value={opt.id}
-                                  checked={isSelected}
-                                  disabled={isClosed}
-                                  onChange={() => {
-                                    setSelectedOptions((prev) => ({ ...prev, [task.id]: opt.id }));
-                                  }}
-                                  className="accent-[var(--primary)]"
-                                />
-                                <span className="text-sm flex-1">{opt.label}</span>
-                                {(isClosed || hasResults) && (
-                                  <span className="text-xs text-[var(--muted-foreground)]">
-                                    {opt._count.votes} vote{opt._count.votes !== 1 ? "s" : ""}
-                                  </span>
-                                )}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {!isClosed && (
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => handleVote(task.id)}
-                            disabled={!selectedOptions[task.id]}
-                            className="px-4 py-1.5 text-sm rounded-lg bg-[var(--primary)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
-                          >
-                            {userVote ? "Change Vote" : "Vote"}
-                          </button>
-                        </div>
-                      )}
-
-                      {(isClosed || hasResults) && totalVotes > 0 && (
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
-                        </p>
-                      )}
-                      <CommentsSection
-                        targetType="task"
-                        targetId={task.id}
-                        commentCount={task._count?.comments ?? 0}
-                      />
                     </div>
                   );
                 }
 
                 // Checkbox / request task — clickable row opens detail modal
-                const statusColors: Record<string, string> = {
-                  open: "bg-gray-100 text-gray-600",
-                  in_progress: "bg-blue-100 text-blue-700",
-                  done: "bg-green-100 text-green-700",
-                  cancelled: "bg-red-50 text-red-500",
-                };
-                const statusLabels: Record<string, string> = {
-                  open: "Open",
-                  in_progress: "In Progress",
-                  done: "Done",
-                  cancelled: "Cancelled",
-                };
                 const isOwnRequest = sessionLoaded && currentUserId !== null && task.requestedById === currentUserId;
 
                 return (
@@ -1016,16 +955,16 @@ export default function PortalProjectDetailPage() {
                   >
                     <div className="flex items-center gap-2">
                       <span
-                        className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[task.status] ?? "bg-gray-100 text-gray-600"}`}
+                        className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${getTaskStatusBadge(task.status)}`}
                       >
-                        {statusLabels[task.status] ?? task.status}
+                        {getTaskStatusLabel(task.status)}
                       </span>
                       <span
                         className={`flex-1 text-sm min-w-0 ${task.status === "done" || task.status === "cancelled" ? "line-through text-[var(--muted-foreground)]" : ""}`}
                       >
                         <span className="break-words">{task.title}</span>
                         {isOwnRequest && (
-                          <span className="ml-2 shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium align-middle">
+                          <span className="ml-2 shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium align-middle">
                             Your request
                           </span>
                         )}
@@ -1374,7 +1313,7 @@ export default function PortalProjectDetailPage() {
       {/* Task Detail Modal */}
       {openTaskId && (() => {
         const t = tasks.find((x) => x.id === openTaskId);
-        if (!t || t.type !== "checkbox") return null;
+        if (!t) return null;
         return (
           <TaskDetailModal
             task={t}

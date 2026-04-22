@@ -243,11 +243,13 @@ export class ProjectsService {
     const includeClients = dto.includeClients ?? false;
 
     return this.prisma.$transaction(async (tx) => {
+      // Duplicate = fresh copy semantics:
+      // - project status uses the schema default (not_started), not the source's
+      // - startDate/endDate are copied but future/past relevance is the user's call
       const newProject = await tx.project.create({
         data: {
           name: dto.name,
           description: source.description,
-          status: source.status,
           startDate: source.startDate,
           endDate: source.endDate,
           organizationId,
@@ -274,15 +276,18 @@ export class ProjectsService {
 
       if (includeTasks && source.tasks.length) {
         for (const task of source.tasks) {
+          // Template-clone semantics: shape is copied, state is not.
+          // Status is reset, dueDate is dropped (source dates don't apply to new work),
+          // and assignees/requesters are cleared so the new project starts unowned.
           const newTask = await tx.task.create({
             data: {
               title: task.title,
               description: task.description,
-              dueDate: task.dueDate,
+              dueDate: null,
               status: "open",
               closedAt: null,
-              requestedById: task.requestedById,
-              assigneeId: task.assigneeId,
+              requestedById: null,
+              assigneeId: null,
               order: task.order,
               type: task.type,
               question: task.question,
@@ -316,6 +321,10 @@ export class ProjectsService {
         where: { id: newProject.id },
         include: { clients: { select: { userId: true } } },
       });
+    }, {
+      // Raise above Prisma's 5s default: cloning a project with many tasks
+      // + options + labels is sequential and can exceed 5s on larger templates.
+      timeout: 15000,
     });
   }
 

@@ -256,12 +256,12 @@ describe("ProjectsService", () => {
 
       const result = await service.duplicate("src-1", { name: "Copy" }, "org-1");
 
-      // New project created with source's core fields
+      // New project created with source's core fields; status is NOT copied —
+      // the schema default ("not_started") applies instead.
       expect(mockPrisma.project.create).toHaveBeenCalledWith({
         data: {
           name: "Copy",
           description: "Original",
-          status: "in_progress",
           startDate: null,
           endDate: null,
           organizationId: "org-1",
@@ -276,12 +276,15 @@ describe("ProjectsService", () => {
       // Clients NOT copied by default
       expect(mockPrisma.projectClient.createMany).not.toHaveBeenCalled();
 
-      // Tasks copied with status reset
+      // Tasks copied with status/assignment state reset
       expect(mockPrisma.task.create).toHaveBeenCalledTimes(2);
       const taskCalls = mockPrisma.task.create.mock.calls;
       const firstTaskData = (taskCalls[0][0] as PrismaArgs).data as Record<string, unknown>;
       expect(firstTaskData.status).toBe("open");
       expect(firstTaskData.closedAt).toBe(null);
+      expect(firstTaskData.dueDate).toBe(null);
+      expect(firstTaskData.requestedById).toBe(null);
+      expect(firstTaskData.assigneeId).toBe(null);
       expect(firstTaskData.title).toBe("Kickoff");
       expect(firstTaskData.projectId).toBe("new-1");
       expect(firstTaskData.organizationId).toBe("org-1");

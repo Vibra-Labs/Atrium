@@ -504,13 +504,15 @@ export default function ProjectDetailPage() {
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-lg font-bold leading-tight">{project.name}</h1>
           <div className="shrink-0 flex items-center gap-1.5">
-            <button
-              onClick={openDuplicateModal}
-              className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
-            >
-              <Copy size={13} />
-              Duplicate
-            </button>
+            {(currentRole === "owner" || currentRole === "admin") && (
+              <button
+                onClick={openDuplicateModal}
+                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
+              >
+                <Copy size={13} />
+                Duplicate
+              </button>
+            )}
             {isArchived ? (
               <button
                 onClick={handleUnarchive}
@@ -608,6 +610,7 @@ export default function ProjectDetailPage() {
                   value={duplicateName}
                   onChange={(e) => setDuplicateName(e.target.value)}
                   autoFocus
+                  maxLength={255}
                   className="w-full bg-transparent border border-[var(--border)] rounded px-2 py-1.5 text-sm"
                 />
               </label>

@@ -304,6 +304,7 @@ describe("FilesService", () => {
   it("remove deletes from storage and db", async () => {
     const file = {
       id: "file-1",
+      type: "UPLOAD",
       storageKey: "org/proj/file.pdf",
       organizationId: "org-1",
     };
@@ -313,6 +314,112 @@ describe("FilesService", () => {
     await service.remove("file-1", "org-1");
     expect(mockPrisma.file.delete).toHaveBeenCalled();
     expect(mockStorage.delete).toHaveBeenCalled();
+  });
+
+  // --- createLink ---
+
+  describe("createLink", () => {
+    it("rejects an invalid URL", async () => {
+      await expect(
+        service.createLink("proj-1", "org-1", "user-1", {
+          url: "not a url",
+          title: "Notes",
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects non-http(s) URLs", async () => {
+      await expect(
+        service.createLink("proj-1", "org-1", "user-1", {
+          url: "ftp://example.com/x",
+          title: "Notes",
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("throws NotFoundException when project is not in the org", async () => {
+      mockPrisma.project.findFirst.mockReturnValue(Promise.resolve(null));
+      await expect(
+        service.createLink("proj-1", "org-1", "user-1", {
+          url: "https://nextcloud.example.com/s/abc",
+          title: "Design brief",
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("persists a LINK-type file entry", async () => {
+      mockPrisma.project.findFirst.mockReturnValue(
+        Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
+      );
+      const result = await service.createLink("proj-1", "org-1", "user-1", {
+        url: "https://nextcloud.example.com/s/abc",
+        title: "  Design brief  ",
+        description: "  A doc  ",
+      });
+
+      expect(result).toBeDefined();
+      expect(mockPrisma.file.create).toHaveBeenCalledWith({
+        data: {
+          filename: "Design brief",
+          type: "LINK",
+          url: "https://nextcloud.example.com/s/abc",
+          description: "A doc",
+          projectId: "proj-1",
+          organizationId: "org-1",
+          uploadedById: "user-1",
+        },
+      });
+    });
+  });
+
+  // --- LINK-type guards in download/remove ---
+
+  it("download rejects LINK-type files", async () => {
+    mockPrisma.file.findFirst.mockReturnValue(
+      Promise.resolve({
+        id: "file-1",
+        type: "LINK",
+        storageKey: null,
+        url: "https://example.com",
+        projectId: "proj-1",
+        organizationId: "org-1",
+      }),
+    );
+    await expect(
+      service.download("file-1", "org-1", "user-1", "admin"),
+    ).rejects.toThrow();
+  });
+
+  it("getDownloadUrl rejects LINK-type files", async () => {
+    mockPrisma.file.findFirst.mockReturnValue(
+      Promise.resolve({
+        id: "file-1",
+        type: "LINK",
+        storageKey: null,
+        projectId: "proj-1",
+        organizationId: "org-1",
+      }),
+    );
+    await expect(
+      service.getDownloadUrl("file-1", "org-1", "user-1", "admin"),
+    ).rejects.toThrow();
+  });
+
+  it("remove succeeds for LINK-type files without touching storage keys", async () => {
+    const deleteCountBefore = mockStorage.delete.mock.calls.length;
+    mockPrisma.file.findFirst.mockReturnValue(
+      Promise.resolve({
+        id: "file-link-remove",
+        type: "LINK",
+        storageKey: null,
+        organizationId: "org-1",
+      }),
+    );
+    mockPrisma.invoice.findFirst.mockReturnValue(Promise.resolve(null));
+
+    await service.remove("file-link-remove", "org-1");
+    expect(mockPrisma.file.delete).toHaveBeenCalled();
+    expect(mockStorage.delete.mock.calls.length).toBe(deleteCountBefore);
   });
 
   // --- uploadAsClient ---

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { getEmbeds } from "./embeds";
+import { getEmbeds, extractOEmbedCandidates } from "./embeds";
 
 // ---------------------------------------------------------------------------
 // YouTube
@@ -348,5 +348,64 @@ describe("getEmbeds — stateless across multiple calls", () => {
     const third = getEmbeds(text);
 
     expect(third).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractOEmbedCandidates
+// ---------------------------------------------------------------------------
+
+describe("extractOEmbedCandidates", () => {
+  test("returns external URLs not handled by regex providers", () => {
+    const text =
+      "Check the Canva design: https://www.canva.com/design/DAF123/View";
+    const urls = extractOEmbedCandidates(text);
+
+    expect(urls).toEqual(["https://www.canva.com/design/DAF123/View"]);
+  });
+
+  test("skips URLs already covered by a regex provider (YouTube, Loom, Figma, GDocs)", () => {
+    const text = [
+      "https://www.youtube.com/watch?v=abc12345678",
+      "https://www.loom.com/share/abc123",
+      "https://www.figma.com/file/XYZ/Design",
+      "https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
+      "https://open.spotify.com/track/abc",
+    ].join(" ");
+
+    const urls = extractOEmbedCandidates(text);
+
+    expect(urls).toEqual(["https://open.spotify.com/track/abc"]);
+  });
+
+  test("strips trailing punctuation from detected URLs", () => {
+    const text = "See (https://codepen.io/anon/pen/abc), it's cool.";
+    const urls = extractOEmbedCandidates(text);
+
+    expect(urls).toContain("https://codepen.io/anon/pen/abc");
+  });
+
+  test("deduplicates identical URLs", () => {
+    const url = "https://codepen.io/anon/pen/abc";
+    const urls = extractOEmbedCandidates(`${url} and again ${url}`);
+
+    expect(urls).toHaveLength(1);
+  });
+
+  test("caps the number of candidates at MAX_EMBEDS (3)", () => {
+    const urls = extractOEmbedCandidates(
+      [
+        "https://codepen.io/a/pen/1",
+        "https://codepen.io/a/pen/2",
+        "https://codepen.io/a/pen/3",
+        "https://codepen.io/a/pen/4",
+      ].join(" "),
+    );
+
+    expect(urls).toHaveLength(3);
+  });
+
+  test("returns an empty array for plain text without URLs", () => {
+    expect(extractOEmbedCandidates("just some words")).toEqual([]);
   });
 });

@@ -171,12 +171,22 @@ model ProjectClient {
   @@map("project_client")
 }
 
+enum FileType {
+  UPLOAD
+  LINK
+
+  @@map("file_type")
+}
+
 model File {
   id             String   @id @default(cuid())
   filename       String
-  storageKey     String
-  mimeType       String
-  sizeBytes      Int
+  type           FileType @default(UPLOAD)
+  storageKey     String?
+  mimeType       String?
+  sizeBytes      Int?
+  url            String?
+  description    String?
   projectId      String
   organizationId String
   uploadedById   String
@@ -206,6 +216,9 @@ model ProjectUpdate {
   organizationId     String
   authorId           String
   createdAt          DateTime @default(now())
+  // Per-URL display preferences for link previews rendered inside this
+  // update's content. Shape: { [url: string]: { size?: "compact" | "full", hidden?: boolean } }
+  previewPrefs       Json?    @map("preview_prefs")
 
   project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   file     File?            @relation(fields: [fileId], references: [id])

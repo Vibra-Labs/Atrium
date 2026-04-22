@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Post,
@@ -14,6 +15,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { FilesService, UploadedFile as UploadedFileType } from "./files.service";
+import { CreateFileLinkDto } from "./files.dto";
 import { AuthGuard, RolesGuard, Roles, PlanLimit, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto, contentDisposition } from "../common";
 
 @Controller("files")
@@ -33,6 +35,20 @@ export class FilesController {
   ) {
     if (!file) throw new BadRequestException("No file provided");
     return this.filesService.upload(file, projectId, orgId, userId);
+  }
+
+  @Post("link")
+  @Roles("owner", "admin")
+  createLink(
+    @Body() dto: CreateFileLinkDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.filesService.createLink(dto.projectId, orgId, userId, {
+      url: dto.url,
+      title: dto.title,
+      description: dto.description,
+    });
   }
 
   @Post("upload/mine")

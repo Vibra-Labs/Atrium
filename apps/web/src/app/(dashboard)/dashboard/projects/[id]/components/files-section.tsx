@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { useConfirm } from "@/components/confirm-modal";
@@ -25,6 +25,9 @@ import {
   Link2,
   Copy,
   XCircle,
+  ExternalLink,
+  LinkIcon,
+  Plus,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
@@ -43,8 +46,11 @@ const SigningViewer = dynamic(
 interface FileRecord {
   id: string;
   filename: string;
-  mimeType: string;
-  sizeBytes: number;
+  type?: "UPLOAD" | "LINK";
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  url?: string | null;
+  description?: string | null;
   createdAt: string;
 }
 
@@ -160,6 +166,27 @@ export function FilesSection({
   const [newLinkToken, setNewLinkToken] = useState<string | null>(null);
   const [placerDocId, setPlacerDocId] = useState<string | null>(null);
 
+  // Add Link modal state
+  const [showAddLink, setShowAddLink] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkTitle, setLinkTitle] = useState("");
+  const [linkDescription, setLinkDescription] = useState("");
+  const [linkSaving, setLinkSaving] = useState(false);
+
+  // Add menu (dropdown) state
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setShowAddMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [showAddMenu]);
+
   // Doc upload form
   const [docTitle, setDocTitle] = useState("");
   const [docType, setDocType] = useState("contract");
@@ -250,6 +277,38 @@ export function FilesSection({
       success("File deleted");
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to delete file");
+    }
+  };
+
+  const resetLinkForm = () => {
+    setLinkUrl("");
+    setLinkTitle("");
+    setLinkDescription("");
+  };
+
+  const handleLinkSubmit = async () => {
+    const url = linkUrl.trim();
+    const title = linkTitle.trim();
+    if (!url || !title) return;
+    setLinkSaving(true);
+    try {
+      await apiFetch("/files/link", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId,
+          url,
+          title,
+          description: linkDescription.trim() || undefined,
+        }),
+      });
+      setShowAddLink(false);
+      resetLinkForm();
+      onFileChange();
+      success("Link added");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to add link");
+    } finally {
+      setLinkSaving(false);
     }
   };
 
@@ -411,13 +470,40 @@ export function FilesSection({
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-medium">Files</h2>
         {!isArchived && (
-          <button
-            onClick={() => setShowDocUpload(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
-          >
-            <Upload size={14} />
-            Upload
-          </button>
+          <div className="relative" ref={addMenuRef}>
+            <button
+              onClick={() => setShowAddMenu((v) => !v)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+            >
+              <Plus size={14} />
+              Add
+              <ChevronDown size={12} />
+            </button>
+            {showAddMenu && (
+              <div className="absolute right-0 mt-1 w-64 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-10 py-1">
+                <button
+                  onClick={() => { setShowAddMenu(false); setShowDocUpload(true); }}
+                  className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[var(--muted)] text-left"
+                >
+                  <Upload size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                  <div>
+                    <p className="text-sm font-medium">Upload file</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Upload a document from your device</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setShowAddMenu(false); setShowAddLink(true); }}
+                  className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[var(--muted)] text-left"
+                >
+                  <LinkIcon size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                  <div>
+                    <p className="text-sm font-medium">Add link</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Link to an external resource (Nextcloud, Canva, etc.)</p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -690,28 +776,76 @@ export function FilesSection({
 
       {/* Plain files list */}
       <div className="space-y-2">
-        {sortedFiles.map((file) => (
-          <div key={file.id} className="p-3 border border-[var(--border)] rounded-lg">
-            <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{file.filename}</p>
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  {formatBytes(file.sizeBytes)} &middot; {formatRelativeTime(file.createdAt)}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 shrink-0">
-                <button onClick={() => handleFileDownload(file.id, file.filename)} className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline">
-                  <Download size={14} /> Download
-                </button>
-                {!isArchived && (
-                  <button onClick={() => handleFileDelete(file.id)} className="flex items-center gap-1.5 text-sm text-red-500 hover:underline">
-                    <Trash2 size={14} /> Delete
-                  </button>
-                )}
+        {sortedFiles.map((file) => {
+          const isLink = file.type === "LINK";
+          let hostname = "";
+          if (isLink && file.url) {
+            try { hostname = new URL(file.url).hostname; } catch { hostname = file.url; }
+          }
+          const handleCardClick = () => {
+            if (isLink && file.url) {
+              window.open(file.url, "_blank", "noopener,noreferrer");
+            } else {
+              handleFileDownload(file.id, file.filename);
+            }
+          };
+          return (
+            <div
+              key={file.id}
+              role="button"
+              tabIndex={0}
+              onClick={handleCardClick}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleCardClick();
+                }
+              }}
+              className="p-3 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+            >
+              <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
+                <div className="min-w-0 flex items-start gap-2">
+                  {isLink ? (
+                    <LinkIcon size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                  ) : (
+                    <FileIcon size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{file.filename}</p>
+                    {isLink ? (
+                      <p className="text-xs text-[var(--muted-foreground)] truncate">
+                        {hostname} &middot; {formatRelativeTime(file.createdAt)}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {formatBytes(file.sizeBytes ?? 0)} &middot; {formatRelativeTime(file.createdAt)}
+                      </p>
+                    )}
+                    {isLink && file.description && (
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1">{file.description}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {isLink ? (
+                    <ExternalLink size={14} className="text-[var(--muted-foreground)]" />
+                  ) : (
+                    <Download size={14} className="text-[var(--muted-foreground)]" />
+                  )}
+                  {!isArchived && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleFileDelete(file.id); }}
+                      title="Delete"
+                      className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {files.length === 0 && documents.length === 0 && (
           <div className="text-center py-8">
             <FileX size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
@@ -850,6 +984,57 @@ export function FilesSection({
               <button onClick={() => handleDocUpload(true)} disabled={docUploading || !docTitle.trim() || !docFile} className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50">{docUploading ? "Uploading..." : "Upload & Send"}</button>
             </div>
             <p className="text-[11px] text-[var(--muted-foreground)] text-right -mt-2">Sending notifies the client immediately.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Add Link Modal */}
+      {showAddLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={(e) => { if (e.target === e.currentTarget) { setShowAddLink(false); resetLinkForm(); } }}>
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-[480px] mx-4 p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Add Link</h3>
+            <p className="text-sm text-[var(--muted-foreground)]">Link to an external resource like a Nextcloud document, Canva design, or any other URL.</p>
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">URL</label>
+              <input
+                type="url"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Title</label>
+              <input
+                type="text"
+                value={linkTitle}
+                onChange={(e) => setLinkTitle(e.target.value)}
+                placeholder="e.g., Design mockup (Canva)"
+                maxLength={255}
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Description (optional)</label>
+              <textarea
+                value={linkDescription}
+                onChange={(e) => setLinkDescription(e.target.value)}
+                placeholder="What is this link for?"
+                rows={2}
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+              <button onClick={() => { setShowAddLink(false); resetLinkForm(); }} className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]">Cancel</button>
+              <button
+                onClick={handleLinkSubmit}
+                disabled={linkSaving || !linkUrl.trim() || !linkTitle.trim()}
+                className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {linkSaving ? "Adding..." : "Add link"}
+              </button>
+            </div>
           </div>
         </div>
       )}

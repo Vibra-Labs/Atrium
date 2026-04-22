@@ -143,13 +143,53 @@ export class FilesService {
     return paginatedResponse(data, total, page, limit);
   }
 
+  async createLink(
+    projectId: string,
+    organizationId: string,
+    uploadedById: string,
+    params: { url: string; title: string; description?: string },
+  ) {
+    let parsed: URL;
+    try {
+      parsed = new URL(params.url);
+    } catch {
+      throw new BadRequestException("Invalid URL");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new BadRequestException("Only http(s) URLs are allowed");
+    }
+
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, organizationId },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+
+    return this.prisma.file.create({
+      data: {
+        filename: params.title.trim(),
+        type: "LINK",
+        url: parsed.toString(),
+        description: params.description?.trim() || null,
+        projectId,
+        organizationId,
+        uploadedById,
+      },
+    });
+  }
+
   async download(id: string, organizationId: string, userId: string, role: string) {
     const file = await this.prisma.file.findFirst({
       where: { id, organizationId },
     });
     if (!file) throw new NotFoundException("File not found");
+    if (file.type === "LINK") {
+      throw new BadRequestException("Cannot download a link entry");
+    }
+    if (!file.storageKey) {
+      throw new NotFoundException("File has no storage object");
+    }
 
-    await assertProjectAccess(this.prisma,file.projectId, userId, role);
+    await assertProjectAccess(this.prisma, file.projectId, userId, role);
 
     const { body, contentType } = await this.storage.download(file.storageKey);
     return { body, contentType, filename: file.filename };
@@ -160,8 +200,11 @@ export class FilesService {
       where: { id, organizationId },
     });
     if (!file) throw new NotFoundException("File not found");
+    if (file.type === "LINK") {
+      throw new BadRequestException("Cannot download a link entry");
+    }
 
-    await assertProjectAccess(this.prisma,file.projectId, userId, role);
+    await assertProjectAccess(this.prisma, file.projectId, userId, role);
 
     return { url: `/api/files/${id}/download` };
   }
@@ -185,11 +228,13 @@ export class FilesService {
 
     await this.prisma.file.delete({ where: { id } });
 
-    try {
-      await this.storage.delete(file.storageKey);
-    } catch {
-      // DB record already deleted — orphaned blob is acceptable;
-      // a future cleanup job can sweep orphans by comparing storage keys.
+    if (file.type === "UPLOAD" && file.storageKey) {
+      try {
+        await this.storage.delete(file.storageKey);
+      } catch {
+        // DB record already deleted — orphaned blob is acceptable;
+        // a future cleanup job can sweep orphans by comparing storage keys.
+      }
     }
   }
 }

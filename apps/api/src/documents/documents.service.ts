@@ -438,6 +438,7 @@ export class DocumentsService {
     await assertProjectAccess(this.prisma, doc.projectId, userId, role);
 
     const fileToView = doc.signedFile ?? doc.file;
+    if (!fileToView.storageKey) throw new NotFoundException("Document file has no storage object");
     const { body, contentType } = await this.storage.download(fileToView.storageKey);
 
     this.auditService.log(id, "downloaded", { userId });
@@ -619,6 +620,7 @@ export class DocumentsService {
 
       // Download the latest signed PDF (or original)
       const sourceFile = doc.signedFileId ? doc.signedFile! : doc.file;
+      if (!sourceFile.storageKey) throw new BadRequestException("Document source file has no storage object");
       const { body: pdfStream } = await this.storage.download(sourceFile.storageKey);
 
       const pdfChunks: Buffer[] = [];
@@ -752,8 +754,8 @@ export class DocumentsService {
       title: string;
       projectId: string;
       signedFileId: string | null;
-      signedFile: { storageKey: string } | null;
-      file: { storageKey: string };
+      signedFile: { storageKey: string | null } | null;
+      file: { storageKey: string | null };
     },
     field: { pageNumber: number; x: number; y: number; width: number; height: number },
     text: string,
@@ -770,6 +772,7 @@ export class DocumentsService {
     },
   ) {
     const sourceFile = doc.signedFileId ? doc.signedFile! : doc.file;
+    if (!sourceFile.storageKey) throw new BadRequestException("Document source file has no storage object");
     const { body: pdfStream } = await this.storage.download(sourceFile.storageKey);
 
     const pdfChunks: Buffer[] = [];
@@ -918,9 +921,11 @@ export class DocumentsService {
     });
     if (!doc) throw new NotFoundException("Document not found");
 
-    // Collect all storage keys to delete
-    const keysToDelete: string[] = [doc.file.storageKey];
-    if (doc.signedFile) {
+    // Collect all storage keys to delete (documents always back onto uploads, so storageKey should be non-null,
+    // but we filter defensively in case of data drift)
+    const keysToDelete: string[] = [];
+    if (doc.file.storageKey) keysToDelete.push(doc.file.storageKey);
+    if (doc.signedFile?.storageKey) {
       keysToDelete.push(doc.signedFile.storageKey);
     }
 
@@ -932,7 +937,7 @@ export class DocumentsService {
     // Version file storage keys
     const versionFileIds: string[] = [];
     for (const v of doc.versions) {
-      keysToDelete.push(v.file.storageKey);
+      if (v.file.storageKey) keysToDelete.push(v.file.storageKey);
       versionFileIds.push(v.fileId);
     }
 
@@ -1038,7 +1043,7 @@ export class DocumentsService {
 
       // Clean up old signed file record + blob
       if (doc.signedFileId && doc.signedFile) {
-        keysToDelete.push(doc.signedFile.storageKey);
+        if (doc.signedFile.storageKey) keysToDelete.push(doc.signedFile.storageKey);
         await tx.file.deleteMany({ where: { id: doc.signedFileId } });
       }
 
@@ -1169,7 +1174,7 @@ export class DocumentsService {
         await tx.documentResponse.deleteMany({ where: { documentId: id } });
       }
       if (doc.signedFileId && doc.signedFile) {
-        keysToDelete.push(doc.signedFile.storageKey);
+        if (doc.signedFile.storageKey) keysToDelete.push(doc.signedFile.storageKey);
         await tx.file.deleteMany({ where: { id: doc.signedFileId } });
       }
 

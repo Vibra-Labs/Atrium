@@ -22,8 +22,11 @@ import { NotesSection } from "./components/notes-section";
 interface FileRecord {
   id: string;
   filename: string;
-  mimeType: string;
-  sizeBytes: number;
+  type?: "UPLOAD" | "LINK";
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  url?: string | null;
+  description?: string | null;
   createdAt: string;
 }
 

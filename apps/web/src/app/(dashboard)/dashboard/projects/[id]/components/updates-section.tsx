@@ -18,7 +18,7 @@ import {
   Lock,
 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
-import { getEmbeds, EmbedPreview } from "@/lib/embeds";
+import { Embeds } from "@/lib/embeds";
 import { track } from "@/lib/track";
 import { CommentsSection } from "@/components/comments-section";
 
@@ -339,9 +339,7 @@ export function UpdatesSection({
                 )}
               </div>
               <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
-              {getEmbeds(entry.content || "").map((embed) => (
-                <EmbedPreview key={embed.embedUrl} embed={embed} />
-              ))}
+              <Embeds text={entry.content || ""} />
               {entry.hasAttachment && isImage && (
                 <img
                   src={attachmentSrc}

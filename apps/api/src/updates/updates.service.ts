@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from "@nestjs/common";
+import type { ProjectUpdate } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ActivityService } from "../activity/activity.service";
@@ -42,7 +43,7 @@ export class UpdatesService {
     authorId: string,
     role: string,
     attachment?: UploadedFile,
-  ) {
+  ): Promise<ProjectUpdate> {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId },
     });
@@ -292,6 +293,28 @@ export class UpdatesService {
     }
 
     return this.findTimeline(projectId, organizationId, page, limit);
+  }
+
+  async updatePreviewPrefs(
+    id: string,
+    organizationId: string,
+    userId: string,
+    role: string,
+    previewPrefs: Record<string, { size?: "compact" | "full"; hidden?: boolean }>,
+  ): Promise<ProjectUpdate> {
+    const update = await this.prisma.projectUpdate.findFirst({
+      where: { id, organizationId },
+    });
+    if (!update) throw new NotFoundException("Update not found");
+
+    // Anyone with access to the project can tweak preview prefs on an update.
+    // Prefs are a display hint, not content — no stricter guard needed.
+    await assertProjectAccess(this.prisma, update.projectId, userId, role, organizationId);
+
+    return this.prisma.projectUpdate.update({
+      where: { id },
+      data: { previewPrefs: previewPrefs as object },
+    });
   }
 
   async remove(id: string, organizationId: string) {

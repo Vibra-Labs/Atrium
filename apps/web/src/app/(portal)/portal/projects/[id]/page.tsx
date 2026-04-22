@@ -25,10 +25,12 @@ import {
   Clock,
   Plus,
   Paperclip,
+  ExternalLink,
+  Link as LinkIcon,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
-import { getEmbeds, EmbedPreview } from "@/lib/embeds";
+import { Embeds } from "@/lib/embeds";
 import { downloadFile } from "@/lib/download";
 import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
@@ -41,8 +43,11 @@ import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
 interface FileRecord {
   id: string;
   filename: string;
-  mimeType: string;
-  sizeBytes: number;
+  type?: "UPLOAD" | "LINK";
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  url?: string | null;
+  description?: string | null;
   createdAt: string;
 }
 
@@ -750,9 +755,7 @@ export default function PortalProjectDetailPage() {
                       </span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
-                    {getEmbeds(entry.content || "").map((embed) => (
-                      <EmbedPreview key={embed.embedUrl} embed={embed} />
-                    ))}
+                    <Embeds text={entry.content || ""} />
                     {entry.hasAttachment && isImage && (
                       <img
                         src={attachmentSrc}
@@ -1037,30 +1040,67 @@ export default function PortalProjectDetailPage() {
                 </label>
               </div>
               <div className="space-y-2">
-                {sortedFiles.map((file) => (
-                  <div
-                    key={file.id}
-                    className="p-3 border border-[var(--border)] rounded-lg"
-                  >
-                    <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {file.filename}
-                        </p>
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          {formatBytes(file.sizeBytes)}
-                        </p>
+                {sortedFiles.map((file) => {
+                  const isLink = file.type === "LINK";
+                  let hostname = "";
+                  if (isLink && file.url) {
+                    try { hostname = new URL(file.url).hostname; } catch { hostname = file.url; }
+                  }
+                  const handleCardClick = () => {
+                    if (isLink && file.url) {
+                      window.open(file.url, "_blank", "noopener,noreferrer");
+                    } else {
+                      handleDownload(file.id, file.filename);
+                    }
+                  };
+                  return (
+                    <div
+                      key={file.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={handleCardClick}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleCardClick();
+                        }
+                      }}
+                      className="p-3 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                    >
+                      <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
+                        <div className="min-w-0 flex items-start gap-2">
+                          {isLink ? (
+                            <LinkIcon size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                          ) : (
+                            <FileText size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {file.filename}
+                            </p>
+                            {isLink ? (
+                              <p className="text-xs text-[var(--muted-foreground)] truncate">
+                                {hostname}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-[var(--muted-foreground)]">
+                                {formatBytes(file.sizeBytes ?? 0)}
+                              </p>
+                            )}
+                            {isLink && file.description && (
+                              <p className="text-xs text-[var(--muted-foreground)] mt-1">{file.description}</p>
+                            )}
+                          </div>
+                        </div>
+                        {isLink ? (
+                          <ExternalLink size={14} className="text-[var(--muted-foreground)] shrink-0" />
+                        ) : (
+                          <Download size={14} className="text-[var(--muted-foreground)] shrink-0" />
+                        )}
                       </div>
-                      <button
-                        onClick={() => handleDownload(file.id, file.filename)}
-                        className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline shrink-0"
-                      >
-                        <Download size={14} />
-                        Download
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {project.files.length === 0 && documents.length === 0 && (
                   <div className="text-center py-8">
                     <FileX size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />

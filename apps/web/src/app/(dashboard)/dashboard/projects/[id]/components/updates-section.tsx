@@ -18,7 +18,7 @@ import {
   Lock,
 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
-import { Embeds } from "@/lib/embeds";
+import { Embeds, type PreviewPrefs } from "@/lib/embeds";
 import { track } from "@/lib/track";
 import { CommentsSection } from "@/components/comments-section";
 
@@ -35,6 +35,7 @@ interface TimelineEntry {
   attachmentMimeType?: string;
   hasAttachment?: boolean;
   fileId?: string;
+  previewPrefs?: PreviewPrefs | null;
   author?: { id: string; name: string };
   commentCount?: number;
   // Activity fields
@@ -161,6 +162,22 @@ export function UpdatesSection({
       URL.revokeObjectURL(url);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to download file");
+    }
+  };
+
+  const handlePrefsChange = async (updateId: string, next: PreviewPrefs) => {
+    // Optimistic update — server errors are silent (prefs are a display hint).
+    setTimeline((prev) =>
+      prev.map((e) => (e.id === updateId ? { ...e, previewPrefs: next } : e)),
+    );
+    try {
+      await apiFetch(`/updates/${updateId}/preview-prefs`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewPrefs: next }),
+      });
+    } catch (err) {
+      console.error("Failed to save preview prefs", err);
     }
   };
 
@@ -339,7 +356,11 @@ export function UpdatesSection({
                 )}
               </div>
               <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
-              <Embeds text={entry.content || ""} />
+              <Embeds
+                text={entry.content || ""}
+                prefs={entry.previewPrefs ?? undefined}
+                onPrefsChange={(next) => handlePrefsChange(entry.id, next)}
+              />
               {entry.hasAttachment && isImage && (
                 <img
                   src={attachmentSrc}

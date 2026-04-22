@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
-import { Embeds } from "@/lib/embeds";
+import { Embeds, type PreviewPrefs } from "@/lib/embeds";
 import { downloadFile } from "@/lib/download";
 import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
@@ -72,6 +72,7 @@ interface TimelineEntry {
   attachmentMimeType?: string;
   hasAttachment?: boolean;
   fileId?: string;
+  previewPrefs?: PreviewPrefs | null;
   author?: { id: string; name: string };
   commentCount?: number;
   // Activity fields
@@ -271,6 +272,22 @@ export default function PortalProjectDetailPage() {
       })
       .catch(console.error);
   }, [id, updatesPage]);
+
+  const handlePrefsChange = async (updateId: string, next: PreviewPrefs) => {
+    // Optimistic — prefs are display state, tolerate PATCH failures silently.
+    setUpdates((prev) =>
+      prev.map((e) => (e.id === updateId ? { ...e, previewPrefs: next } : e)),
+    );
+    try {
+      await apiFetch(`/updates/${updateId}/preview-prefs`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewPrefs: next }),
+      });
+    } catch (err) {
+      console.error("Failed to save preview prefs", err);
+    }
+  };
 
   const loadTasks = useCallback(() => {
     apiFetch<PaginatedResponse<TaskRecord>>(
@@ -755,7 +772,11 @@ export default function PortalProjectDetailPage() {
                       </span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
-                    <Embeds text={entry.content || ""} />
+                    <Embeds
+                      text={entry.content || ""}
+                      prefs={entry.previewPrefs ?? undefined}
+                      onPrefsChange={(next) => handlePrefsChange(entry.id, next)}
+                    />
                     {entry.hasAttachment && isImage && (
                       <img
                         src={attachmentSrc}

@@ -27,6 +27,20 @@ const IMAGE_TYPES = new Set([
   "image/webp",
 ]);
 
+type PreviewPrefsMap = Record<
+  string,
+  { size?: "compact" | "full"; hidden?: boolean }
+>;
+
+// Prisma surfaces `previewPrefs` as its internal `JsonValue`, which can't be
+// named across package boundaries. Narrow to our own shape at the response
+// boundary so the inferred controller return types stay portable.
+function coercePreviewPrefs(value: unknown): PreviewPrefsMap | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as PreviewPrefsMap)
+    : null;
+}
+
 @Injectable()
 export class UpdatesService {
   constructor(
@@ -153,6 +167,7 @@ export class UpdatesService {
           hasAttachment: !!u.attachmentKey || !!u.fileId,
           fileId: u.fileId,
           projectId: u.projectId,
+          previewPrefs: coercePreviewPrefs(u.previewPrefs),
           author: author ?? { id: u.authorId, name: "Unknown" },
           commentCount: u._count.comments,
           createdAt: u.createdAt,
@@ -248,6 +263,7 @@ export class UpdatesService {
           attachmentMimeType: u.attachmentMimeType,
           hasAttachment: !!u.attachmentKey || !!u.fileId,
           fileId: u.fileId,
+          previewPrefs: coercePreviewPrefs(u.previewPrefs),
           author: author ?? { id: u.authorId, name: "Unknown" },
           commentCount: u._count.comments,
         };

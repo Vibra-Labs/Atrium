@@ -29,6 +29,25 @@ export interface PreviewPref {
 
 export type PreviewPrefs = Record<string, PreviewPref>;
 
+/**
+ * Merge a pref patch for `url` into `prefs`. Pure; returns a new object so
+ * React can detect the change. Extracted for unit-testability.
+ */
+export function applyPrefPatch(
+  prefs: PreviewPrefs,
+  url: string,
+  patch: PreviewPref,
+): PreviewPrefs {
+  return { ...prefs, [url]: { ...(prefs[url] || {}), ...patch } };
+}
+
+/**
+ * Toggle between compact and full preview sizes.
+ */
+export function nextSize(current: PreviewSize): PreviewSize {
+  return current === "full" ? "compact" : "full";
+}
+
 const PROVIDER_LABELS: Record<EmbedProvider, string> = {
   youtube: "YouTube",
   loom: "Loom",
@@ -495,12 +514,11 @@ export function Embeds({ text, prefs = {}, onPrefsChange }: EmbedsProps) {
   const [oembedFailed, setOembedFailed] = useState<Record<string, boolean>>({});
 
   const mutatePref = (url: string, patch: PreviewPref) => {
-    const next: PreviewPrefs = { ...prefs, [url]: { ...(prefs[url] || {}), ...patch } };
-    onPrefsChange?.(next);
+    onPrefsChange?.(applyPrefPatch(prefs, url, patch));
   };
 
   const toggleSize = (url: string, current: PreviewSize) => {
-    mutatePref(url, { size: current === "full" ? "compact" : "full" });
+    mutatePref(url, { size: nextSize(current) });
   };
 
   const hide = (url: string) => {

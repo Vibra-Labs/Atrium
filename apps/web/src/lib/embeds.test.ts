@@ -1,5 +1,11 @@
 import { describe, test, expect } from "bun:test";
-import { getEmbeds, extractOEmbedCandidates } from "./embeds";
+import {
+  getEmbeds,
+  extractOEmbedCandidates,
+  applyPrefPatch,
+  nextSize,
+  type PreviewPrefs,
+} from "./embeds";
 
 // ---------------------------------------------------------------------------
 // YouTube
@@ -354,6 +360,58 @@ describe("getEmbeds — stateless across multiple calls", () => {
 // ---------------------------------------------------------------------------
 // extractOEmbedCandidates
 // ---------------------------------------------------------------------------
+
+describe("applyPrefPatch", () => {
+  test("creates an entry for a URL not yet in prefs", () => {
+    const prefs: PreviewPrefs = {};
+    const next = applyPrefPatch(prefs, "https://x.com/", { size: "compact" });
+    expect(next["https://x.com/"]).toEqual({ size: "compact" });
+  });
+
+  test("merges fields with an existing entry instead of replacing", () => {
+    const prefs: PreviewPrefs = { "https://x.com/": { size: "full" } };
+    const next = applyPrefPatch(prefs, "https://x.com/", { hidden: true });
+    expect(next["https://x.com/"]).toEqual({ size: "full", hidden: true });
+  });
+
+  test("overwrites a key when the patch supplies the same field", () => {
+    const prefs: PreviewPrefs = { "https://x.com/": { size: "full" } };
+    const next = applyPrefPatch(prefs, "https://x.com/", { size: "compact" });
+    expect(next["https://x.com/"].size).toBe("compact");
+  });
+
+  test("does not mutate the input prefs object", () => {
+    const prefs: PreviewPrefs = { "https://x.com/": { size: "full" } };
+    applyPrefPatch(prefs, "https://x.com/", { hidden: true });
+    expect(prefs["https://x.com/"]).toEqual({ size: "full" });
+  });
+
+  test("does not mutate the per-URL entry object", () => {
+    const entry = { size: "full" as const };
+    const prefs: PreviewPrefs = { "https://x.com/": entry };
+    applyPrefPatch(prefs, "https://x.com/", { hidden: true });
+    expect(entry).toEqual({ size: "full" });
+  });
+
+  test("preserves other URLs unchanged", () => {
+    const prefs: PreviewPrefs = {
+      "https://a.com/": { size: "full" },
+      "https://b.com/": { hidden: true },
+    };
+    const next = applyPrefPatch(prefs, "https://a.com/", { hidden: true });
+    expect(next["https://b.com/"]).toBe(prefs["https://b.com/"]);
+  });
+});
+
+describe("nextSize", () => {
+  test("full → compact", () => {
+    expect(nextSize("full")).toBe("compact");
+  });
+
+  test("compact → full", () => {
+    expect(nextSize("compact")).toBe("full");
+  });
+});
 
 describe("extractOEmbedCandidates", () => {
   test("returns external URLs not handled by regex providers", () => {

@@ -15,6 +15,7 @@ import { ProjectsService } from "./projects.service";
 import {
   CreateProjectDto,
   UpdateProjectDto,
+  DuplicateProjectDto,
   ProjectListQueryDto,
   ClientProjectListQueryDto,
 } from "./projects.dto";
@@ -110,6 +111,17 @@ export class ProjectsController {
   @Roles("owner", "admin")
   archive(@Param("id") id: string, @CurrentOrg("id") orgId: string) {
     return this.projectsService.archive(id, orgId);
+  }
+
+  @Post(":id/duplicate")
+  @Roles("owner", "admin")
+  @PlanLimit("projects")
+  duplicate(
+    @Param("id") id: string,
+    @Body() dto: DuplicateProjectDto,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.projectsService.duplicate(id, dto, orgId);
   }
 
   @Post(":id/unarchive")

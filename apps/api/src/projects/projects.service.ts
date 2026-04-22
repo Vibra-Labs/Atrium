@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { CreateProjectDto, UpdateProjectDto } from "./projects.dto";
+import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { paginationArgs, paginatedResponse } from "../common";
 
 interface ProjectWhereInput {
@@ -216,6 +216,106 @@ export class ProjectsService {
     return this.prisma.project.findUnique({
       where: { id },
       include: { clients: { select: { userId: true } } },
+    });
+  }
+
+  async duplicate(
+    id: string,
+    dto: DuplicateProjectDto,
+    organizationId: string,
+  ) {
+    const source = await this.prisma.project.findFirst({
+      where: { id, organizationId },
+      include: {
+        clients: { select: { userId: true } },
+        labels: { select: { labelId: true } },
+        tasks: {
+          include: {
+            options: { select: { label: true, order: true } },
+            labels: { select: { labelId: true } },
+          },
+        },
+      },
+    });
+    if (!source) throw new NotFoundException("Project not found");
+
+    const includeTasks = dto.includeTasks ?? true;
+    const includeClients = dto.includeClients ?? false;
+
+    return this.prisma.$transaction(async (tx) => {
+      const newProject = await tx.project.create({
+        data: {
+          name: dto.name,
+          description: source.description,
+          status: source.status,
+          startDate: source.startDate,
+          endDate: source.endDate,
+          organizationId,
+        },
+      });
+
+      if (source.labels.length) {
+        await tx.projectLabel.createMany({
+          data: source.labels.map((l) => ({
+            projectId: newProject.id,
+            labelId: l.labelId,
+          })),
+        });
+      }
+
+      if (includeClients && source.clients.length) {
+        await tx.projectClient.createMany({
+          data: source.clients.map((c) => ({
+            projectId: newProject.id,
+            userId: c.userId,
+          })),
+        });
+      }
+
+      if (includeTasks && source.tasks.length) {
+        for (const task of source.tasks) {
+          const newTask = await tx.task.create({
+            data: {
+              title: task.title,
+              description: task.description,
+              dueDate: task.dueDate,
+              status: "open",
+              closedAt: null,
+              requestedById: task.requestedById,
+              assigneeId: task.assigneeId,
+              order: task.order,
+              type: task.type,
+              question: task.question,
+              projectId: newProject.id,
+              organizationId,
+            },
+          });
+
+          if (task.options.length) {
+            await tx.decisionOption.createMany({
+              data: task.options.map((o) => ({
+                taskId: newTask.id,
+                label: o.label,
+                order: o.order,
+              })),
+            });
+          }
+
+          if (task.labels.length) {
+            await tx.taskLabel.createMany({
+              data: task.labels.map((l) => ({
+                taskId: newTask.id,
+                labelId: l.labelId,
+              })),
+            });
+          }
+        }
+      }
+
+      return tx.project.findUnique({
+        where: { id: newProject.id },
+        include: { clients: { select: { userId: true } } },
+      });
     });
   }
 

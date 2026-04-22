@@ -28,6 +28,7 @@ import {
   ExternalLink,
   LinkIcon,
   Plus,
+  Pencil,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
@@ -129,12 +130,14 @@ export function FilesSection({
   files,
   onFileChange,
   projectClients: projectClientsProp = [],
+  currentRole = null,
 }: {
   projectId: string;
   isArchived: boolean;
   files: FileRecord[];
   onFileChange: () => void;
   projectClients?: { userId: string; user: { id: string; name: string; email: string } }[];
+  currentRole?: string | null;
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -172,6 +175,15 @@ export function FilesSection({
   const [linkTitle, setLinkTitle] = useState("");
   const [linkDescription, setLinkDescription] = useState("");
   const [linkSaving, setLinkSaving] = useState(false);
+
+  // Edit file modal state
+  const [editFile, setEditFile] = useState<FileRecord | null>(null);
+  const [editFilename, setEditFilename] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  const canManageFiles = currentRole === "owner" || currentRole === "admin";
 
   // Add menu (dropdown) state
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -284,6 +296,60 @@ export function FilesSection({
     setLinkUrl("");
     setLinkTitle("");
     setLinkDescription("");
+  };
+
+  const openEditFile = (file: FileRecord): void => {
+    setEditFile(file);
+    setEditFilename(file.filename);
+    setEditDescription(file.description ?? "");
+    setEditUrl(file.url ?? "");
+  };
+
+  const closeEditFile = (): void => {
+    setEditFile(null);
+    setEditFilename("");
+    setEditDescription("");
+    setEditUrl("");
+  };
+
+  const handleEditFileSave = async (): Promise<void> => {
+    if (!editFile) return;
+    const nextFilename = editFilename.trim();
+    if (!nextFilename) return;
+    const body: { filename?: string; description?: string; url?: string } = {};
+    if (nextFilename !== editFile.filename) {
+      body.filename = nextFilename;
+    }
+    const nextDescription = editDescription.trim();
+    const originalDescription = editFile.description ?? "";
+    if (nextDescription !== originalDescription) {
+      body.description = nextDescription;
+    }
+    if (editFile.type === "LINK") {
+      const nextUrl = editUrl.trim();
+      const originalUrl = editFile.url ?? "";
+      if (nextUrl && nextUrl !== originalUrl) {
+        body.url = nextUrl;
+      }
+    }
+    if (Object.keys(body).length === 0) {
+      closeEditFile();
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await apiFetch(`/files/${editFile.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      closeEditFile();
+      onFileChange();
+      success("File updated");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update file");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleLinkSubmit = async () => {
@@ -832,6 +898,15 @@ export function FilesSection({
                   ) : (
                     <Download size={14} className="text-[var(--muted-foreground)]" />
                   )}
+                  {!isArchived && canManageFiles && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openEditFile(file); }}
+                      title="Edit"
+                      className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
                   {!isArchived && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleFileDelete(file.id); }}
@@ -1033,6 +1108,73 @@ export function FilesSection({
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
               >
                 {linkSaving ? "Adding..." : "Add link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit File Modal */}
+      {editFile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) closeEditFile(); }}
+        >
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-[480px] mx-4 p-6 space-y-4">
+            <h3 className="text-lg font-semibold">
+              {editFile.type === "LINK" ? "Edit Link" : "Edit File"}
+            </h3>
+            {editFile.type === "LINK" && (
+              <div>
+                <label className="text-sm text-[var(--muted-foreground)]">URL</label>
+                <input
+                  type="url"
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                />
+              </div>
+            )}
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">
+                {editFile.type === "LINK" ? "Title" : "Filename"}
+              </label>
+              <input
+                type="text"
+                value={editFilename}
+                onChange={(e) => setEditFilename(e.target.value)}
+                maxLength={255}
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-[var(--muted-foreground)]">Description (optional)</label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="What is this for?"
+                rows={2}
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+              <button
+                onClick={closeEditFile}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditFileSave}
+                disabled={
+                  editSaving ||
+                  !editFilename.trim() ||
+                  (editFile.type === "LINK" && !editUrl.trim())
+                }
+                className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {editSaving ? "Saving..." : "Save"}
               </button>
             </div>
           </div>

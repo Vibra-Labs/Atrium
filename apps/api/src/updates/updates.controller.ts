@@ -17,7 +17,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import type { ProjectUpdate } from "@atrium/database";
 import { UpdatesService } from "./updates.service";
-import { CreateUpdateDto, UpdatePreviewPrefsDto } from "./updates.dto";
+import { CreateUpdateDto, UpdateContentDto, UpdatePreviewPrefsDto } from "./updates.dto";
 import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto } from "../common";
 import type { UploadedFile as UploadedFileType } from "../files/files.service";
 
@@ -42,6 +42,17 @@ export class UpdatesController {
   ): Promise<ProjectUpdate> {
     if (!projectId) throw new BadRequestException("projectId is required");
     return this.updatesService.create(dto, projectId, orgId, userId, role, attachment);
+  }
+
+  @Patch(":id")
+  update(
+    @Param("id") id: string,
+    @Body() dto: UpdateContentDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentMember("role") role: string,
+  ): Promise<ProjectUpdate> {
+    return this.updatesService.update(id, dto, orgId, userId, role);
   }
 
   @Patch(":id/preview-prefs")

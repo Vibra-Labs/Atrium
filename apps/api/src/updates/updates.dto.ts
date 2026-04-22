@@ -5,12 +5,20 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  MinLength,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
 
 export class CreateUpdateDto {
   @IsString()
+  @MaxLength(5000)
+  content: string;
+}
+
+export class UpdateContentDto {
+  @IsString()
+  @MinLength(1)
   @MaxLength(5000)
   content: string;
 }

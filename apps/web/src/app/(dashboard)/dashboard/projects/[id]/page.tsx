@@ -150,6 +150,7 @@ export default function ProjectDetailPage() {
     if (searchParams.get("task")) setActiveTab("tasks");
   }, [searchParams]);
   const [currentRole, setCurrentRole] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
   const isArchived = !!project?.archivedAt;
   const isOwner = currentRole === "owner";
@@ -173,6 +174,9 @@ export default function ProjectDetailPage() {
       .catch(console.error);
     apiFetch<{ role: string }>("/auth/organization/get-active-member")
       .then((member) => setCurrentRole(member.role))
+      .catch(console.error);
+    apiFetch<{ user: { id: string } }>("/auth/get-session")
+      .then((s) => setCurrentUserId(s.user.id))
       .catch(console.error);
     apiFetch<LabelRecord[]>("/labels")
       .then(setOrgLabels)
@@ -417,7 +421,13 @@ export default function ProjectDetailPage() {
         <TasksSection projectId={id} isArchived={isArchived} />
       )}
       {activeTab === "updates" && (
-        <UpdatesSection projectId={id} isArchived={isArchived} onFileChange={loadProject} />
+        <UpdatesSection
+          projectId={id}
+          isArchived={isArchived}
+          onFileChange={loadProject}
+          currentUserId={currentUserId}
+          currentRole={currentRole}
+        />
       )}
       {activeTab === "files" && (
         <FilesSection
@@ -426,6 +436,7 @@ export default function ProjectDetailPage() {
           files={project.files}
           onFileChange={loadProject}
           projectClients={clients.filter((c) => assignedIds.has(c.userId))}
+          currentRole={currentRole}
         />
       )}
       {activeTab === "invoices" && (

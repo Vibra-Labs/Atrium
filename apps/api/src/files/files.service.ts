@@ -209,6 +209,50 @@ export class FilesService {
     return { url: `/api/files/${id}/download` };
   }
 
+  async update(
+    id: string,
+    dto: { filename?: string; description?: string; url?: string },
+    organizationId: string,
+    userId: string,
+    role: string,
+  ) {
+    const file = await this.prisma.file.findFirst({
+      where: { id, organizationId },
+    });
+    if (!file) throw new NotFoundException("File not found");
+
+    if (dto.url !== undefined && file.type !== "LINK") {
+      throw new BadRequestException("url can only be updated on link-type files");
+    }
+
+    await assertProjectAccess(this.prisma, file.projectId, userId, role, organizationId);
+
+    const data: { filename?: string; description?: string; url?: string } = {};
+    if (dto.filename !== undefined) data.filename = dto.filename;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.url !== undefined) {
+      let parsed: URL;
+      try {
+        parsed = new URL(dto.url);
+      } catch {
+        throw new BadRequestException("Invalid URL");
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new BadRequestException("Only http(s) URLs are allowed");
+      }
+      data.url = parsed.toString();
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException("No fields provided to update");
+    }
+
+    return this.prisma.file.update({
+      where: { id },
+      data,
+    });
+  }
+
   async remove(id: string, organizationId: string) {
     const file = await this.prisma.file.findFirst({
       where: { id, organizationId },

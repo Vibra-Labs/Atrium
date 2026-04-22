@@ -191,6 +191,7 @@ model File {
   organizationId String
   uploadedById   String
   createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
 
   project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   updates          ProjectUpdate[]
@@ -216,6 +217,7 @@ model ProjectUpdate {
   organizationId     String
   authorId           String
   createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
   // Per-URL display preferences for link previews rendered inside this
   // update's content. Shape: { [url: string]: { size?: "compact" | "full", hidden?: boolean } }
   previewPrefs       Json?    @map("preview_prefs")

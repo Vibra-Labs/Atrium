@@ -171,6 +171,7 @@ export class UpdatesService {
           author: author ?? { id: u.authorId, name: "Unknown" },
           commentCount: u._count.comments,
           createdAt: u.createdAt,
+          updatedAt: u.updatedAt,
         };
       }),
     );
@@ -257,6 +258,7 @@ export class UpdatesService {
           id: u.id,
           kind: "update" as const,
           createdAt: u.createdAt,
+          updatedAt: u.updatedAt,
           content: u.content,
           attachmentUrl,
           attachmentName: u.attachmentName,
@@ -309,6 +311,34 @@ export class UpdatesService {
     }
 
     return this.findTimeline(projectId, organizationId, page, limit);
+  }
+
+  async update(
+    id: string,
+    dto: { content: string },
+    organizationId: string,
+    userId: string,
+    role: string,
+  ): Promise<ProjectUpdate> {
+    const update = await this.prisma.projectUpdate.findFirst({
+      where: { id, organizationId },
+    });
+    if (!update) throw new NotFoundException("Update not found");
+
+    const isPrivileged = role === "owner" || role === "admin";
+    const isAuthor = update.authorId === userId;
+    if (!isAuthor && !isPrivileged) {
+      throw new ForbiddenException("Cannot edit this update");
+    }
+
+    // Ensure the user still has access to the project — a client removed
+    // from the project should not be able to edit their old updates.
+    await assertProjectAccess(this.prisma, update.projectId, userId, role, organizationId);
+
+    return this.prisma.projectUpdate.update({
+      where: { id },
+      data: { content: dto.content },
+    });
   }
 
   async updatePreviewPrefs(

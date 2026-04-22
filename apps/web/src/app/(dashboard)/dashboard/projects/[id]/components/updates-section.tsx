@@ -16,6 +16,7 @@ import {
   FileCheck,
   Vote,
   Lock,
+  Pencil,
 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
 import { Embeds, type PreviewPrefs } from "@/lib/embeds";
@@ -28,6 +29,7 @@ interface TimelineEntry {
   id: string;
   kind: "update" | "activity";
   createdAt: string;
+  updatedAt?: string;
   // Update fields
   content?: string;
   attachmentUrl?: string;
@@ -87,10 +89,14 @@ export function UpdatesSection({
   projectId,
   isArchived,
   onFileChange,
+  currentUserId = null,
+  currentRole = null,
 }: {
   projectId: string;
   isArchived: boolean;
   onFileChange?: () => void;
+  currentUserId?: string | null;
+  currentRole?: string | null;
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -101,6 +107,11 @@ export function UpdatesSection({
   const [newAttachment, setNewAttachment] = useState<File | null>(null);
   const [posting, setPosting] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  const isPrivileged = currentRole === "owner" || currentRole === "admin";
 
   const loadTimeline = useCallback(() => {
     apiFetch<PaginatedResponse<TimelineEntry>>(
@@ -116,6 +127,37 @@ export function UpdatesSection({
   useEffect(() => {
     loadTimeline();
   }, [loadTimeline]);
+
+  const startEdit = (entry: TimelineEntry): void => {
+    setEditingId(entry.id);
+    setEditDraft(entry.content || "");
+  };
+
+  const cancelEdit = (): void => {
+    setEditingId(null);
+    setEditDraft("");
+  };
+
+  const saveEdit = async (updateId: string): Promise<void> => {
+    const content = editDraft.trim();
+    if (!content) return;
+    setEditSaving(true);
+    try {
+      await apiFetch(`/updates/${updateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      setEditingId(null);
+      setEditDraft("");
+      loadTimeline();
+      success("Update edited");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to edit update");
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const handlePost = async () => {
     if (!newContent.trim()) return;
@@ -333,6 +375,14 @@ export function UpdatesSection({
           const attachmentSrc = entry.fileId
             ? `${API_URL}/api/files/${entry.fileId}/download`
             : entry.attachmentUrl || `${API_URL}/api/updates/${entry.id}/attachment`;
+          const isAuthor =
+            !!currentUserId && !!entry.author?.id && entry.author.id === currentUserId;
+          const canEdit = isAuthor || isPrivileged || !currentRole;
+          const isEditing = editingId === entry.id;
+          const showEdited =
+            !!entry.updatedAt &&
+            new Date(entry.updatedAt).getTime() - new Date(entry.createdAt).getTime() >
+              2 * 60 * 1000;
           return (
             <div
               key={entry.id}
@@ -344,23 +394,69 @@ export function UpdatesSection({
                   <span className="text-xs text-[var(--muted-foreground)]">
                     {formatRelativeTime(entry.createdAt)}
                   </span>
+                  {showEdited && (
+                    <span className="text-xs text-[var(--muted-foreground)] italic">
+                      (edited)
+                    </span>
+                  )}
                 </div>
-                {!isArchived && (
-                  <button
-                    onClick={() => handleDelete(entry.id)}
-                    className="flex items-center gap-1 px-2 py-1 text-xs text-red-500 hover:underline"
-                  >
-                    <Trash2 size={12} />
-                    Delete
-                  </button>
+                {!isArchived && !isEditing && (
+                  <div className="flex items-center gap-1">
+                    {canEdit && (
+                      <button
+                        onClick={() => startEdit(entry)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:underline"
+                      >
+                        <Pencil size={12} />
+                        Edit
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(entry.id)}
+                      className="flex items-center gap-1 px-2 py-1 text-xs text-red-500 hover:underline"
+                    >
+                      <Trash2 size={12} />
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
-              <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
-              <Embeds
-                text={entry.content || ""}
-                prefs={entry.previewPrefs ?? undefined}
-                onPrefsChange={(next) => handlePrefsChange(entry.id, next)}
-              />
+              {isEditing ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={editDraft}
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    maxLength={5000}
+                    rows={4}
+                    autoFocus
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={cancelEdit}
+                      className="px-3 py-1 border border-[var(--border)] rounded-lg text-xs hover:bg-[var(--muted)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => saveEdit(entry.id)}
+                      disabled={editSaving || !editDraft.trim()}
+                      className="px-3 py-1 bg-[var(--primary)] text-white rounded-lg text-xs hover:opacity-90 disabled:opacity-50"
+                    >
+                      {editSaving ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
+                  <Embeds
+                    text={entry.content || ""}
+                    prefs={entry.previewPrefs ?? undefined}
+                    onPrefsChange={(next) => handlePrefsChange(entry.id, next)}
+                  />
+                </>
+              )}
               {entry.hasAttachment && isImage && (
                 <img
                   src={attachmentSrc}

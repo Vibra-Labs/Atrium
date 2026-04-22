@@ -27,6 +27,7 @@ import {
   Paperclip,
   ExternalLink,
   Link as LinkIcon,
+  Pencil,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
@@ -65,6 +66,7 @@ interface TimelineEntry {
   id: string;
   kind: "update" | "activity";
   createdAt: string;
+  updatedAt?: string;
   // Update fields
   content?: string;
   attachmentUrl?: string;
@@ -229,6 +231,9 @@ export default function PortalProjectDetailPage() {
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<string>("");
+  const [savingEdit, setSavingEdit] = useState<boolean>(false);
 
   // Deep-link sync for task modal
   useEffect(() => {
@@ -335,6 +340,37 @@ export default function PortalProjectDetailPage() {
       toast.error(err instanceof Error ? err.message : "Failed to post update");
     } finally {
       setPostingUpdate(false);
+    }
+  };
+
+  const handleStartEdit = (entry: TimelineEntry): void => {
+    setEditingId(entry.id);
+    setEditDraft(entry.content || "");
+  };
+
+  const handleCancelEdit = (): void => {
+    setEditingId(null);
+    setEditDraft("");
+  };
+
+  const handleSaveEdit = async (updateId: string): Promise<void> => {
+    const content = editDraft.trim();
+    if (!content) return;
+    setSavingEdit(true);
+    try {
+      await apiFetch(`/updates/${updateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      toast.success("Update edited");
+      setEditingId(null);
+      setEditDraft("");
+      loadUpdates();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to edit update");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -760,23 +796,90 @@ export default function PortalProjectDetailPage() {
                 const attachmentSrc = entry.fileId
                   ? `${API_URL}/api/files/${entry.fileId}/download`
                   : entry.attachmentUrl || `${API_URL}/api/updates/${entry.id}/attachment`;
+                const isOwnUpdate =
+                  sessionLoaded &&
+                  currentUserId !== null &&
+                  entry.author?.id === currentUserId;
+                const isEditing = editingId === entry.id;
+                const wasEdited =
+                  !!entry.updatedAt &&
+                  new Date(entry.updatedAt).getTime() -
+                    new Date(entry.createdAt).getTime() >
+                    2 * 60 * 1000;
                 return (
                   <div
                     key={entry.id}
                     className="border border-[var(--border)] rounded-lg p-4"
                   >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm font-medium">{entry.author?.name}</span>
-                      <span className="text-xs text-[var(--muted-foreground)]">
-                        {formatRelativeTime(entry.createdAt)}
-                      </span>
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium">{entry.author?.name}</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">
+                          {formatRelativeTime(entry.createdAt)}
+                        </span>
+                        {wasEdited && (
+                          <span
+                            data-testid="update-edited-indicator"
+                            className="text-xs text-[var(--muted-foreground)] italic"
+                          >
+                            (edited)
+                          </span>
+                        )}
+                      </div>
+                      {isOwnUpdate && !isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(entry)}
+                          aria-label="Edit update"
+                          data-testid={`edit-update-${entry.id}`}
+                          className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                        >
+                          <Pencil size={12} />
+                          Edit
+                        </button>
+                      )}
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
-                    <Embeds
-                      text={entry.content || ""}
-                      prefs={entry.previewPrefs ?? undefined}
-                      onPrefsChange={(next) => handlePrefsChange(entry.id, next)}
-                    />
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          maxLength={5000}
+                          rows={4}
+                          autoFocus
+                          data-testid={`edit-update-textarea-${entry.id}`}
+                          className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            disabled={savingEdit}
+                            className="px-3 py-1 border border-[var(--border)] rounded-lg text-xs hover:bg-[var(--muted)] transition-colors disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(entry.id)}
+                            disabled={savingEdit || !editDraft.trim()}
+                            data-testid={`save-update-${entry.id}`}
+                            className="px-3 py-1 bg-[var(--primary)] text-white rounded-lg text-xs hover:opacity-90 disabled:opacity-50"
+                          >
+                            {savingEdit ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
+                        <Embeds
+                          text={entry.content || ""}
+                          prefs={entry.previewPrefs ?? undefined}
+                          onPrefsChange={(next) => handlePrefsChange(entry.id, next)}
+                        />
+                      </>
+                    )}
                     {entry.hasAttachment && isImage && (
                       <img
                         src={attachmentSrc}

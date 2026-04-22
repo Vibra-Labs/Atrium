@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUrl, MaxLength, MinLength } from "class-validator";
+import { IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength } from "class-validator";
 
 export class CreateFileLinkDto {
   @IsString()
@@ -17,4 +17,23 @@ export class CreateFileLinkDto {
   @IsString()
   @MaxLength(1000)
   description?: string;
+}
+
+export class UpdateFileDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  filename?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  @Matches(/^https?:\/\//i, { message: "url must start with http:// or https://" })
+  url?: string;
 }

@@ -96,24 +96,16 @@ test.describe("Edit flows", () => {
 
     await page.goto(`/dashboard/projects/${projectId}`);
 
-    // Locate the Edit button on the update we just posted. The dashboard
-    // updates-section renders an Edit control beside Delete when the
-    // parallel agent's work lands — look for a button labelled "Edit"
-    // inside the container holding our update text.
-    const updateContainer = page
-      .locator("p", { hasText: "Initial text" })
-      .locator("..")
-      .locator("..")
-      .first();
+    // Locate the entry by its stable test id (the <p> body is replaced by a
+    // textarea once edit mode begins, so we anchor on the entry container).
+    const updateContainer = page.getByTestId(`update-entry-${updateId}`);
     await expect(updateContainer).toBeVisible({ timeout: 10000 });
 
-    const editButton = updateContainer.getByRole("button", { name: /^edit$/i });
-    await editButton.click();
+    await page.getByTestId(`edit-update-${updateId}`).click();
 
-    // Clear the textarea and type the new content.
-    const textarea = updateContainer.getByRole("textbox");
+    const textarea = page.getByTestId(`edit-update-textarea-${updateId}`);
     await textarea.fill("Edited text");
-    await updateContainer.getByRole("button", { name: /^save$/i }).click();
+    await page.getByTestId(`save-update-${updateId}`).click();
 
     // Assert the edited content appears.
     await expect(
@@ -171,33 +163,18 @@ test.describe("Edit flows", () => {
 
     await page.goto(`/dashboard/projects/${projectId}`);
     // Make sure we're on the Files tab.
-    const filesTab = page.getByRole("button", { name: /^files$/i });
-    if (await filesTab.isVisible().catch(() => false)) {
-      await filesTab.click();
-    }
+    await page.getByTestId("project-tab-files").click();
 
-    const row = page
-      .locator("p", { hasText: "Canva" })
-      .locator("..")
-      .locator("..")
-      .first();
+    const row = page.getByTestId(`file-row-${linkId}`);
     await expect(row).toBeVisible({ timeout: 10000 });
 
-    // The parallel-agent work adds a pencil/edit control to each file row.
-    // Look for any button with aria-label containing "edit" or name "Edit".
-    const editControl = row
-      .getByRole("button", { name: /edit/i })
-      .first();
-    await editControl.click();
+    await page.getByTestId(`edit-file-${linkId}`).click();
 
-    // Fill the name + description fields in the modal/drawer that opens.
-    // These field names match the "Add link" dialog shape.
-    const nameField = page.getByLabel(/name|title/i).first();
-    await nameField.fill("Canva (updated)");
-    const descField = page.getByLabel(/description/i).first();
-    await descField.fill("v2");
+    // Fill the name + description fields in the edit modal.
+    await page.getByTestId("edit-file-name").fill("Canva (updated)");
+    await page.getByTestId("edit-file-description").fill("v2");
 
-    await page.getByRole("button", { name: /^save$/i }).click();
+    await page.getByTestId("edit-file-save").click();
 
     // Assert the updated list entry appears.
     await expect(
@@ -318,18 +295,21 @@ test.describe("Edit flows", () => {
       "Could not resolve client user id via members/clients APIs",
     );
 
-    const assignRes = await ownerPage.request.post(
-      `${API}/projects/${projectId}/clients`,
+    const assignRes = await ownerPage.request.put(
+      `${API}/projects/${projectId}`,
       {
-        data: { userId: clientUserId },
-        headers: { "x-csrf-token": ownerCsrf },
+        data: { clientUserIds: [clientUserId] },
+        headers: {
+          "x-csrf-token": ownerCsrf,
+          "Content-Type": "application/json",
+        },
       },
     );
     expect(assignRes.ok()).toBeTruthy();
 
     // 4. As the client, open the project in the portal and post an update.
     await clientPage.goto(`${WEB_URL}/portal/projects/${projectId}`, {
-      waitUntil: "networkidle",
+      waitUntil: "domcontentloaded",
       timeout: 15000,
     });
 
@@ -344,47 +324,61 @@ test.describe("Edit flows", () => {
       .click();
 
     // The client's own update is visible.
-    const ownContainer = clientPage
-      .locator("p", { hasText: "Client posted this" })
-      .locator("..")
-      .locator("..")
-      .first();
-    await expect(ownContainer).toBeVisible({ timeout: 10000 });
+    await expect(
+      clientPage.locator("p", { hasText: "Client posted this" }).first(),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Resolve the update id via the timeline API so we can use stable testids
+    // (the <p> body is replaced by a textarea once edit mode begins).
+    const ownTimelineRes = await clientPage.request.get(
+      `${API}/updates/timeline/mine/${projectId}`,
+    );
+    expect(ownTimelineRes.ok()).toBeTruthy();
+    const ownTimeline = await ownTimelineRes.json();
+    const ownEntries = (ownTimeline.data ?? ownTimeline) as Array<{
+      id: string;
+      content?: string;
+    }>;
+    const ownEntry = ownEntries.find((e) => e.content === "Client posted this");
+    expect(ownEntry).toBeTruthy();
+    const ownUpdateId = ownEntry!.id;
 
     // Edit button must be visible on the client's own update.
-    const editOwn = ownContainer.getByRole("button", {
-      name: /edit update|^edit$/i,
-    });
+    const editOwn = clientPage.getByTestId(`edit-update-${ownUpdateId}`);
     await expect(editOwn).toBeVisible({ timeout: 10000 });
 
     // Edit the text.
     await editOwn.click();
-    const editTextarea = ownContainer.getByRole("textbox").first();
-    await editTextarea.fill("Client edited this");
-    await ownContainer.getByRole("button", { name: /^save$/i }).click();
+    await clientPage
+      .getByTestId(`edit-update-textarea-${ownUpdateId}`)
+      .fill("Client edited this");
+    await clientPage.getByTestId(`save-update-${ownUpdateId}`).click();
 
     await expect(
       clientPage.locator("p", { hasText: "Client edited this" }).first(),
     ).toBeVisible({ timeout: 10000 });
 
     // 5. As the agency owner, post a second update on the same project.
-    await ownerPage.request.post(`${API}/updates?projectId=${projectId}`, {
-      multipart: { content: "Agency posted this" },
-      headers: { "x-csrf-token": ownerCsrf },
-    });
+    const agencyPostRes = await ownerPage.request.post(
+      `${API}/updates?projectId=${projectId}`,
+      {
+        multipart: { content: "Agency posted this" },
+        headers: { "x-csrf-token": ownerCsrf },
+      },
+    );
+    expect(agencyPostRes.ok()).toBeTruthy();
+    const agencyUpdate = await agencyPostRes.json();
+    const agencyUpdateId = agencyUpdate.id as string;
 
     // 6. Reload the client view and confirm:
     //    - the agency update is visible
     //    - there is NO Edit button on it (not author)
     await clientPage.reload({ waitUntil: "networkidle" });
-    const agencyContainer = clientPage
-      .locator("p", { hasText: "Agency posted this" })
-      .locator("..")
-      .locator("..")
-      .first();
-    await expect(agencyContainer).toBeVisible({ timeout: 10000 });
     await expect(
-      agencyContainer.getByRole("button", { name: /edit update|^edit$/i }),
+      clientPage.locator("p", { hasText: "Agency posted this" }).first(),
+    ).toBeVisible({ timeout: 10000 });
+    await expect(
+      clientPage.getByTestId(`edit-update-${agencyUpdateId}`),
     ).toHaveCount(0);
 
     await ownerCtx.close();

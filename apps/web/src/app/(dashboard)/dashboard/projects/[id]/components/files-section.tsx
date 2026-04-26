@@ -867,6 +867,7 @@ export function FilesSection({
                   handleCardClick();
                 }
               }}
+              data-testid={`file-row-${file.id}`}
               className="p-3 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
             >
               <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
@@ -902,6 +903,8 @@ export function FilesSection({
                     <button
                       onClick={(e) => { e.stopPropagation(); openEditFile(file); }}
                       title="Edit"
+                      aria-label="Edit file"
+                      data-testid={`edit-file-${file.id}`}
                       className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
                     >
                       <Pencil size={14} />
@@ -1132,6 +1135,7 @@ export function FilesSection({
                   value={editUrl}
                   onChange={(e) => setEditUrl(e.target.value)}
                   placeholder="https://..."
+                  data-testid="edit-file-url"
                   className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                 />
               </div>
@@ -1145,6 +1149,7 @@ export function FilesSection({
                 value={editFilename}
                 onChange={(e) => setEditFilename(e.target.value)}
                 maxLength={255}
+                data-testid="edit-file-name"
                 className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
               />
             </div>
@@ -1155,6 +1160,7 @@ export function FilesSection({
                 onChange={(e) => setEditDescription(e.target.value)}
                 placeholder="What is this for?"
                 rows={2}
+                data-testid="edit-file-description"
                 className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none"
               />
             </div>
@@ -1172,6 +1178,7 @@ export function FilesSection({
                   !editFilename.trim() ||
                   (editFile.type === "LINK" && !editUrl.trim())
                 }
+                data-testid="edit-file-save"
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
               >
                 {editSaving ? "Saving..." : "Save"}

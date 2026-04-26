@@ -386,6 +386,7 @@ export function UpdatesSection({
           return (
             <div
               key={entry.id}
+              data-testid={`update-entry-${entry.id}`}
               className="border border-[var(--border)] rounded-lg p-4"
             >
               <div className="flex items-center justify-between mb-2">
@@ -395,7 +396,10 @@ export function UpdatesSection({
                     {formatRelativeTime(entry.createdAt)}
                   </span>
                   {showEdited && (
-                    <span className="text-xs text-[var(--muted-foreground)] italic">
+                    <span
+                      data-testid="update-edited-indicator"
+                      className="text-xs text-[var(--muted-foreground)] italic"
+                    >
                       (edited)
                     </span>
                   )}
@@ -405,6 +409,8 @@ export function UpdatesSection({
                     {canEdit && (
                       <button
                         onClick={() => startEdit(entry)}
+                        aria-label="Edit update"
+                        data-testid={`edit-update-${entry.id}`}
                         className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:underline"
                       >
                         <Pencil size={12} />
@@ -429,6 +435,7 @@ export function UpdatesSection({
                     maxLength={5000}
                     rows={4}
                     autoFocus
+                    data-testid={`edit-update-textarea-${entry.id}`}
                     className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
                   />
                   <div className="flex justify-end gap-2">
@@ -441,6 +448,7 @@ export function UpdatesSection({
                     <button
                       onClick={() => saveEdit(entry.id)}
                       disabled={editSaving || !editDraft.trim()}
+                      data-testid={`save-update-${entry.id}`}
                       className="px-3 py-1 bg-[var(--primary)] text-white rounded-lg text-xs hover:opacity-90 disabled:opacity-50"
                     >
                       {editSaving ? "Saving..." : "Save"}

@@ -438,6 +438,7 @@ export default function ProjectDetailPage() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            data-testid={`project-tab-${tab.id}`}
             onClick={() => setActiveTab(tab.id)}
             className={`px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors relative after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:rounded-full ${
               activeTab === tab.id

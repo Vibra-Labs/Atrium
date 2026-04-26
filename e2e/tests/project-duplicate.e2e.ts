@@ -19,9 +19,8 @@ test.describe("Project duplication", () => {
     const source = await projectRes.json();
 
     // 2. Seed two tasks (one done, assigned; one decision)
-    const t1 = await request.post(`${API}/tasks`, {
+    const t1 = await request.post(`${API}/tasks?projectId=${source.id}`, {
       data: {
-        projectId: source.id,
         title: "Kickoff meeting",
         description: "Run the kickoff",
       },
@@ -37,12 +36,12 @@ test.describe("Project duplication", () => {
     });
     expect(t1Update.ok()).toBeTruthy();
 
-    const t2 = await request.post(`${API}/tasks`, {
+    const t2 = await request.post(`${API}/tasks?projectId=${source.id}`, {
       data: {
-        projectId: source.id,
         title: "Pick a direction",
         type: "decision",
         question: "Which way?",
+        options: [{ label: "Left" }, { label: "Right" }],
       },
       headers: { "x-csrf-token": csrfToken, "Content-Type": "application/json" },
     });
@@ -110,8 +109,8 @@ test.describe("Project duplication", () => {
     });
     const source = await projectRes.json();
 
-    await request.post(`${API}/tasks`, {
-      data: { projectId: source.id, title: "Only task" },
+    await request.post(`${API}/tasks?projectId=${source.id}`, {
+      data: { title: "Only task" },
       headers: { "x-csrf-token": csrfToken, "Content-Type": "application/json" },
     });
 

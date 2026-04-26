@@ -407,9 +407,15 @@ describe("AccountService", () => {
 
       await service.deleteAccount("user-1", "correct-password");
 
-      // Storage keys should be queried for the org being deleted
+      // Storage keys should be queried for the org being deleted, scoped to
+      // UPLOAD-type files with a non-null storageKey (link-type files have no
+      // storage to purge).
       expect(mockPrisma.file.findMany).toHaveBeenCalledWith({
-        where: { organizationId: { in: ["org-1"] } },
+        where: {
+          organizationId: { in: ["org-1"] },
+          type: "UPLOAD",
+          storageKey: { not: null },
+        },
         select: { storageKey: true },
       });
 

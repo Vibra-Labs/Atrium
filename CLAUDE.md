@@ -115,3 +115,4 @@ See `.env.example` for all variables.
 ## Git
 
 - Never add `Co-Authored-By` lines to commit messages. All commits should show only the user as author.
+- **Releases mean tagging, not PRs.** When asked to "create a release", create a git tag on `main` (e.g. `git tag v1.4.3 && git push origin v1.4.3`). Do not open a PR for a release. PRs are for feature branches merging into main.

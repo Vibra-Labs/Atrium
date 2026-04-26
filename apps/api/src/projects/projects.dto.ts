@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsDateString, MaxLength } from "class-validator";
+import { IsString, IsOptional, IsArray, IsBoolean, IsDateString, MaxLength } from "class-validator";
 import { PaginationQueryDto } from "../common";
 
 export class CreateProjectDto {
@@ -51,6 +51,20 @@ export class ProjectListQueryDto extends ClientProjectListQueryDto {
   @IsOptional()
   @MaxLength(2000)
   labels?: string;
+}
+
+export class DuplicateProjectDto {
+  @IsString()
+  @MaxLength(255)
+  name!: string;
+
+  @IsBoolean()
+  @IsOptional()
+  includeTasks?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  includeClients?: boolean;
 }
 
 export class UpdateProjectDto {

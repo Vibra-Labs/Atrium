@@ -2,6 +2,21 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Link-type file entries** — The Files section now supports adding external links (Nextcloud, Canva, Notion, Google Drive, etc.) alongside hard-uploaded files. A single "+ Add" menu on the project files header replaces the previous upload button with two clearly labeled options (Upload file / Add link). Link entries open in a new tab and do not count against the plan storage quota. Visible read-only in the client portal.
+- **oEmbed discovery for project updates** — Project update URLs are now resolved via a server-side oEmbed registry covering Canva, Spotify, SoundCloud, CodePen, and Vimeo. Existing regex providers (YouTube, Loom, Figma, Google Docs) remain a zero-network fast path. Provider HTML is sanitized to an iframe-only allowlist with per-provider host pinning; failed resolutions silently degrade to plain links. Embed cards are capped to `max-w-xl` so they don't dominate the timeline. Twitter/X is intentionally deferred — its oEmbed response is a `<blockquote>` + widgets.js script, which our iframe-only sanitizer rejects.
+
+### Changed
+
+- `POST /files/link` endpoint added (owner/admin only). `download`/`remove` paths branch on file `type` so link entries are never fetched from storage. CSP `frame-src` extended for the new providers' embed hosts.
+
+### Database
+
+- `File.type` (`UPLOAD | LINK`, default `UPLOAD`), `File.url`, `File.description` added. `storageKey`/`mimeType`/`sizeBytes` are now nullable to accommodate link entries; all existing readers filter to `type = UPLOAD` or tolerate nulls.
+
 ## [1.4.4] — 2026-04-21
 
 ### Added

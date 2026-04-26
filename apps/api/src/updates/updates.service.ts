@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from "@nestjs/common";
+import type { ProjectUpdate } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ActivityService } from "../activity/activity.service";
@@ -26,6 +27,20 @@ const IMAGE_TYPES = new Set([
   "image/webp",
 ]);
 
+type PreviewPrefsMap = Record<
+  string,
+  { size?: "compact" | "full"; hidden?: boolean }
+>;
+
+// Prisma surfaces `previewPrefs` as its internal `JsonValue`, which can't be
+// named across package boundaries. Narrow to our own shape at the response
+// boundary so the inferred controller return types stay portable.
+function coercePreviewPrefs(value: unknown): PreviewPrefsMap | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as PreviewPrefsMap)
+    : null;
+}
+
 @Injectable()
 export class UpdatesService {
   constructor(
@@ -42,7 +57,7 @@ export class UpdatesService {
     authorId: string,
     role: string,
     attachment?: UploadedFile,
-  ) {
+  ): Promise<ProjectUpdate> {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId },
     });
@@ -152,9 +167,11 @@ export class UpdatesService {
           hasAttachment: !!u.attachmentKey || !!u.fileId,
           fileId: u.fileId,
           projectId: u.projectId,
+          previewPrefs: coercePreviewPrefs(u.previewPrefs),
           author: author ?? { id: u.authorId, name: "Unknown" },
           commentCount: u._count.comments,
           createdAt: u.createdAt,
+          updatedAt: u.updatedAt,
         };
       }),
     );
@@ -241,12 +258,14 @@ export class UpdatesService {
           id: u.id,
           kind: "update" as const,
           createdAt: u.createdAt,
+          updatedAt: u.updatedAt,
           content: u.content,
           attachmentUrl,
           attachmentName: u.attachmentName,
           attachmentMimeType: u.attachmentMimeType,
           hasAttachment: !!u.attachmentKey || !!u.fileId,
           fileId: u.fileId,
+          previewPrefs: coercePreviewPrefs(u.previewPrefs),
           author: author ?? { id: u.authorId, name: "Unknown" },
           commentCount: u._count.comments,
         };
@@ -292,6 +311,56 @@ export class UpdatesService {
     }
 
     return this.findTimeline(projectId, organizationId, page, limit);
+  }
+
+  async update(
+    id: string,
+    dto: { content: string },
+    organizationId: string,
+    userId: string,
+    role: string,
+  ): Promise<ProjectUpdate> {
+    const update = await this.prisma.projectUpdate.findFirst({
+      where: { id, organizationId },
+    });
+    if (!update) throw new NotFoundException("Update not found");
+
+    const isPrivileged = role === "owner" || role === "admin";
+    const isAuthor = update.authorId === userId;
+    if (!isAuthor && !isPrivileged) {
+      throw new ForbiddenException("Cannot edit this update");
+    }
+
+    // Ensure the user still has access to the project — a client removed
+    // from the project should not be able to edit their old updates.
+    await assertProjectAccess(this.prisma, update.projectId, userId, role, organizationId);
+
+    return this.prisma.projectUpdate.update({
+      where: { id },
+      data: { content: dto.content },
+    });
+  }
+
+  async updatePreviewPrefs(
+    id: string,
+    organizationId: string,
+    userId: string,
+    role: string,
+    previewPrefs: Record<string, { size?: "compact" | "full"; hidden?: boolean }>,
+  ): Promise<ProjectUpdate> {
+    const update = await this.prisma.projectUpdate.findFirst({
+      where: { id, organizationId },
+    });
+    if (!update) throw new NotFoundException("Update not found");
+
+    // Anyone with access to the project can tweak preview prefs on an update.
+    // Prefs are a display hint, not content — no stricter guard needed.
+    await assertProjectAccess(this.prisma, update.projectId, userId, role, organizationId);
+
+    return this.prisma.projectUpdate.update({
+      where: { id },
+      data: { previewPrefs: previewPrefs as object },
+    });
   }
 
   async remove(id: string, organizationId: string) {

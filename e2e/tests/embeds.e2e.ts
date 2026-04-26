@@ -97,4 +97,80 @@ test.describe("Content Embeds", () => {
       page.locator('iframe[src*="loom.com/embed"]').first(),
     ).toBeVisible({ timeout: 10000 });
   });
+
+  test("Canva URL in update renders iframe via mocked oEmbed response", async ({
+    page,
+    request,
+  }) => {
+    test.skip(!projectId, "No project available");
+
+    const csrfToken = getCsrfToken();
+    const canvaUrl = "https://www.canva.com/design/DAF0000TEST/view";
+    await request.post(`${API}/updates?projectId=${projectId}`, {
+      multipart: {
+        content: `Check the board: ${canvaUrl}`,
+      },
+      headers: { "x-csrf-token": csrfToken },
+    });
+
+    // Mock the browser-side call to /api/embeds/resolve so we don't hit
+    // Canva's real oEmbed endpoint from the test environment.
+    await page.route("**/api/embeds/resolve*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          html: '<iframe src="https://www.canva.com/design/DAF0000TEST/view?embed" width="800" height="500"></iframe>',
+          width: 800,
+          height: 500,
+          providerName: "Canva",
+          title: "Test Canva Design",
+        }),
+      });
+    });
+
+    await page.goto(`/dashboard/projects/${projectId}`);
+    await expect(
+      page
+        .locator('iframe[src*="canva.com/design/DAF0000TEST"]')
+        .first(),
+    ).toBeVisible({ timeout: 10000 });
+  });
+
+  test("oEmbed failure degrades to plain link (no iframe)", async ({
+    page,
+    request,
+  }) => {
+    test.skip(!projectId, "No project available");
+
+    const csrfToken = getCsrfToken();
+    const vimeoUrl = "https://vimeo.com/000000000";
+    const content = `See: ${vimeoUrl}`;
+    await request.post(`${API}/updates?projectId=${projectId}`, {
+      multipart: { content },
+      headers: { "x-csrf-token": csrfToken },
+    });
+
+    // Simulate an unresolvable oEmbed URL.
+    await page.route("**/api/embeds/resolve*", async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "No oEmbed provider" }),
+      });
+    });
+
+    await page.goto(`/dashboard/projects/${projectId}`);
+
+    // The update itself must render, and the plain linkified URL must be
+    // visible, but no Vimeo iframe should appear.
+    const updateContainer = page
+      .locator("p", { hasText: "See:" })
+      .locator("..")
+      .first();
+    await expect(updateContainer).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.locator('iframe[src*="player.vimeo.com"]'),
+    ).not.toBeVisible();
+  });
 });

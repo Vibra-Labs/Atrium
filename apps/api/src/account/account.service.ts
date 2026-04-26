@@ -97,10 +97,10 @@ export class AccountService {
     let storageKeys: string[] = [];
     if (orgsToDelete.length > 0) {
       const files = await this.prisma.file.findMany({
-        where: { organizationId: { in: orgsToDelete } },
+        where: { organizationId: { in: orgsToDelete }, type: "UPLOAD", storageKey: { not: null } },
         select: { storageKey: true },
       });
-      storageKeys = files.map((f) => f.storageKey);
+      storageKeys = files.map((f) => f.storageKey).filter((k): k is string => k !== null);
     }
 
     await this.prisma.$transaction(async (tx) => {

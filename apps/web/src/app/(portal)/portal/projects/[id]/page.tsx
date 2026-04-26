@@ -25,10 +25,13 @@ import {
   Clock,
   Plus,
   Paperclip,
+  ExternalLink,
+  Link as LinkIcon,
+  Pencil,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
-import { getEmbeds, EmbedPreview } from "@/lib/embeds";
+import { Embeds, type PreviewPrefs } from "@/lib/embeds";
 import { downloadFile } from "@/lib/download";
 import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
@@ -41,8 +44,11 @@ import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
 interface FileRecord {
   id: string;
   filename: string;
-  mimeType: string;
-  sizeBytes: number;
+  type?: "UPLOAD" | "LINK";
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  url?: string | null;
+  description?: string | null;
   createdAt: string;
 }
 
@@ -60,6 +66,7 @@ interface TimelineEntry {
   id: string;
   kind: "update" | "activity";
   createdAt: string;
+  updatedAt?: string;
   // Update fields
   content?: string;
   attachmentUrl?: string;
@@ -67,6 +74,7 @@ interface TimelineEntry {
   attachmentMimeType?: string;
   hasAttachment?: boolean;
   fileId?: string;
+  previewPrefs?: PreviewPrefs | null;
   author?: { id: string; name: string };
   commentCount?: number;
   // Activity fields
@@ -223,6 +231,9 @@ export default function PortalProjectDetailPage() {
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<string>("");
+  const [savingEdit, setSavingEdit] = useState<boolean>(false);
 
   // Deep-link sync for task modal
   useEffect(() => {
@@ -266,6 +277,22 @@ export default function PortalProjectDetailPage() {
       })
       .catch(console.error);
   }, [id, updatesPage]);
+
+  const handlePrefsChange = async (updateId: string, next: PreviewPrefs) => {
+    // Optimistic — prefs are display state, tolerate PATCH failures silently.
+    setUpdates((prev) =>
+      prev.map((e) => (e.id === updateId ? { ...e, previewPrefs: next } : e)),
+    );
+    try {
+      await apiFetch(`/updates/${updateId}/preview-prefs`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewPrefs: next }),
+      });
+    } catch (err) {
+      console.error("Failed to save preview prefs", err);
+    }
+  };
 
   const loadTasks = useCallback(() => {
     apiFetch<PaginatedResponse<TaskRecord>>(
@@ -313,6 +340,37 @@ export default function PortalProjectDetailPage() {
       toast.error(err instanceof Error ? err.message : "Failed to post update");
     } finally {
       setPostingUpdate(false);
+    }
+  };
+
+  const handleStartEdit = (entry: TimelineEntry): void => {
+    setEditingId(entry.id);
+    setEditDraft(entry.content || "");
+  };
+
+  const handleCancelEdit = (): void => {
+    setEditingId(null);
+    setEditDraft("");
+  };
+
+  const handleSaveEdit = async (updateId: string): Promise<void> => {
+    const content = editDraft.trim();
+    if (!content) return;
+    setSavingEdit(true);
+    try {
+      await apiFetch(`/updates/${updateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      toast.success("Update edited");
+      setEditingId(null);
+      setEditDraft("");
+      loadUpdates();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to edit update");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -738,21 +796,90 @@ export default function PortalProjectDetailPage() {
                 const attachmentSrc = entry.fileId
                   ? `${API_URL}/api/files/${entry.fileId}/download`
                   : entry.attachmentUrl || `${API_URL}/api/updates/${entry.id}/attachment`;
+                const isOwnUpdate =
+                  sessionLoaded &&
+                  currentUserId !== null &&
+                  entry.author?.id === currentUserId;
+                const isEditing = editingId === entry.id;
+                const wasEdited =
+                  !!entry.updatedAt &&
+                  new Date(entry.updatedAt).getTime() -
+                    new Date(entry.createdAt).getTime() >
+                    2 * 60 * 1000;
                 return (
                   <div
                     key={entry.id}
                     className="border border-[var(--border)] rounded-lg p-4"
                   >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm font-medium">{entry.author?.name}</span>
-                      <span className="text-xs text-[var(--muted-foreground)]">
-                        {formatRelativeTime(entry.createdAt)}
-                      </span>
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium">{entry.author?.name}</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">
+                          {formatRelativeTime(entry.createdAt)}
+                        </span>
+                        {wasEdited && (
+                          <span
+                            data-testid="update-edited-indicator"
+                            className="text-xs text-[var(--muted-foreground)] italic"
+                          >
+                            (edited)
+                          </span>
+                        )}
+                      </div>
+                      {isOwnUpdate && !isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(entry)}
+                          aria-label="Edit update"
+                          data-testid={`edit-update-${entry.id}`}
+                          className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                        >
+                          <Pencil size={12} />
+                          Edit
+                        </button>
+                      )}
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
-                    {getEmbeds(entry.content || "").map((embed) => (
-                      <EmbedPreview key={embed.embedUrl} embed={embed} />
-                    ))}
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          maxLength={5000}
+                          rows={4}
+                          autoFocus
+                          data-testid={`edit-update-textarea-${entry.id}`}
+                          className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            disabled={savingEdit}
+                            className="px-3 py-1 border border-[var(--border)] rounded-lg text-xs hover:bg-[var(--muted)] transition-colors disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(entry.id)}
+                            disabled={savingEdit || !editDraft.trim()}
+                            data-testid={`save-update-${entry.id}`}
+                            className="px-3 py-1 bg-[var(--primary)] text-white rounded-lg text-xs hover:opacity-90 disabled:opacity-50"
+                          >
+                            {savingEdit ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm whitespace-pre-wrap">{linkify(entry.content || "")}</p>
+                        <Embeds
+                          text={entry.content || ""}
+                          prefs={entry.previewPrefs ?? undefined}
+                          onPrefsChange={(next) => handlePrefsChange(entry.id, next)}
+                        />
+                      </>
+                    )}
                     {entry.hasAttachment && isImage && (
                       <img
                         src={attachmentSrc}
@@ -1037,30 +1164,67 @@ export default function PortalProjectDetailPage() {
                 </label>
               </div>
               <div className="space-y-2">
-                {sortedFiles.map((file) => (
-                  <div
-                    key={file.id}
-                    className="p-3 border border-[var(--border)] rounded-lg"
-                  >
-                    <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {file.filename}
-                        </p>
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          {formatBytes(file.sizeBytes)}
-                        </p>
+                {sortedFiles.map((file) => {
+                  const isLink = file.type === "LINK";
+                  let hostname = "";
+                  if (isLink && file.url) {
+                    try { hostname = new URL(file.url).hostname; } catch { hostname = file.url; }
+                  }
+                  const handleCardClick = () => {
+                    if (isLink && file.url) {
+                      window.open(file.url, "_blank", "noopener,noreferrer");
+                    } else {
+                      handleDownload(file.id, file.filename);
+                    }
+                  };
+                  return (
+                    <div
+                      key={file.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={handleCardClick}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleCardClick();
+                        }
+                      }}
+                      className="p-3 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                    >
+                      <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
+                        <div className="min-w-0 flex items-start gap-2">
+                          {isLink ? (
+                            <LinkIcon size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                          ) : (
+                            <FileText size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {file.filename}
+                            </p>
+                            {isLink ? (
+                              <p className="text-xs text-[var(--muted-foreground)] truncate">
+                                {hostname}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-[var(--muted-foreground)]">
+                                {formatBytes(file.sizeBytes ?? 0)}
+                              </p>
+                            )}
+                            {isLink && file.description && (
+                              <p className="text-xs text-[var(--muted-foreground)] mt-1">{file.description}</p>
+                            )}
+                          </div>
+                        </div>
+                        {isLink ? (
+                          <ExternalLink size={14} className="text-[var(--muted-foreground)] shrink-0" />
+                        ) : (
+                          <Download size={14} className="text-[var(--muted-foreground)] shrink-0" />
+                        )}
                       </div>
-                      <button
-                        onClick={() => handleDownload(file.id, file.filename)}
-                        className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline shrink-0"
-                      >
-                        <Download size={14} />
-                        Download
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {project.files.length === 0 && documents.length === 0 && (
                   <div className="text-center py-8">
                     <FileX size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />

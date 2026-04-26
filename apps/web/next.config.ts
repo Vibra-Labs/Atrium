@@ -23,7 +23,16 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            value: "frame-src https://www.youtube.com https://www.loom.com https://www.figma.com https://docs.google.com;",
+            value:
+              "frame-src " +
+              // Regex-based providers (fast path)
+              "https://www.youtube.com https://www.loom.com https://www.figma.com https://docs.google.com " +
+              // oEmbed providers (resolved via /api/embeds/resolve)
+              "https://www.canva.com https://canva.com " +
+              "https://open.spotify.com " +
+              "https://w.soundcloud.com https://soundcloud.com " +
+              "https://codepen.io " +
+              "https://player.vimeo.com;",
           },
         ],
       },

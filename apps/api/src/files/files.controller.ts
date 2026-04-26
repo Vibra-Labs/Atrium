@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Query,
@@ -13,7 +15,9 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
+import type { File } from "@atrium/database";
 import { FilesService, UploadedFile as UploadedFileType } from "./files.service";
+import { CreateFileLinkDto, UpdateFileDto } from "./files.dto";
 import { AuthGuard, RolesGuard, Roles, PlanLimit, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto, contentDisposition } from "../common";
 
 @Controller("files")
@@ -33,6 +37,20 @@ export class FilesController {
   ) {
     if (!file) throw new BadRequestException("No file provided");
     return this.filesService.upload(file, projectId, orgId, userId);
+  }
+
+  @Post("link")
+  @Roles("owner", "admin")
+  createLink(
+    @Body() dto: CreateFileLinkDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.filesService.createLink(dto.projectId, orgId, userId, {
+      url: dto.url,
+      title: dto.title,
+      description: dto.description,
+    });
   }
 
   @Post("upload/mine")
@@ -92,6 +110,18 @@ export class FilesController {
     @CurrentMember("role") role: string,
   ) {
     return this.filesService.getDownloadUrl(id, orgId, userId, role);
+  }
+
+  @Patch(":id")
+  @Roles("owner", "admin")
+  update(
+    @Param("id") id: string,
+    @Body() dto: UpdateFileDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentMember("role") role: string,
+  ): Promise<File> {
+    return this.filesService.update(id, dto, orgId, userId, role);
   }
 
   @Delete(":id")

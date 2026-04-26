@@ -7,7 +7,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag, Copy } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { LabelPicker } from "@/components/label-picker";
@@ -22,8 +22,11 @@ import { NotesSection } from "./components/notes-section";
 interface FileRecord {
   id: string;
   filename: string;
-  mimeType: string;
-  sizeBytes: number;
+  type?: "UPLOAD" | "LINK";
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  url?: string | null;
+  description?: string | null;
   createdAt: string;
 }
 
@@ -147,7 +150,13 @@ export default function ProjectDetailPage() {
     if (searchParams.get("task")) setActiveTab("tasks");
   }, [searchParams]);
   const [currentRole, setCurrentRole] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateName, setDuplicateName] = useState("");
+  const [duplicateIncludeTasks, setDuplicateIncludeTasks] = useState(true);
+  const [duplicateIncludeClients, setDuplicateIncludeClients] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const isArchived = !!project?.archivedAt;
   const isOwner = currentRole === "owner";
 
@@ -170,6 +179,9 @@ export default function ProjectDetailPage() {
       .catch(console.error);
     apiFetch<{ role: string }>("/auth/organization/get-active-member")
       .then((member) => setCurrentRole(member.role))
+      .catch(console.error);
+    apiFetch<{ user: { id: string } }>("/auth/get-session")
+      .then((s) => setCurrentUserId(s.user.id))
       .catch(console.error);
     apiFetch<LabelRecord[]>("/labels")
       .then(setOrgLabels)
@@ -269,6 +281,39 @@ export default function ProjectDetailPage() {
       success("Project unarchived");
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to unarchive project");
+    }
+  };
+
+  const openDuplicateModal = () => {
+    setDuplicateName(project ? `${project.name} (copy)` : "");
+    setDuplicateIncludeTasks(true);
+    setDuplicateIncludeClients(false);
+    setDuplicateOpen(true);
+  };
+
+  const handleDuplicate = async () => {
+    const name = duplicateName.trim();
+    if (!name) {
+      showError("Name is required");
+      return;
+    }
+    setDuplicating(true);
+    try {
+      const created = await apiFetch<{ id: string }>(`/projects/${id}/duplicate`, {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          includeTasks: duplicateIncludeTasks,
+          includeClients: duplicateIncludeClients,
+        }),
+      });
+      success("Project duplicated");
+      setDuplicateOpen(false);
+      router.push(`/dashboard/projects/${created.id}`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to duplicate project");
+    } finally {
+      setDuplicating(false);
     }
   };
 
@@ -393,6 +438,7 @@ export default function ProjectDetailPage() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            data-testid={`project-tab-${tab.id}`}
             onClick={() => setActiveTab(tab.id)}
             className={`px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors relative after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:rounded-full ${
               activeTab === tab.id
@@ -414,7 +460,13 @@ export default function ProjectDetailPage() {
         <TasksSection projectId={id} isArchived={isArchived} />
       )}
       {activeTab === "updates" && (
-        <UpdatesSection projectId={id} isArchived={isArchived} onFileChange={loadProject} />
+        <UpdatesSection
+          projectId={id}
+          isArchived={isArchived}
+          onFileChange={loadProject}
+          currentUserId={currentUserId}
+          currentRole={currentRole}
+        />
       )}
       {activeTab === "files" && (
         <FilesSection
@@ -423,6 +475,7 @@ export default function ProjectDetailPage() {
           files={project.files}
           onFileChange={loadProject}
           projectClients={clients.filter((c) => assignedIds.has(c.userId))}
+          currentRole={currentRole}
         />
       )}
       {activeTab === "invoices" && (
@@ -451,23 +504,34 @@ export default function ProjectDetailPage() {
 
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-lg font-bold leading-tight">{project.name}</h1>
-          {isArchived ? (
-            <button
-              onClick={handleUnarchive}
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs hover:bg-[var(--muted)] transition-colors"
-            >
-              <ArchiveRestore size={13} />
-              Unarchive
-            </button>
-          ) : (
-            <button
-              onClick={handleArchive}
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
-            >
-              <Archive size={13} />
-              Archive
-            </button>
-          )}
+          <div className="shrink-0 flex items-center gap-1.5">
+            {(currentRole === "owner" || currentRole === "admin") && (
+              <button
+                onClick={openDuplicateModal}
+                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
+              >
+                <Copy size={13} />
+                Duplicate
+              </button>
+            )}
+            {isArchived ? (
+              <button
+                onClick={handleUnarchive}
+                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs hover:bg-[var(--muted)] transition-colors"
+              >
+                <ArchiveRestore size={13} />
+                Unarchive
+              </button>
+            ) : (
+              <button
+                onClick={handleArchive}
+                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
+              >
+                <Archive size={13} />
+                Archive
+              </button>
+            )}
+          </div>
         </div>
         {project.description && (
           <p className="text-xs text-[var(--muted-foreground)] leading-relaxed -mt-1">
@@ -531,6 +595,65 @@ export default function ProjectDetailPage() {
         {tabBar}
         {tabContent}
       </div>
+
+      {duplicateOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) setDuplicateOpen(false); }}
+        >
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-[480px] mx-4 p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Duplicate Project</h3>
+            <div className="space-y-3">
+              <label className="block text-sm">
+                <span className="block mb-1 text-[var(--muted-foreground)]">Name</span>
+                <input
+                  type="text"
+                  value={duplicateName}
+                  onChange={(e) => setDuplicateName(e.target.value)}
+                  autoFocus
+                  maxLength={255}
+                  className="w-full bg-transparent border border-[var(--border)] rounded px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={duplicateIncludeTasks}
+                  onChange={(e) => setDuplicateIncludeTasks(e.target.checked)}
+                />
+                Include tasks
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={duplicateIncludeClients}
+                  onChange={(e) => setDuplicateIncludeClients(e.target.checked)}
+                />
+                Include client assignments
+              </label>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Files, updates, invoices, and notes are not copied.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setDuplicateOpen(false)}
+                disabled={duplicating}
+                className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDuplicate}
+                disabled={duplicating || !duplicateName.trim()}
+                className="px-3 py-1.5 text-sm bg-[var(--foreground)] text-[var(--background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {duplicating ? "Duplicating…" : "Duplicate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

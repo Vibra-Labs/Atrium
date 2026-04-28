@@ -53,6 +53,7 @@ interface EmailConfig {
   from?: string;
   apiKey?: string | null;
   smtp?: Record<string, unknown> | null;
+  isOrgConfigured?: boolean;
 }
 
 function makeSettingsService(emailConfig: EmailConfig | null = null) {
@@ -83,6 +84,7 @@ describe("MailService", () => {
       provider: "smtp",
       from: "noreply@example.com",
       smtp: smtpConfig,
+      isOrgConfigured: true,
     });
 
     const config = makeConfig();
@@ -115,6 +117,7 @@ describe("MailService", () => {
         provider: "smtp",
         from: "noreply@example.com",
         smtp: cfg,
+        isOrgConfigured: true,
       });
     });
 
@@ -139,6 +142,7 @@ describe("MailService", () => {
       apiKey: "re_test_key",
       from: "noreply@example.com",
       smtp: null,
+      isOrgConfigured: true,
     });
 
     const service = new MailService(

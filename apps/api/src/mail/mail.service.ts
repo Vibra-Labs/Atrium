@@ -53,13 +53,21 @@ export class MailService {
     return transporter;
   }
 
-  async send(to: string, subject: string, html: string, organizationId?: string) {
-    // If an organizationId is provided, try to use DB-configured email settings
+  async send(
+    to: string,
+    subject: string,
+    html: string,
+    organizationId?: string,
+  ): Promise<{ sent: boolean; viaOrgConfig: boolean }> {
     if (organizationId) {
       try {
         const emailConfig = await this.settingsService.getEffectiveEmailConfig(organizationId);
 
-        if (emailConfig.provider === "resend" && emailConfig.apiKey) {
+        if (
+          emailConfig.isOrgConfigured &&
+          emailConfig.provider === "resend" &&
+          emailConfig.apiKey
+        ) {
           const resend = new Resend(emailConfig.apiKey);
           await resend.emails.send({
             from: emailConfig.from,
@@ -68,10 +76,14 @@ export class MailService {
             html,
           });
           this.logger.info({ to, subject }, "Email sent via DB-configured Resend");
-          return;
+          return { sent: true, viaOrgConfig: true };
         }
 
-        if (emailConfig.provider === "smtp" && emailConfig.smtp) {
+        if (
+          emailConfig.isOrgConfigured &&
+          emailConfig.provider === "smtp" &&
+          emailConfig.smtp
+        ) {
           const transporter = this.getSmtpTransporter(emailConfig.smtp, organizationId);
           await transporter.sendMail({
             from: emailConfig.from,
@@ -80,10 +92,8 @@ export class MailService {
             html,
           });
           this.logger.info({ to, subject }, "Email sent via DB-configured SMTP");
-          return;
+          return { sent: true, viaOrgConfig: true };
         }
-
-        // If DB config has no provider set, fall through to env-var fallback
       } catch (err) {
         this.logger.warn(
           { error: err instanceof Error ? err.message : String(err) },
@@ -92,10 +102,9 @@ export class MailService {
       }
     }
 
-    // Fallback: use env-var configured Resend client
     if (!this.resend) {
       this.logger.info({ to, subject }, "Email not sent (no email provider configured)");
-      return;
+      return { sent: false, viaOrgConfig: false };
     }
 
     await this.resend.emails.send({
@@ -104,6 +113,7 @@ export class MailService {
       subject,
       html,
     });
-    this.logger.info({ to, subject }, "Email sent");
+    this.logger.info({ to, subject }, "Email sent via env-var Resend");
+    return { sent: true, viaOrgConfig: false };
   }
 }

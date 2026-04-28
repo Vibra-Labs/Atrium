@@ -2,6 +2,17 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.6.1] — 2026-04-27
+
+### Fixed
+
+- **Password reset emails were never sent** — the forgot-password form posted to `/api/auth/forget-password`, an endpoint Better Auth renamed to `/api/auth/request-password-reset` in v1.4. Requests 404'd silently, so no email was generated. Reported in #40.
+- **Auth emails ignored per-org email config** — reset, verification, magic-link, and invitation emails routed through the default sender instead of the System Settings SMTP/Resend config. Each callback now resolves the user's primary org and threads `organizationId` into `MailService.send` so per-org configs are honored.
+
+### Added
+
+- **Admin "Send password reset link" action** — owners and admins can generate a reset URL for any team or client member from `/dashboard/clients`. The link is delivered by email when configured and also surfaced in-app for out-of-band sharing on self-hosted setups where email is unreliable. Owners can reset other owners; admins cannot reset owners; nobody can reset themselves. New `POST /clients/:id/reset-password` endpoint.
+
 ## [1.6.0] — 2026-04-26
 
 ### Added

@@ -1,5 +1,6 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import * as Sentry from "@sentry/nestjs";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -11,10 +12,17 @@ import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
 
+interface AdminResetContext {
+  capturedUrl: string | null;
+  emailSent: boolean;
+  emailViaOrgConfig: boolean;
+}
+
 @Injectable()
 export class AuthService {
   public auth: ReturnType<typeof betterAuth>;
   private readonly logger = new Logger(AuthService.name);
+  private readonly adminResetStorage = new AsyncLocalStorage<AdminResetContext>();
 
   constructor(
     private config: ConfigService,
@@ -81,13 +89,27 @@ export class AuthService {
         enabled: true,
         minPasswordLength: 8,
         maxPasswordLength: 128,
+        // Revoke all existing sessions when a password is reset so a stolen or
+        // forgotten session can't be used after the user (or an admin) recovers
+        // the account.
+        revokeSessionsOnPasswordReset: true,
         sendResetPassword: async ({ user, url }) => {
+          const ctx = this.adminResetStorage.getStore();
+          if (ctx) {
+            ctx.capturedUrl = url;
+          }
           const html = await render(ResetPasswordEmail({ url }));
-          await this.mail.send(
+          const organizationId = await this.getPrimaryOrgForUserId(user.id);
+          const result = await this.mail.send(
             user.email,
             "Reset your password",
             html,
+            organizationId,
           );
+          if (ctx) {
+            ctx.emailSent = result.sent;
+            ctx.emailViaOrgConfig = result.viaOrgConfig;
+          }
         },
       },
       emailVerification: {
@@ -95,10 +117,12 @@ export class AuthService {
         autoSignInAfterVerification: true,
         sendVerificationEmail: async ({ user, url }) => {
           const html = await render(VerifyEmail({ url }));
+          const organizationId = await this.getPrimaryOrgForUserId(user.id);
           await this.mail.send(
             user.email,
             "Verify your email address",
             html,
+            organizationId,
           );
         },
       },
@@ -117,6 +141,7 @@ export class AuthService {
               invitation.email,
               `You've been invited to ${organization.name}`,
               html,
+              organization.id,
             );
           },
           organizationHooks: {
@@ -134,7 +159,13 @@ export class AuthService {
         magicLink({
           sendMagicLink: async ({ email, url }) => {
             const html = await render(MagicLinkEmail({ url }));
-            await this.mail.send(email, "Sign in to Atrium", html);
+            const organizationId = await this.getPrimaryOrgForEmail(email);
+            await this.mail.send(
+              email,
+              "Sign in to Atrium",
+              html,
+              organizationId,
+            );
           },
         }),
       ],
@@ -173,5 +204,68 @@ export class AuthService {
 
   async handleRequest(request: Request) {
     return this.auth.handler(request);
+  }
+
+  // Picks the most recently created membership when the user belongs to
+  // multiple orgs — used to route auth emails through per-org email config.
+  async getPrimaryOrgForUserId(userId: string): Promise<string | undefined> {
+    try {
+      const member = await this.prisma.member.findFirst({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
+      });
+      return member?.organizationId;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to resolve primary org for user",
+      );
+      return undefined;
+    }
+  }
+
+  async getPrimaryOrgForEmail(email: string): Promise<string | undefined> {
+    try {
+      const member = await this.prisma.member.findFirst({
+        where: { user: { email } },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
+      });
+      return member?.organizationId;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to resolve primary org for email",
+      );
+      return undefined;
+    }
+  }
+
+  async generateResetLink(
+    email: string,
+  ): Promise<{ url: string; emailSent: boolean; emailViaOrgConfig: boolean }> {
+    const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
+    const ctx: AdminResetContext = {
+      capturedUrl: null,
+      emailSent: false,
+      emailViaOrgConfig: false,
+    };
+    await this.adminResetStorage.run(ctx, async () => {
+      await this.auth.api.requestPasswordReset({
+        body: {
+          email,
+          redirectTo: `${webUrl}/reset-password`,
+        },
+      });
+    });
+    if (!ctx.capturedUrl) {
+      throw new InternalServerErrorException("Reset URL was not captured");
+    }
+    return {
+      url: ctx.capturedUrl,
+      emailSent: ctx.emailSent,
+      emailViaOrgConfig: ctx.emailViaOrgConfig,
+    };
   }
 }

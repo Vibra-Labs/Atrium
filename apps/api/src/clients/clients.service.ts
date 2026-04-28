@@ -2,13 +2,53 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { AuthService } from "../auth/auth.service";
 import { UpdateClientProfileDto } from "./client-profile.dto";
 
 @Injectable()
 export class ClientsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private authService: AuthService,
+  ) {}
+
+  async generateResetLink(
+    memberId: string,
+    orgId: string,
+    requestingUserId: string,
+    requestingRole: string,
+  ): Promise<{
+    url: string;
+    email: string;
+    emailSent: boolean;
+    emailViaOrgConfig: boolean;
+  }> {
+    const member = await this.prisma.member.findFirst({
+      where: { id: memberId, organizationId: orgId },
+      include: { user: { select: { id: true, email: true } } },
+    });
+    if (!member) throw new NotFoundException("Member not found");
+    if (member.userId === requestingUserId) {
+      throw new BadRequestException(
+        "Cannot reset your own password — use forgot-password instead",
+      );
+    }
+    if (member.role === "owner" && requestingRole !== "owner") {
+      throw new ForbiddenException("Only owners can reset another owner");
+    }
+
+    const { url, emailSent, emailViaOrgConfig } =
+      await this.authService.generateResetLink(member.user.email);
+    return {
+      url,
+      email: member.user.email,
+      emailSent,
+      emailViaOrgConfig,
+    };
+  }
 
   async removeMember(
     memberId: string,

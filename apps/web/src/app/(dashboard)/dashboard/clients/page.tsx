@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
@@ -98,6 +98,14 @@ export default function PeoplePage() {
   const [editingProfile, setEditingProfile] = useState<Record<string, ClientProfile>>({});
   const [savingProfile, setSavingProfile] = useState<string | null>(null);
 
+  const [resetLink, setResetLink] = useState<{
+    url: string;
+    email: string;
+    emailSent: boolean;
+    emailViaOrgConfig: boolean;
+  } | null>(null);
+  const [resettingMemberId, setResettingMemberId] = useState<string | null>(null);
+
   useEffect(() => {
     apiFetch<{ user: { id: string } }>("/auth/get-session")
       .then((session) => setCurrentUserId(session.user.id))
@@ -177,6 +185,34 @@ export default function PeoplePage() {
       }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to remove");
+    }
+  };
+
+  const handleResetPassword = async (memberId: string, email: string) => {
+    const ok = await confirm({
+      title: "Send Password Reset Link",
+      message: `Generate a password reset link for ${email}? An email will also be sent if email delivery is configured. You'll see the link here so you can share it directly if needed.`,
+      confirmLabel: "Generate Link",
+    });
+    if (!ok) return;
+    setResettingMemberId(memberId);
+    try {
+      const res = await apiFetch<{
+        url: string;
+        email: string;
+        emailSent: boolean;
+        emailViaOrgConfig: boolean;
+      }>(`/clients/${memberId}/reset-password`, { method: "POST" });
+      setResetLink(res);
+      success(
+        res.emailViaOrgConfig
+          ? `Reset link emailed to ${res.email}`
+          : `Reset link generated for ${res.email}`,
+      );
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to generate reset link");
+    } finally {
+      setResettingMemberId(null);
     }
   };
 
@@ -320,6 +356,81 @@ export default function PeoplePage() {
         </button>
       </div>
 
+      {resetLink && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setResetLink(null);
+          }}
+        >
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Password reset link</h3>
+                <p className="text-sm text-[var(--muted-foreground)] mt-0.5">
+                  For {resetLink.email}
+                </p>
+              </div>
+              <button
+                onClick={() => setResetLink(null)}
+                className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              className={
+                resetLink.emailViaOrgConfig
+                  ? "p-3 rounded-lg text-sm bg-green-50 text-green-800 border border-green-200"
+                  : "p-3 rounded-lg text-sm bg-amber-50 text-amber-900 border border-amber-200"
+              }
+            >
+              {resetLink.emailViaOrgConfig
+                ? `An email with this link was sent to ${resetLink.email} via your organization's email config.`
+                : resetLink.emailSent
+                  ? `Sent via the platform default to ${resetLink.email}. If it doesn't arrive, share the link below directly.`
+                  : "No email provider is configured, so no email was sent. Copy the link below and share it with the user directly."}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-[var(--muted-foreground)]">
+                Reset link (expires in 1 hour)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={resetLink.url}
+                  onFocus={(e) => e.currentTarget.select()}
+                  autoFocus
+                  className="flex-1 px-2 py-1.5 text-sm bg-[var(--muted)] text-[var(--foreground)] border border-[var(--border)] rounded font-mono"
+                />
+                <button
+                  onClick={() => copyLink(resetLink.url)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--primary)] text-white rounded hover:opacity-90"
+                >
+                  {copied === resetLink.url ? <Check size={14} /> : <Copy size={14} />}
+                  {copied === resetLink.url ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Refreshing the page will not retrieve this link again.
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setResetLink(null)}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="relative">
         <div className="flex">
@@ -428,7 +539,7 @@ export default function PeoplePage() {
                     <input
                       readOnly
                       value={teamInviteLink}
-                      className="flex-1 px-2 py-1 text-sm bg-white border border-green-300 rounded font-mono"
+                      className="flex-1 px-2 py-1 text-sm bg-white text-gray-900 border border-green-300 rounded font-mono"
                     />
                     <button
                       onClick={() => copyLink(teamInviteLink)}
@@ -488,6 +599,8 @@ export default function PeoplePage() {
                   const isSelf = member.userId === currentUserId;
                   const canChangeRole = isOwner && !isSelf;
                   const canRemove = isOwner && !isSelf;
+                  const canResetPassword =
+                    !isSelf && (isOwner || (currentRole === "admin" && member.role !== "owner"));
 
                   return (
                     <div
@@ -519,6 +632,16 @@ export default function PeoplePage() {
                           <span className={`text-xs px-2 py-1 rounded-full ${roleColor(member.role)}`}>
                             {member.role}
                           </span>
+                        )}
+                        {canResetPassword && (
+                          <button
+                            onClick={() => handleResetPassword(member.id, member.user.email)}
+                            disabled={resettingMemberId === member.id}
+                            className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors disabled:opacity-50"
+                            title="Send password reset link"
+                          >
+                            <KeyRound size={14} />
+                          </button>
                         )}
                         {canRemove && (
                           <button
@@ -704,6 +827,14 @@ export default function PeoplePage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => handleResetPassword(member.id, member.user.email)}
+                            disabled={resettingMemberId === member.id}
+                            className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors disabled:opacity-50"
+                            title="Send password reset link"
+                          >
+                            <KeyRound size={14} />
+                          </button>
                           <button
                             onClick={() => handleRemoveMember(member.id, member.user.name, false)}
                             className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"

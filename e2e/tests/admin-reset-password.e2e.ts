@@ -3,10 +3,6 @@ import { test, expect } from "@playwright/test";
 const API_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
 
-/**
- * Helper: create an owner user with an org via the onboarding API,
- * then establish a browser session for that user.
- */
 async function createOwnerUser(
   browser: import("@playwright/test").Browser,
   prefix = "reset-owner",
@@ -56,10 +52,6 @@ async function createOwnerUser(
   return { context, page, email, password, orgName };
 }
 
-/**
- * Helper: create a client user, invite them, and have them accept.
- * Returns the client's email + original password.
- */
 async function createAndAcceptClient(
   browser: import("@playwright/test").Browser,
   ownerPage: import("@playwright/test").Page,

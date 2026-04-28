@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as Sentry from "@sentry/nestjs";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -196,11 +196,8 @@ export class AuthService {
     return this.auth.handler(request);
   }
 
-  /**
-   * Resolves the user's primary organization for routing auth emails
-   * through the right per-org email config. Picks the most recently
-   * created membership when the user belongs to multiple orgs.
-   */
+  // Picks the most recently created membership when the user belongs to
+  // multiple orgs — used to route auth emails through per-org email config.
   async getPrimaryOrgForUserId(userId: string): Promise<string | undefined> {
     try {
       const member = await this.prisma.member.findFirst({
@@ -220,12 +217,12 @@ export class AuthService {
 
   async getPrimaryOrgForEmail(email: string): Promise<string | undefined> {
     try {
-      const user = await this.prisma.user.findUnique({
-        where: { email },
-        select: { id: true },
+      const member = await this.prisma.member.findFirst({
+        where: { user: { email } },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
       });
-      if (!user) return undefined;
-      return this.getPrimaryOrgForUserId(user.id);
+      return member?.organizationId;
     } catch (err) {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -235,13 +232,6 @@ export class AuthService {
     }
   }
 
-  /**
-   * Triggers Better Auth's request-password-reset flow and returns the
-   * reset URL that was issued. The URL is also delivered to the user
-   * via email through the standard sendResetPassword callback. Used by
-   * the admin-initiated reset flow so admins can share the link
-   * directly out-of-band when email is unreliable or unconfigured.
-   */
   async generateResetLink(email: string): Promise<string> {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     const ctx: AdminResetContext = { capturedUrl: null };
@@ -254,7 +244,7 @@ export class AuthService {
       });
     });
     if (!ctx.capturedUrl) {
-      throw new Error("Reset URL was not captured");
+      throw new InternalServerErrorException("Reset URL was not captured");
     }
     return ctx.capturedUrl;
   }

@@ -69,7 +69,6 @@ describe("ClientsService", () => {
       mockPrisma as unknown as PrismaService,
       mockAuthService as unknown as AuthService,
     );
-    // Reset all mocks before each test so state does not leak
     mockPrisma.member.findFirst.mockClear();
     mockPrisma.member.count.mockClear();
     mockPrisma.member.delete.mockClear();

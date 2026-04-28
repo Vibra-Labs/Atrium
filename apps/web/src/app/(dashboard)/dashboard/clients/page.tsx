@@ -98,7 +98,6 @@ export default function PeoplePage() {
   const [editingProfile, setEditingProfile] = useState<Record<string, ClientProfile>>({});
   const [savingProfile, setSavingProfile] = useState<string | null>(null);
 
-  // Admin password reset state
   const [resetLink, setResetLink] = useState<{ url: string; email: string } | null>(null);
   const [resettingMemberId, setResettingMemberId] = useState<string | null>(null);
 
@@ -346,7 +345,6 @@ export default function PeoplePage() {
         </button>
       </div>
 
-      {/* Reset link banner — shown after admin generates a reset link */}
       {resetLink && (
         <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
           <div className="flex items-center justify-between mb-2">

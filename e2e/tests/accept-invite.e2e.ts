@@ -210,6 +210,69 @@ test.describe("Accept Invite", () => {
     await clientCtx.close();
   });
 
+  test("client invited while already owning another org lands on portal, not setup", async ({
+    browser,
+  }) => {
+    // The bug: setActiveOrgAndRedirect picked orgs[0] regardless of which org
+    // was just joined, so a user who already owned an org would be sent to
+    // /dashboard (and onward to /setup if that org had pending setup) instead
+    // of /portal for the org they were invited to as a client.
+
+    // Step 1: Inviter org and inviter session
+    const {
+      context: inviterCtx,
+      page: inviterPage,
+    } = await createOwnerUser(browser, "inv-multi-inviter");
+
+    // Step 2: Invitee already owns their own (separate) org
+    const inviteeEmail = `inv-multi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
+    const inviteePassword = "MultiOrgClient123!";
+    const ownCtx = await browser.newContext({ storageState: undefined });
+    const ownPage = await ownCtx.newPage();
+    const ownSignup = await ownPage.request.post(
+      `${API_URL}/api/onboarding/signup`,
+      {
+        data: {
+          name: "Multi Org Invitee",
+          email: inviteeEmail,
+          password: inviteePassword,
+          orgName: `Invitee Own Org ${Date.now().toString(36)}`,
+        },
+      },
+    );
+    if (!ownSignup.ok()) {
+      throw new Error(
+        `Invitee own-org signup failed (${ownSignup.status()}): ${await ownSignup.text()}`,
+      );
+    }
+    await ownCtx.close();
+
+    // Step 3: Inviter invites the invitee as a client (member role)
+    const invitationId = await inviteClient(inviterPage, inviteeEmail);
+    await inviterCtx.close();
+
+    // Step 4: Invitee opens the invite link in a fresh context and signs in
+    const clientCtx = await browser.newContext({ storageState: undefined });
+    const clientPage = await clientCtx.newPage();
+    await clientPage.goto(
+      `${WEB_URL}/accept-invite?id=${invitationId}`,
+      { waitUntil: "networkidle", timeout: 15000 },
+    );
+
+    await clientPage.getByRole("button", { name: /sign in instead/i }).click();
+    await clientPage.getByLabel(/email/i).fill(inviteeEmail);
+    await clientPage.getByLabel(/password/i).fill(inviteePassword);
+    await clientPage.getByRole("button", { name: /sign in & join/i }).click();
+
+    // Step 5: Must land in the portal of the inviting org, NOT on their own
+    // dashboard or setup wizard.
+    await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+    expect(clientPage.url()).not.toMatch(/\/dashboard/);
+    expect(clientPage.url()).not.toMatch(/\/setup/);
+
+    await clientCtx.close();
+  });
+
   test("shows invalid invitation message when no ID is provided", async ({
     browser,
   }) => {

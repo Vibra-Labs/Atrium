@@ -124,9 +124,10 @@ test.describe("Admin Reset Password", () => {
     // Confirm modal appears
     await ownerPage.getByRole("button", { name: /generate link/i }).click();
 
-    // Banner with reset URL appears
-    const banner = ownerPage.getByText(/password reset link for/i).first();
-    await expect(banner).toBeVisible({ timeout: 10000 });
+    // Modal with reset URL appears
+    await expect(
+      ownerPage.getByRole("heading", { name: /password reset link/i }),
+    ).toBeVisible({ timeout: 10000 });
 
     // Pull the URL out of the readonly input
     const resetUrl = await ownerPage

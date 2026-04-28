@@ -36,7 +36,11 @@ const mockPrisma = {
 
 const mockAuthService = {
   generateResetLink: mock(() =>
-    Promise.resolve("https://api.test/api/auth/reset-password/abc?callbackURL=foo"),
+    Promise.resolve({
+      url: "https://api.test/api/auth/reset-password/abc?callbackURL=foo",
+      emailSent: true,
+      emailViaOrgConfig: true,
+    }),
   ),
 };
 
@@ -424,9 +428,36 @@ describe("ClientsService", () => {
 
       expect(result.email).toBe("user-target@test.com");
       expect(result.url).toContain("/reset-password/");
+      expect(result.emailSent).toBe(true);
       expect(mockAuthService.generateResetLink).toHaveBeenCalledWith(
         "user-target@test.com",
       );
+    });
+
+    it("propagates emailSent=false when email delivery is not configured", async () => {
+      const member = memberWithUser({
+        id: "member-1",
+        userId: "user-target",
+        role: "member",
+      });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockAuthService.generateResetLink.mockReturnValueOnce(
+        Promise.resolve({
+          url: "https://api.test/api/auth/reset-password/xyz",
+          emailSent: false,
+          emailViaOrgConfig: false,
+        }),
+      );
+
+      const result = await service.generateResetLink(
+        "member-1",
+        "org-1",
+        "user-admin",
+        "admin",
+      );
+
+      expect(result.emailSent).toBe(false);
+      expect(result.emailViaOrgConfig).toBe(false);
     });
 
     it("scopes member lookup to the caller's org", async () => {

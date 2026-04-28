@@ -20,7 +20,12 @@ export class ClientsService {
     orgId: string,
     requestingUserId: string,
     requestingRole: string,
-  ): Promise<{ url: string; email: string }> {
+  ): Promise<{
+    url: string;
+    email: string;
+    emailSent: boolean;
+    emailViaOrgConfig: boolean;
+  }> {
     const member = await this.prisma.member.findFirst({
       where: { id: memberId, organizationId: orgId },
       include: { user: { select: { id: true, email: true } } },
@@ -35,8 +40,14 @@ export class ClientsService {
       throw new ForbiddenException("Only owners can reset another owner");
     }
 
-    const url = await this.authService.generateResetLink(member.user.email);
-    return { url, email: member.user.email };
+    const { url, emailSent, emailViaOrgConfig } =
+      await this.authService.generateResetLink(member.user.email);
+    return {
+      url,
+      email: member.user.email,
+      emailSent,
+      emailViaOrgConfig,
+    };
   }
 
   async removeMember(

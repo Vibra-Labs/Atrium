@@ -14,6 +14,8 @@ import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from
 
 interface AdminResetContext {
   capturedUrl: string | null;
+  emailSent: boolean;
+  emailViaOrgConfig: boolean;
 }
 
 @Injectable()
@@ -87,6 +89,10 @@ export class AuthService {
         enabled: true,
         minPasswordLength: 8,
         maxPasswordLength: 128,
+        // Revoke all existing sessions when a password is reset so a stolen or
+        // forgotten session can't be used after the user (or an admin) recovers
+        // the account.
+        revokeSessionsOnPasswordReset: true,
         sendResetPassword: async ({ user, url }) => {
           const ctx = this.adminResetStorage.getStore();
           if (ctx) {
@@ -94,12 +100,16 @@ export class AuthService {
           }
           const html = await render(ResetPasswordEmail({ url }));
           const organizationId = await this.getPrimaryOrgForUserId(user.id);
-          await this.mail.send(
+          const result = await this.mail.send(
             user.email,
             "Reset your password",
             html,
             organizationId,
           );
+          if (ctx) {
+            ctx.emailSent = result.sent;
+            ctx.emailViaOrgConfig = result.viaOrgConfig;
+          }
         },
       },
       emailVerification: {
@@ -232,9 +242,15 @@ export class AuthService {
     }
   }
 
-  async generateResetLink(email: string): Promise<string> {
+  async generateResetLink(
+    email: string,
+  ): Promise<{ url: string; emailSent: boolean; emailViaOrgConfig: boolean }> {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
-    const ctx: AdminResetContext = { capturedUrl: null };
+    const ctx: AdminResetContext = {
+      capturedUrl: null,
+      emailSent: false,
+      emailViaOrgConfig: false,
+    };
     await this.adminResetStorage.run(ctx, async () => {
       await this.auth.api.requestPasswordReset({
         body: {
@@ -246,6 +262,10 @@ export class AuthService {
     if (!ctx.capturedUrl) {
       throw new InternalServerErrorException("Reset URL was not captured");
     }
-    return ctx.capturedUrl;
+    return {
+      url: ctx.capturedUrl,
+      emailSent: ctx.emailSent,
+      emailViaOrgConfig: ctx.emailViaOrgConfig,
+    };
   }
 }

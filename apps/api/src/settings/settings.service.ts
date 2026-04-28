@@ -157,6 +157,7 @@ export class SettingsService {
       provider,
       apiKey,
       from,
+      isOrgConfigured: !!settings?.emailProvider,
       smtp: provider === "smtp"
         ? {
             host: settings?.smtpHost ?? null,

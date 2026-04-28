@@ -120,7 +120,7 @@ describe("AuthService", () => {
   });
 
   describe("generateResetLink", () => {
-    it("returns the URL captured from the sendResetPassword callback context", async () => {
+    it("returns the URL and emailSent captured from the sendResetPassword callback context", async () => {
       const expectedUrl =
         "http://localhost:3001/api/auth/reset-password/token-abc?callbackURL=http%3A%2F%2Flocalhost%3A3000%2Freset-password";
 
@@ -128,25 +128,65 @@ describe("AuthService", () => {
         const store = (
           service as unknown as {
             adminResetStorage: {
-              getStore: () => { capturedUrl: string | null } | undefined;
+              getStore: () => {
+                capturedUrl: string | null;
+                emailSent: boolean;
+                emailViaOrgConfig: boolean;
+              } | undefined;
             };
           }
         ).adminResetStorage.getStore();
-        if (store) store.capturedUrl = expectedUrl;
+        if (store) {
+          store.capturedUrl = expectedUrl;
+          store.emailSent = true;
+          store.emailViaOrgConfig = true;
+        }
       });
       (service.auth as unknown as {
         api: { requestPasswordReset: typeof requestPasswordReset };
       }).api.requestPasswordReset = requestPasswordReset;
 
-      const url = await service.generateResetLink("alice@example.com");
+      const result = await service.generateResetLink("alice@example.com");
 
-      expect(url).toBe(expectedUrl);
+      expect(result).toEqual({
+        url: expectedUrl,
+        emailSent: true,
+        emailViaOrgConfig: true,
+      });
       expect(requestPasswordReset).toHaveBeenCalledTimes(1);
       const callArg = requestPasswordReset.mock.calls[0][0] as {
         body: { email: string; redirectTo: string };
       };
       expect(callArg.body.email).toBe("alice@example.com");
       expect(callArg.body.redirectTo).toBe("http://localhost:3000/reset-password");
+    });
+
+    it("returns emailSent=false when no provider sent the email", async () => {
+      const requestPasswordReset = mock(async () => {
+        const store = (
+          service as unknown as {
+            adminResetStorage: {
+              getStore: () => {
+                capturedUrl: string | null;
+                emailSent: boolean;
+                emailViaOrgConfig: boolean;
+              } | undefined;
+            };
+          }
+        ).adminResetStorage.getStore();
+        if (store) {
+          store.capturedUrl = "https://example.test/reset/abc";
+          // emailSent and emailViaOrgConfig stay false
+        }
+      });
+      (service.auth as unknown as {
+        api: { requestPasswordReset: typeof requestPasswordReset };
+      }).api.requestPasswordReset = requestPasswordReset;
+
+      const result = await service.generateResetLink("alice@example.com");
+
+      expect(result.emailSent).toBe(false);
+      expect(result.emailViaOrgConfig).toBe(false);
     });
 
     it("throws InternalServerErrorException when no URL was captured", async () => {
@@ -169,13 +209,20 @@ describe("AuthService", () => {
         const store = (
           service as unknown as {
             adminResetStorage: {
-              getStore: () => { capturedUrl: string | null } | undefined;
+              getStore: () => {
+                capturedUrl: string | null;
+                emailSent: boolean;
+                emailViaOrgConfig: boolean;
+              } | undefined;
             };
           }
         ).adminResetStorage.getStore();
-        // simulate async delay to interleave the two ALS contexts
         await new Promise((r) => setTimeout(r, ++call * 5));
-        if (store) store.capturedUrl = `https://example.test/reset/${body.email}`;
+        if (store) {
+          store.capturedUrl = `https://example.test/reset/${body.email}`;
+          store.emailSent = true;
+          store.emailViaOrgConfig = true;
+        }
       });
 
       const [a, b] = await Promise.all([
@@ -183,8 +230,8 @@ describe("AuthService", () => {
         service.generateResetLink("b@example.com"),
       ]);
 
-      expect(a).toBe("https://example.test/reset/a@example.com");
-      expect(b).toBe("https://example.test/reset/b@example.com");
+      expect(a.url).toBe("https://example.test/reset/a@example.com");
+      expect(b.url).toBe("https://example.test/reset/b@example.com");
     });
   });
 });

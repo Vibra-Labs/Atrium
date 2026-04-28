@@ -98,7 +98,12 @@ export default function PeoplePage() {
   const [editingProfile, setEditingProfile] = useState<Record<string, ClientProfile>>({});
   const [savingProfile, setSavingProfile] = useState<string | null>(null);
 
-  const [resetLink, setResetLink] = useState<{ url: string; email: string } | null>(null);
+  const [resetLink, setResetLink] = useState<{
+    url: string;
+    email: string;
+    emailSent: boolean;
+    emailViaOrgConfig: boolean;
+  } | null>(null);
   const [resettingMemberId, setResettingMemberId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -192,12 +197,18 @@ export default function PeoplePage() {
     if (!ok) return;
     setResettingMemberId(memberId);
     try {
-      const res = await apiFetch<{ url: string; email: string }>(
-        `/clients/${memberId}/reset-password`,
-        { method: "POST" },
-      );
+      const res = await apiFetch<{
+        url: string;
+        email: string;
+        emailSent: boolean;
+        emailViaOrgConfig: boolean;
+      }>(`/clients/${memberId}/reset-password`, { method: "POST" });
       setResetLink(res);
-      success(`Reset link generated for ${res.email}`);
+      success(
+        res.emailViaOrgConfig
+          ? `Reset link emailed to ${res.email}`
+          : `Reset link generated for ${res.email}`,
+      );
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to generate reset link");
     } finally {
@@ -346,35 +357,76 @@ export default function PeoplePage() {
       </div>
 
       {resetLink && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-green-800 font-medium">
-              Password reset link for {resetLink.email}
-            </p>
-            <button
-              onClick={() => setResetLink(null)}
-              className="p-1 text-green-700 hover:text-green-900"
-              title="Dismiss"
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setResetLink(null);
+          }}
+        >
+          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Password reset link</h3>
+                <p className="text-sm text-[var(--muted-foreground)] mt-0.5">
+                  For {resetLink.email}
+                </p>
+              </div>
+              <button
+                onClick={() => setResetLink(null)}
+                className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              className={
+                resetLink.emailViaOrgConfig
+                  ? "p-3 rounded-lg text-sm bg-green-50 text-green-800 border border-green-200"
+                  : "p-3 rounded-lg text-sm bg-amber-50 text-amber-900 border border-amber-200"
+              }
             >
-              <X size={14} />
-            </button>
-          </div>
-          <p className="text-xs text-green-700 mb-2">
-            Share this link with the user. It expires in 1 hour. Refreshing the page will not retrieve it.
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              readOnly
-              value={resetLink.url}
-              className="flex-1 px-2 py-1 text-sm bg-white border border-green-300 rounded font-mono"
-            />
-            <button
-              onClick={() => copyLink(resetLink.url)}
-              className="flex items-center gap-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-            >
-              {copied === resetLink.url ? <Check size={14} /> : <Copy size={14} />}
-              {copied === resetLink.url ? "Copied!" : "Copy"}
-            </button>
+              {resetLink.emailViaOrgConfig
+                ? `An email with this link was sent to ${resetLink.email} via your organization's email config.`
+                : resetLink.emailSent
+                  ? `Sent via the platform default to ${resetLink.email}. If it doesn't arrive, share the link below directly.`
+                  : "No email provider is configured, so no email was sent. Copy the link below and share it with the user directly."}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-[var(--muted-foreground)]">
+                Reset link (expires in 1 hour)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={resetLink.url}
+                  onFocus={(e) => e.currentTarget.select()}
+                  autoFocus
+                  className="flex-1 px-2 py-1.5 text-sm bg-[var(--muted)] text-[var(--foreground)] border border-[var(--border)] rounded font-mono"
+                />
+                <button
+                  onClick={() => copyLink(resetLink.url)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--primary)] text-white rounded hover:opacity-90"
+                >
+                  {copied === resetLink.url ? <Check size={14} /> : <Copy size={14} />}
+                  {copied === resetLink.url ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Refreshing the page will not retrieve this link again.
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setResetLink(null)}
+                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -487,7 +539,7 @@ export default function PeoplePage() {
                     <input
                       readOnly
                       value={teamInviteLink}
-                      className="flex-1 px-2 py-1 text-sm bg-white border border-green-300 rounded font-mono"
+                      className="flex-1 px-2 py-1 text-sm bg-white text-gray-900 border border-green-300 rounded font-mono"
                     />
                     <button
                       onClick={() => copyLink(teamInviteLink)}

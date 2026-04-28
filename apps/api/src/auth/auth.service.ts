@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import * as Sentry from "@sentry/nestjs";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -11,10 +12,15 @@ import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
 
+interface AdminResetContext {
+  capturedUrl: string | null;
+}
+
 @Injectable()
 export class AuthService {
   public auth: ReturnType<typeof betterAuth>;
   private readonly logger = new Logger(AuthService.name);
+  private readonly adminResetStorage = new AsyncLocalStorage<AdminResetContext>();
 
   constructor(
     private config: ConfigService,
@@ -82,11 +88,17 @@ export class AuthService {
         minPasswordLength: 8,
         maxPasswordLength: 128,
         sendResetPassword: async ({ user, url }) => {
+          const ctx = this.adminResetStorage.getStore();
+          if (ctx) {
+            ctx.capturedUrl = url;
+          }
           const html = await render(ResetPasswordEmail({ url }));
+          const organizationId = await this.getPrimaryOrgForUserId(user.id);
           await this.mail.send(
             user.email,
             "Reset your password",
             html,
+            organizationId,
           );
         },
       },
@@ -95,10 +107,12 @@ export class AuthService {
         autoSignInAfterVerification: true,
         sendVerificationEmail: async ({ user, url }) => {
           const html = await render(VerifyEmail({ url }));
+          const organizationId = await this.getPrimaryOrgForUserId(user.id);
           await this.mail.send(
             user.email,
             "Verify your email address",
             html,
+            organizationId,
           );
         },
       },
@@ -117,6 +131,7 @@ export class AuthService {
               invitation.email,
               `You've been invited to ${organization.name}`,
               html,
+              organization.id,
             );
           },
           organizationHooks: {
@@ -134,7 +149,13 @@ export class AuthService {
         magicLink({
           sendMagicLink: async ({ email, url }) => {
             const html = await render(MagicLinkEmail({ url }));
-            await this.mail.send(email, "Sign in to Atrium", html);
+            const organizationId = await this.getPrimaryOrgForEmail(email);
+            await this.mail.send(
+              email,
+              "Sign in to Atrium",
+              html,
+              organizationId,
+            );
           },
         }),
       ],
@@ -173,5 +194,68 @@ export class AuthService {
 
   async handleRequest(request: Request) {
     return this.auth.handler(request);
+  }
+
+  /**
+   * Resolves the user's primary organization for routing auth emails
+   * through the right per-org email config. Picks the most recently
+   * created membership when the user belongs to multiple orgs.
+   */
+  async getPrimaryOrgForUserId(userId: string): Promise<string | undefined> {
+    try {
+      const member = await this.prisma.member.findFirst({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
+      });
+      return member?.organizationId;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to resolve primary org for user",
+      );
+      return undefined;
+    }
+  }
+
+  async getPrimaryOrgForEmail(email: string): Promise<string | undefined> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+      if (!user) return undefined;
+      return this.getPrimaryOrgForUserId(user.id);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to resolve primary org for email",
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * Triggers Better Auth's request-password-reset flow and returns the
+   * reset URL that was issued. The URL is also delivered to the user
+   * via email through the standard sendResetPassword callback. Used by
+   * the admin-initiated reset flow so admins can share the link
+   * directly out-of-band when email is unreliable or unconfigured.
+   */
+  async generateResetLink(email: string): Promise<string> {
+    const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
+    const ctx: AdminResetContext = { capturedUrl: null };
+    await this.adminResetStorage.run(ctx, async () => {
+      await this.auth.api.requestPasswordReset({
+        body: {
+          email,
+          redirectTo: `${webUrl}/reset-password`,
+        },
+      });
+    });
+    if (!ctx.capturedUrl) {
+      throw new Error("Reset URL was not captured");
+    }
+    return ctx.capturedUrl;
   }
 }

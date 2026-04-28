@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
@@ -98,6 +98,10 @@ export default function PeoplePage() {
   const [editingProfile, setEditingProfile] = useState<Record<string, ClientProfile>>({});
   const [savingProfile, setSavingProfile] = useState<string | null>(null);
 
+  // Admin password reset state
+  const [resetLink, setResetLink] = useState<{ url: string; email: string } | null>(null);
+  const [resettingMemberId, setResettingMemberId] = useState<string | null>(null);
+
   useEffect(() => {
     apiFetch<{ user: { id: string } }>("/auth/get-session")
       .then((session) => setCurrentUserId(session.user.id))
@@ -177,6 +181,28 @@ export default function PeoplePage() {
       }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to remove");
+    }
+  };
+
+  const handleResetPassword = async (memberId: string, email: string) => {
+    const ok = await confirm({
+      title: "Send Password Reset Link",
+      message: `Generate a password reset link for ${email}? An email will also be sent if email delivery is configured. You'll see the link here so you can share it directly if needed.`,
+      confirmLabel: "Generate Link",
+    });
+    if (!ok) return;
+    setResettingMemberId(memberId);
+    try {
+      const res = await apiFetch<{ url: string; email: string }>(
+        `/clients/${memberId}/reset-password`,
+        { method: "POST" },
+      );
+      setResetLink(res);
+      success(`Reset link generated for ${res.email}`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to generate reset link");
+    } finally {
+      setResettingMemberId(null);
     }
   };
 
@@ -319,6 +345,41 @@ export default function PeoplePage() {
           <span className="hidden sm:inline">Export</span>
         </button>
       </div>
+
+      {/* Reset link banner — shown after admin generates a reset link */}
+      {resetLink && (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-green-800 font-medium">
+              Password reset link for {resetLink.email}
+            </p>
+            <button
+              onClick={() => setResetLink(null)}
+              className="p-1 text-green-700 hover:text-green-900"
+              title="Dismiss"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <p className="text-xs text-green-700 mb-2">
+            Share this link with the user. It expires in 1 hour. Refreshing the page will not retrieve it.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={resetLink.url}
+              className="flex-1 px-2 py-1 text-sm bg-white border border-green-300 rounded font-mono"
+            />
+            <button
+              onClick={() => copyLink(resetLink.url)}
+              className="flex items-center gap-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+            >
+              {copied === resetLink.url ? <Check size={14} /> : <Copy size={14} />}
+              {copied === resetLink.url ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="relative">
@@ -488,6 +549,8 @@ export default function PeoplePage() {
                   const isSelf = member.userId === currentUserId;
                   const canChangeRole = isOwner && !isSelf;
                   const canRemove = isOwner && !isSelf;
+                  const canResetPassword =
+                    !isSelf && (isOwner || (currentRole === "admin" && member.role !== "owner"));
 
                   return (
                     <div
@@ -519,6 +582,16 @@ export default function PeoplePage() {
                           <span className={`text-xs px-2 py-1 rounded-full ${roleColor(member.role)}`}>
                             {member.role}
                           </span>
+                        )}
+                        {canResetPassword && (
+                          <button
+                            onClick={() => handleResetPassword(member.id, member.user.email)}
+                            disabled={resettingMemberId === member.id}
+                            className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors disabled:opacity-50"
+                            title="Send password reset link"
+                          >
+                            <KeyRound size={14} />
+                          </button>
                         )}
                         {canRemove && (
                           <button
@@ -704,6 +777,14 @@ export default function PeoplePage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => handleResetPassword(member.id, member.user.email)}
+                            disabled={resettingMemberId === member.id}
+                            className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors disabled:opacity-50"
+                            title="Send password reset link"
+                          >
+                            <KeyRound size={14} />
+                          </button>
                           <button
                             onClick={() => handleRemoveMember(member.id, member.user.name, false)}
                             className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"

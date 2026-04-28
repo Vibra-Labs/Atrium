@@ -1,7 +1,12 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { ClientsService } from "./clients.service";
-import { NotFoundException, BadRequestException } from "@nestjs/common";
+import {
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
+import type { AuthService } from "../auth/auth.service";
 
 interface PrismaArgs {
   where?: Record<string, unknown>;
@@ -29,6 +34,12 @@ const mockPrisma = {
   $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
+const mockAuthService = {
+  generateResetLink: mock(() =>
+    Promise.resolve("https://api.test/api/auth/reset-password/abc?callbackURL=foo"),
+  ),
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -54,7 +65,10 @@ describe("ClientsService", () => {
   let service: ClientsService;
 
   beforeEach(() => {
-    service = new ClientsService(mockPrisma as unknown as PrismaService);
+    service = new ClientsService(
+      mockPrisma as unknown as PrismaService,
+      mockAuthService as unknown as AuthService,
+    );
     // Reset all mocks before each test so state does not leak
     mockPrisma.member.findFirst.mockClear();
     mockPrisma.member.count.mockClear();
@@ -63,6 +77,7 @@ describe("ClientsService", () => {
     mockPrisma.project.findMany.mockClear();
     mockPrisma.projectClient.deleteMany.mockClear();
     mockPrisma.$transaction.mockClear();
+    mockAuthService.generateResetLink.mockClear();
   });
 
   // -------------------------------------------------------------------------
@@ -300,6 +315,136 @@ describe("ClientsService", () => {
 
       // count should NOT have been called — only needed when demoting an owner
       expect(mockPrisma.member.count).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // generateResetLink
+  // -------------------------------------------------------------------------
+  describe("generateResetLink", () => {
+    function memberWithUser(overrides: Partial<{ id: string; userId: string; role: string }> = {}) {
+      const m = makeMember(overrides);
+      return { ...m, user: { id: m.userId, email: `${m.userId}@test.com` } };
+    }
+
+    it("throws NotFoundException when the member does not exist", async () => {
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(null));
+
+      try {
+        await service.generateResetLink(
+          "missing-member",
+          "org-1",
+          "user-admin",
+          "admin",
+        );
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(NotFoundException);
+      }
+    });
+
+    it("throws BadRequestException when caller targets themselves", async () => {
+      const selfMember = memberWithUser({
+        id: "member-self",
+        userId: "user-self",
+        role: "admin",
+      });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(selfMember));
+
+      try {
+        await service.generateResetLink(
+          "member-self",
+          "org-1",
+          "user-self",
+          "admin",
+        );
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+      }
+      expect(mockAuthService.generateResetLink).not.toHaveBeenCalled();
+    });
+
+    it("throws ForbiddenException when admin tries to reset an owner", async () => {
+      const ownerMember = memberWithUser({
+        id: "member-owner",
+        userId: "user-owner",
+        role: "owner",
+      });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(ownerMember));
+
+      try {
+        await service.generateResetLink(
+          "member-owner",
+          "org-1",
+          "user-admin",
+          "admin",
+        );
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+      }
+      expect(mockAuthService.generateResetLink).not.toHaveBeenCalled();
+    });
+
+    it("allows owner to reset another owner", async () => {
+      const otherOwner = memberWithUser({
+        id: "member-owner-2",
+        userId: "user-owner-2",
+        role: "owner",
+      });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(otherOwner));
+
+      const result = await service.generateResetLink(
+        "member-owner-2",
+        "org-1",
+        "user-owner-1",
+        "owner",
+      );
+
+      expect(result.email).toBe("user-owner-2@test.com");
+      expect(mockAuthService.generateResetLink).toHaveBeenCalledWith(
+        "user-owner-2@test.com",
+      );
+    });
+
+    it("returns the URL and email when admin resets a regular member", async () => {
+      const member = memberWithUser({
+        id: "member-1",
+        userId: "user-target",
+        role: "member",
+      });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+
+      const result = await service.generateResetLink(
+        "member-1",
+        "org-1",
+        "user-admin",
+        "admin",
+      );
+
+      expect(result.email).toBe("user-target@test.com");
+      expect(result.url).toContain("/reset-password/");
+      expect(mockAuthService.generateResetLink).toHaveBeenCalledWith(
+        "user-target@test.com",
+      );
+    });
+
+    it("scopes member lookup to the caller's org", async () => {
+      const member = memberWithUser({
+        id: "member-1",
+        userId: "user-target",
+        role: "member",
+      });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+
+      await service.generateResetLink("member-1", "org-1", "user-admin", "admin");
+
+      expect(mockPrisma.member.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "member-1", organizationId: "org-1" },
+        }),
+      );
     });
   });
 });

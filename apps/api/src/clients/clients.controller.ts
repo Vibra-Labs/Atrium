@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Delete,
+  Post,
   Put,
   Body,
   Param,
@@ -182,6 +183,22 @@ export class ClientsController {
     @CurrentMember("role") role: string,
   ) {
     await this.clientsService.removeMember(memberId, orgId, userId, role);
+  }
+
+  @Post(":id/reset-password")
+  @Roles("owner", "admin")
+  async resetPassword(
+    @Param("id") memberId: string,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentMember("role") role: string,
+  ) {
+    return this.clientsService.generateResetLink(
+      memberId,
+      orgId,
+      userId,
+      role,
+    );
   }
 
   @Put(":id/role")

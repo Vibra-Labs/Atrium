@@ -94,9 +94,23 @@ function AcceptInviteContent() {
         throw new Error(data.message || "Failed to accept invitation");
       }
 
+      // Pin the active org to the one we just joined. Without this, users who
+      // already belong to another org (e.g. their own agency) can be routed
+      // to that org's dashboard/setup instead of the invited org's portal.
+      const acceptData: {
+        member?: { organizationId?: string };
+        invitation?: { organizationId?: string };
+      } = await acceptRes.json().catch(() => ({}));
+      const joinedOrgId =
+        acceptData.member?.organizationId ??
+        acceptData.invitation?.organizationId;
+
       // Step 3: Set active organization and redirect by role
       track("invite_accepted");
-      window.location.href = await setActiveOrgAndRedirect("/portal");
+      window.location.href = await setActiveOrgAndRedirect(
+        "/portal",
+        joinedOrgId,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {

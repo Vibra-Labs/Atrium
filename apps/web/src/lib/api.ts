@@ -67,22 +67,33 @@ export async function apiFetch<T = unknown>(
 /**
  * After authentication, sets the active org and returns the redirect path
  * based on the user's role (owner/admin -> /dashboard, member -> /portal).
+ *
+ * `preferredOrgId` is used when the caller knows which org the user is acting
+ * on (e.g. the org they just accepted an invite to). Without it, users who
+ * belong to multiple orgs would be routed by an arbitrary `orgs[0]`, which
+ * can land an invited client on the dashboard of an unrelated org they own.
  */
 export async function setActiveOrgAndRedirect(
   defaultPath = "/portal",
+  preferredOrgId?: string,
 ): Promise<string> {
   const orgsRes = await fetch(`${API_URL}/api/auth/organization/list`, {
     credentials: "include",
   });
   if (!orgsRes.ok) return defaultPath;
 
-  const orgs = await orgsRes.json();
+  const orgs: { id: string }[] = await orgsRes.json();
   if (!orgs?.length) return defaultPath;
+
+  const targetOrgId =
+    preferredOrgId && orgs.some((o) => o.id === preferredOrgId)
+      ? preferredOrgId
+      : orgs[0].id;
 
   await fetch(`${API_URL}/api/auth/organization/set-active`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ organizationId: orgs[0].id }),
+    body: JSON.stringify({ organizationId: targetOrgId }),
     credentials: "include",
   });
 

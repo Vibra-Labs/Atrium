@@ -2,6 +2,12 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.6.2] — 2026-04-28
+
+### Fixed
+
+- **Client invite signup landed on the org setup wizard** — when an invitee already belonged to another org (e.g. their own agency), the post-invite redirect picked an arbitrary `orgs[0]` as the active org and routed by *that* org's role, sending the client to `/dashboard` (or `/setup` if that org's wizard was incomplete) instead of the inviting org's portal. The invited org id from `acceptInvitation` is now pinned as active before redirecting.
+
 ## [1.6.1] — 2026-04-27
 
 ### Fixed

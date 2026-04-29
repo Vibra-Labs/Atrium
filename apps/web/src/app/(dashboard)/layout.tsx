@@ -8,6 +8,7 @@ import { MobileNav } from "./mobile-nav";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
+import { DEFAULT_BRANDING } from "@atrium/shared";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
 
@@ -138,7 +139,15 @@ export default async function DashboardLayout({
   const logoSrc = getLogoSrc(branding);
 
   return (
-    <div className="min-h-screen flex">
+    <div
+      className="min-h-screen flex"
+      style={
+        {
+          "--primary": branding?.primaryColor || DEFAULT_BRANDING.primaryColor,
+          "--accent": branding?.accentColor || DEFAULT_BRANDING.accentColor,
+        } as React.CSSProperties
+      }
+    >
       <DynamicFavicon href={logoSrc || "/icon.png"} />
       {/* Desktop sidebar - hidden on mobile */}
       <aside className="hidden md:flex w-64 border-r border-[var(--border)] p-4 flex-col">

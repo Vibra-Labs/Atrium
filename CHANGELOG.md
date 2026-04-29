@@ -2,6 +2,12 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.6.3] — 2026-04-28
+
+### Fixed
+
+- **Saved branding colors were ignored on the dashboard and setup wizard** — the org's primary/accent colors persisted correctly and applied in the client portal, but the `(dashboard)` and `(setup)` route group layouts never set the `--primary`/`--accent` CSS variables, so buttons and accents fell back to the default theme. Both layouts now fetch branding server-side and apply the saved colors via inline CSS variables, matching the portal layout. Reported in #43.
+
 ## [1.6.2] — 2026-04-28
 
 ### Fixed

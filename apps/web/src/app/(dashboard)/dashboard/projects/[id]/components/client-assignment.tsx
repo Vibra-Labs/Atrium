@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { Eye, X } from "lucide-react";
+import { Tooltip } from "@/components/tooltip";
 
 interface ClientMember {
   id: string;
@@ -13,12 +15,18 @@ export function ClientAssignment({
   assignedIds,
   onToggle,
   onRemove,
+  onPreview,
   disabled,
 }: {
   clients: ClientMember[];
   assignedIds: Set<string>;
   onToggle: (userId: string) => void;
   onRemove: (userId: string) => void;
+  onPreview?: (
+    userId: string,
+    clientName: string,
+    clientEmail: string,
+  ) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -61,26 +69,53 @@ export function ClientAssignment({
               inputRef.current?.focus();
             }}
           >
-            {assignedClients.map((c) => (
-              <span
-                key={c.userId}
-                className="inline-flex items-center gap-1 px-2 py-0.5 bg-[var(--muted)] rounded text-xs font-medium"
-              >
-                {c.user.name}
-                {!disabled && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemove(c.userId);
-                    }}
-                    className="ml-0.5 hover:text-red-500"
-                  >
-                    &times;
-                  </button>
-                )}
-              </span>
-            ))}
+            {assignedClients.map((c) => {
+              const canRemove = !disabled;
+              const canPreview = !!onPreview;
+              const hasActions = canRemove || canPreview;
+              return (
+                <span
+                  key={c.userId}
+                  className="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 bg-[var(--muted)] rounded text-xs font-medium"
+                >
+                  <span>{c.user.name}</span>
+                  {hasActions && (
+                    <span className="inline-flex items-center gap-0.5 pl-1.5 border-l border-[var(--border)]">
+                      {canPreview && (
+                        <Tooltip label="View as customer">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onPreview!(c.userId, c.user.name, c.user.email);
+                            }}
+                            className="inline-flex items-center justify-center p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--background)] transition-colors"
+                            aria-label={`View portal as ${c.user.name}`}
+                          >
+                            <Eye size={14} />
+                          </button>
+                        </Tooltip>
+                      )}
+                      {canRemove && (
+                        <Tooltip label="Remove from project">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemove(c.userId);
+                            }}
+                            className="inline-flex items-center justify-center p-1 rounded text-[var(--muted-foreground)] hover:text-red-600 hover:bg-[var(--background)] transition-colors"
+                            aria-label={`Remove ${c.user.name} from project`}
+                          >
+                            <X size={14} />
+                          </button>
+                        </Tooltip>
+                      )}
+                    </span>
+                  )}
+                </span>
+              );
+            })}
             {!disabled && (
               <input
                 ref={inputRef}

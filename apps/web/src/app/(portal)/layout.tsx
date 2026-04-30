@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -5,6 +6,8 @@ import { SignOutButton } from "./sign-out-button";
 import { getSession } from "@/lib/auth";
 import { NotificationBell } from "@/components/notification-bell";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
+import { PreviewModeProvider } from "@/lib/preview-mode";
+import { PreviewBanner } from "@/components/preview-banner";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
 
@@ -71,37 +74,42 @@ export default async function PortalLayout({
   const logoSrc = getLogoSrc(branding);
 
   return (
-    <div
-      style={
-        {
-          "--primary": branding?.primaryColor || "#006b68",
-          "--accent": branding?.accentColor || "#ff6b5c",
-        } as React.CSSProperties
-      }
-    >
-      <DynamicFavicon href={logoSrc || "/icon.png"} />
-      <header className="border-b border-[var(--border)] px-6 py-4 flex items-center gap-3">
-        {!branding?.hideLogo && (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={logoSrc || "/icon.png"} alt="Logo" className="h-8 w-8 object-contain" />
-        )}
-        <span className="font-semibold flex-1">{orgName || "Atrium"}</span>
-        <Link
-          href="/portal"
-          className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+    <Suspense fallback={null}>
+      <PreviewModeProvider>
+        <div
+          style={
+            {
+              "--primary": branding?.primaryColor || "#006b68",
+              "--accent": branding?.accentColor || "#ff6b5c",
+            } as React.CSSProperties
+          }
         >
-          Projects
-        </Link>
-        <Link
-          href="/portal/settings"
-          className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-        >
-          Settings
-        </Link>
-        <NotificationBell />
-        <SignOutButton />
-      </header>
-      <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">{children}</main>
-    </div>
+          <DynamicFavicon href={logoSrc || "/icon.png"} />
+          <PreviewBanner />
+          <header className="border-b border-[var(--border)] px-6 py-4 flex items-center gap-3">
+            {!branding?.hideLogo && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={logoSrc || "/icon.png"} alt="Logo" className="h-8 w-8 object-contain" />
+            )}
+            <span className="font-semibold flex-1">{orgName || "Atrium"}</span>
+            <Link
+              href="/portal"
+              className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            >
+              Projects
+            </Link>
+            <Link
+              href="/portal/settings"
+              className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            >
+              Settings
+            </Link>
+            <NotificationBell />
+            <SignOutButton />
+          </header>
+          <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">{children}</main>
+        </div>
+      </PreviewModeProvider>
+    </Suspense>
   );
 }

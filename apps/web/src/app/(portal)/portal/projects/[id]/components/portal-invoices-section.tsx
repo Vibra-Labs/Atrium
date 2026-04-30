@@ -7,6 +7,7 @@ import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { Receipt, Download, CreditCard } from "lucide-react";
 import { downloadFile } from "@/lib/download";
+import { usePreviewMode } from "@/lib/preview-mode";
 
 interface LineItem {
   id: string;
@@ -56,6 +57,7 @@ export function PortalInvoicesSection({
   const [stripeEnabled, setStripeEnabled] = useState(false);
   const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
   const { success, info, error: showError } = useToast();
+  const { preview } = usePreviewMode();
 
   useEffect(() => {
     apiFetch<{ paymentInstructions: string | null; stripeConnectEnabled: boolean }>("/settings/payment-instructions")
@@ -220,8 +222,9 @@ export function PortalInvoicesSection({
                   {stripeEnabled && isPayable(inv.status) && (
                     <button
                       onClick={(e) => handlePayNow(e, inv.id)}
-                      disabled={payingInvoiceId === inv.id}
-                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 mr-3 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity shrink-0"
+                      disabled={!!preview || payingInvoiceId === inv.id}
+                      title={preview ? "Disabled in preview mode" : undefined}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 mr-3 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <CreditCard size={12} />
                       {payingInvoiceId === inv.id ? "..." : "Pay"}
@@ -241,8 +244,9 @@ export function PortalInvoicesSection({
                         {stripeEnabled && isPayable(inv.status) && (
                           <button
                             onClick={(e) => handlePayNow(e, inv.id)}
-                            disabled={payingInvoiceId === inv.id}
-                            className="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity"
+                            disabled={!!preview || payingInvoiceId === inv.id}
+                            title={preview ? "Disabled in preview mode" : undefined}
+                            className="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <CreditCard size={14} />
                             {payingInvoiceId === inv.id ? "Redirecting..." : "Pay Now"}

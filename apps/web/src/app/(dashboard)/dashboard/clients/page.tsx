@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X, Eye } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
@@ -186,6 +186,11 @@ export default function PeoplePage() {
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to remove");
     }
+  };
+
+  const handleViewAsClient = (clientUserId: string) => {
+    track("client_viewed_as");
+    window.open(`/portal?previewAs=${clientUserId}`, "_blank", "noopener");
   };
 
   const handleResetPassword = async (memberId: string, email: string) => {
@@ -827,6 +832,16 @@ export default function PeoplePage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          {(currentRole === "owner" || currentRole === "admin") && (
+                            <button
+                              onClick={() => handleViewAsClient(member.userId)}
+                              className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors"
+                              title="View as customer"
+                              aria-label={`View portal as ${member.user.name}`}
+                            >
+                              <Eye size={14} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleResetPassword(member.id, member.user.email)}
                             disabled={resettingMemberId === member.id}

@@ -29,19 +29,6 @@ const PreviewModeContext = createContext<PreviewModeContextValue>({
   exitPreview: () => {},
 });
 
-interface MemberRecord {
-  id: string;
-  userId: string;
-  role: string;
-  user: { id: string; name: string; email: string };
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-}
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
 function readStored(): PreviewModeState | null {
   if (typeof window === "undefined") return null;
   try {
@@ -76,54 +63,30 @@ export function PreviewModeProvider({ children }: { children: ReactNode }) {
     const requestedId = searchParams.get("previewAs");
     if (!requestedId) return;
 
-    let cancelled = false;
-    (async () => {
-      try {
-        // The server will validate role + org membership via the X-Preview-As
-        // header below; we just need the client's name/email for the banner.
-        const res = await fetch(`${API_URL}/api/clients?page=1&limit=100`, {
-          credentials: "include",
-        });
-        if (!res.ok) throw new Error("Failed to load clients");
-        const body = (await res.json()) as PaginatedResponse<MemberRecord>;
-        const match = body.data.find((m) => m.userId === requestedId);
-        if (!match) throw new Error("Client not found");
-        if (cancelled) return;
-        const state: PreviewModeState = {
-          clientId: match.userId,
-          clientName: match.user.name,
-          clientEmail: match.user.email,
-        };
-        writeStored(state);
-        setPreview(state);
-      } catch (err) {
-        console.error("preview-mode init failed", err);
-        writeStored(null);
-        setPreview(null);
-      } finally {
-        if (!cancelled) {
-          // Strip ?previewAs= from the URL.
-          router.replace("/portal");
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
+    const clientName = searchParams.get("previewName") || "Client";
+    const clientEmail = searchParams.get("previewEmail") || "";
+    const state: PreviewModeState = {
+      clientId: requestedId,
+      clientName,
+      clientEmail,
     };
-  }, [router, searchParams]);
+    writeStored(state);
+    setPreview(state);
+
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/portal");
+    }
+  }, [searchParams]);
 
   const exitPreview = useCallback(() => {
     writeStored(null);
     setPreview(null);
-    if (typeof window !== "undefined") {
-      // Try to close the tab (works when opened via window.open).
-      window.close();
-      // Fallback if the browser blocks close().
-      setTimeout(() => {
-        if (!window.closed) router.push("/dashboard/clients");
-      }, 100);
-    }
+    if (typeof window === "undefined") return;
+    // Opened via window.open from dashboard; close if allowed, else navigate back.
+    window.close();
+    setTimeout(() => {
+      if (!window.closed) router.push("/dashboard/clients");
+    }, 100);
   }, [router]);
 
   const value = useMemo(

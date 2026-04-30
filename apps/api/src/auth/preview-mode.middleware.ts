@@ -4,11 +4,12 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Request, Response, NextFunction } from "express";
+import { ROLES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthenticatedRequest } from "../common";
 
 const HEADER_NAME = "x-preview-as";
-const PRIVILEGED_ROLES = new Set(["owner", "admin"]);
+const PRIVILEGED_ROLES = new Set<string>([ROLES.OWNER, ROLES.ADMIN]);
 
 @Injectable()
 export class PreviewModeMiddleware implements NestMiddleware {
@@ -36,7 +37,7 @@ export class PreviewModeMiddleware implements NestMiddleware {
       select: { userId: true, role: true, organizationId: true },
     });
 
-    if (!targetMember || targetMember.role !== "member") {
+    if (!targetMember || targetMember.role !== ROLES.MEMBER) {
       throw new UnauthorizedException("Preview unavailable");
     }
 

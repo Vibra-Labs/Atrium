@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import type { AuthenticatedRequest } from "../common";
 
-const SAFE_METHODS = new Set(["GET", "HEAD"]);
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 @Injectable()
 export class PreviewModeGuard implements CanActivate {

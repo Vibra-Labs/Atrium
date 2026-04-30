@@ -24,6 +24,10 @@ describe("PreviewModeGuard", () => {
     expect(guard.canActivate(buildContext("HEAD", true))).toBe(true);
   });
 
+  it("allows OPTIONS preflight when previewMode is true", () => {
+    expect(guard.canActivate(buildContext("OPTIONS", true))).toBe(true);
+  });
+
   it("rejects POST when previewMode is true", () => {
     expect(() => guard.canActivate(buildContext("POST", true))).toThrow(
       ForbiddenException,

@@ -85,7 +85,6 @@ async function inviteAndAcceptClient(
     timeout: 30000,
   });
   await clientPage.waitForSelector("#name", { state: "visible", timeout: 30000 });
-  // Allow React to hydrate before interacting.
   await clientPage.waitForLoadState("networkidle", { timeout: 30000 });
   await clientPage.locator("#name").fill(clientName);
   await clientPage.locator("#email").fill(clientEmail);

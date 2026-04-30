@@ -188,9 +188,18 @@ export default function PeoplePage() {
     }
   };
 
-  const handleViewAsClient = (clientUserId: string) => {
+  const handleViewAsClient = (
+    clientUserId: string,
+    clientName: string,
+    clientEmail: string,
+  ) => {
     track("client_viewed_as");
-    window.open(`/portal?previewAs=${clientUserId}`, "_blank", "noopener");
+    const params = new URLSearchParams({
+      previewAs: clientUserId,
+      previewName: clientName,
+      previewEmail: clientEmail,
+    });
+    window.open(`/portal?${params.toString()}`, "_blank", "noopener");
   };
 
   const handleResetPassword = async (memberId: string, email: string) => {
@@ -834,7 +843,13 @@ export default function PeoplePage() {
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           {(currentRole === "owner" || currentRole === "admin") && (
                             <button
-                              onClick={() => handleViewAsClient(member.userId)}
+                              onClick={() =>
+                                handleViewAsClient(
+                                  member.userId,
+                                  member.user.name,
+                                  member.user.email,
+                                )
+                              }
                               className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors"
                               title="View as customer"
                               aria-label={`View portal as ${member.user.name}`}

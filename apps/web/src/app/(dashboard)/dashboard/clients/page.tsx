@@ -7,6 +7,7 @@ import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
 import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X, Eye } from "lucide-react";
 import { track } from "@/lib/track";
+import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
 import Link from "next/link";
@@ -194,12 +195,7 @@ export default function PeoplePage() {
     clientEmail: string,
   ) => {
     track("client_viewed_as");
-    const params = new URLSearchParams({
-      previewAs: clientUserId,
-      previewName: clientName,
-      previewEmail: clientEmail,
-    });
-    window.open(`/portal?${params.toString()}`, "_blank", "noopener");
+    startPreview(clientUserId, clientName, clientEmail);
   };
 
   const handleResetPassword = async (memberId: string, email: string) => {

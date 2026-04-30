@@ -17,6 +17,12 @@ export class PreviewModeMiddleware implements NestMiddleware {
 
   async use(req: Request, _res: Response, next: NextFunction): Promise<void> {
     const authReq = req as AuthenticatedRequest;
+    const url: string = req.originalUrl || req.url || "";
+    if (url.startsWith("/api/auth/")) {
+      next();
+      return;
+    }
+
     const headerValue = req.headers[HEADER_NAME];
     const targetUserId = Array.isArray(headerValue) ? headerValue[0] : headerValue;
 

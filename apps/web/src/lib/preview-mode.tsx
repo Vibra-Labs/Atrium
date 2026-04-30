@@ -12,11 +12,57 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 const STORAGE_KEY = "atrium:previewAs";
+const HANDOFF_PREFIX = "atrium:previewPending:";
+const HANDOFF_TTL_MS = 60_000;
 
 export interface PreviewModeState {
   clientId: string;
   clientName: string;
   clientEmail: string;
+}
+
+interface PreviewHandoff {
+  name: string;
+  email: string;
+  ts: number;
+}
+
+export function startPreview(
+  clientUserId: string,
+  clientName: string,
+  clientEmail: string,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const handoff: PreviewHandoff = {
+      name: clientName,
+      email: clientEmail,
+      ts: Date.now(),
+    };
+    window.localStorage.setItem(
+      HANDOFF_PREFIX + clientUserId,
+      JSON.stringify(handoff),
+    );
+  } catch (err) {
+    console.error("preview-mode handoff write failed", err);
+  }
+  const params = new URLSearchParams({ previewAs: clientUserId });
+  window.open(`/portal?${params.toString()}`, "_blank", "noopener");
+}
+
+function readHandoff(clientUserId: string): PreviewHandoff | null {
+  if (typeof window === "undefined") return null;
+  const key = HANDOFF_PREFIX + clientUserId;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    window.localStorage.removeItem(key);
+    const parsed = JSON.parse(raw) as PreviewHandoff;
+    if (Date.now() - parsed.ts > HANDOFF_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 interface PreviewModeContextValue {
@@ -63,12 +109,11 @@ export function PreviewModeProvider({ children }: { children: ReactNode }) {
     const requestedId = searchParams.get("previewAs");
     if (!requestedId) return;
 
-    const clientName = searchParams.get("previewName") || "Client";
-    const clientEmail = searchParams.get("previewEmail") || "";
+    const handoff = readHandoff(requestedId);
     const state: PreviewModeState = {
       clientId: requestedId,
-      clientName,
-      clientEmail,
+      clientName: handoff?.name || "Client",
+      clientEmail: handoff?.email || "",
     };
     writeStored(state);
     setPreview(state);

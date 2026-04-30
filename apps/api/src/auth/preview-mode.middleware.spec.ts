@@ -40,6 +40,27 @@ describe("PreviewModeMiddleware", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores X-Preview-As header on /api/auth/* routes", async () => {
+    const prisma = buildPrismaMock({
+      userId: "client-9",
+      role: "member",
+      organizationId: "org-1",
+    });
+    const mw = new PreviewModeMiddleware(prisma as any);
+    const req = buildReq({
+      headers: { "x-preview-as": "client-9" },
+      originalUrl: "/api/auth/get-session",
+    });
+    const next = mock(() => {}) as unknown as NextFunction;
+
+    await mw.use(req as Request, {} as Response, next);
+
+    expect(req.user?.id).toBe("owner-1");
+    expect(req.previewMode).toBeUndefined();
+    expect(prisma.member.findFirst).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it("overrides user.id when owner previews a valid client", async () => {
     const prisma = buildPrismaMock({
       userId: "client-9",

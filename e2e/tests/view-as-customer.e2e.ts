@@ -23,13 +23,22 @@ async function createOwner(browser: Browser, prefix = "vac-owner"): Promise<{
     throw new Error(`Owner signup failed (${res.status()}): ${await res.text()}`);
   }
 
-  await page.goto(`${WEB_URL}/login`, { waitUntil: "networkidle", timeout: 15000 });
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
-  await page.getByRole("button", { name: /sign in/i }).click();
-  await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
+  await page.goto(`${WEB_URL}/dashboard`, {
+    waitUntil: "networkidle",
+    timeout: 15000,
+  });
 
-  if (page.url().includes("/setup")) {
+  let url = page.url();
+  if (url.includes("/login")) {
+    await page.goto(`${WEB_URL}/login`);
+    await page.getByLabel(/email/i).fill(email);
+    await page.getByLabel(/password/i).fill(password);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
+    url = page.url();
+  }
+
+  if (url.includes("/setup")) {
     const cookies = await context.cookies();
     const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
     await page.request.post(`${API_URL}/api/setup/complete`, {
@@ -72,12 +81,15 @@ async function inviteAndAcceptClient(
   const clientCtx = await browser.newContext({ storageState: undefined });
   const clientPage = await clientCtx.newPage();
   await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`, {
-    waitUntil: "networkidle",
-    timeout: 15000,
+    waitUntil: "domcontentloaded",
+    timeout: 30000,
   });
-  await clientPage.getByLabel(/your name/i).fill(clientName);
-  await clientPage.getByLabel(/email/i).fill(clientEmail);
-  await clientPage.getByLabel(/password/i).fill(password);
+  await clientPage.waitForSelector("#name", { state: "visible", timeout: 30000 });
+  // Allow React to hydrate before interacting.
+  await clientPage.waitForLoadState("networkidle", { timeout: 30000 });
+  await clientPage.locator("#name").fill(clientName);
+  await clientPage.locator("#email").fill(clientEmail);
+  await clientPage.locator("#password").fill(password);
   await clientPage.getByRole("button", { name: /create account & join/i }).click();
   await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
   await clientCtx.close();
@@ -86,6 +98,7 @@ async function inviteAndAcceptClient(
 }
 
 test.describe("View as customer", () => {
+  test.setTimeout(120000);
   test("owner can preview portal as a client and mutations are blocked", async ({
     browser,
   }) => {

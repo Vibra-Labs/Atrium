@@ -1,0 +1,161 @@
+import { test, expect } from "@playwright/test";
+import type { Browser, Page } from "@playwright/test";
+
+const API_URL = "http://localhost:3001";
+const WEB_URL = "http://localhost:3000";
+
+async function createOwner(browser: Browser, prefix = "vac-owner"): Promise<{
+  context: import("@playwright/test").BrowserContext;
+  page: Page;
+  email: string;
+  password: string;
+}> {
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  const orgName = `${prefix} Org ${Date.now().toString(36)}`;
+  const email = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
+  const password = "ViewAs123!";
+
+  const res = await page.request.post(`${API_URL}/api/onboarding/signup`, {
+    data: { name: "VAC Owner", email, password, orgName },
+  });
+  if (!res.ok()) {
+    throw new Error(`Owner signup failed (${res.status()}): ${await res.text()}`);
+  }
+
+  await page.goto(`${WEB_URL}/login`, { waitUntil: "networkidle", timeout: 15000 });
+  await page.getByLabel(/email/i).fill(email);
+  await page.getByLabel(/password/i).fill(password);
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
+
+  if (page.url().includes("/setup")) {
+    const cookies = await context.cookies();
+    const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
+    await page.request.post(`${API_URL}/api/setup/complete`, {
+      headers: { "x-csrf-token": csrfToken },
+    });
+    await page.goto(`${WEB_URL}/dashboard`, {
+      waitUntil: "networkidle",
+      timeout: 15000,
+    });
+  }
+
+  return { context, page, email, password };
+}
+
+async function inviteAndAcceptClient(
+  browser: Browser,
+  ownerPage: Page,
+  prefix: string,
+): Promise<{ clientEmail: string; clientName: string; password: string }> {
+  const clientEmail = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
+  const password = "Client123!";
+  const clientName = "Test Client VAC";
+
+  const inviteRes = await ownerPage.request.post(
+    `${API_URL}/api/auth/organization/invite-member`,
+    {
+      data: { email: clientEmail, role: "member" },
+      headers: { Origin: WEB_URL },
+    },
+  );
+  if (!inviteRes.ok()) {
+    throw new Error(`Invite failed (${inviteRes.status()}): ${await inviteRes.text()}`);
+  }
+  const inviteBody = await inviteRes.json();
+  const invitationId: string = inviteBody?.id || inviteBody?.invitation?.id;
+  if (!invitationId) {
+    throw new Error(`Could not extract invitation id from: ${JSON.stringify(inviteBody)}`);
+  }
+
+  const clientCtx = await browser.newContext({ storageState: undefined });
+  const clientPage = await clientCtx.newPage();
+  await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`, {
+    waitUntil: "networkidle",
+    timeout: 15000,
+  });
+  await clientPage.getByLabel(/your name/i).fill(clientName);
+  await clientPage.getByLabel(/email/i).fill(clientEmail);
+  await clientPage.getByLabel(/password/i).fill(password);
+  await clientPage.getByRole("button", { name: /create account & join/i }).click();
+  await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+  await clientCtx.close();
+
+  return { clientEmail, clientName, password };
+}
+
+test.describe("View as customer", () => {
+  test("owner can preview portal as a client and mutations are blocked", async ({
+    browser,
+  }) => {
+    const { context: ownerCtx, page: ownerPage } = await createOwner(browser);
+    const { clientEmail, clientName } = await inviteAndAcceptClient(
+      browser,
+      ownerPage,
+      "vac-client",
+    );
+
+    await ownerPage.goto(`${WEB_URL}/dashboard/clients`, {
+      waitUntil: "networkidle",
+      timeout: 15000,
+    });
+    await ownerPage.getByRole("button", { name: /^clients/i }).click();
+
+    const clientRow = ownerPage
+      .locator("div")
+      .filter({ hasText: clientEmail })
+      .first();
+    await expect(clientRow).toBeVisible({ timeout: 10000 });
+
+    const viewButton = clientRow.getByTitle("View as customer");
+    await expect(viewButton).toBeVisible();
+
+    const [previewPage] = await Promise.all([
+      ownerCtx.waitForEvent("page"),
+      viewButton.click(),
+    ]);
+
+    await previewPage.waitForLoadState("networkidle");
+    await previewPage.waitForURL(/\/portal/, { timeout: 15000 });
+
+    await expect(previewPage.getByText(/previewing as/i)).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(previewPage.getByText(clientName)).toBeVisible();
+    await expect(previewPage.getByText(/read-only/i)).toBeVisible();
+    await expect(
+      previewPage.getByRole("button", { name: /exit preview/i }),
+    ).toBeVisible();
+
+    const mutationResult = await previewPage.evaluate(async () => {
+      try {
+        const res = await fetch("http://localhost:3001/api/clients/me/profile", {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Preview-As": JSON.parse(
+              window.sessionStorage.getItem("atrium:previewAs") || "{}",
+            ).clientId || "",
+          },
+          body: JSON.stringify({ company: "should-not-save" }),
+        });
+        return { ok: res.ok, status: res.status };
+      } catch (err) {
+        return { error: String(err), ok: false, status: 0 };
+      }
+    });
+    expect(mutationResult.ok).not.toBe(true);
+    expect([401, 403]).toContain(mutationResult.status);
+
+    await previewPage.getByRole("button", { name: /exit preview/i }).click();
+    await previewPage
+      .waitForURL(/\/dashboard\/clients/, { timeout: 5000 })
+      .catch(() => {
+        // Tab may have closed via window.close() instead of navigating.
+      });
+
+    await ownerCtx.close();
+  });
+});

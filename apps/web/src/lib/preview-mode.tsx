@@ -81,7 +81,7 @@ export function PreviewModeProvider({ children }: { children: ReactNode }) {
       try {
         // The server will validate role + org membership via the X-Preview-As
         // header below; we just need the client's name/email for the banner.
-        const res = await fetch(`${API_URL}/api/clients?page=1&limit=200`, {
+        const res = await fetch(`${API_URL}/api/clients?page=1&limit=100`, {
           credentials: "include",
         });
         if (!res.ok) throw new Error("Failed to load clients");

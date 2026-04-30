@@ -170,4 +170,93 @@ test.describe("View as customer", () => {
 
     await ownerCtx.close();
   });
+
+  test("query params are stripped from URL after preview mode initializes", async ({
+    browser,
+  }) => {
+    const { context: ownerCtx, page: ownerPage } = await createOwner(
+      browser,
+      "vac-strip",
+    );
+    const { clientEmail } = await inviteAndAcceptClient(
+      browser,
+      ownerPage,
+      "vac-strip-client",
+    );
+
+    await ownerPage.goto(`${WEB_URL}/dashboard/clients`, {
+      waitUntil: "networkidle",
+      timeout: 15000,
+    });
+    await ownerPage.getByRole("button", { name: /^clients/i }).click();
+
+    const clientRow = ownerPage
+      .locator("div")
+      .filter({ hasText: clientEmail })
+      .first();
+    await expect(clientRow).toBeVisible({ timeout: 10000 });
+
+    const viewButton = clientRow.getByTitle("View as customer");
+    const [previewPage] = await Promise.all([
+      ownerCtx.waitForEvent("page"),
+      viewButton.click(),
+    ]);
+
+    await previewPage.waitForLoadState("networkidle");
+    // After replaceState the URL must contain no previewAs/previewName/previewEmail
+    // query params. The portal may internally redirect /portal -> /portal/projects.
+    await expect(previewPage).toHaveURL(
+      /^http:\/\/localhost:3000\/portal(\/.*)?$/,
+      { timeout: 10000 },
+    );
+    expect(new URL(previewPage.url()).search).toBe("");
+
+    await ownerCtx.close();
+  });
+
+  test("banner shows fallback name 'Client' when previewName param is absent", async ({
+    browser,
+  }) => {
+    // Navigate directly to /portal?previewAs=<id> without previewName/previewEmail.
+    // The provider must fall back to "Client" / "" instead of crashing.
+    const { context: ownerCtx, page: ownerPage } = await createOwner(
+      browser,
+      "vac-fallback",
+    );
+    const { } = await inviteAndAcceptClient(
+      browser,
+      ownerPage,
+      "vac-fallback-client",
+    );
+
+    // Fetch the client's userId directly via the API so we can craft the URL.
+    const membersRes = await ownerPage.request.get(
+      `${API_URL}/api/clients?page=1&limit=100`,
+      { headers: { Origin: WEB_URL } },
+    );
+    const membersBody = await membersRes.json();
+    const clientMember = (membersBody.data as Array<{
+      role: string;
+      userId: string;
+    }>).find((m) => m.role === "member");
+
+    if (!clientMember) {
+      throw new Error("Could not find a member-role member to preview as");
+    }
+
+    // Open /portal with only previewAs — deliberately omit previewName/previewEmail.
+    const portalPage = await ownerCtx.newPage();
+    await portalPage.goto(
+      `${WEB_URL}/portal?previewAs=${clientMember.userId}`,
+      { waitUntil: "networkidle", timeout: 20000 },
+    );
+
+    await expect(portalPage.getByText(/previewing as/i)).toBeVisible({
+      timeout: 10000,
+    });
+    // Fallback name must render as "Client", not throw or show undefined/null.
+    await expect(portalPage.getByText("Client")).toBeVisible();
+
+    await ownerCtx.close();
+  });
 });

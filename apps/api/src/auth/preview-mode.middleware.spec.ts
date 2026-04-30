@@ -139,4 +139,49 @@ describe("PreviewModeMiddleware", () => {
     expect(cachedUser.id).toBe("owner-1");
     expect(req.user?.id).toBe("client-9");
   });
+
+  it("uses first value when X-Preview-As header is an array", async () => {
+    const prisma = buildPrismaMock({
+      userId: "client-9",
+      role: "member",
+      organizationId: "org-1",
+    });
+    const mw = new PreviewModeMiddleware(prisma as any);
+    const req = buildReq() as MockReq & { headers: Record<string, string | string[]> };
+    req.headers["x-preview-as"] = ["client-9", "ignored-second-value"];
+    const next = mock(() => {}) as unknown as NextFunction;
+
+    await mw.use(req as unknown as Request, {} as Response, next);
+
+    expect(req.user?.id).toBe("client-9");
+    expect(req.previewMode).toBe(true);
+  });
+
+  it("rejects with 401 when requester has no member context", async () => {
+    const prisma = buildPrismaMock(null);
+    const mw = new PreviewModeMiddleware(prisma as any);
+    const req = buildReq({
+      headers: { "x-preview-as": "client-9" },
+      member: undefined,
+    });
+    const next = mock(() => {}) as unknown as NextFunction;
+
+    await expect(mw.use(req as Request, {} as Response, next)).rejects.toThrow(
+      "Preview unavailable",
+    );
+  });
+
+  it("rejects with 401 when requester has no organization context", async () => {
+    const prisma = buildPrismaMock(null);
+    const mw = new PreviewModeMiddleware(prisma as any);
+    const req = buildReq({
+      headers: { "x-preview-as": "client-9" },
+      organization: undefined,
+    });
+    const next = mock(() => {}) as unknown as NextFunction;
+
+    await expect(mw.use(req as Request, {} as Response, next)).rejects.toThrow(
+      "Preview unavailable",
+    );
+  });
 });

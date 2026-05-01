@@ -92,7 +92,7 @@ The `SystemSettings` table already exists per-org and is the right home for this
 - Clicking it opens a confirmation modal. If the acting user has 2FA themselves, they must enter their own current TOTP code as confirmation.
 - The frontend calls `DELETE /two-factor/admin/:userId` (Atrium-owned, not Better Auth).
 - Server checks: same-org membership, acting user's role is `owner` or `admin`, target user exists.
-- On success: clears the target user's `twoFactor` row and `User.twoFactorEnabled`. Logged to `ActivityLog`.
+- On success: clears the target user's `twoFactor` row and `User.twoFactorEnabled`. Server emits a structured pino log line at `info` level with `{ event: "two_factor.admin_disabled", actorId, targetUserId, organizationId }` so self-hosters and cloud operators can grep audit trails. (We don't write to `ActivityLog` because that table is project-scoped.)
 
 ### Recovery — owner lockout (CLI)
 
@@ -164,7 +164,7 @@ The `SystemSettings` table already exists per-org and is the right home for this
 - Admin-disable endpoint:
   - Cross-org rejection (admin from org A cannot disable for user in org B).
   - Role check (member role rejected).
-  - `ActivityLog` row written on success.
+  - Pino log line emitted on success with `{ event: "two_factor.admin_disabled", actorId, targetUserId, organizationId }`.
 - CLI script: happy path + user-not-found + user-without-2FA.
 
 ### E2E (Playwright, `e2e/tests/two-factor.e2e.ts`)

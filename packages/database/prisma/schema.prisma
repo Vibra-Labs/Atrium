@@ -11,13 +11,14 @@ datasource db {
 // ─── Better Auth tables (managed by Better Auth CLI) ───
 
 model User {
-  id            String    @id
-  name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id
+  name             String
+  email            String    @unique
+  emailVerified    Boolean   @default(false)
+  twoFactorEnabled Boolean   @default(false)
+  image            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   sessions           Session[]
   accounts           Account[]
@@ -27,6 +28,7 @@ model User {
   documentVersions   DocumentVersion[]
   tasksRequested     Task[]              @relation("TaskRequester")
   tasksAssigned      Task[]              @relation("TaskAssignee")
+  twoFactors         TwoFactor[]
 
   @@map("user")
 }
@@ -76,6 +78,18 @@ model Verification {
   updatedAt  DateTime? @updatedAt
 
   @@map("verification")
+}
+
+model TwoFactor {
+  id          String @id @default(cuid())
+  secret      String
+  backupCodes String
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([secret])
+  @@map("two_factor")
 }
 
 model Organization {

@@ -55,10 +55,22 @@ export async function apiFetch<T = unknown>(
   // If a mutating request is rejected with a CSRF error, the response will
   // have set the csrf-token cookie. Re-read it and retry once.
   const method = (options.method || "GET").toUpperCase();
-  if (res.status === 403 && MUTATING_METHODS.has(method)) {
+  if (res.status === 403) {
     const body = await res.json().catch(() => ({}));
+    const code = (body as { code?: string }).code;
     const message: string = (body as Record<string, unknown>).message as string || "";
-    if (message.toLowerCase().includes("csrf")) {
+
+    if (code === "TWO_FACTOR_REQUIRED") {
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.startsWith("/2fa/setup")
+      ) {
+        window.location.href = "/2fa/setup";
+      }
+      throw new Error("Two-factor authentication is required");
+    }
+
+    if (MUTATING_METHODS.has(method) && message.toLowerCase().includes("csrf")) {
       res = await doFetch(path, options);
     } else {
       throw new Error(message || `API error: ${res.status}`);

@@ -131,3 +131,79 @@ describe("TimeEntriesService.create/update/delete", () => {
     expect(reloaded).toBeNull();
   });
 });
+
+describe("TimeEntriesService.list/report/generateInvoice", () => {
+  it("list filters by projectId and date range", async () => {
+    const e1 = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+    });
+    const otherProject = await prisma.project.create({ data: { name: "P2", organizationId: orgId } });
+    await service.create(userId, orgId, {
+      projectId: otherProject.id,
+      startedAt: "2026-04-01T11:00:00Z",
+      endedAt: "2026-04-01T12:00:00Z",
+    });
+    const res = await service.list(orgId, { projectId });
+    expect(res.data.length).toBe(1);
+    expect(res.data[0].id).toBe(e1.id);
+  });
+
+  it("report aggregates billable seconds and value cents", async () => {
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T10:00:00Z",
+      endedAt: "2026-04-01T10:30:00Z",
+      billable: false,
+    });
+    const r = await service.report(orgId, {});
+    expect(r.totals.seconds).toBe(5400);
+    expect(r.totals.billableSeconds).toBe(3600);
+    expect(r.totals.valueCents).toBe(5000); // 1h * $50
+  });
+
+  it("generateInvoice creates draft, snapshots rate, marks entries", async () => {
+    const e1 = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+    });
+    const e2 = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-02T09:00:00Z",
+      endedAt: "2026-04-02T09:30:00Z",
+    });
+    const { invoiceId } = await service.generateInvoice(userId, orgId, { projectId });
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { lineItems: true },
+    });
+    expect(invoice?.status).toBe("draft");
+    expect(invoice?.lineItems.length).toBe(2);
+    const total = invoice!.lineItems.reduce((s, li) => s + li.unitPrice * li.quantity, 0);
+    expect(total).toBe(5000 + 2500);
+    const reloaded = await prisma.timeEntry.findMany({ where: { id: { in: [e1.id, e2.id] } } });
+    expect(reloaded.every((e) => e.invoiceLineItemId !== null)).toBe(true);
+  });
+
+  it("generateInvoice rejects when no eligible entries", async () => {
+    await expect(service.generateInvoice(userId, orgId, { projectId })).rejects.toThrow();
+  });
+
+  it("generateInvoice skips already-invoiced entries", async () => {
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+    });
+    await service.generateInvoice(userId, orgId, { projectId });
+    await expect(service.generateInvoice(userId, orgId, { projectId })).rejects.toThrow();
+  });
+});

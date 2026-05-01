@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsBoolean, IsDateString, MaxLength } from "class-validator";
+import { IsString, IsOptional, IsArray, IsBoolean, IsDateString, IsInt, MaxLength, Min } from "class-validator";
 import { PaginationQueryDto } from "../common";
 
 export class CreateProjectDto {
@@ -95,4 +95,9 @@ export class UpdateProjectDto {
   @IsString({ each: true })
   @IsOptional()
   clientUserIds?: string[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  hourlyRateCents?: number | null;
 }

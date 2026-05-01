@@ -73,3 +73,61 @@ describe("TimeEntriesService.start/stop", () => {
     expect(entry.hourlyRateCents).toBe(12000);
   });
 });
+
+describe("TimeEntriesService.create/update/delete", () => {
+  it("create computes durationSec from start/end", async () => {
+    const start = new Date("2026-05-01T10:00:00Z");
+    const end = new Date("2026-05-01T11:30:00Z");
+    const entry = await service.create(userId, orgId, {
+      projectId,
+      startedAt: start.toISOString(),
+      endedAt: end.toISOString(),
+      description: "manual",
+    });
+    expect(entry.durationSec).toBe(5400);
+    expect(entry.hourlyRateCents).toBe(5000);
+  });
+
+  it("create rejects when end <= start", async () => {
+    const start = new Date("2026-05-01T10:00:00Z");
+    const end = new Date("2026-05-01T09:00:00Z");
+    await expect(
+      service.create(userId, orgId, { projectId, startedAt: start.toISOString(), endedAt: end.toISOString() }),
+    ).rejects.toThrow();
+  });
+
+  it("update on invoiced entry returns 409", async () => {
+    const entry = await service.create(userId, orgId, {
+      projectId,
+      startedAt: new Date(Date.now() - 3600_000).toISOString(),
+      endedAt: new Date().toISOString(),
+    });
+    // Fake an invoice link
+    const invoice = await prisma.invoice.create({
+      data: {
+        organizationId: orgId,
+        invoiceNumber: `INV-${Date.now()}`,
+        status: "draft",
+        dueDate: new Date(Date.now() + 86400000),
+      },
+    });
+    const lineItem = await prisma.invoiceLineItem.create({
+      data: { invoiceId: invoice.id, description: "x", quantity: 1, unitPrice: 5000 },
+    });
+    await prisma.timeEntry.update({ where: { id: entry.id }, data: { invoiceLineItemId: lineItem.id } });
+
+    await expect(service.update(entry.id, userId, orgId, { description: "edit" })).rejects.toThrow(/locked/i);
+    await expect(service.delete(entry.id, userId, orgId)).rejects.toThrow(/locked/i);
+  });
+
+  it("delete unlocked entry succeeds", async () => {
+    const entry = await service.create(userId, orgId, {
+      projectId,
+      startedAt: new Date(Date.now() - 3600_000).toISOString(),
+      endedAt: new Date().toISOString(),
+    });
+    await service.delete(entry.id, userId, orgId);
+    const reloaded = await prisma.timeEntry.findUnique({ where: { id: entry.id } });
+    expect(reloaded).toBeNull();
+  });
+});

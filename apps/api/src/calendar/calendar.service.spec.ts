@@ -54,10 +54,10 @@ afterAll(async () => {
 describe("CalendarService.list", () => {
   it("returns task whose dueDate falls in window", async () => {
     await prisma.task.create({
-      data: { title: "Inside", organizationId: orgId, projectId, status: "todo", dueDate: new Date("2026-05-10") },
+      data: { title: "Inside", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-05-10") },
     });
     await prisma.task.create({
-      data: { title: "Outside", organizationId: orgId, projectId, status: "todo", dueDate: new Date("2026-06-15") },
+      data: { title: "Outside", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-06-15") },
     });
     const events = await service.list(orgId, { from: "2026-05-01", to: "2026-05-31" });
     const tasks = events.filter((e) => e.type === "task");
@@ -103,7 +103,7 @@ describe("CalendarService.list", () => {
       data: { id: `cal-other-${stamp2}`, name: "Other", organizationId: orgId, startDate: new Date("2026-05-08") },
     });
     await prisma.task.create({
-      data: { title: "OtherTask", organizationId: orgId, projectId: other.id, status: "todo", dueDate: new Date("2026-05-12") },
+      data: { title: "OtherTask", organizationId: orgId, projectId: other.id, status: "open", dueDate: new Date("2026-05-12") },
     });
     const events = await service.list(orgId, { from: "2026-05-01", to: "2026-05-31", projectId });
     const titles = events.map((e) => e.title);
@@ -113,7 +113,7 @@ describe("CalendarService.list", () => {
 
   it("type filter returns only requested event types", async () => {
     await prisma.task.create({
-      data: { title: "T", organizationId: orgId, projectId, status: "todo", dueDate: new Date("2026-05-10") },
+      data: { title: "T", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-05-10") },
     });
     const events = await service.list(orgId, { from: "2026-05-01", to: "2026-05-31", type: "task" });
     expect(events.length).toBeGreaterThan(0);
@@ -134,10 +134,10 @@ describe("CalendarService.list", () => {
 
   it("sorts events ascending by date", async () => {
     await prisma.task.create({
-      data: { title: "Late", organizationId: orgId, projectId, status: "todo", dueDate: new Date("2026-05-22") },
+      data: { title: "Late", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-05-22") },
     });
     await prisma.task.create({
-      data: { title: "Early", organizationId: orgId, projectId, status: "todo", dueDate: new Date("2026-05-03") },
+      data: { title: "Early", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-05-03") },
     });
     const events = await service.list(orgId, { from: "2026-05-01", to: "2026-05-31" });
     for (let i = 1; i < events.length; i++) {

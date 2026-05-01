@@ -1,63 +1,7 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { test, expect } from "@playwright/test";
+import { createTask, getOrCreateProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
-
-async function getOrCreateProject(
-  request: APIRequestContext,
-  name: string,
-): Promise<string> {
-  const listRes = await request.get(`${API}/projects?limit=100`);
-  if (listRes.ok()) {
-    const list = await listRes.json();
-    const items: { id: string; name: string }[] = Array.isArray(list)
-      ? list
-      : (list.data ?? []);
-    const found = items.find((p) => p.name === name);
-    if (found) return found.id;
-  }
-  const csrfToken = getCsrfToken();
-  const res = await request.post(`${API}/projects`, {
-    data: { name },
-    headers: { "x-csrf-token": csrfToken },
-  });
-  if (!res.ok()) {
-    const body = await res.text();
-    throw new Error(
-      `Failed to create project (${res.status()}): ${body.slice(0, 200)}`,
-    );
-  }
-  const body = await res.json();
-  return body.id as string;
-}
-
-async function createTask(
-  request: APIRequestContext,
-  projectId: string,
-  title: string,
-  dueDate: Date,
-): Promise<string> {
-  const csrfToken = getCsrfToken();
-  const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
-    data: { title, dueDate: dueDate.toISOString() },
-    headers: { "x-csrf-token": csrfToken },
-  });
-  if (!res.ok()) {
-    const body = await res.text();
-    throw new Error(
-      `Failed to create task (${res.status()}): ${body.slice(0, 200)}`,
-    );
-  }
-  const body = await res.json();
-  return body.id as string;
-}
-
-async function dismissTelemetry(page: import("@playwright/test").Page): Promise<void> {
-  const noThanks = page.getByRole("button", { name: /^no thanks$/i });
-  if (await noThanks.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await noThanks.click();
-  }
-}
 
 function midOfMonth(): Date {
   const t = new Date();
@@ -71,7 +15,6 @@ test.describe("Calendar", () => {
     await createTask(request, projectId, title, midOfMonth());
 
     await page.goto("/dashboard/calendar");
-    await dismissTelemetry(page);
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 10000 });
   });
 
@@ -93,7 +36,6 @@ test.describe("Calendar", () => {
     await createTask(request, pb.id, titleB, due);
 
     await page.goto("/dashboard/calendar");
-    await dismissTelemetry(page);
     await expect(page.getByText(titleA).first()).toBeVisible({ timeout: 10000 });
     await expect(page.getByText(titleB).first()).toBeVisible();
 
@@ -112,7 +54,6 @@ test.describe("Calendar", () => {
     await createTask(request, projectId, title, new Date(midOfMonth().getFullYear(), midOfMonth().getMonth(), 17, 12, 0, 0));
 
     await page.goto("/dashboard/calendar");
-    await dismissTelemetry(page);
     await page.getByText(title).first().click();
     await page.waitForURL(/\/dashboard\/projects\/[^/]+\?tab=tasks&task=/);
   });
@@ -123,7 +64,6 @@ test.describe("Calendar", () => {
     await createTask(request, projectId, title, new Date(midOfMonth().getFullYear(), midOfMonth().getMonth(), 18, 12, 0, 0));
 
     await page.goto("/dashboard/calendar");
-    await dismissTelemetry(page);
     await page.getByRole("button", { name: /^agenda$/i }).click();
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 10000 });
   });

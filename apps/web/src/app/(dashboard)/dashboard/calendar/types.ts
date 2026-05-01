@@ -1,36 +1,10 @@
-export type CalendarEvent =
-  | {
-      type: "task";
-      id: string;
-      date: string;
-      title: string;
-      status: string;
-      projectId: string;
-      projectName: string;
-      assigneeId: string | null;
-      assigneeName: string | null;
-    }
-  | {
-      type: "project_start" | "project_end";
-      id: string;
-      date: string;
-      title: string;
-      projectId: string;
-      projectName: string;
-    }
-  | {
-      type: "invoice_due";
-      id: string;
-      date: string;
-      title: string;
-      status: string;
-      projectId: string | null;
-      projectName: string | null;
-      amountCents: number;
-    };
+export {
+  CALENDAR_EVENT_TYPES as ALL_TYPES,
+  type CalendarEvent,
+  type CalendarEventType,
+} from "@atrium/shared";
 
-export const ALL_TYPES = ["task", "project_start", "project_end", "invoice_due"] as const;
-export type CalendarEventType = (typeof ALL_TYPES)[number];
+import type { CalendarEvent } from "@atrium/shared";
 
 export function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -63,10 +37,11 @@ export function gridDays(month: Date): Date[] {
   const start = gridStart(month);
   const end = gridEnd(month);
   const days: Date[] = [];
-  const cur = new Date(start);
-  while (cur <= end) {
-    days.push(new Date(cur));
-    cur.setDate(cur.getDate() + 1);
+  // Use indexed Date construction (not setDate mutation) to avoid DST drift.
+  for (let i = 0; ; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    if (d > end) break;
+    days.push(d);
   }
   return days;
 }
@@ -79,4 +54,14 @@ export function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth()
     && a.getDate() === b.getDate();
+}
+
+export function groupByDate(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
+  const byDate = new Map<string, CalendarEvent[]>();
+  for (const e of events) {
+    const arr = byDate.get(e.date) ?? [];
+    arr.push(e);
+    byDate.set(e.date, arr);
+  }
+  return byDate;
 }

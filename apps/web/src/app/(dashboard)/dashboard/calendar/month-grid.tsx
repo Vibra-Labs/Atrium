@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { gridDays, isSameDay, toISODate } from "./types";
+import { useMemo, useState } from "react";
+import { gridDays, groupByDate, isSameDay, toISODate } from "./types";
 import type { CalendarEvent } from "./types";
 import { EventChip } from "./event-chip";
 
@@ -10,15 +10,9 @@ const MAX_VISIBLE = 3;
 
 export function MonthGrid({ month, events }: { month: Date; events: CalendarEvent[] }) {
   const [popoverDate, setPopoverDate] = useState<string | null>(null);
-  const days = gridDays(month);
+  const days = useMemo(() => gridDays(month), [month]);
   const today = new Date();
-
-  const byDate = new Map<string, CalendarEvent[]>();
-  for (const e of events) {
-    const arr = byDate.get(e.date) ?? [];
-    arr.push(e);
-    byDate.set(e.date, arr);
-  }
+  const byDate = useMemo(() => groupByDate(events), [events]);
 
   return (
     <div className="border border-[var(--border)] rounded-lg overflow-hidden">

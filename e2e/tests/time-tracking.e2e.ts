@@ -1,47 +1,11 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getOrCreateProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Get or create a project for use in this test suite. The Free plan caps
- * orgs at 2 projects, so we can't always create a fresh one — we reuse
- * existing projects by name when present.
- */
-async function getOrCreateProject(
-  request: APIRequestContext,
-  name: string,
-): Promise<string> {
-  // Look for an existing project with this name first
-  const listRes = await request.get(`${API}/projects?limit=100`);
-  if (listRes.ok()) {
-    const list = await listRes.json();
-    const items: { id: string; name: string }[] = Array.isArray(list)
-      ? list
-      : (list.data ?? []);
-    const found = items.find((p) => p.name === name);
-    if (found) return found.id;
-  }
-
-  // Otherwise create
-  const csrfToken = getCsrfToken();
-  const res = await request.post(`${API}/projects`, {
-    data: { name },
-    headers: { "x-csrf-token": csrfToken },
-  });
-  if (!res.ok()) {
-    const body = await res.text();
-    throw new Error(
-      `Failed to create project (${res.status()}): ${body.slice(0, 200)}`,
-    );
-  }
-  const body = await res.json();
-  return body.id as string;
-}
 
 async function createBillableTimeEntry(
   request: APIRequestContext,

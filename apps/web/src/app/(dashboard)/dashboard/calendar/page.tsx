@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { useToast } from "@/components/toast";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   ALL_TYPES,
@@ -27,7 +26,6 @@ const TYPE_LABEL: Record<CalendarEventType, string> = {
 };
 
 export default function CalendarPage() {
-  const { error: showError } = useToast();
   const [month, setMonth] = useState<Date>(() => new Date());
   const [view, setView] = useState<"month" | "agenda">("month");
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -44,7 +42,7 @@ export default function CalendarPage() {
       .catch((err: unknown) => { console.error(err); });
   }, []);
 
-  const load = useCallback(async (): Promise<void> => {
+  const load = useCallback(async (signal?: AbortSignal): Promise<void> => {
     setLoading(true);
     setError(null);
     try {
@@ -54,18 +52,23 @@ export default function CalendarPage() {
       params.set("from", from);
       params.set("to", to);
       if (projectId) params.set("projectId", projectId);
-      const res = await apiFetch<CalendarEvent[]>(`/calendar?${params.toString()}`);
+      const res = await apiFetch<CalendarEvent[]>(`/calendar?${params.toString()}`, { signal });
+      if (signal?.aborted) return;
       setEvents(res);
     } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       const msg = err instanceof Error ? err.message : "Failed to load";
       setError(msg);
-      showError(msg);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }, [month, projectId, showError]);
+  }, [month, projectId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
 
   const filtered = useMemo<CalendarEvent[]>(() => {
     return events.filter((e) => {
@@ -164,7 +167,7 @@ export default function CalendarPage() {
       {error ? (
         <div className="border border-[var(--border)] rounded-lg p-6 text-center text-sm">
           <div className="text-red-600 mb-2">Failed to load</div>
-          <button onClick={load} className="px-3 py-1.5 border border-[var(--border)] rounded">Retry</button>
+          <button onClick={() => load()} className="px-3 py-1.5 border border-[var(--border)] rounded">Retry</button>
         </div>
       ) : loading ? (
         <div className="text-sm text-[var(--muted-foreground)]">Loading…</div>

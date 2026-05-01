@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { CheckSquare, PlayCircle, StopCircle, Receipt } from "lucide-react";
+import { TASK_STATUSES } from "@atrium/shared";
 import type { CalendarEvent } from "./types";
 
 function chipHref(e: CalendarEvent): string {
@@ -18,8 +19,8 @@ function invoiceColor(status: string): string {
 }
 
 function taskColor(status: string): string {
-  if (status === "done") return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900";
-  if (status === "in_progress") return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-900";
+  if (status === TASK_STATUSES.DONE) return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900";
+  if (status === TASK_STATUSES.IN_PROGRESS) return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-900";
   return "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700";
 }
 

@@ -1,9 +1,14 @@
 "use client";
 
+import { useMemo } from "react";
 import type { CalendarEvent } from "./types";
+import { groupByDate } from "./types";
 import { EventChip } from "./event-chip";
 
 export function AgendaList({ events }: { events: CalendarEvent[] }) {
+  const grouped = useMemo(() => groupByDate(events), [events]);
+  const dates = useMemo(() => Array.from(grouped.keys()).sort(), [grouped]);
+
   if (events.length === 0) {
     return (
       <div className="border border-[var(--border)] rounded-lg p-8 text-center text-sm text-[var(--muted-foreground)]">
@@ -11,15 +16,6 @@ export function AgendaList({ events }: { events: CalendarEvent[] }) {
       </div>
     );
   }
-
-  const grouped = new Map<string, CalendarEvent[]>();
-  for (const e of events) {
-    const arr = grouped.get(e.date) ?? [];
-    arr.push(e);
-    grouped.set(e.date, arr);
-  }
-
-  const dates = Array.from(grouped.keys()).sort();
 
   return (
     <div className="border border-[var(--border)] rounded-lg divide-y divide-[var(--border)]">

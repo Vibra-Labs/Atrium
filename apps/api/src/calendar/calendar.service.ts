@@ -1,52 +1,20 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
+import { CALENDAR_EVENT_TYPES, type CalendarEvent } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { CalendarQueryDto } from "./calendar.dto";
 
-export type CalendarEvent =
-  | {
-      type: "task";
-      id: string;
-      date: string;
-      title: string;
-      status: string;
-      projectId: string;
-      projectName: string;
-      assigneeId: string | null;
-      assigneeName: string | null;
-    }
-  | {
-      type: "project_start" | "project_end";
-      id: string;
-      date: string;
-      title: string;
-      projectId: string;
-      projectName: string;
-    }
-  | {
-      type: "invoice_due";
-      id: string;
-      date: string;
-      title: string;
-      status: string;
-      projectId: string | null;
-      projectName: string | null;
-      amountCents: number;
-    };
+export type { CalendarEvent };
 
-interface CalendarQuery {
-  from: string;
-  to: string;
-  projectId?: string;
-  type?: string;
-}
-
-const VALID_TYPES = new Set(["task", "project_start", "project_end", "invoice_due"]);
+const VALID_TYPES = new Set<string>(CALENDAR_EVENT_TYPES);
 
 @Injectable()
 export class CalendarService {
   constructor(private prisma: PrismaService) {}
 
-  async list(orgId: string, query: CalendarQuery): Promise<CalendarEvent[]> {
+  async list(orgId: string, query: CalendarQueryDto): Promise<CalendarEvent[]> {
     const from = new Date(query.from);
+    // `to` is inclusive: a date-only string parses to 00:00Z, which would
+    // exclude any event timestamped later that day. Extend to end-of-day.
     const to = new Date(query.to);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
       throw new BadRequestException("Invalid date format");
@@ -57,6 +25,9 @@ export class CalendarService {
     const days = Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
     if (days > 366) {
       throw new BadRequestException("Window cannot exceed 366 days");
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(query.to)) {
+      to.setUTCHours(23, 59, 59, 999);
     }
 
     const requestedTypes = query.type

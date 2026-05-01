@@ -4,7 +4,7 @@ import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { organization, magicLink } from "better-auth/plugins";
+import { organization, magicLink, twoFactor } from "better-auth/plugins";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
@@ -166,6 +166,17 @@ export class AuthService {
               html,
               organizationId,
             );
+          },
+        }),
+        twoFactor({
+          issuer: "Atrium",
+          totpOptions: {
+            digits: 6,
+            period: 30,
+          },
+          backupCodeOptions: {
+            amount: 10,
+            length: 10,
           },
         }),
       ],

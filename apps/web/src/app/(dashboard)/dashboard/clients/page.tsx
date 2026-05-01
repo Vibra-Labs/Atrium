@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X, Eye } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X, Eye, ShieldCheck, ShieldOff } from "lucide-react";
 import { track } from "@/lib/track";
 import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
@@ -32,7 +32,7 @@ interface MemberRecord {
   id: string;
   userId: string;
   role: string;
-  user: { id: string; name: string; email: string };
+  user: { id: string; name: string; email: string; twoFactorEnabled?: boolean };
   labels?: { label: LabelRecord }[];
 }
 
@@ -223,6 +223,24 @@ export default function PeoplePage() {
       showError(err instanceof Error ? err.message : "Failed to generate reset link");
     } finally {
       setResettingMemberId(null);
+    }
+  };
+
+  const handleDisableTwoFactor = async (userId: string, name: string) => {
+    const ok = await confirm({
+      title: `Disable 2FA for ${name}?`,
+      message:
+        "Use only when the user has lost both their authenticator device and recovery codes. They will be able to sign in with just their password.",
+      confirmLabel: "Disable 2FA",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await apiFetch(`/two-factor/admin/${userId}`, { method: "DELETE" });
+      success(`2FA disabled for ${name}`);
+      loadMembers();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to disable 2FA");
     }
   };
 
@@ -611,6 +629,10 @@ export default function PeoplePage() {
                   const canRemove = isOwner && !isSelf;
                   const canResetPassword =
                     !isSelf && (isOwner || (currentRole === "admin" && member.role !== "owner"));
+                  const canDisableTwoFactor =
+                    !isSelf &&
+                    member.user.twoFactorEnabled === true &&
+                    (currentRole === "owner" || currentRole === "admin");
 
                   return (
                     <div
@@ -620,6 +642,13 @@ export default function PeoplePage() {
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium">{member.user.name}</p>
+                          {member.user.twoFactorEnabled && (
+                            <ShieldCheck
+                              size={14}
+                              className="text-emerald-600"
+                              aria-label="Two-factor authentication enabled"
+                            />
+                          )}
                           {isSelf && (
                             <span className="text-xs text-[var(--muted-foreground)]">(you)</span>
                           )}
@@ -651,6 +680,15 @@ export default function PeoplePage() {
                             title="Send password reset link"
                           >
                             <KeyRound size={14} />
+                          </button>
+                        )}
+                        {canDisableTwoFactor && (
+                          <button
+                            onClick={() => handleDisableTwoFactor(member.userId, member.user.name)}
+                            className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                            title="Disable 2FA (recovery)"
+                          >
+                            <ShieldOff size={14} />
                           </button>
                         )}
                         {canRemove && (
@@ -822,6 +860,13 @@ export default function PeoplePage() {
                           <div>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-sm font-medium">{member.user.name}</p>
+                              {member.user.twoFactorEnabled && (
+                                <ShieldCheck
+                                  size={14}
+                                  className="text-emerald-600"
+                                  aria-label="Two-factor authentication enabled"
+                                />
+                              )}
                               {member.labels && member.labels.length > 0 &&
                                 member.labels.map((l) => (
                                   <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
@@ -861,6 +906,16 @@ export default function PeoplePage() {
                           >
                             <KeyRound size={14} />
                           </button>
+                          {member.user.twoFactorEnabled &&
+                            (currentRole === "owner" || currentRole === "admin") && (
+                              <button
+                                onClick={() => handleDisableTwoFactor(member.userId, member.user.name)}
+                                className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                                title="Disable 2FA (recovery)"
+                              >
+                                <ShieldOff size={14} />
+                              </button>
+                            )}
                           <button
                             onClick={() => handleRemoveMember(member.id, member.user.name, false)}
                             className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"

@@ -6,10 +6,11 @@ import { formatCurrency } from "@/lib/format";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Plus, Trash2, Receipt, Download, Upload } from "lucide-react";
+import { Plus, Trash2, Receipt, Download, Upload, Clock } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { track } from "@/lib/track";
 import { downloadFile, downloadCsv } from "@/lib/download";
+import { GenerateFromTimeModal } from "./generate-from-time-modal";
 
 interface LineItem {
   id?: string;
@@ -69,6 +70,7 @@ export function InvoicesSection({
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showGenerate, setShowGenerate] = useState<boolean>(false);
   const [outstandingAmount, setOutstandingAmount] = useState(0);
 
   // Create form state
@@ -401,6 +403,14 @@ export function InvoicesSection({
               <span className="hidden sm:inline">Upload Invoice</span><span className="sm:hidden">Upload</span>
             </button>
             <button
+              onClick={() => setShowGenerate(true)}
+              className="flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
+              title="Generate a draft invoice from un-invoiced time entries on this project"
+            >
+              <Clock size={14} />
+              <span className="hidden sm:inline">Generate from time</span><span className="sm:hidden">From time</span>
+            </button>
+            <button
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
             >
@@ -434,6 +444,17 @@ export function InvoicesSection({
           <option value="overdue">Overdue</option>
         </select>
       </div>
+
+      {/* Generate from time modal */}
+      {showGenerate && (
+        <GenerateFromTimeModal
+          projectId={projectId}
+          onClose={() => setShowGenerate(false)}
+          onCreated={() => {
+            loadInvoices();
+          }}
+        />
+      )}
 
       {/* Create modal */}
       {showCreate && (

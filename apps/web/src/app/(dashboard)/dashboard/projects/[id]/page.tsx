@@ -19,6 +19,7 @@ import { UpdatesSection } from "./components/updates-section";
 import { FilesSection } from "./components/files-section";
 import { InvoicesSection } from "./components/invoices-section";
 import { NotesSection } from "./components/notes-section";
+import { TimeTab } from "./time-tab";
 
 interface FileRecord {
   id: string;
@@ -76,6 +77,7 @@ const tabs = [
   { id: "updates", label: "Updates" },
   { id: "tasks", label: "Tasks" },
   { id: "files", label: "Files" },
+  { id: "time", label: "Time" },
   { id: "invoices", label: "Invoices" },
   { id: "notes", label: "Notes" },
 ] as const;
@@ -141,13 +143,22 @@ export default function ProjectDetailPage() {
   const [clients, setClients] = useState<ClientMember[]>([]);
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TabId>(() =>
-    searchParams.get("task") ? "tasks" : "updates",
-  );
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && tabs.some((t) => t.id === tabParam)) return tabParam as TabId;
+    if (searchParams.get("task")) return "tasks";
+    return "updates";
+  });
 
   // When a ?task=<id> deep link is set (e.g. from a notification or
   // cross-tab share), jump to the Tasks tab so the detail modal can open.
+  // When a ?tab=<id> deep link is set (e.g. from the timer widget), jump to it.
   useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && tabs.some((t) => t.id === tabParam)) {
+      setActiveTab(tabParam as TabId);
+      return;
+    }
     if (searchParams.get("task")) setActiveTab("tasks");
   }, [searchParams]);
   const [currentRole, setCurrentRole] = useState<string | null>(null);
@@ -502,6 +513,9 @@ export default function ProjectDetailPage() {
           projectClients={clients.filter((c) => assignedIds.has(c.userId))}
           currentRole={currentRole}
         />
+      )}
+      {activeTab === "time" && (
+        <TimeTab projectId={id} isArchived={isArchived} />
       )}
       {activeTab === "invoices" && (
         <InvoicesSection projectId={id} isArchived={isArchived} />

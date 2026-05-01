@@ -103,10 +103,10 @@ hourlyRateCents Int?
 
 ### Modified: `InvoiceLineItem`
 
-Add back-relation only; no new columns:
+Add back-relation only; no new columns. The relation is 1:1 because each entry maps to exactly one line item:
 
 ```prisma
-timeEntries TimeEntry[]
+timeEntry TimeEntry?
 ```
 
 ## API Surface

@@ -6,6 +6,7 @@ import { PdfViewer } from "./pdf-viewer";
 import { SignaturePad } from "./signature-pad";
 import { apiFetch } from "@/lib/api";
 import { downloadFile } from "@/lib/download";
+import { usePreviewMode } from "@/lib/preview-mode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -90,6 +91,7 @@ export function SigningViewer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pdfVersion, setPdfVersion] = useState(0);
+  const { preview } = usePreviewMode();
 
   const closeFieldCapture = useCallback(() => {
     setActiveFieldId(null);
@@ -158,6 +160,7 @@ export function SigningViewer({
   };
 
   const handleFieldClick = (field: SignatureField) => {
+    if (preview) return;
     if (signingInfo?.signedFieldIds.includes(field.id)) return;
     if (isFieldLocked(field)) return;
 
@@ -474,10 +477,12 @@ export function SigningViewer({
               <button
                 onClick={handleApplyField}
                 disabled={
+                  !!preview ||
                   submitting ||
                   (isImageField && !signatureDataUrl) ||
                   (isTextBasedField && !textValue.trim())
                 }
+                title={preview ? "Disabled in preview mode" : undefined}
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 {submitting ? "Applying..." : "Apply"}

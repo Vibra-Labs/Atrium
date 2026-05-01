@@ -1,3 +1,5 @@
+import { getStoredPreviewClientId } from "./preview-mode";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 function getCsrfToken(): string | undefined {
@@ -27,6 +29,14 @@ async function doFetch(
     if (csrfToken) {
       headers["x-csrf-token"] = csrfToken;
     }
+  }
+
+  const previewClientId = getStoredPreviewClientId();
+  if (previewClientId) {
+    if (MUTATING_METHODS.has(method)) {
+      throw new Error("Read-only preview mode");
+    }
+    headers["X-Preview-As"] = previewClientId;
   }
 
   return fetch(`${API_URL}/api${path}`, {

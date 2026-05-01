@@ -29,6 +29,8 @@ import { PaymentsModule } from "./payments/payments.module";
 import { EmbedsModule } from "./embeds/embeds.module";
 import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
+import { PreviewModeMiddleware } from "./auth/preview-mode.middleware";
+import { PreviewModeGuard } from "./auth/preview-mode.guard";
 import { AllExceptionsFilter } from "./common";
 import { CsrfGuard } from "./common/guards/csrf.guard";
 import { PlanGuard } from "./common/guards/plan.guard";
@@ -100,10 +102,16 @@ import { PlanGuard } from "./common/guards/plan.guard";
       provide: APP_GUARD,
       useClass: PlanGuard,
     },
+    {
+      provide: APP_GUARD,
+      useClass: PreviewModeGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(SessionMiddleware).forRoutes("*");
+    consumer
+      .apply(SessionMiddleware, PreviewModeMiddleware)
+      .forRoutes("*");
   }
 }

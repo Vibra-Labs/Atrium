@@ -9,6 +9,7 @@ import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag, Copy } from "lucide-react";
 import { track } from "@/lib/track";
+import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
 import { LabelPicker } from "@/components/label-picker";
 import { StatusPipeline } from "./components/status-pipeline";
@@ -213,6 +214,16 @@ export default function ProjectDetailPage() {
 
   const handleRemoveClient = async (userId: string) => {
     if (!project || isArchived) return;
+    const client = clients.find((c) => c.userId === userId);
+    const ok = await confirm({
+      title: "Remove client from project?",
+      message: client
+        ? `${client.user.name} will no longer see this project in their portal. You can re-add them at any time.`
+        : "This client will no longer see this project in their portal. You can re-add them at any time.",
+      confirmLabel: "Remove client",
+      variant: "danger",
+    });
+    if (!ok) return;
     const newIds = (project.clients ?? [])
       .map((c) => c.userId)
       .filter((cid) => cid !== userId);
@@ -221,6 +232,15 @@ export default function ProjectDetailPage() {
       body: JSON.stringify({ clientUserIds: newIds }),
     });
     loadProject();
+  };
+
+  const handlePreviewAsClient = (
+    clientUserId: string,
+    clientName: string,
+    clientEmail: string,
+  ) => {
+    track("client_viewed_as", { from: "project" });
+    startPreview(clientUserId, clientName, clientEmail);
   };
 
   const handleDateChange = async (field: "startDate" | "endDate", value: string) => {
@@ -372,6 +392,11 @@ export default function ProjectDetailPage() {
         assignedIds={assignedIds}
         onToggle={handleClientToggle}
         onRemove={handleRemoveClient}
+        onPreview={
+          currentRole === "owner" || currentRole === "admin"
+            ? handlePreviewAsClient
+            : undefined
+        }
         disabled={isArchived}
       />
 

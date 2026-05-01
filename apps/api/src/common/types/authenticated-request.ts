@@ -46,4 +46,5 @@ export interface AuthenticatedRequest extends Request {
   session: AuthSession;
   organization: FullOrganization;
   member: OrgMember;
+  previewMode?: boolean;
 }

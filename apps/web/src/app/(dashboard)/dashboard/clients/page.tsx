@@ -5,8 +5,9 @@ import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X, Eye } from "lucide-react";
 import { track } from "@/lib/track";
+import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
 import Link from "next/link";
@@ -186,6 +187,15 @@ export default function PeoplePage() {
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to remove");
     }
+  };
+
+  const handleViewAsClient = (
+    clientUserId: string,
+    clientName: string,
+    clientEmail: string,
+  ) => {
+    track("client_viewed_as");
+    startPreview(clientUserId, clientName, clientEmail);
   };
 
   const handleResetPassword = async (memberId: string, email: string) => {
@@ -827,6 +837,22 @@ export default function PeoplePage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          {(currentRole === "owner" || currentRole === "admin") && (
+                            <button
+                              onClick={() =>
+                                handleViewAsClient(
+                                  member.userId,
+                                  member.user.name,
+                                  member.user.email,
+                                )
+                              }
+                              className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors"
+                              title="View as customer"
+                              aria-label={`View portal as ${member.user.name}`}
+                            >
+                              <Eye size={14} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleResetPassword(member.id, member.user.email)}
                             disabled={resettingMemberId === member.id}

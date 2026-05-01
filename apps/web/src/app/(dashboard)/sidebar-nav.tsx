@@ -8,6 +8,7 @@ import {
   Users,
   UserCog,
   Settings,
+  Shield,
 } from "lucide-react";
 
 const navItems = [
@@ -16,6 +17,7 @@ const navItems = [
   { href: "/dashboard/clients", label: "People", icon: Users },
   { href: "/dashboard/settings/system", label: "System", icon: Settings },
   { href: "/dashboard/settings/account", label: "Account", icon: UserCog },
+  { href: "/dashboard/settings/security", label: "Security", icon: Shield },
 ];
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void } = {}) {

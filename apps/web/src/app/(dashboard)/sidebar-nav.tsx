@@ -8,12 +8,14 @@ import {
   Users,
   UserCog,
   Settings,
+  BarChart3,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
   { href: "/dashboard/clients", label: "People", icon: Users },
+  { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings/system", label: "System", icon: Settings },
   { href: "/dashboard/settings/account", label: "Account", icon: UserCog },
 ];

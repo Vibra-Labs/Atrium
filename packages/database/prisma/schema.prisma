@@ -84,10 +84,9 @@ model TwoFactor {
   id          String @id @default(cuid())
   secret      String
   backupCodes String
-  userId      String
+  userId      String @unique
   user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
   @@index([secret])
   @@map("two_factor")
 }

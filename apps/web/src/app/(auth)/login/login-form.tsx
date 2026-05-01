@@ -39,7 +39,12 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
         throw new Error(data.message || "Invalid credentials");
       }
 
-      await res.json();
+      const body = await res.json();
+      if (body?.twoFactorRedirect) {
+        setRedirecting(true);
+        window.location.href = "/login/2fa";
+        return;
+      }
 
       setRedirecting(true);
       window.location.href = await setActiveOrgAndRedirect("/portal/projects");

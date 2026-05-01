@@ -185,21 +185,14 @@ Modified existing endpoints:
 
 - Eligible entries: same `organizationId` + `projectId`, `endedAt IS NOT NULL`, `invoiceLineItemId IS NULL`, and `billable = true` unless `includeNonBillable: true`.
 - Optional `from` / `to` filter on `startedAt`.
-- One line item per entry. Mapping:
-  - `description`: `entry.description ?? (taskTitle ?? "Time entry")` + ` — ${formatDate(entry.startedAt)}`
-  - `quantity`: `Math.round((durationSec / 3600) * 4) / 4` rounded to 0.25 — stored as a string with two decimals (the schema currently stores qty as int — see "Schema constraint" below)
-  - `unitPrice`: `entry.hourlyRateCents ?? 0`
+- One line item per entry. Mapping (no schema change to `InvoiceLineItem.quantity`):
+  - `description`: `${entry.description ?? taskTitle ?? "Time entry"} — ${formatDate(entry.startedAt)} (${formatDuration(durationSec)} @ ${formatMoney(hourlyRateCents)}/hr)`
+  - `quantity`: `1`
+  - `unitPrice`: `Math.round((durationSec / 3600) * (hourlyRateCents ?? 0))` — total cents for that entry, rounded to nearest cent
 - Created invoice has status `draft` and the org's existing default currency.
 - Transactional: invoice + all line items + entry FK updates happen in a single Prisma `$transaction`.
 
-### Schema constraint to resolve in plan
-
-The existing `InvoiceLineItem.quantity` is `Int`. We have two options:
-
-- **A.** Migrate `quantity` to `Decimal` (exact 0.25 increments).
-- **B.** Multiply quantity by 100 and store hundredths-of-an-hour, divide for display.
-
-The plan picks **A** (migrate `Int → Decimal` with `bun db:push --accept-data-loss=false` — Prisma handles this as a type widening, no data loss for whole-number rows). Existing UI just reads the number.
+This keeps the existing `InvoiceLineItem.quantity Int` schema untouched. Each time entry → one line item with quantity=1 and a fully-computed price; the duration + rate are visible in the description.
 
 ## Reports semantics
 

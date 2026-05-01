@@ -435,6 +435,9 @@ model SystemSettings {
   // Telemetry
   telemetryEnabled Boolean?  // null = not yet asked, true = opted in, false = opted out
 
+  // Security
+  requireTwoFactor Boolean @default(false)
+
   // General
   setupCompleted Boolean  @default(false)
 

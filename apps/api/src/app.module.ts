@@ -27,6 +27,7 @@ import { CommentsModule } from "./comments/comments.module";
 import { LabelsModule } from "./labels/labels.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { EmbedsModule } from "./embeds/embeds.module";
+import { TimeEntriesModule } from "./time-entries/time-entries.module";
 import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
 import { PreviewModeMiddleware } from "./auth/preview-mode.middleware";
@@ -83,6 +84,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     LabelsModule,
     PaymentsModule,
     EmbedsModule,
+    TimeEntriesModule,
   ],
   controllers: [HealthController],
   providers: [

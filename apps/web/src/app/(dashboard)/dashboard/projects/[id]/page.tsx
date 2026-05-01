@@ -46,6 +46,7 @@ interface Project {
   startDate?: string | null;
   endDate?: string | null;
   archivedAt?: string | null;
+  hourlyRateCents?: number | null;
   clients?: { userId: string }[];
   files: FileRecord[];
   labels?: { label: LabelRecord }[];
@@ -267,6 +268,32 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleRateChange = async (rawValue: string) => {
+    if (isArchived) return;
+    const trimmed = rawValue.trim();
+    let cents: number | null = null;
+    if (trimmed !== "") {
+      const dollars = Number(trimmed);
+      if (!Number.isFinite(dollars) || dollars < 0) {
+        showError("Enter a valid non-negative rate");
+        return;
+      }
+      cents = Math.round(dollars * 100);
+    }
+    const current = project?.hourlyRateCents ?? null;
+    if (current === cents) return;
+    try {
+      await apiFetch(`/projects/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ hourlyRateCents: cents }),
+      });
+      success("Rate updated");
+      loadProject();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update rate");
+    }
+  };
+
   const handleLabelToggle = async (labelId: string) => {
     if (!project || isArchived) return;
     const assignedIds = (project.labels ?? []).map((l) => l.label.id);
@@ -450,6 +477,35 @@ export default function ProjectDetailPage() {
           );
         })()}
       </div>
+
+      {(currentRole === "owner" || currentRole === "admin") && (
+        <div className="space-y-2 pt-4">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+            Default rate
+          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-[var(--muted-foreground)] shrink-0">$/hour</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              placeholder="Member rate"
+              defaultValue={
+                project.hourlyRateCents != null
+                  ? (project.hourlyRateCents / 100).toString()
+                  : ""
+              }
+              key={project.hourlyRateCents ?? "empty"}
+              onBlur={(e) => handleRateChange(e.target.value)}
+              disabled={isArchived}
+              className="w-[140px] sm:w-[170px] text-sm bg-transparent border border-[var(--border)] rounded px-2 py-1 text-right disabled:opacity-50"
+            />
+          </div>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Overrides each member&apos;s default rate for time on this project.
+          </p>
+        </div>
+      )}
 
       {isOwner && (
         <>

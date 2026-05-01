@@ -55,6 +55,7 @@ export class ClientsController {
           userId: true,
           role: true,
           createdAt: true,
+          hourlyRateCents: true,
           user: { select: { id: true, name: true, email: true } },
           labels: { select: { label: { select: { id: true, name: true, color: true } } } },
         },

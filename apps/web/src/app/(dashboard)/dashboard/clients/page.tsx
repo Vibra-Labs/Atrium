@@ -32,6 +32,7 @@ interface MemberRecord {
   id: string;
   userId: string;
   role: string;
+  hourlyRateCents?: number | null;
   user: { id: string; name: string; email: string };
   labels?: { label: LabelRecord }[];
 }
@@ -223,6 +224,31 @@ export default function PeoplePage() {
       showError(err instanceof Error ? err.message : "Failed to generate reset link");
     } finally {
       setResettingMemberId(null);
+    }
+  };
+
+  const handleSetRate = async (memberId: string, rawValue: string) => {
+    const trimmed = rawValue.trim();
+    let cents: number | null = null;
+    if (trimmed !== "") {
+      const dollars = Number(trimmed);
+      if (!Number.isFinite(dollars) || dollars < 0) {
+        showError("Enter a valid non-negative rate");
+        return;
+      }
+      cents = Math.round(dollars * 100);
+    }
+    try {
+      await apiFetch(`/clients/${memberId}/rate`, {
+        method: "PUT",
+        body: JSON.stringify({ hourlyRateCents: cents }),
+      });
+      success("Rate updated");
+      setMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, hourlyRateCents: cents } : m)),
+      );
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update rate");
     }
   };
 
@@ -629,6 +655,34 @@ export default function PeoplePage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {isOwner && (
+                          <div className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                            <span>$</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              placeholder="Rate"
+                              defaultValue={
+                                member.hourlyRateCents != null
+                                  ? (member.hourlyRateCents / 100).toString()
+                                  : ""
+                              }
+                              onBlur={(e) => {
+                                const next = e.target.value;
+                                const current =
+                                  member.hourlyRateCents != null
+                                    ? (member.hourlyRateCents / 100).toString()
+                                    : "";
+                                if (next.trim() === current) return;
+                                handleSetRate(member.id, next);
+                              }}
+                              title="Default hourly rate"
+                              className="w-16 rounded border border-[var(--border)] bg-[var(--background)] px-1.5 py-1 text-right text-xs"
+                            />
+                            <span>/hr</span>
+                          </div>
+                        )}
                         {canChangeRole ? (
                           <select
                             value={member.role}

@@ -96,6 +96,20 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 2. Create projects, upload files, and manage statuses from the **dashboard**
 3. Invite clients by email -- they access the **client portal** at `/portal`
 
+## Recovery
+
+### Disabling 2FA for a locked-out user
+
+If a user has lost access to their authenticator app **and** their recovery codes:
+
+- **Owner or admin still has access:** sign in to the dashboard, open the team-members list, find the user, and click **Disable 2FA** in the row's menu.
+- **The locked-out user is the only owner:** an operator with shell access to the API server can run:
+  ```bash
+  cd apps/api
+  bun run script:disable-2fa <user-email>
+  ```
+  This works for both self-hosted instances and cloud deployments. After running, the user can sign in with their password and re-enroll.
+
 ## Documentation
 
 - [Docker Deployment](docs/docker.md)

@@ -31,6 +31,8 @@ import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
 import { PreviewModeMiddleware } from "./auth/preview-mode.middleware";
 import { PreviewModeGuard } from "./auth/preview-mode.guard";
+import { TwoFactorModule } from "./two-factor/two-factor.module";
+import { TwoFactorEnforcementGuard } from "./two-factor/two-factor-enforcement.guard";
 import { AllExceptionsFilter } from "./common";
 import { CsrfGuard } from "./common/guards/csrf.guard";
 import { PlanGuard } from "./common/guards/plan.guard";
@@ -83,6 +85,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     LabelsModule,
     PaymentsModule,
     EmbedsModule,
+    TwoFactorModule,
   ],
   controllers: [HealthController],
   providers: [
@@ -105,6 +108,10 @@ import { PlanGuard } from "./common/guards/plan.guard";
     {
       provide: APP_GUARD,
       useClass: PreviewModeGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TwoFactorEnforcementGuard,
     },
   ],
 })

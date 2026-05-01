@@ -87,6 +87,7 @@ export class SettingsService {
     if (dto.maxFileSizeMb !== undefined) data.maxFileSizeMb = dto.maxFileSizeMb;
     if (dto.paymentInstructions !== undefined) data.paymentInstructions = dto.paymentInstructions;
     if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
+    if (dto.requireTwoFactor !== undefined) data.requireTwoFactor = dto.requireTwoFactor;
     if (dto.telemetryEnabled !== undefined) {
       data.telemetryEnabled = dto.telemetryEnabled;
       // Keep the in-process Sentry client in sync so errors are captured

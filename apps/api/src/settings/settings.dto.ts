@@ -82,6 +82,10 @@ export class UpdateSettingsDto {
   @Transform(({ value }) => (value === "" ? null : value))
   @IsIn([true, false, null])
   telemetryEnabled?: boolean | null;
+
+  @IsOptional()
+  @IsBoolean()
+  requireTwoFactor?: boolean;
 }
 
 export class SaveCustomDomainDto {

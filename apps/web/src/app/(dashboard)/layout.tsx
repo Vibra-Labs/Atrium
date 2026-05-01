@@ -8,6 +8,7 @@ import { MobileNav } from "./mobile-nav";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
+import { TimerWidget } from "@/components/timer-widget";
 import { DEFAULT_BRANDING } from "@atrium/shared";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
@@ -184,6 +185,11 @@ export default async function DashboardLayout({
         )}
         {session.role === "owner" && telemetryEnabled === null && (
           <TelemetryConsentBanner />
+        )}
+        {(session.role === "owner" || session.role === "admin") && (
+          <div className="flex justify-end mb-4">
+            <TimerWidget />
+          </div>
         )}
         {children}
       </main>

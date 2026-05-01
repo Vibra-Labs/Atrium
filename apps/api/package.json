@@ -9,7 +9,8 @@
     "start:prod": "node dist/main",
     "test": "bun test",
     "lint": "eslint src/",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "script:disable-2fa": "bun run src/scripts/disable-2fa.ts"
   },
   "dependencies": {
     "@atrium/database": "workspace:*",

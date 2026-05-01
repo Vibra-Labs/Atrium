@@ -44,11 +44,16 @@ export function EventChip({ event, compact = false }: { event: CalendarEvent; co
     className = "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-900";
     label = `End: ${event.title}`;
     tooltip = `Project ends: ${event.title}`;
-  } else {
+  } else if (event.type === "invoice_due") {
     icon = <Receipt size={10} />;
     className = invoiceColor(event.status);
     label = event.title;
     tooltip = `Invoice ${event.title} due${event.projectName ? ` · ${event.projectName}` : ""}`;
+  } else {
+    icon = null;
+    className = "";
+    label = "";
+    tooltip = "";
   }
 
   return (

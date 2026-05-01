@@ -9,11 +9,13 @@ import {
   UserCog,
   Settings,
   BarChart3,
+  Calendar,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+  { href: "/dashboard/calendar", label: "Calendar", icon: Calendar },
   { href: "/dashboard/clients", label: "People", icon: Users },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings/system", label: "System", icon: Settings },

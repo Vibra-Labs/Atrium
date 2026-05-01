@@ -8,6 +8,7 @@ import {
   MaxLength,
   Min,
 } from "class-validator";
+import { Type } from "class-transformer";
 
 export class StartTimerDto {
   @IsString() projectId!: string;
@@ -39,8 +40,8 @@ export class TimeEntryListQueryDto {
   @IsOptional() @IsDateString() to?: string;
   @IsOptional() billable?: "true" | "false";
   @IsOptional() invoiced?: "true" | "false";
-  @IsOptional() @IsInt() @Min(1) page?: number;
-  @IsOptional() @IsInt() @Min(1) limit?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) limit?: number;
 }
 
 export class GenerateInvoiceDto {

@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "otplib": "^13.4.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"
   },

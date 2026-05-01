@@ -39,7 +39,7 @@ export default function CalendarPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<ProjectsResponse>("/projects?limit=200")
+    apiFetch<ProjectsResponse>("/projects?limit=100")
       .then((res) => setProjects(Array.isArray(res) ? res : res.data))
       .catch((err: unknown) => { console.error(err); });
   }, []);

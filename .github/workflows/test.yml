@@ -46,12 +46,11 @@ jobs:
 
       - run: bun run db:generate
 
+      - run: bun run db:push
+
       - run: bun run build
 
       - run: bun run test
-
-      # E2E tests with Playwright
-      - run: bun run db:push
 
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium

@@ -73,7 +73,7 @@ test.describe("Billing", () => {
   });
 
   test("billing settings page loads", async ({ page }) => {
-    await page.goto("/dashboard/settings/billing");
+    await page.goto("/dashboard/settings/account");
     // Should either show billing page or redirect
     // If billing is enabled, we expect the heading
     const heading = page.getByRole("heading", { name: /billing/i });
@@ -86,7 +86,7 @@ test.describe("Billing", () => {
   });
 
   test("billing page shows plans section", async ({ page }) => {
-    await page.goto("/dashboard/settings/billing");
+    await page.goto("/dashboard/settings/account");
     const plansHeading = page.getByRole("heading", { name: /plans/i });
     const visible = await plansHeading
       .isVisible({ timeout: 5000 })

@@ -157,13 +157,14 @@ test.describe("Invoice Upload", () => {
   });
 
   test.describe("Dashboard UI", () => {
-    test("invoices tab has upload invoice button", async ({ page }) => {
+    test("invoices tab has upload PDF option in new invoice menu", async ({ page }) => {
       await page.goto("/dashboard/projects");
       const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
       if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
         await projectLink.click();
         await page.getByRole("button", { name: /^invoices$/i }).click();
-        await expect(page.getByRole("button", { name: /upload invoice/i })).toBeVisible({ timeout: 5000 });
+        await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 5000 });
+        await expect(page.getByRole("menuitem", { name: /upload pdf/i })).toBeVisible({ timeout: 5000 });
       }
     });
   });

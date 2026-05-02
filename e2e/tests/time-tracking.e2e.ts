@@ -38,7 +38,7 @@ async function createBillableTimeEntry(
 // ---------------------------------------------------------------------------
 
 test.describe("Time tracking", () => {
-  test("Start timer from time tab and stop it from the top-bar widget", async ({
+  test("Start and stop timer from the project Time tab", async ({
     page,
     request,
   }) => {
@@ -52,44 +52,33 @@ test.describe("Time tracking", () => {
       await noThanks.click();
     }
 
-    // The "Start timer" button appears twice on this page — once in the
-    // top-bar widget (which opens a project picker dropdown) and once in
-    // the Time tab itself (which starts immediately for this project).
-    // Use the in-tab button so we don't have to navigate the picker.
-    // The in-tab one sits next to the "Add entry" button.
-    const inTabStart = page
+    const startButton = page
       .locator("main")
-      .getByRole("button", { name: /^start timer$/i })
-      .last();
-    await expect(inTabStart).toBeVisible({ timeout: 10000 });
-    // Wait for the start-timer POST to complete so we know the entry exists
+      .getByRole("button", { name: /^start timer$/i });
+    await expect(startButton).toBeVisible({ timeout: 10000 });
+
     const startResponse = page.waitForResponse(
       (res) =>
         res.url().includes("/api/time-entries/start") &&
         res.request().method() === "POST",
       { timeout: 10000 },
     );
-    await inTabStart.click();
+    await startButton.click();
     const startRes = await startResponse;
     expect(startRes.ok()).toBeTruthy();
 
-    // The Time tab itself should now show a "running" entry row (TimeTab
-    // re-fetches after starting). This is more reliable than waiting for
-    // the top-bar widget's 30s poll.
+    // Running entry row shows "running"; the toolbar swaps Start → Stop.
     await expect(page.getByText(/running/i).first()).toBeVisible({
       timeout: 10000,
     });
-
-    // Reload the page so the top-bar TimerWidget re-fetches /time-entries/running
-    // and renders the running indicator with the "Stop timer" button.
-    await page.reload();
-    const stopButton = page.getByTitle("Stop timer");
+    const stopButton = page
+      .locator("main")
+      .getByRole("button", { name: /^stop timer$/i });
     await expect(stopButton).toBeVisible({ timeout: 10000 });
 
     // Wait briefly so the entry has a non-trivial duration
     await page.waitForTimeout(1500);
 
-    // Stop the timer via the top-bar widget
     const stopResponse = page.waitForResponse(
       (res) =>
         res.url().includes("/api/time-entries/stop") &&
@@ -100,11 +89,11 @@ test.describe("Time tracking", () => {
     const stopRes = await stopResponse;
     expect(stopRes.ok()).toBeTruthy();
 
-    // After stopping, the widget should revert and "Stop timer" disappears.
+    // After stopping, the toolbar swaps back to Start.
     await expect(stopButton).toBeHidden({ timeout: 10000 });
+    await expect(startButton).toBeVisible({ timeout: 10000 });
 
-    // Confirm an entry exists in the Time tab list.
-    await page.goto(`/dashboard/projects/${projectId}?tab=time`);
+    // Confirm an entry exists in the list.
     await expect(
       page.getByText(/No time logged on this project yet\./),
     ).toBeHidden({ timeout: 10000 });
@@ -189,10 +178,14 @@ test.describe("Time tracking", () => {
       .first()
       .click();
 
-    // Click "Generate from time" in the invoices section. The button text
-    // collapses to "From time" on small viewports — match either.
+    // Open the "New Invoice" dropdown and pick "Generate from time".
     await page
-      .getByRole("button", { name: /(generate from time|from time)/i })
+      .locator("main")
+      .getByRole("button", { name: /^new invoice$/i })
+      .first()
+      .click();
+    await page
+      .getByRole("menuitem", { name: /generate from time/i })
       .click();
 
     // Modal title appears

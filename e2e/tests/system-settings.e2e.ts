@@ -2,99 +2,77 @@ import { test, expect } from "@playwright/test";
 import { getCsrfToken } from "./helpers";
 
 test.describe("System Settings", () => {
-  test("system settings page loads", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    await expect(
-      page.getByRole("heading", { name: /system settings/i }),
-    ).toBeVisible();
+  test("general settings page loads", async ({ page }) => {
+    await page.goto("/dashboard/settings/workspace");
+    await expect(page.getByRole("heading", { name: /^email$/i })).toBeVisible();
   });
 
   test("shows email configuration section", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    // Email config is on the General tab
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByRole("heading", { name: /^email$/i })).toBeVisible();
     await expect(page.getByText(/email provider/i)).toBeVisible();
   });
 
   test("shows file settings section", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    // File settings are on the General tab
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByRole("heading", { name: /^files$/i })).toBeVisible();
     await expect(page.getByText(/maximum file size/i)).toBeVisible();
   });
 
-  test("sidebar has system settings link", async ({ page }) => {
-    await page.goto("/dashboard");
-    const systemLink = page.getByRole("link", { name: /system/i });
-    await expect(systemLink).toBeVisible();
-    await systemLink.click();
-    await expect(page).toHaveURL(/\/dashboard\/settings\/system/);
+  test("settings subnav has Workspace link", async ({ page }) => {
+    await page.goto("/dashboard/settings");
+    const workspaceLink = page.getByRole("link", { name: /^workspace$/i });
+    await expect(workspaceLink).toBeVisible();
+    await workspaceLink.click();
+    await expect(page).toHaveURL(/\/dashboard\/settings\/workspace/);
   });
 
   test("email provider selector works", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    // Email config is on the General tab
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
 
     const select = page.locator("select");
     await expect(select).toBeVisible();
 
-    // Default should be "None"
     await expect(select).toHaveValue("");
 
-    // Select Resend and check that API key field appears
     await select.selectOption("resend");
     await expect(page.getByText(/resend api key/i)).toBeVisible();
 
-    // Select SMTP and check that SMTP fields appear
     await select.selectOption("smtp");
     await expect(page.getByText(/smtp host/i)).toBeVisible();
     await expect(page.getByText("Port", { exact: true })).toBeVisible();
     await expect(page.getByText("Username", { exact: true })).toBeVisible();
     await expect(page.getByText("Password", { exact: true })).toBeVisible();
 
-    // Select None and check that provider-specific fields disappear
     await select.selectOption("");
     await expect(page.getByText(/resend api key/i)).not.toBeVisible();
     await expect(page.getByText(/smtp host/i)).not.toBeVisible();
   });
 
   test("save settings button exists and is clickable", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    // Save button is in the General tab configuration form
-    await page.getByRole("button", { name: /^general$/i }).click();
-    // The configuration form's save button is before the Custom Domain section
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText(/maximum file size/i)).toBeVisible();
     const saveButton = page.getByRole("button", { name: /^save$/i }).first();
     await expect(saveButton).toBeVisible();
   });
 
   test("can update max file size", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    // Slider is on the General tab
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
     const slider = page.locator('input[type="range"]');
     await expect(slider).toBeVisible();
 
-    // The slider should have a value
     const value = await slider.inputValue();
     expect(parseInt(value, 10)).toBeGreaterThanOrEqual(1);
     expect(parseInt(value, 10)).toBeLessThanOrEqual(500);
   });
 
   test("test email button appears when provider is selected", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    // Email config is on the General tab
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
 
-    // No test email button when no provider is selected
     await expect(
       page.getByRole("button", { name: /send test email/i }),
     ).not.toBeVisible();
 
-    // Select resend and check the button appears
     await page.locator("select").selectOption("resend");
     await expect(
       page.getByRole("button", { name: /send test email/i }),
@@ -102,33 +80,25 @@ test.describe("System Settings", () => {
   });
 
   test("settings API returns data", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    // Navigate to General tab
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
 
-    // Wait for settings to load (loading text should disappear)
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
-    // The slider being visible confirms settings loaded
     await expect(page.locator('input[type="range"]')).toBeVisible();
   });
 
   test("can save settings without errors", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
     await expect(page.locator('input[type="range"]')).toBeVisible();
 
-    // Click the configuration form's Save button (first Save button in tab)
     await page.getByRole("button", { name: /^save$/i }).first().click();
 
-    // Should see success toast
     await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 5000 });
   });
 
-  test("shows error reporting section in general tab", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    await page.getByRole("button", { name: /^general$/i }).click();
+  test("shows error reporting section", async ({ page }) => {
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
     await expect(page.getByRole("heading", { name: /error reporting/i })).toBeVisible();
@@ -138,25 +108,21 @@ test.describe("System Settings", () => {
   });
 
   test("can toggle error reporting on and off", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
-    await page.getByRole("button", { name: /^general$/i }).click();
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
     const checkbox = page.locator('section:has(h2:text-is("Error Reporting")) input[type="checkbox"]');
     await expect(checkbox).toBeVisible();
 
-    // Record initial state and toggle
     const initial = await checkbox.isChecked();
     await checkbox.click();
     await expect(page.getByText(initial ? /error reporting disabled/i : /error reporting enabled/i)).toBeVisible({ timeout: 5000 });
 
-    // Toggle back
     await checkbox.click();
     await expect(page.getByText(initial ? /error reporting enabled/i : /error reporting disabled/i)).toBeVisible({ timeout: 5000 });
   });
 
   test("telemetry consent banner appears when preference not yet set", async ({ page, request }) => {
-    // Reset telemetryEnabled to null via the settings API
     const csrfToken = getCsrfToken();
     await request.patch("http://localhost:3001/api/settings", {
       data: { telemetryEnabled: null },

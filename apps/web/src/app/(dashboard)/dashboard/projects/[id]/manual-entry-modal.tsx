@@ -5,45 +5,91 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { X } from "lucide-react";
 
+export interface EditableEntry {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  description: string | null;
+  billable: boolean;
+}
+
 interface ManualEntryModalProps {
   projectId: string;
+  entry?: EditableEntry;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
+}
+
+function pad(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function localDateParts(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return { date, time };
 }
 
 export function ManualEntryModal({
   projectId,
+  entry,
   onClose,
-  onCreated,
+  onSaved,
 }: ManualEntryModalProps): React.ReactElement {
   const { error: showError } = useToast();
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState<string>(today);
-  const [start, setStart] = useState<string>("09:00");
-  const [end, setEnd] = useState<string>("10:00");
-  const [description, setDescription] = useState<string>("");
-  const [billable, setBillable] = useState<boolean>(true);
+  const isEdit = !!entry;
+
+  const initialStart = entry
+    ? localDateParts(entry.startedAt)
+    : { date: new Date().toISOString().slice(0, 10), time: "09:00" };
+  const initialEnd = entry?.endedAt
+    ? localDateParts(entry.endedAt)
+    : { date: initialStart.date, time: "10:00" };
+
+  const [startDate, setStartDate] = useState<string>(initialStart.date);
+  const [endDate, setEndDate] = useState<string>(initialEnd.date);
+  const [start, setStart] = useState<string>(initialStart.time);
+  const [end, setEnd] = useState<string>(initialEnd.time);
+  const [description, setDescription] = useState<string>(entry?.description ?? "");
+  const [billable, setBillable] = useState<boolean>(entry?.billable ?? true);
   const [busy, setBusy] = useState<boolean>(false);
 
   async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
+    const startedAt = new Date(`${startDate}T${start}:00`);
+    const endedAt = new Date(`${endDate}T${end}:00`);
+    if (endedAt.getTime() <= startedAt.getTime()) {
+      showError("End must be after start");
+      return;
+    }
     setBusy(true);
     try {
-      const startedAt = new Date(`${date}T${start}:00`).toISOString();
-      const endedAt = new Date(`${date}T${end}:00`).toISOString();
-      await apiFetch("/time-entries", {
-        method: "POST",
-        body: JSON.stringify({
-          projectId,
-          startedAt,
-          endedAt,
-          description: description || undefined,
-          billable,
-        }),
-      });
-      onCreated();
+      if (isEdit && entry) {
+        await apiFetch(`/time-entries/${entry.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            startedAt: startedAt.toISOString(),
+            endedAt: endedAt.toISOString(),
+            description: description || null,
+            billable,
+          }),
+        });
+      } else {
+        await apiFetch("/time-entries", {
+          method: "POST",
+          body: JSON.stringify({
+            projectId,
+            startedAt: startedAt.toISOString(),
+            endedAt: endedAt.toISOString(),
+            description: description || undefined,
+            billable,
+          }),
+        });
+      }
+      onSaved();
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to create entry");
+      showError(err instanceof Error ? err.message : "Failed to save entry");
     } finally {
       setBusy(false);
     }
@@ -61,7 +107,7 @@ export function ManualEntryModal({
         className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md p-6 space-y-4"
       >
         <div className="flex items-start justify-between">
-          <h3 className="text-lg font-semibold">Add time entry</h3>
+          <h3 className="text-lg font-semibold">{isEdit ? "Edit time entry" : "Add time entry"}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -71,22 +117,40 @@ export function ManualEntryModal({
             <X size={18} />
           </button>
         </div>
-        <div>
-          <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-            Date
-          </label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-            className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs text-[var(--muted-foreground)] mb-1">
+              Start date
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                if (endDate < e.target.value) setEndDate(e.target.value);
+              }}
+              required
+              className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-[var(--muted-foreground)] mb-1">
+              End date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              min={startDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              required
+              className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
+            />
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-              Start
+              Start time
             </label>
             <input
               type="time"
@@ -98,7 +162,7 @@ export function ManualEntryModal({
           </div>
           <div>
             <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-              End
+              End time
             </label>
             <input
               type="time"

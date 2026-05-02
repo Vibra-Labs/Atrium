@@ -128,7 +128,7 @@ export class PaymentsService {
 
   buildOAuthErrorRedirect(error?: string): string {
     const status = error === "access_denied" ? "cancelled" : "error";
-    return `${this.webUrl}/dashboard/settings/system?stripe=${status}`;
+    return `${this.webUrl}/dashboard/settings/payments?stripe=${status}`;
   }
 
   // ── Unified status ──

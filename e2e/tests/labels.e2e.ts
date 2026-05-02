@@ -2,13 +2,13 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Labels", () => {
   test("labels section visible in system settings", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
     await expect(page.getByRole("heading", { name: /labels/i })).toBeVisible();
   });
 
   test("can create a label", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
     // Fill in label name and create
@@ -23,7 +23,7 @@ test.describe("Labels", () => {
   });
 
   test("can edit a label", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
     // Create a label first
@@ -46,7 +46,7 @@ test.describe("Labels", () => {
   });
 
   test("can delete a label", async ({ page }) => {
-    await page.goto("/dashboard/settings/system");
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
 
     // Create a label first
@@ -67,7 +67,7 @@ test.describe("Labels", () => {
 
   test("label badges show on project cards", async ({ page }) => {
     // First create a label
-    await page.goto("/dashboard/settings/system");
+    await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder("New label name").fill("Project Tag");
     await page.getByRole("button", { name: /add/i }).click();

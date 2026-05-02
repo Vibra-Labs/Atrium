@@ -168,7 +168,7 @@ export function LabelPicker({
                 Create new label
               </button>
               <Link
-                href="/dashboard/settings/system"
+                href="/dashboard/settings/workspace"
                 onClick={() => setOpen(false)}
                 className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
               >

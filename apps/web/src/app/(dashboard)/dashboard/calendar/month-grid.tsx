@@ -16,15 +16,40 @@ export function MonthGrid({ month, events }: { month: Date; events: CalendarEven
 
   return (
     <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-      <div className="grid grid-cols-7 bg-[var(--muted)] text-xs font-medium">
-        {WEEKDAYS.map((w) => (
-          <div key={w} className="p-2 text-center">{w}</div>
-        ))}
+      <div className="grid grid-cols-7 border-b border-[var(--border)]">
+        {WEEKDAYS.map((w, i) => {
+          const isWeekend = i === 0 || i === 6;
+          return (
+            <div
+              key={w}
+              className={`py-2.5 text-center text-[11px] font-semibold tracking-wide uppercase ${isWeekend ? "text-[var(--muted-foreground)]/60" : "text-[var(--muted-foreground)]"}`}
+            >
+              {w}
+            </div>
+          );
+        })}
       </div>
       <div className="grid grid-cols-7">
-        {days.map((d) => {
+        {days.map((d, idx) => {
           const iso = toISODate(d);
           const inMonth = d.getMonth() === month.getMonth();
+          const dayOfWeek = d.getDay();
+          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+          const col = idx % 7;
+          const row = Math.floor(idx / 7);
+          const isLastCol = col === 6;
+          const isLastRow = row === Math.floor((days.length - 1) / 7);
+          const borders = `${isLastCol ? "" : "border-r"} ${isLastRow ? "" : "border-b"} border-[var(--border)]`;
+
+          if (!inMonth) {
+            return (
+              <div
+                key={iso}
+                className={`min-h-[110px] ${borders} bg-[var(--muted)]/20`}
+              />
+            );
+          }
+
           const isToday = isSameDay(d, today);
           const dayEvents = byDate.get(iso) ?? [];
           const visible = dayEvents.slice(0, MAX_VISIBLE);
@@ -33,22 +58,32 @@ export function MonthGrid({ month, events }: { month: Date; events: CalendarEven
           return (
             <div
               key={iso}
-              className={`min-h-[110px] border-t border-l border-[var(--border)] p-1 flex flex-col gap-1 ${inMonth ? "" : "bg-[var(--muted)]/40 text-[var(--muted-foreground)]"}`}
+              className={`min-h-[110px] ${borders} p-1.5 flex flex-col gap-1 transition-colors hover:bg-[var(--muted)]/40 ${isWeekend ? "bg-[var(--muted)]/10" : ""}`}
             >
-              <div className={`text-xs px-1 ${isToday ? "inline-flex w-6 h-6 items-center justify-center rounded-full bg-[var(--primary)] text-white font-medium" : ""}`}>
-                {d.getDate()}
+              <div className="flex justify-end pr-0.5">
+                {isToday ? (
+                  <span className="w-6 h-6 inline-flex items-center justify-center rounded-full bg-[var(--primary)] text-white text-[11px] font-semibold">
+                    {d.getDate()}
+                  </span>
+                ) : (
+                  <span className={`text-[11px] font-medium px-1 ${isWeekend ? "text-[var(--muted-foreground)]/60" : "text-[var(--muted-foreground)]"}`}>
+                    {d.getDate()}
+                  </span>
+                )}
               </div>
-              {visible.map((e) => (
-                <EventChip key={`${e.type}-${e.id}-${e.date}`} event={e} />
-              ))}
-              {overflow > 0 && (
-                <button
-                  onClick={() => setPopoverDate(iso)}
-                  className="text-[11px] text-[var(--muted-foreground)] hover:underline text-left px-1"
-                >
-                  +{overflow} more
-                </button>
-              )}
+              <div className="flex flex-col gap-0.5">
+                {visible.map((e) => (
+                  <EventChip key={`${e.type}-${e.id}-${e.date}`} event={e} />
+                ))}
+                {overflow > 0 && (
+                  <button
+                    onClick={() => setPopoverDate(iso)}
+                    className="text-[10px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors text-left px-1.5 py-0.5 rounded hover:bg-[var(--muted)]"
+                  >
+                    +{overflow} more
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

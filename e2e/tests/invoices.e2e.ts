@@ -64,6 +64,7 @@ test.describe("Invoices", () => {
         await projectLink.click();
         await page.getByRole("button", { name: /^invoices$/i }).click();
         await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 5000 });
+        await page.getByRole("menuitem", { name: /create new/i }).click();
         await expect(page.getByText(/line items/i)).toBeVisible();
         await expect(page.getByText(/due date/i)).toBeVisible();
         await expect(page.getByRole("button", { name: /create invoice/i })).toBeVisible();
@@ -78,6 +79,7 @@ test.describe("Invoices", () => {
         await projectLink.click();
         await page.getByRole("button", { name: /^invoices$/i }).click();
         await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 5000 });
+        await page.getByRole("menuitem", { name: /create new/i }).click();
 
         // Fill in a line item
         await page.getByPlaceholder("Description").fill("E2E Test Service");

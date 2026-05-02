@@ -2,6 +2,25 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.8.0] — 2026-05-02
+
+### Added
+
+- **Calendar view redesign** — The dashboard calendar now leads with a proper toolbar: a segmented Month/Agenda view-switcher, a filter popover that surfaces an active-count badge when filters are applied, and a month/year picker for jumping out of the previous/next-month-only flow. The grid itself was rebuilt — cells grew to 110px with a hover state, weekend columns get a subtle tint to anchor the eye, and events render as left-stripe chips colored by type (tasks blue, project starts emerald, project ends violet, invoices amber) so a glance tells you what's happening on a given day.
+- **Edit time entry** — Completed time entries that haven't been invoiced or archived now show a Pencil button in the project Time tab. It reuses the manual-entry modal in edit mode and saves via `PATCH /time-entries/:id`, so fixing a typo in a description or correcting a duration no longer means deleting and re-creating the row.
+- **Stop timer from the project Time tab** — With the global timer widget gone, the running-timer row on the project's Time tab now exposes the Stop control directly, keeping timer operation co-located with the project context it belongs to.
+- **Live elapsed time on running timer rows** — Active timers now tick every second in place, paired with a pulsing red dot and a "running" badge so it's obvious at a glance which entry is in progress.
+- **Description input on the timer toolbar** — You can type a description before clicking Start (passed straight to the API on create), or edit the description on a running entry and have it saved on blur via PATCH — no need to wait until the timer stops to label what you're working on.
+- **Cross-project timer warning** — Starting a timer while another is already running on a different project now triggers a confirm dialog before auto-stopping the previous one, preventing accidental project switches mid-session.
+- **"New Invoice" dropdown** — The three invoice buttons on the project invoices section (Create new / Generate from time / Upload PDF) collapsed into a single dropdown with click-outside and Escape to close, cleaning up a row that had grown crowded.
+- **Merge-into-single-line-item option for "Generate invoice from time"** — Enabled by default, this groups the selected time entries by hourly rate so an invoice generated from mixed-rate work produces one line per rate instead of one line per entry. Implemented end-to-end in `time-entries.service.ts` and the generate-from-time modal.
+- **Settings restructured into tabs** — `/dashboard/settings` is now a tabbed surface (general / profile / workspace / payments / branding / billing) backed by a shared layout, replacing the prior monolithic settings pages and giving each concern its own focused screen.
+
+### Removed
+
+- **Reports page** — `/dashboard/reports/*` routes and the sidebar entry are gone. The underlying API endpoints (`/time-entries/report` and `/time-entries/report/export`) were intentionally retained so the surface can be re-enabled without API rework when the design returns.
+- **Global TimerWidget** — The persistent timer that floated on every dashboard screen has been removed; timer controls now live exclusively on the project Time tab, where the rest of the time-entry context already is.
+
 ## [1.6.3] — 2026-04-28
 
 ### Fixed

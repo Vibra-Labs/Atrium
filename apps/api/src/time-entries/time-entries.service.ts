@@ -154,7 +154,8 @@ export class TimeEntriesService {
     return this.prisma.timeEntry.update({
       where: { id },
       data: {
-        description: dto.description ?? entry.description,
+        description:
+          "description" in dto ? dto.description ?? null : entry.description,
         startedAt: start,
         endedAt: end,
         durationSec,
@@ -303,13 +304,19 @@ export class TimeEntriesService {
       organizationId: orgId,
       projectId: dto.projectId,
       invoiceLineItemId: null,
-      NOT: { endedAt: null },
+      endedAt: { not: null },
+      durationSec: { not: null },
     };
     if (!dto.includeNonBillable) where.billable = true;
     if (dto.from || dto.to) {
+      // Date-only inputs become inclusive whole days. `to` is bumped to the
+      // start of the next day (exclusive) so an entry started any time on
+      // the picked day is still included.
+      const toDate = dto.to ? new Date(dto.to) : null;
+      if (toDate) toDate.setUTCDate(toDate.getUTCDate() + 1);
       where.startedAt = {
         ...(dto.from ? { gte: new Date(dto.from) } : {}),
-        ...(dto.to ? { lte: new Date(dto.to) } : {}),
+        ...(toDate ? { lt: toDate } : {}),
       };
     }
 
@@ -321,11 +328,21 @@ export class TimeEntriesService {
     if (entries.length === 0) {
       throw new BadRequestException("No eligible time entries to invoice");
     }
+    const missingRate = entries.find(
+      (e) => e.hourlyRateCents === null || e.hourlyRateCents === 0,
+    );
+    if (missingRate) {
+      throw new BadRequestException(
+        "One or more entries have no hourly rate. Set a project or member rate before invoicing.",
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
+      // Lex-safe ordering: createdAt is monotonic; invoiceNumber strings sort
+      // wrong once they grow past 9999 (e.g. "INV-9999" > "INV-10000").
       const last = await tx.invoice.findFirst({
         where: { organizationId: orgId },
-        orderBy: { invoiceNumber: "desc" },
+        orderBy: { createdAt: "desc" },
         select: { invoiceNumber: true },
       });
       let next = 1;
@@ -335,37 +352,72 @@ export class TimeEntriesService {
       }
       const invoiceNumber = `INV-${String(next).padStart(4, "0")}`;
 
-      const lineItemsData = entries.map((e) => {
-        const hours = (e.durationSec ?? 0) / 3600;
-        const total = Math.round(hours * (e.hourlyRateCents ?? 0));
-        const dateStr = e.startedAt.toISOString().slice(0, 10);
-        const label = e.description ?? e.task?.title ?? "Time entry";
-        const rateStr = ((e.hourlyRateCents ?? 0) / 100).toFixed(2);
-        const hoursStr = hours.toFixed(2);
-        return {
-          description: `${label} — ${dateStr} (${hoursStr}h @ $${rateStr}/hr)`,
-          quantity: 1,
-          unitPrice: total,
-        };
-      });
-
       const invoice = await tx.invoice.create({
         data: {
           organizationId: orgId,
           projectId: dto.projectId,
           invoiceNumber,
           status: "draft",
-          lineItems: { create: lineItemsData },
         },
-        include: { lineItems: true },
       });
 
-      // Link entries 1:1 to line items by index (insertion order matches `entries`).
-      for (let i = 0; i < entries.length; i++) {
-        await tx.timeEntry.update({
-          where: { id: entries[i].id },
-          data: { invoiceLineItemId: invoice.lineItems[i].id },
-        });
+      if (dto.mergeEntries) {
+        // Group by hourly rate; one line item per rate so the line's stored
+        // unitPrice is always the exact sum of per-entry rounded amounts
+        // (no cents drift between label hours and money).
+        const byRate = new Map<
+          number,
+          { entryIds: string[]; totalSec: number; total: number }
+        >();
+        for (const e of entries) {
+          const rate = e.hourlyRateCents as number;
+          const g = byRate.get(rate) ?? { entryIds: [], totalSec: 0, total: 0 };
+          g.entryIds.push(e.id);
+          g.totalSec += e.durationSec ?? 0;
+          g.total += Math.round(((e.durationSec ?? 0) / 3600) * rate);
+          byRate.set(rate, g);
+        }
+
+        for (const [rate, g] of byRate) {
+          const hours = g.totalSec / 3600;
+          const rateStr = (rate / 100).toFixed(2);
+          const hoursStr = hours.toFixed(2);
+          const label = `${project.name} — ${hoursStr}h @ $${rateStr}/hr (${g.entryIds.length} entries)`;
+          const lineItem = await tx.invoiceLineItem.create({
+            data: {
+              invoiceId: invoice.id,
+              description: label,
+              quantity: 1,
+              unitPrice: g.total,
+            },
+          });
+          await tx.timeEntry.updateMany({
+            where: { id: { in: g.entryIds } },
+            data: { invoiceLineItemId: lineItem.id },
+          });
+        }
+      } else {
+        for (const e of entries) {
+          const rate = e.hourlyRateCents as number;
+          const hours = (e.durationSec ?? 0) / 3600;
+          const total = Math.round(hours * rate);
+          const dateStr = e.startedAt.toISOString().slice(0, 10);
+          const label = e.description ?? e.task?.title ?? "Time entry";
+          const rateStr = (rate / 100).toFixed(2);
+          const hoursStr = hours.toFixed(2);
+          const lineItem = await tx.invoiceLineItem.create({
+            data: {
+              invoiceId: invoice.id,
+              description: `${label} — ${dateStr} (${hoursStr}h @ $${rateStr}/hr)`,
+              quantity: 1,
+              unitPrice: total,
+            },
+          });
+          await tx.timeEntry.update({
+            where: { id: e.id },
+            data: { invoiceLineItemId: lineItem.id },
+          });
+        }
       }
 
       return { invoiceId: invoice.id };

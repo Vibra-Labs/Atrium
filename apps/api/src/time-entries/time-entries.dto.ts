@@ -49,4 +49,5 @@ export class GenerateInvoiceDto {
   @IsOptional() @IsDateString() from?: string;
   @IsOptional() @IsDateString() to?: string;
   @IsOptional() @IsBoolean() includeNonBillable?: boolean;
+  @IsOptional() @IsBoolean() mergeEntries?: boolean;
 }

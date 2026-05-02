@@ -24,6 +24,7 @@ export function GenerateFromTimeModal({
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
   const [includeNonBillable, setIncludeNonBillable] = useState<boolean>(false);
+  const [mergeEntries, setMergeEntries] = useState<boolean>(true);
   const [busy, setBusy] = useState<boolean>(false);
 
   async function submit(e: FormEvent<HTMLFormElement>): Promise<void> {
@@ -35,11 +36,13 @@ export function GenerateFromTimeModal({
         from?: string;
         to?: string;
         includeNonBillable: boolean;
+        mergeEntries: boolean;
       } = {
         projectId,
         from: from || undefined,
         to: to || undefined,
         includeNonBillable,
+        mergeEntries,
       };
       const res = await apiFetch<GenerateInvoiceResponse>(
         "/time-entries/generate-invoice",
@@ -121,6 +124,21 @@ export function GenerateFromTimeModal({
             onChange={(e) => setIncludeNonBillable(e.target.checked)}
           />
           Include non-billable entries
+        </label>
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={mergeEntries}
+            onChange={(e) => setMergeEntries(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            Merge into a single line item
+            <span className="block text-xs text-[var(--muted-foreground)]">
+              Combines all entries into one line per hourly rate.
+            </span>
+          </span>
         </label>
 
         <div className="flex justify-end gap-2 pt-2">

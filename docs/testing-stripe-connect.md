@@ -68,8 +68,8 @@ Restart the API server after updating `.env`.
 ### Connect Stripe Account
 
 1. Log in as the **org owner** at `http://localhost:3000/login`
-2. Go to **Settings > System** (`/dashboard/settings/system`)
-3. Scroll down to **Client Payments** section
+2. Go to **Settings > Payments** (`/dashboard/settings/payments`)
+3. Find the **Client Payments** section
 4. Click **Connect with Stripe** (purple button)
 5. You'll be redirected to Stripe's OAuth page
 6. Click **Skip this form** (test mode) or connect a real test account

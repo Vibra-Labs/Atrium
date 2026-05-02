@@ -92,7 +92,14 @@ test.describe("System Settings", () => {
     await expect(page.getByText("Loading...").first()).not.toBeVisible({ timeout: 5000 });
     await expect(page.locator('input[type="range"]')).toBeVisible();
 
-    await page.getByRole("button", { name: /^save$/i }).first().click();
+    // The workspace page renders both Branding and General sections, each with
+    // its own Save button. Scope to the General section's form (uniquely
+    // identified by the "Files" heading) so we don't click Branding's Save.
+    await page
+      .locator("form")
+      .filter({ has: page.getByRole("heading", { name: /^files$/i }) })
+      .getByRole("button", { name: /^save$/i })
+      .click();
 
     await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 5000 });
   });

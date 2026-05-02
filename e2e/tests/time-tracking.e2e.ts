@@ -12,6 +12,12 @@ async function createBillableTimeEntry(
   projectId: string,
 ): Promise<string> {
   const csrfToken = getCsrfToken();
+  // Ensure the project has an hourly rate so the entry can be invoiced.
+  // The invoice generator rejects entries that don't resolve to a rate.
+  await request.put(`${API}/projects/${projectId}`, {
+    data: { hourlyRateCents: 10000 },
+    headers: { "x-csrf-token": csrfToken },
+  });
   // Create a 1-hour entry yesterday so it's safely in the past
   const end = new Date();
   end.setDate(end.getDate() - 1);

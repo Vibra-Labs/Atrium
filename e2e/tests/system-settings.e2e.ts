@@ -82,14 +82,14 @@ test.describe("System Settings", () => {
   test("settings API returns data", async ({ page }) => {
     await page.goto("/dashboard/settings/workspace");
 
-    await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Loading...").first()).not.toBeVisible({ timeout: 5000 });
 
     await expect(page.locator('input[type="range"]')).toBeVisible();
   });
 
   test("can save settings without errors", async ({ page }) => {
     await page.goto("/dashboard/settings/workspace");
-    await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Loading...").first()).not.toBeVisible({ timeout: 5000 });
     await expect(page.locator('input[type="range"]')).toBeVisible();
 
     await page.getByRole("button", { name: /^save$/i }).first().click();
@@ -99,7 +99,7 @@ test.describe("System Settings", () => {
 
   test("shows error reporting section", async ({ page }) => {
     await page.goto("/dashboard/settings/workspace");
-    await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Loading...").first()).not.toBeVisible({ timeout: 5000 });
 
     await expect(page.getByRole("heading", { name: /error reporting/i })).toBeVisible();
     await expect(
@@ -109,7 +109,7 @@ test.describe("System Settings", () => {
 
   test("can toggle error reporting on and off", async ({ page }) => {
     await page.goto("/dashboard/settings/workspace");
-    await expect(page.getByText("Loading...")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Loading...").first()).not.toBeVisible({ timeout: 5000 });
 
     const checkbox = page.locator('section:has(h2:text-is("Error Reporting")) input[type="checkbox"]');
     await expect(checkbox).toBeVisible();

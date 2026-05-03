@@ -6,20 +6,14 @@ All notable changes to Atrium will be documented in this file.
 
 ### Added
 
+- **Time tracking** — Per-project Time tab with start/stop timer, live-ticking elapsed time, inline description editing (saved on blur), edit/delete on un-invoiced entries, and a cross-project confirm dialog before auto-stopping another running timer. Manual entries via modal. Generate-invoice-from-time supports an optional "merge into one line per hourly rate" mode (on by default).
 - **Calendar view redesign** — Toolbar with Month/Agenda switcher, filter popover with active-count badge, and a month/year picker. Larger grid cells, weekend tinting, and color-coded left-stripe event chips (tasks, project starts/ends, invoices).
-- **Edit time entry** — Pencil button on un-invoiced, un-archived entries reuses the manual-entry modal in edit mode (`PATCH /time-entries/:id`).
-- **Stop timer from the project Time tab** — Stop control lives directly on the running-entry row.
-- **Live elapsed time on running timer rows** — Ticks every second with a pulsing red dot and "running" badge.
-- **Description input on the timer toolbar** — Set a description before Start, or edit a running entry's description (saved on blur via PATCH).
-- **Cross-project timer warning** — Confirm dialog before auto-stopping a timer running on a different project.
 - **"New Invoice" dropdown** — Create new / Generate from time / Upload PDF collapsed into a single dropdown.
-- **Merge-into-single-line-item option for "Generate invoice from time"** — Groups entries by hourly rate so mixed-rate work produces one line per rate. On by default.
 - **Settings restructured into tabs** — `/dashboard/settings` is now a tabbed surface (general / profile / workspace / payments / branding / billing) over a shared layout.
 
 ### Removed
 
 - **Reports page** — `/dashboard/reports/*` routes and sidebar entry removed. `/time-entries/report` and `/time-entries/report/export` API endpoints retained for a future re-enable.
-- **Global TimerWidget** — Removed from every dashboard screen; timer controls now live only on the project Time tab.
 
 ## [1.6.3] — 2026-04-28
 

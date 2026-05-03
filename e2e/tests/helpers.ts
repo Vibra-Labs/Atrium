@@ -1,6 +1,8 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
-import type { BrowserContext } from "@playwright/test";
+import type { APIRequestContext, BrowserContext } from "@playwright/test";
+
+const API = "http://localhost:3001/api";
 
 /**
  * Read the CSRF token from the stored auth state file written by global-setup.
@@ -40,4 +42,57 @@ export async function getCsrfTokenFromContext(
   const cookies = await context.cookies();
   const cookie = cookies.find((c) => c.name === "csrf-token");
   return cookie?.value || "";
+}
+
+/**
+ * Get or create a project by name. The Free plan caps orgs at 2 projects, so
+ * tests must reuse projects by name when possible.
+ */
+export async function getOrCreateProject(
+  request: APIRequestContext,
+  name: string,
+): Promise<string> {
+  const listRes = await request.get(`${API}/projects?limit=100`);
+  if (listRes.ok()) {
+    const list = await listRes.json();
+    const items: { id: string; name: string }[] = Array.isArray(list)
+      ? list
+      : (list.data ?? []);
+    const found = items.find((p) => p.name === name);
+    if (found) return found.id;
+  }
+  const csrfToken = getCsrfToken();
+  const res = await request.post(`${API}/projects`, {
+    data: { name },
+    headers: { "x-csrf-token": csrfToken },
+  });
+  if (!res.ok()) {
+    const body = await res.text();
+    throw new Error(
+      `Failed to create project (${res.status()}): ${body.slice(0, 200)}`,
+    );
+  }
+  const body = await res.json();
+  return body.id as string;
+}
+
+export async function createTask(
+  request: APIRequestContext,
+  projectId: string,
+  title: string,
+  dueDate: Date,
+): Promise<string> {
+  const csrfToken = getCsrfToken();
+  const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
+    data: { title, dueDate: dueDate.toISOString() },
+    headers: { "x-csrf-token": csrfToken },
+  });
+  if (!res.ok()) {
+    const body = await res.text();
+    throw new Error(
+      `Failed to create task (${res.status()}): ${body.slice(0, 200)}`,
+    );
+  }
+  const body = await res.json();
+  return body.id as string;
 }

@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Plus, Trash2, Receipt, Download, Upload } from "lucide-react";
+import { Plus, Trash2, Receipt, Download, Upload, Clock, FileText, ChevronDown } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { track } from "@/lib/track";
 import { downloadFile, downloadCsv } from "@/lib/download";
+import { GenerateFromTimeModal } from "./generate-from-time-modal";
 
 interface LineItem {
   id?: string;
@@ -69,7 +70,28 @@ export function InvoicesSection({
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showGenerate, setShowGenerate] = useState<boolean>(false);
   const [outstandingAmount, setOutstandingAmount] = useState(0);
+  const [newMenuOpen, setNewMenuOpen] = useState<boolean>(false);
+  const newMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!newMenuOpen) return;
+    function onClick(e: MouseEvent): void {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setNewMenuOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") setNewMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [newMenuOpen]);
 
   // Create form state
   const [newDueDate, setNewDueDate] = useState("");
@@ -392,22 +414,58 @@ export function InvoicesSection({
             </button>
           )}
           {!isArchived && (
-            <>
-            <button
-              onClick={() => setShowUpload(true)}
-              className="flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]"
-            >
-              <Upload size={14} />
-              <span className="hidden sm:inline">Upload Invoice</span><span className="sm:hidden">Upload</span>
-            </button>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
-            >
-              <Plus size={14} />
-              New Invoice
-            </button>
-            </>
+            <div ref={newMenuRef} className="relative">
+              <button
+                onClick={() => setNewMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={newMenuOpen}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+              >
+                <Plus size={14} />
+                New Invoice
+                <ChevronDown size={14} className="opacity-80" />
+              </button>
+              {newMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-1.5 w-64 rounded-lg border border-[var(--border)] bg-[var(--background)] shadow-lg z-30 p-1"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => { setNewMenuOpen(false); setShowCreate(true); }}
+                    className="w-full flex items-start gap-3 px-3 py-2 rounded-md text-left hover:bg-[var(--muted)] transition-colors"
+                  >
+                    <FileText size={15} className="mt-0.5 text-[var(--muted-foreground)] shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">Create new</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">Build line items by hand</div>
+                    </div>
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => { setNewMenuOpen(false); setShowGenerate(true); }}
+                    className="w-full flex items-start gap-3 px-3 py-2 rounded-md text-left hover:bg-[var(--muted)] transition-colors"
+                  >
+                    <Clock size={15} className="mt-0.5 text-[var(--muted-foreground)] shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">Generate from time</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">Roll up un-invoiced billable hours</div>
+                    </div>
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => { setNewMenuOpen(false); setShowUpload(true); }}
+                    className="w-full flex items-start gap-3 px-3 py-2 rounded-md text-left hover:bg-[var(--muted)] transition-colors"
+                  >
+                    <Upload size={15} className="mt-0.5 text-[var(--muted-foreground)] shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">Upload PDF</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">Attach an existing invoice file</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -434,6 +492,17 @@ export function InvoicesSection({
           <option value="overdue">Overdue</option>
         </select>
       </div>
+
+      {/* Generate from time modal */}
+      {showGenerate && (
+        <GenerateFromTimeModal
+          projectId={projectId}
+          onClose={() => setShowGenerate(false)}
+          onCreated={() => {
+            loadInvoices();
+          }}
+        />
+      )}
 
       {/* Create modal */}
       {showCreate && (

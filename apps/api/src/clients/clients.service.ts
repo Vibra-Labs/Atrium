@@ -113,6 +113,26 @@ export class ClientsService {
     });
   }
 
+  async setMemberRate(
+    memberId: string,
+    orgId: string,
+    actorUserId: string,
+    actorRole: string,
+    rate: number | null,
+  ) {
+    if (actorRole !== "owner") {
+      throw new ForbiddenException("Only owners can set member rates");
+    }
+    const member = await this.prisma.member.findFirst({
+      where: { id: memberId, organizationId: orgId },
+    });
+    if (!member) throw new NotFoundException("Member not found");
+    return this.prisma.member.update({
+      where: { id: memberId },
+      data: { hourlyRateCents: rate },
+    });
+  }
+
   async getProfile(userId: string, orgId: string) {
     const profile = await this.prisma.clientProfile.findUnique({
       where: { userId_organizationId: { userId, organizationId: orgId } },

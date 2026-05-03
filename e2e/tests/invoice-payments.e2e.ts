@@ -8,17 +8,14 @@ test.describe("Invoice Payments", () => {
 
   test.describe("Settings page", () => {
     test("system settings shows Client Payments section", async ({ page }) => {
-      await page.goto("/dashboard/settings/system");
-      // Payments section is on the Payments tab
-      await page.getByRole("button", { name: /^payments$/i }).click();
+      await page.goto("/dashboard/settings/payments");
       await expect(
         page.getByRole("heading", { name: /client payments/i }),
       ).toBeVisible({ timeout: 5000 });
     });
 
     test("shows Stripe connection UI (direct key input or OAuth button)", async ({ page }) => {
-      await page.goto("/dashboard/settings/system");
-      await page.getByRole("button", { name: /^payments$/i }).click();
+      await page.goto("/dashboard/settings/payments");
       // Direct mode shows sk_test_ input; Connect mode shows "Connect with Stripe" button
       const directInput = page.getByPlaceholder(/sk_test_/i);
       const connectBtn = page.getByRole("button", { name: /connect with stripe/i });
@@ -26,8 +23,7 @@ test.describe("Invoice Payments", () => {
     });
 
     test("shows Stripe action button (Save & Connect or Connect with Stripe)", async ({ page }) => {
-      await page.goto("/dashboard/settings/system");
-      await page.getByRole("button", { name: /^payments$/i }).click();
+      await page.goto("/dashboard/settings/payments");
       // Direct mode shows "Save & Connect"; Connect mode shows "Connect with Stripe"
       const saveConnect = page.getByRole("button", { name: /save.*connect/i });
       const connectStripe = page.getByRole("button", { name: /connect with stripe/i });

@@ -301,8 +301,8 @@ export function BillingSection() {
         method: "POST",
         body: JSON.stringify({
           planSlug,
-          successUrl: `${window.location.origin}/dashboard/settings/account?tab=billing&success=true`,
-          cancelUrl: `${window.location.origin}/dashboard/settings/account?tab=billing`,
+          successUrl: `${window.location.origin}/dashboard/settings/account?success=true#billing`,
+          cancelUrl: `${window.location.origin}/dashboard/settings/account#billing`,
         }),
       });
       if (result.url) window.location.href = result.url;
@@ -317,7 +317,7 @@ export function BillingSection() {
       const result = await apiFetch<{ url: string }>("/billing/portal", {
         method: "POST",
         body: JSON.stringify({
-          returnUrl: `${window.location.origin}/dashboard/settings/account?tab=billing`,
+          returnUrl: `${window.location.origin}/dashboard/settings/account#billing`,
         }),
       });
       if (result.url) window.location.href = result.url;

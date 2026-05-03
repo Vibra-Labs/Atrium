@@ -2,9 +2,10 @@
 
 import { useEffect } from "react";
 
-export default function BillingPage() {
+export default function BillingRedirect(): React.ReactElement {
   useEffect(() => {
-    window.location.replace("/dashboard/settings/account?tab=billing");
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    window.location.replace(`/dashboard/settings/account${search}#billing`);
   }, []);
   return <div>Redirecting...</div>;
 }

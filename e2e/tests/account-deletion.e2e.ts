@@ -70,7 +70,7 @@ test.describe("Account Deletion", () => {
 
     await page.goto("http://localhost:3000/dashboard/settings/account");
     await expect(
-      page.getByRole("heading", { name: /account settings/i }),
+      page.getByRole("heading", { name: /^profile$/i }).first(),
     ).toBeVisible({ timeout: 10000 });
 
     // Verify the Danger Zone section is visible (owner only)

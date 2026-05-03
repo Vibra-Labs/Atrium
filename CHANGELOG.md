@@ -2,6 +2,21 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.8.0] — 2026-05-02
+
+### Added
+
+- **Time tracking, built for billable work** — Track every billable hour without leaving the project. Start and stop timers from the project's Time tab, watch elapsed time tick live, label work as you go, and never lose a session to a forgotten timer thanks to cross-project switch protection. Add or edit past entries in seconds, then turn un-invoiced time into a polished invoice in one click — automatically grouped by hourly rate so mixed-rate work bills cleanly.
+- **Redesigned calendar** — Get the whole month at a glance with a faster, more readable layout: roomy day cells, weekend shading, color-coded event chips for tasks, project milestones, and invoices, plus a month/year jumper and filters that show what's active at a glance. Toggle to Agenda view for a chronological run-down.
+- **Streamlined invoice creation** — A single "New Invoice" button now opens a clean menu for creating from scratch, generating from tracked time, or uploading a PDF — replacing the old triple-button row.
+- **Reorganized Settings** — Settings is now a tabbed workspace (General, Profile, Workspace, Payments, Branding, Billing) so each area has room to breathe and you always know where to find what you need.
+
+## [1.7.0] — 2026-04-30
+
+### Added
+
+- **View as customer** — See your client portal exactly the way your client sees it. Owners and admins can launch a preview from the Clients list or from any project's client chips, with a clear banner indicating you're in preview mode. Mutations are safely blocked end-to-end (server-side and in the UI), so you can explore freely without changing any real data.
+
 ## [1.6.3] — 2026-04-28
 
 ### Fixed

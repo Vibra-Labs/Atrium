@@ -27,7 +27,7 @@ import {
 } from "../common";
 import type { CsvColumn } from "../common";
 import { ClientsService } from "./clients.service";
-import { ChangeRoleDto } from "./clients.dto";
+import { ChangeRoleDto, SetRateDto } from "./clients.dto";
 import { UpdateClientProfileDto } from "./client-profile.dto";
 
 @Controller("clients")
@@ -55,6 +55,7 @@ export class ClientsController {
           userId: true,
           role: true,
           createdAt: true,
+          hourlyRateCents: true,
           user: { select: { id: true, name: true, email: true } },
           labels: { select: { label: { select: { id: true, name: true, color: true } } } },
         },
@@ -210,5 +211,23 @@ export class ClientsController {
     @CurrentUser("id") userId: string,
   ) {
     return this.clientsService.changeRole(memberId, dto.role, orgId, userId);
+  }
+
+  @Put(":id/rate")
+  @Roles("owner")
+  async setRate(
+    @Param("id") memberId: string,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentMember("role") role: string,
+    @Body() dto: SetRateDto,
+  ) {
+    return this.clientsService.setMemberRate(
+      memberId,
+      orgId,
+      userId,
+      role,
+      dto.hourlyRateCents ?? null,
+    );
   }
 }

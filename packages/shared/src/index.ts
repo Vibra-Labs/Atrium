@@ -53,6 +53,46 @@ export type TaskTypeValue = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
 
 export const DEFAULT_LABEL_COLOR = "#6b7280";
 
+export const CALENDAR_EVENT_TYPES = [
+  "task",
+  "project_start",
+  "project_end",
+  "invoice_due",
+] as const;
+
+export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number];
+
+export type CalendarEvent =
+  | {
+      type: "task";
+      id: string;
+      date: string;
+      title: string;
+      status: string;
+      projectId: string;
+      projectName: string;
+      assigneeId: string | null;
+      assigneeName: string | null;
+    }
+  | {
+      type: "project_start" | "project_end";
+      id: string;
+      date: string;
+      title: string;
+      projectId: string;
+      projectName: string;
+    }
+  | {
+      type: "invoice_due";
+      id: string;
+      date: string;
+      title: string;
+      status: string;
+      projectId: string | null;
+      projectName: string | null;
+      amountCents: number;
+    };
+
 export interface OwnedOrg {
   id: string;
   name: string;

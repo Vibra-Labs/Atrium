@@ -19,6 +19,7 @@ import { UpdatesSection } from "./components/updates-section";
 import { FilesSection } from "./components/files-section";
 import { InvoicesSection } from "./components/invoices-section";
 import { NotesSection } from "./components/notes-section";
+import { TimeTab } from "./time-tab";
 
 interface FileRecord {
   id: string;
@@ -45,6 +46,7 @@ interface Project {
   startDate?: string | null;
   endDate?: string | null;
   archivedAt?: string | null;
+  hourlyRateCents?: number | null;
   clients?: { userId: string }[];
   files: FileRecord[];
   labels?: { label: LabelRecord }[];
@@ -76,6 +78,7 @@ const tabs = [
   { id: "updates", label: "Updates" },
   { id: "tasks", label: "Tasks" },
   { id: "files", label: "Files" },
+  { id: "time", label: "Time" },
   { id: "invoices", label: "Invoices" },
   { id: "notes", label: "Notes" },
 ] as const;
@@ -141,13 +144,22 @@ export default function ProjectDetailPage() {
   const [clients, setClients] = useState<ClientMember[]>([]);
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TabId>(() =>
-    searchParams.get("task") ? "tasks" : "updates",
-  );
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && tabs.some((t) => t.id === tabParam)) return tabParam as TabId;
+    if (searchParams.get("task")) return "tasks";
+    return "updates";
+  });
 
   // When a ?task=<id> deep link is set (e.g. from a notification or
   // cross-tab share), jump to the Tasks tab so the detail modal can open.
+  // When a ?tab=<id> deep link is set (e.g. from the timer widget), jump to it.
   useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && tabs.some((t) => t.id === tabParam)) {
+      setActiveTab(tabParam as TabId);
+      return;
+    }
     if (searchParams.get("task")) setActiveTab("tasks");
   }, [searchParams]);
   const [currentRole, setCurrentRole] = useState<string | null>(null);
@@ -253,6 +265,32 @@ export default function ProjectDetailPage() {
       loadProject();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to update date");
+    }
+  };
+
+  const handleRateChange = async (rawValue: string) => {
+    if (isArchived) return;
+    const trimmed = rawValue.trim();
+    let cents: number | null = null;
+    if (trimmed !== "") {
+      const dollars = Number(trimmed);
+      if (!Number.isFinite(dollars) || dollars < 0) {
+        showError("Enter a valid non-negative rate");
+        return;
+      }
+      cents = Math.round(dollars * 100);
+    }
+    const current = project?.hourlyRateCents ?? null;
+    if (current === cents) return;
+    try {
+      await apiFetch(`/projects/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ hourlyRateCents: cents }),
+      });
+      success("Rate updated");
+      loadProject();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to update rate");
     }
   };
 
@@ -440,6 +478,35 @@ export default function ProjectDetailPage() {
         })()}
       </div>
 
+      {(currentRole === "owner" || currentRole === "admin") && (
+        <div className="space-y-2 pt-4">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+            Default rate
+          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-[var(--muted-foreground)] shrink-0">$/hour</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              placeholder="Member rate"
+              defaultValue={
+                project.hourlyRateCents != null
+                  ? (project.hourlyRateCents / 100).toString()
+                  : ""
+              }
+              key={project.hourlyRateCents ?? "empty"}
+              onBlur={(e) => handleRateChange(e.target.value)}
+              disabled={isArchived}
+              className="w-[140px] sm:w-[170px] text-sm bg-transparent border border-[var(--border)] rounded px-2 py-1 text-right disabled:opacity-50"
+            />
+          </div>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Overrides each member&apos;s default rate for time on this project.
+          </p>
+        </div>
+      )}
+
       {isOwner && (
         <>
           <div className="border-t border-[var(--border)] mt-1" />
@@ -502,6 +569,9 @@ export default function ProjectDetailPage() {
           projectClients={clients.filter((c) => assignedIds.has(c.userId))}
           currentRole={currentRole}
         />
+      )}
+      {activeTab === "time" && (
+        <TimeTab projectId={id} isArchived={isArchived} />
       )}
       {activeTab === "invoices" && (
         <InvoicesSection projectId={id} isArchived={isArchived} />

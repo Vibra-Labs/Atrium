@@ -238,7 +238,7 @@ export class NotificationsService {
       "stripe_disconnected",
       "Stripe account disconnected",
       "Your Stripe account was disconnected. Clients can no longer pay invoices online. Reconnect from Settings.",
-      "/dashboard/settings/system",
+      "/dashboard/settings/payments",
     );
   }
 

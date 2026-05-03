@@ -61,7 +61,7 @@ Global middleware/guards applied in `app.module.ts` and `main.ts`:
 
 Next.js App Router with route groups:
 - `(auth)/` -- `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/accept-invite`
-- `(dashboard)/` -- `/dashboard`, `/dashboard/projects`, `/dashboard/projects/[id]`, `/dashboard/clients`, `/dashboard/settings/branding`
+- `(dashboard)/` -- `/dashboard`, `/dashboard/projects`, `/dashboard/projects/[id]`, `/dashboard/clients`, `/dashboard/settings/{account,workspace,payments}`
 - `(portal)/` -- `/portal`, `/portal/projects`, `/portal/projects/[id]`
 
 ## Database (packages/database)

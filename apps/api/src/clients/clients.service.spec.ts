@@ -322,6 +322,84 @@ describe("ClientsService", () => {
   });
 
   // -------------------------------------------------------------------------
+  // setMemberRate
+  // -------------------------------------------------------------------------
+  describe("setMemberRate", () => {
+    it("updates member.hourlyRateCents when called by an owner", async () => {
+      const member = makeMember({ id: "member-admin", userId: "user-admin", role: "admin" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockPrisma.member.update.mockReturnValue(
+        Promise.resolve({ id: "member-admin", hourlyRateCents: 7500 }),
+      );
+
+      const result = await service.setMemberRate(
+        "member-admin",
+        "org-1",
+        "user-owner",
+        "owner",
+        7500,
+      );
+
+      expect(result.hourlyRateCents).toBe(7500);
+      expect(mockPrisma.member.update).toHaveBeenCalledWith({
+        where: { id: "member-admin" },
+        data: { hourlyRateCents: 7500 },
+      });
+    });
+
+    it("rejects non-owner callers with ForbiddenException", async () => {
+      try {
+        await service.setMemberRate(
+          "member-admin",
+          "org-1",
+          "user-other-admin",
+          "admin",
+          7500,
+        );
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+      }
+      // Must short-circuit before any DB lookup
+      expect(mockPrisma.member.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.member.update).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException when member does not exist", async () => {
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(null));
+
+      try {
+        await service.setMemberRate(
+          "missing-member",
+          "org-1",
+          "user-owner",
+          "owner",
+          5000,
+        );
+        expect(true).toBe(false);
+      } catch (e) {
+        expect(e).toBeInstanceOf(NotFoundException);
+      }
+      expect(mockPrisma.member.update).not.toHaveBeenCalled();
+    });
+
+    it("clears the rate when null is passed", async () => {
+      const member = makeMember({ id: "member-admin", userId: "user-admin", role: "admin" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockPrisma.member.update.mockReturnValue(
+        Promise.resolve({ id: "member-admin", hourlyRateCents: null }),
+      );
+
+      await service.setMemberRate("member-admin", "org-1", "user-owner", "owner", null);
+
+      expect(mockPrisma.member.update).toHaveBeenCalledWith({
+        where: { id: "member-admin" },
+        data: { hourlyRateCents: null },
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // generateResetLink
   // -------------------------------------------------------------------------
   describe("generateResetLink", () => {

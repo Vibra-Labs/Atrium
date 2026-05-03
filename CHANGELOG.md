@@ -11,6 +11,12 @@ All notable changes to Atrium will be documented in this file.
 - **Streamlined invoice creation** — A single "New Invoice" button now opens a clean menu for creating from scratch, generating from tracked time, or uploading a PDF — replacing the old triple-button row.
 - **Reorganized Settings** — Settings is now a tabbed workspace (General, Profile, Workspace, Payments, Branding, Billing) so each area has room to breathe and you always know where to find what you need.
 
+## [1.7.0] — 2026-04-30
+
+### Added
+
+- **View as customer** — See your client portal exactly the way your client sees it. Owners and admins can launch a preview from the Clients list or from any project's client chips, with a clear banner indicating you're in preview mode. Mutations are safely blocked end-to-end (server-side and in the UI), so you can explore freely without changing any real data.
+
 ## [1.6.3] — 2026-04-28
 
 ### Fixed

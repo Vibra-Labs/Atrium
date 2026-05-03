@@ -11,10 +11,6 @@ All notable changes to Atrium will be documented in this file.
 - **Streamlined invoice creation** — A single "New Invoice" button now opens a clean menu for creating from scratch, generating from tracked time, or uploading a PDF — replacing the old triple-button row.
 - **Reorganized Settings** — Settings is now a tabbed workspace (General, Profile, Workspace, Payments, Branding, Billing) so each area has room to breathe and you always know where to find what you need.
 
-### Removed
-
-- **Reports page** — Temporarily removed while we redesign it. The underlying API stays in place so the feature can return without disruption.
-
 ## [1.6.3] — 2026-04-28
 
 ### Fixed

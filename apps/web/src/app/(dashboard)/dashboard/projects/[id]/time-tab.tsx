@@ -36,6 +36,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
   const confirm = useConfirm();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [now, setNow] = useState<number>(() => Date.now());
   const [draftDescription, setDraftDescription] = useState<string>("");
@@ -51,6 +52,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await apiFetch<EntryListResponse>(
         `/time-entries?projectId=${projectId}&limit=200`,
@@ -58,10 +60,13 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
       setEntries(res.data);
     } catch (err) {
       console.error(err);
+      const msg = err instanceof Error ? err.message : "Could not load time entries";
+      setLoadError(msg);
+      showError("Could not load time entries — try again");
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, showError]);
 
   useEffect(() => {
     load();
@@ -229,7 +234,17 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
         )}
       </div>
 
-      {loading ? (
+      {loadError ? (
+        <div className="border border-[var(--border)] rounded-lg p-6 text-center text-sm">
+          <div className="text-red-600 mb-2">Could not load time entries</div>
+          <button
+            onClick={() => load()}
+            className="px-3 py-1.5 border border-[var(--border)] rounded"
+          >
+            Retry
+          </button>
+        </div>
+      ) : loading ? (
         <div className="text-sm text-[var(--muted-foreground)]">Loading…</div>
       ) : entries.length === 0 ? (
         <div className="text-sm text-[var(--muted-foreground)] text-center py-8">
@@ -247,7 +262,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
                   <span className="font-mono">
                     {e.endedAt
                       ? formatDuration(e.durationSec ?? 0)
-                      : formatDuration((now - new Date(e.startedAt).getTime()) / 1000)}
+                      : formatDuration(Math.floor((now - new Date(e.startedAt).getTime()) / 1000))}
                   </span>
                   {!e.endedAt && (
                     <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 inline-flex items-center gap-1">

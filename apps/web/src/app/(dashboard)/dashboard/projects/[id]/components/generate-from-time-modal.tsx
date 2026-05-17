@@ -29,6 +29,10 @@ export function GenerateFromTimeModal({
 
   async function submit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    if (from && to && to < from) {
+      showError("End date must be on or after start date");
+      return;
+    }
     setBusy(true);
     try {
       const body: {
@@ -111,11 +115,17 @@ export function GenerateFromTimeModal({
             <input
               type="date"
               value={to}
+              min={from || undefined}
               onChange={(e) => setTo(e.target.value)}
               className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
             />
           </div>
         </div>
+        {from && to && to < from && (
+          <p className="text-xs text-red-600">
+            End date must be on or after start date.
+          </p>
+        )}
 
         <label className="flex items-center gap-2 text-sm">
           <input

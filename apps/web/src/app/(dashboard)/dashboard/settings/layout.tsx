@@ -21,7 +21,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     <div className="space-y-6">
       <div className="flex gap-1 border-b border-[var(--border)]">
         {SECTIONS.map((s) => {
-          const isActive = pathname.startsWith(s.href);
+          const isActive = pathname === s.href;
           return (
             <Link
               key={s.href}

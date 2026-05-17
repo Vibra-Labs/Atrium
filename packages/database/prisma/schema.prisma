@@ -355,8 +355,8 @@ model InvoiceLineItem {
   unitPrice   Int   // cents (1500 = $15.00)
   invoiceId   String
 
-  invoice   Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  timeEntry TimeEntry?
+  invoice     Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  timeEntries TimeEntry[]
 
   @@index([invoiceId])
   @@map("invoice_line_item")
@@ -793,7 +793,7 @@ model TimeEntry {
   durationSec       Int?
   billable          Boolean          @default(true)
   hourlyRateCents   Int?
-  invoiceLineItemId String?          @unique
+  invoiceLineItemId String?
   invoiceLineItem   InvoiceLineItem? @relation(fields: [invoiceLineItemId], references: [id], onDelete: SetNull)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -801,5 +801,10 @@ model TimeEntry {
   @@index([organizationId, userId, startedAt])
   @@index([projectId, startedAt])
   @@index([taskId])
+  @@index([invoiceLineItemId])
   @@map("time_entry")
+  // Partial unique index "time_entry_one_running_per_user" on
+  // ("organizationId", "userId") WHERE "endedAt" IS NULL is applied
+  // out-of-band by packages/database/scripts/migrate-time-entry-running-unique.ts
+  // (Prisma 6 does not yet support `where:` on `@@unique`).
 }

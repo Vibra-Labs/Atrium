@@ -65,6 +65,12 @@ async function main() {
     console.warn("Warning: Could not push database schema — the API may fail to start");
   }
 
+  try {
+    await $`bun run ./scripts/migrate-time-entry-running-unique.ts`.cwd(dbDir).quiet();
+  } catch (err) {
+    console.warn("Warning: Could not apply time_entry running unique index:", err);
+  }
+
   // Run turbo dev
   const turbo = Bun.spawn(["bunx", "turbo", "run", "dev"], {
     cwd: root,

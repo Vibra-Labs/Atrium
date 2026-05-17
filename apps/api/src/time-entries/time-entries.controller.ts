@@ -38,7 +38,7 @@ export class TimeEntriesController {
     @Query() q: TimeEntryListQueryDto,
     @Res() res: Response,
   ) {
-    const list = await this.service.list(orgId, { ...q, page: 1, limit: 10000 });
+    const list = await this.service.listForExport(orgId, q);
     type Row = { date: string; user: string; project: string; task: string; description: string; hours: string; billable: string; invoiced: string };
     const rows: Row[] = list.data.map((e) => ({
       date: e.startedAt.toISOString().slice(0, 10),

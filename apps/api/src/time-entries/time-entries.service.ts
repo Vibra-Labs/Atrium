@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from "@nestjs/common";
+import type { TimeEntry } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   StartTimerDto,
@@ -7,6 +8,21 @@ import {
   TimeEntryListQueryDto,
   GenerateInvoiceDto,
 } from "./time-entries.dto";
+
+// Hard upper bound on rows returned by the unbounded export path. The
+// paginated `list()` cap remains at 200; this cap only applies to the
+// CSV export and exists to keep a malicious or buggy caller from
+// requesting a runaway result set.
+const EXPORT_MAX_ROWS = 50_000;
+
+function isP2002(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "P2002"
+  );
+}
 
 @Injectable()
 export class TimeEntriesService {
@@ -25,7 +41,7 @@ export class TimeEntriesService {
     return member?.hourlyRateCents ?? null;
   }
 
-  async start(userId: string, orgId: string, dto: StartTimerDto) {
+  async start(userId: string, orgId: string, dto: StartTimerDto): Promise<TimeEntry> {
     const project = await this.prisma.project.findFirst({
       where: { id: dto.projectId, organizationId: orgId },
       select: { id: true },
@@ -42,30 +58,44 @@ export class TimeEntriesService {
 
     const rate = await this.resolveRate(orgId, userId, dto.projectId);
 
-    return this.prisma.$transaction(async (tx) => {
-      const now = new Date();
-      const running = await tx.timeEntry.findFirst({
-        where: { userId, organizationId: orgId, endedAt: null },
-      });
-      if (running) {
-        const durationSec = Math.max(0, Math.round((now.getTime() - running.startedAt.getTime()) / 1000));
-        await tx.timeEntry.update({
-          where: { id: running.id },
-          data: { endedAt: now, durationSec },
+    // The transaction first closes out any existing running entry, then
+    // creates the new one. Two concurrent calls can both observe `running`
+    // as null and proceed to create, so a partial unique index on
+    // ("organizationId", "userId") WHERE "endedAt" IS NULL is applied at
+    // the database level (see migrate-time-entry-running-unique.ts). We
+    // translate the resulting P2002 into a 409 ConflictException for the
+    // caller — typically a double-click or two browser tabs racing.
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const running = await tx.timeEntry.findFirst({
+          where: { userId, organizationId: orgId, endedAt: null },
         });
-      }
-      return tx.timeEntry.create({
-        data: {
-          organizationId: orgId,
-          projectId: dto.projectId,
-          taskId: dto.taskId ?? null,
-          userId,
-          description: dto.description ?? null,
-          startedAt: now,
-          hourlyRateCents: rate,
-        },
+        if (running) {
+          const durationSec = Math.max(0, Math.round((now.getTime() - running.startedAt.getTime()) / 1000));
+          await tx.timeEntry.update({
+            where: { id: running.id },
+            data: { endedAt: now, durationSec },
+          });
+        }
+        return tx.timeEntry.create({
+          data: {
+            organizationId: orgId,
+            projectId: dto.projectId,
+            taskId: dto.taskId ?? null,
+            userId,
+            description: dto.description ?? null,
+            startedAt: now,
+            hourlyRateCents: rate,
+          },
+        });
       });
-    });
+    } catch (err) {
+      if (isP2002(err)) {
+        throw new ConflictException("A timer is already running for this user");
+      }
+      throw err;
+    }
   }
 
   async stop(userId: string, orgId: string) {
@@ -170,9 +200,7 @@ export class TimeEntriesService {
     await this.prisma.timeEntry.delete({ where: { id } });
   }
 
-  async list(orgId: string, query: TimeEntryListQueryDto) {
-    const page = query.page ?? 1;
-    const limit = Math.min(query.limit ?? 50, 200);
+  private buildListWhere(orgId: string, query: TimeEntryListQueryDto): Record<string, unknown> {
     const where: Record<string, unknown> = { organizationId: orgId };
     if (query.projectId) where.projectId = query.projectId;
     if (query.userId) where.userId = query.userId;
@@ -186,6 +214,13 @@ export class TimeEntriesService {
     if (query.billable === "false") where.billable = false;
     if (query.invoiced === "true") where.NOT = { invoiceLineItemId: null };
     if (query.invoiced === "false") where.invoiceLineItemId = null;
+    return where;
+  }
+
+  async list(orgId: string, query: TimeEntryListQueryDto) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 50, 200);
+    const where = this.buildListWhere(orgId, query);
 
     const [data, total] = await Promise.all([
       this.prisma.timeEntry.findMany({
@@ -202,6 +237,25 @@ export class TimeEntriesService {
       this.prisma.timeEntry.count({ where }),
     ]);
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
+  // Unbounded read path for CSV export. Applies the same filters as list()
+  // but skips pagination — callers asking for "a year of data" should not
+  // be silently truncated at 200 rows. A hard cap of EXPORT_MAX_ROWS still
+  // applies so a runaway request can't OOM the API.
+  async listForExport(orgId: string, query: TimeEntryListQueryDto) {
+    const where = this.buildListWhere(orgId, query);
+    const data = await this.prisma.timeEntry.findMany({
+      where,
+      include: {
+        project: { select: { id: true, name: true } },
+        task: { select: { id: true, title: true } },
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { startedAt: "desc" },
+      take: EXPORT_MAX_ROWS,
+    });
+    return { data };
   }
 
   async report(orgId: string, query: TimeEntryListQueryDto) {
@@ -362,24 +416,27 @@ export class TimeEntriesService {
       });
 
       if (dto.mergeEntries) {
-        // Group by hourly rate; one line item per rate so the line's stored
-        // unitPrice is always the exact sum of per-entry rounded amounts
-        // (no cents drift between label hours and money).
+        // Group by hourly rate; one line item per rate. Merging implies
+        // all merged entries share the same rate, so we compute unitPrice
+        // once from the summed seconds — a single rounding step. This
+        // matches the label math exactly (e.g. "12.50h @ $75.00/hr" =>
+        // $937.50, not the $937.49 you'd get from summing per-entry
+        // rounded cent amounts).
         const byRate = new Map<
           number,
-          { entryIds: string[]; totalSec: number; total: number }
+          { entryIds: string[]; totalSec: number }
         >();
         for (const e of entries) {
           const rate = e.hourlyRateCents as number;
-          const g = byRate.get(rate) ?? { entryIds: [], totalSec: 0, total: 0 };
+          const g = byRate.get(rate) ?? { entryIds: [], totalSec: 0 };
           g.entryIds.push(e.id);
           g.totalSec += e.durationSec ?? 0;
-          g.total += Math.round(((e.durationSec ?? 0) / 3600) * rate);
           byRate.set(rate, g);
         }
 
         for (const [rate, g] of byRate) {
           const hours = g.totalSec / 3600;
+          const total = Math.round(hours * rate);
           const rateStr = (rate / 100).toFixed(2);
           const hoursStr = hours.toFixed(2);
           const label = `${project.name} — ${hoursStr}h @ $${rateStr}/hr (${g.entryIds.length} entries)`;
@@ -388,7 +445,7 @@ export class TimeEntriesService {
               invoiceId: invoice.id,
               description: label,
               quantity: 1,
-              unitPrice: g.total,
+              unitPrice: total,
             },
           });
           await tx.timeEntry.updateMany({

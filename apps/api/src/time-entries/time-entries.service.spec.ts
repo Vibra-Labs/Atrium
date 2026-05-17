@@ -102,6 +102,45 @@ describe("TimeEntriesService.create/update/delete", () => {
     ).rejects.toThrow();
   });
 
+  it("update rejects taskId from a different project", async () => {
+    // Entry on `projectId` with no task. Try to PATCH a taskId that belongs
+    // to a different project (same org). FK alone would succeed because the
+    // task exists; the service must reject it.
+    const entry = await service.create(userId, orgId, {
+      projectId,
+      startedAt: new Date(Date.now() - 3600_000).toISOString(),
+      endedAt: new Date().toISOString(),
+    });
+    const otherProject = await prisma.project.create({
+      data: { name: "Other", organizationId: orgId },
+    });
+    const foreignTask = await prisma.task.create({
+      data: {
+        title: "Foreign",
+        projectId: otherProject.id,
+        organizationId: orgId,
+      },
+    });
+    await expect(
+      service.update(entry.id, userId, orgId, { taskId: foreignTask.id }),
+    ).rejects.toThrow(/task not found/i);
+  });
+
+  it("update accepts a taskId that belongs to the entry's project", async () => {
+    const ownTask = await prisma.task.create({
+      data: { title: "Own", projectId, organizationId: orgId },
+    });
+    const entry = await service.create(userId, orgId, {
+      projectId,
+      startedAt: new Date(Date.now() - 3600_000).toISOString(),
+      endedAt: new Date().toISOString(),
+    });
+    const updated = await service.update(entry.id, userId, orgId, {
+      taskId: ownTask.id,
+    });
+    expect(updated.taskId).toBe(ownTask.id);
+  });
+
   it("update on invoiced entry returns 409", async () => {
     const entry = await service.create(userId, orgId, {
       projectId,
@@ -169,10 +208,94 @@ describe("TimeEntriesService.list/report/generateInvoice", () => {
       endedAt: "2026-04-01T10:30:00Z",
       billable: false,
     });
-    const r = await service.report(orgId, {});
+    const r = await service.report(orgId, {}, "admin");
     expect(r.totals.seconds).toBe(5400);
     expect(r.totals.billableSeconds).toBe(3600);
     expect(r.totals.valueCents).toBe(5000); // 1h * $50
+    expect(r.byProject[0].seconds).toBe(5400);
+    expect(r.byProject[0].billableSeconds).toBe(3600);
+    expect(r.byProject[0].valueCents).toBe(5000);
+    expect(r.byUser[0].seconds).toBe(5400);
+    expect(r.byUser[0].valueCents).toBe(5000);
+  });
+
+  it("report stitches multiple projects and users (groupBy path)", async () => {
+    // Two projects, two users — verifies the groupBy + name-stitch path
+    // produces correct per-project and per-user buckets.
+    const otherProject = await prisma.project.create({
+      data: { name: "Other", organizationId: orgId, hourlyRateCents: 10000 },
+    });
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const otherUser = await prisma.user.create({
+      data: { id: `te-u2-${stamp}`, name: "U2", email: `u2-${stamp}@x.com`, emailVerified: true },
+    });
+    await prisma.member.create({
+      data: { id: `te-m2-${stamp}`, organizationId: orgId, userId: otherUser.id, role: "admin", hourlyRateCents: 8000 },
+    });
+
+    // Entry 1: userId on projectId — billable, 1h @ $50/hr (member rate, no project rate)
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    // Entry 2: otherUser on otherProject — billable, 2h @ $100/hr (project rate wins)
+    await service.create(otherUser.id, orgId, {
+      projectId: otherProject.id,
+      startedAt: "2026-04-02T09:00:00Z",
+      endedAt: "2026-04-02T11:00:00Z",
+      billable: true,
+    });
+
+    const r = await service.report(orgId, {}, "admin");
+    expect(r.totals.seconds).toBe(3600 + 7200);
+    expect(r.totals.billableSeconds).toBe(3600 + 7200);
+    expect(r.totals.valueCents).toBe(5000 + 20000);
+    expect(r.byProject.length).toBe(2);
+    expect(r.byUser.length).toBe(2);
+    const otherP = r.byProject.find((p) => p.projectId === otherProject.id);
+    expect(otherP?.projectName).toBe("Other");
+    expect(otherP?.valueCents).toBe(20000);
+    const ownP = r.byProject.find((p) => p.projectId === projectId);
+    expect(ownP?.valueCents).toBe(5000);
+    const otherU = r.byUser.find((u) => u.userId === otherUser.id);
+    expect(otherU?.name).toBe("U2");
+    expect(otherU?.valueCents).toBe(20000);
+  });
+
+  it("report omits valueCents for member role (still returns durationSec)", async () => {
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const r = await service.report(orgId, {}, "member");
+    expect(r.totals.seconds).toBe(3600);
+    expect(r.totals.billableSeconds).toBe(3600);
+    expect(r.totals.valueCents).toBe(0);
+    expect(r.byProject[0].seconds).toBe(3600);
+    expect(r.byProject[0].valueCents).toBe(0);
+    expect(r.byUser[0].valueCents).toBe(0);
+  });
+
+  it("list omits hourlyRateCents for member role and includes it for admin/owner", async () => {
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const asAdmin = await service.list(orgId, {}, "admin");
+    expect(asAdmin.data[0].hourlyRateCents).toBe(5000);
+    const asOwner = await service.list(orgId, {}, "owner");
+    expect(asOwner.data[0].hourlyRateCents).toBe(5000);
+    const asMember = await service.list(orgId, {}, "member");
+    expect("hourlyRateCents" in asMember.data[0]).toBe(false);
+    // Other fields still present
+    expect(asMember.data[0].durationSec).toBe(3600);
+    expect(asMember.data[0].billable).toBe(true);
   });
 
   it("generateInvoice creates draft, snapshots rate, marks entries", async () => {

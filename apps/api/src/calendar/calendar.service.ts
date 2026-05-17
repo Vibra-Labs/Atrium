@@ -19,16 +19,31 @@ export class CalendarService {
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
       throw new BadRequestException("Invalid date format");
     }
-    if (to.getTime() <= from.getTime()) {
-      throw new BadRequestException("`to` must be after `from`");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(query.to)) {
+      to.setUTCHours(23, 59, 59, 999);
+    }
+    if (to.getTime() < from.getTime()) {
+      throw new BadRequestException("`to` must be on or after `from`");
     }
     const days = Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
     if (days > 366) {
       throw new BadRequestException("Window cannot exceed 366 days");
     }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(query.to)) {
-      to.setUTCHours(23, 59, 59, 999);
+
+    const tz = query.tz ?? "UTC";
+    let dateFormatter: Intl.DateTimeFormat;
+    try {
+      dateFormatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    } catch {
+      throw new BadRequestException("Invalid timezone");
     }
+    // en-CA formats as YYYY-MM-DD.
+    const toDateKey = (d: Date): string => dateFormatter.format(d);
 
     const requestedTypes = query.type
       ? new Set(query.type.split(",").map((s) => s.trim()).filter((s) => VALID_TYPES.has(s)))
@@ -109,7 +124,7 @@ export class CalendarService {
       events.push({
         type: "task",
         id: t.id,
-        date: t.dueDate.toISOString().slice(0, 10),
+        date: toDateKey(t.dueDate),
         title: t.title,
         status: t.status,
         projectId: t.projectId,
@@ -124,7 +139,7 @@ export class CalendarService {
         events.push({
           type: "project_start",
           id: p.id,
-          date: p.startDate.toISOString().slice(0, 10),
+          date: toDateKey(p.startDate),
           title: p.name,
           projectId: p.id,
           projectName: p.name,
@@ -134,7 +149,7 @@ export class CalendarService {
         events.push({
           type: "project_end",
           id: p.id,
-          date: p.endDate.toISOString().slice(0, 10),
+          date: toDateKey(p.endDate),
           title: p.name,
           projectId: p.id,
           projectName: p.name,
@@ -148,7 +163,7 @@ export class CalendarService {
       events.push({
         type: "invoice_due",
         id: inv.id,
-        date: inv.dueDate.toISOString().slice(0, 10),
+        date: toDateKey(inv.dueDate),
         title: inv.invoiceNumber,
         status: inv.status,
         projectId: inv.projectId,

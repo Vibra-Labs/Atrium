@@ -132,6 +132,35 @@ describe("CalendarService.list", () => {
     ).rejects.toThrow();
   });
 
+  it("allows same-day query (from === to)", async () => {
+    await prisma.task.create({
+      data: { title: "Same", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-05-15T12:00:00Z") },
+    });
+    const events = await service.list(orgId, { from: "2026-05-15", to: "2026-05-15" });
+    const tasks = events.filter((e) => e.type === "task" && e.title === "Same");
+    expect(tasks.length).toBe(1);
+  });
+
+  it("groups dates in the requested timezone (America/Los_Angeles)", async () => {
+    // 2026-05-15T03:00:00Z is May 14 in America/Los_Angeles (UTC-7 PDT).
+    await prisma.task.create({
+      data: { title: "NearMidnight", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-05-15T03:00:00Z") },
+    });
+    const utcEvents = await service.list(orgId, { from: "2026-05-01", to: "2026-05-31" });
+    const utcTask = utcEvents.find((e) => e.type === "task" && e.title === "NearMidnight");
+    expect(utcTask?.date).toBe("2026-05-15");
+
+    const laEvents = await service.list(orgId, { from: "2026-05-01", to: "2026-05-31", tz: "America/Los_Angeles" });
+    const laTask = laEvents.find((e) => e.type === "task" && e.title === "NearMidnight");
+    expect(laTask?.date).toBe("2026-05-14");
+  });
+
+  it("rejects an invalid timezone", async () => {
+    await expect(
+      service.list(orgId, { from: "2026-05-01", to: "2026-05-31", tz: "Not/A_Zone" }),
+    ).rejects.toThrow();
+  });
+
   it("sorts events ascending by date", async () => {
     await prisma.task.create({
       data: { title: "Late", organizationId: orgId, projectId, status: "open", dueDate: new Date("2026-05-22") },

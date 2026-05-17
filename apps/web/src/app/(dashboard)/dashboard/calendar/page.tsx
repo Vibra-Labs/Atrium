@@ -76,9 +76,11 @@ export default function CalendarPage(): React.ReactElement {
     try {
       const from = toISODate(gridStart(month));
       const to = toISODate(gridEnd(month));
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const params = new URLSearchParams();
       params.set("from", from);
       params.set("to", to);
+      if (tz) params.set("tz", tz);
       if (projectId) params.set("projectId", projectId);
       const res = await apiFetch<CalendarEvent[]>(`/calendar?${params.toString()}`, { signal });
       if (signal?.aborted) return;

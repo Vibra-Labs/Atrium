@@ -500,12 +500,30 @@ export class TimeEntriesService {
     if (entries.length === 0) {
       throw new BadRequestException("No eligible time entries to invoice");
     }
+
+    // Backfill rates onto entries that were created before any rate was set.
+    // The frozen-rate snapshot only matters when a rate existed at creation;
+    // null means we have nothing to preserve, so applying the current
+    // project/member rate is the most useful behavior and brings the entry
+    // row in line with what will appear on the invoice.
+    for (const e of entries) {
+      if (e.hourlyRateCents != null && e.hourlyRateCents > 0) continue;
+      const resolved = await this.resolveRate(orgId, e.userId, e.projectId);
+      if (resolved != null && resolved > 0) {
+        e.hourlyRateCents = resolved;
+        await this.prisma.timeEntry.update({
+          where: { id: e.id },
+          data: { hourlyRateCents: resolved },
+        });
+      }
+    }
+
     const missingRate = entries.find(
       (e) => e.hourlyRateCents === null || e.hourlyRateCents === 0,
     );
     if (missingRate) {
       throw new BadRequestException(
-        "One or more entries have no hourly rate. Set a project or member rate before invoicing.",
+        "One or more entries have no hourly rate. Set a project or member rate first — entries already created without a rate will pick it up automatically once one is set.",
       );
     }
 

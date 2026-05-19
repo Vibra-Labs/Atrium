@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -40,6 +41,7 @@ export function GenerateFromTimeModal({
   const [includeNonBillable, setIncludeNonBillable] = useState<boolean>(false);
   const [mergeEntries, setMergeEntries] = useState<boolean>(true);
   const [busy, setBusy] = useState<boolean>(false);
+  const [noRateError, setNoRateError] = useState<boolean>(false);
 
   async function submit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -48,6 +50,7 @@ export function GenerateFromTimeModal({
       return;
     }
     setBusy(true);
+    setNoRateError(false);
     try {
       const body: {
         projectId: string;
@@ -74,9 +77,12 @@ export function GenerateFromTimeModal({
       onClose();
     } catch (err) {
       console.error(err);
-      showError(
-        err instanceof Error ? err.message : "Failed to generate invoice",
-      );
+      const message = err instanceof Error ? err.message : "Failed to generate invoice";
+      if (message.toLowerCase().includes("hourly rate")) {
+        setNoRateError(true);
+      } else {
+        showError(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -110,6 +116,31 @@ export function GenerateFromTimeModal({
           entries. Defaults to month-to-date — clear both dates to include all
           un-invoiced entries.
         </p>
+
+        {noRateError && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs space-y-2">
+            <p className="text-amber-900 dark:text-amber-200">
+              No hourly rate is set anywhere yet. Add one in either place and
+              then retry — entries created earlier will pick it up automatically.
+            </p>
+            <div className="flex gap-3">
+              <Link
+                href={`/dashboard/projects/${projectId}#default-rate`}
+                onClick={onClose}
+                className="text-amber-900 dark:text-amber-200 underline hover:no-underline"
+              >
+                Set project rate
+              </Link>
+              <Link
+                href="/dashboard/clients"
+                onClick={onClose}
+                className="text-amber-900 dark:text-amber-200 underline hover:no-underline"
+              >
+                Set member rate
+              </Link>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <div>

@@ -15,14 +15,28 @@ interface GenerateInvoiceResponse {
   invoiceId: string;
 }
 
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function startOfMonthISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
+}
+
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function GenerateFromTimeModal({
   projectId,
   onClose,
   onCreated,
 }: GenerateFromTimeModalProps): React.ReactElement {
   const { success, error: showError } = useToast();
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+  const [from, setFrom] = useState<string>(() => startOfMonthISO());
+  const [to, setTo] = useState<string>(() => todayISO());
   const [includeNonBillable, setIncludeNonBillable] = useState<boolean>(false);
   const [mergeEntries, setMergeEntries] = useState<boolean>(true);
   const [busy, setBusy] = useState<boolean>(false);
@@ -93,7 +107,8 @@ export function GenerateFromTimeModal({
 
         <p className="text-xs text-[var(--muted-foreground)]">
           Creates a draft invoice from this project&apos;s un-invoiced time
-          entries. Optionally restrict to a date range.
+          entries. Defaults to month-to-date — clear both dates to include all
+          un-invoiced entries.
         </p>
 
         <div className="grid grid-cols-2 gap-2">

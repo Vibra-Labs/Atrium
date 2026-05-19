@@ -2,8 +2,14 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import Link from "next/link";
 import { Providers } from "./providers";
-import pkg from "../../package.json";
+// @ts-expect-error — raw string import via webpack asset/source
+import changelogRaw from "../../CHANGELOG.md";
 import "./globals.css";
+
+function latestChangelogVersion(): string {
+  const match = (changelogRaw as string).match(/^## \[(.+?)\]/m);
+  return match?.[1] ?? "0.0.0";
+}
 
 export const metadata: Metadata = {
   title: "Atrium",
@@ -68,7 +74,7 @@ export default function RootLayout({
           href="/changelog"
           className="fixed bottom-3 right-3 text-[10px] font-mono text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors opacity-50 hover:opacity-100"
         >
-          v{pkg.version}
+          v{latestChangelogVersion()}
         </Link>
       </body>
     </html>

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { formatDuration, formatHours } from "@/lib/format-duration";
-import { Play, Square, Plus, Trash2, Lock, Pencil } from "lucide-react";
+import { Play, Square, Plus, Trash2, Lock, Pencil, X } from "lucide-react";
 import { ManualEntryModal, type EditableEntry } from "./manual-entry-modal";
 
 type ModalState = { mode: "closed" } | { mode: "new" } | { mode: "edit"; entry: EditableEntry };
@@ -41,6 +41,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
   const [now, setNow] = useState<number>(() => Date.now());
   const [draftDescription, setDraftDescription] = useState<string>("");
   const [timerBusy, setTimerBusy] = useState<boolean>(false);
+  const [stopPrompt, setStopPrompt] = useState<{ description: string } | null>(null);
 
   const runningEntry = entries.find((e) => !e.endedAt);
   const hasRunning = !!runningEntry;
@@ -106,11 +107,20 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
     }
   }
 
-  async function stopTimer(): Promise<void> {
-    if (timerBusy) return;
+  async function stopTimer(description: string): Promise<void> {
+    if (timerBusy || !runningEntry) return;
     setTimerBusy(true);
     try {
+      const trimmed = description.trim();
+      const current = runningEntry.description ?? "";
+      if (trimmed !== current) {
+        await apiFetch(`/time-entries/${runningEntry.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ description: trimmed || null }),
+        });
+      }
       await apiFetch("/time-entries/stop", { method: "POST" });
+      setStopPrompt(null);
       success("Timer stopped");
       load();
     } catch (err) {
@@ -192,7 +202,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
                   className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm w-full sm:w-56"
                 />
                 <button
-                  onClick={stopTimer}
+                  onClick={() => setStopPrompt({ description: runningEntry.description ?? "" })}
                   disabled={timerBusy}
                   title="Stop timer"
                   className="flex items-center gap-1 rounded-lg border border-red-500 text-red-600 dark:text-red-400 px-3 py-1.5 text-sm hover:bg-red-500/10 transition-colors disabled:opacity-50"
@@ -334,6 +344,103 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
           }}
         />
       )}
+
+      {stopPrompt && runningEntry && (
+        <StopTimerModal
+          elapsedSec={Math.floor((now - new Date(runningEntry.startedAt).getTime()) / 1000)}
+          initialDescription={stopPrompt.description}
+          busy={timerBusy}
+          onCancel={() => setStopPrompt(null)}
+          onStop={(desc) => stopTimer(desc)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface StopTimerModalProps {
+  elapsedSec: number;
+  initialDescription: string;
+  busy: boolean;
+  onCancel: () => void;
+  onStop: (description: string) => void;
+}
+
+function StopTimerModal({
+  elapsedSec,
+  initialDescription,
+  busy,
+  onCancel,
+  onStop,
+}: StopTimerModalProps): React.ReactElement {
+  const [description, setDescription] = useState<string>(initialDescription);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  function submit(e: React.FormEvent): void {
+    e.preventDefault();
+    onStop(description);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <form
+        onSubmit={submit}
+        className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md p-6 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-lg font-semibold">Stop timer</h3>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="text-sm text-[var(--muted-foreground)]">
+          Elapsed: <span className="font-mono text-[var(--foreground)]">{formatDuration(elapsedSec)}</span>
+        </div>
+        <div>
+          <label className="block text-xs text-[var(--muted-foreground)] mb-1">
+            Description
+          </label>
+          <input
+            ref={inputRef}
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What did you work on?"
+            className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {busy ? "Stopping…" : "Stop"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

@@ -85,13 +85,18 @@ test.describe("Time tracking", () => {
     // Wait briefly so the entry has a non-trivial duration
     await page.waitForTimeout(1500);
 
+    // Clicking "Stop timer" opens the description-prompt modal.
+    await stopButton.click();
+    const stopModalConfirm = page.getByRole("button", { name: /^stop$/i });
+    await expect(stopModalConfirm).toBeVisible({ timeout: 5000 });
+
     const stopResponse = page.waitForResponse(
       (res) =>
         res.url().includes("/api/time-entries/stop") &&
         res.request().method() === "POST",
       { timeout: 10000 },
     );
-    await stopButton.click();
+    await stopModalConfirm.click();
     const stopRes = await stopResponse;
     expect(stopRes.ok()).toBeTruthy();
 

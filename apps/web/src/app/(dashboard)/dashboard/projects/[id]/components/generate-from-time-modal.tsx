@@ -124,13 +124,22 @@ export function GenerateFromTimeModal({
               then retry — entries created earlier will pick it up automatically.
             </p>
             <div className="flex gap-3">
-              <Link
-                href={`/dashboard/projects/${projectId}#default-rate`}
-                onClick={onClose}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  // Defer scroll until after the modal unmounts so the target
+                  // is actually visible.
+                  setTimeout(() => {
+                    document
+                      .getElementById("default-rate")
+                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }, 50);
+                }}
                 className="text-amber-900 dark:text-amber-200 underline hover:no-underline"
               >
                 Set project rate
-              </Link>
+              </button>
               <Link
                 href="/dashboard/clients"
                 onClick={onClose}

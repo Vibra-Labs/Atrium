@@ -479,7 +479,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {(currentRole === "owner" || currentRole === "admin") && (
-        <div className="space-y-2 pt-4">
+        <div id="default-rate" className="space-y-2 pt-4 scroll-mt-24">
           <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Default rate
           </h2>

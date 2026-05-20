@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
+import { BillingSection } from "./billing-section";
+import { useAppConfig } from "@/lib/app-config";
 
-export default function BillingRedirect(): React.ReactElement {
-  useEffect(() => {
-    const search = typeof window !== "undefined" ? window.location.search : "";
-    window.location.replace(`/dashboard/settings/account${search}#billing`);
-  }, []);
-  return <div>Redirecting...</div>;
+export default function BillingPage(): React.ReactElement {
+  const config = useAppConfig();
+  const billingEnabled = config?.billingEnabled ?? false;
+
+  if (!billingEnabled) {
+    return (
+      <p className="text-sm text-[var(--muted-foreground)]">
+        Billing is not configured on this Atrium instance.
+      </p>
+    );
+  }
+
+  return <BillingSection />;
 }

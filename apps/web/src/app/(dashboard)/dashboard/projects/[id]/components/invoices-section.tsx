@@ -6,11 +6,12 @@ import { formatCurrency } from "@/lib/format";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Plus, Trash2, Receipt, Download, Upload, Clock, FileText, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Receipt, Download, Upload, Clock, FileText, ChevronDown, Eye } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { track } from "@/lib/track";
 import { downloadFile, downloadCsv } from "@/lib/download";
 import { GenerateFromTimeModal } from "./generate-from-time-modal";
+import { PdfViewerModal } from "@/components/pdf-viewer-modal";
 
 interface LineItem {
   id?: string;
@@ -71,6 +72,7 @@ export function InvoicesSection({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showGenerate, setShowGenerate] = useState<boolean>(false);
+  const [viewing, setViewing] = useState<{ url: string; invoiceNumber: string } | null>(null);
   const [outstandingAmount, setOutstandingAmount] = useState(0);
   const [newMenuOpen, setNewMenuOpen] = useState<boolean>(false);
   const newMenuRef = useRef<HTMLDivElement | null>(null);
@@ -387,6 +389,28 @@ export function InvoicesSection({
     }
   };
 
+  const handleViewPdf = async (invoiceId: string, invoiceNumber: string) => {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/invoices/${invoiceId}/pdf`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Could not load PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setViewing({ url, invoiceNumber });
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to open invoice");
+    }
+  };
+
+  const closeViewer = useCallback(() => {
+    setViewing((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
+
   const newTotal = newLineItems.reduce(
     (sum, item) => sum + item.quantity * item.unitPrice,
     0,
@@ -501,6 +525,14 @@ export function InvoicesSection({
           onCreated={() => {
             loadInvoices();
           }}
+        />
+      )}
+
+      {viewing && (
+        <PdfViewerModal
+          url={viewing.url}
+          title={viewing.invoiceNumber}
+          onClose={closeViewer}
         />
       )}
 
@@ -790,6 +822,13 @@ export function InvoicesSection({
                           Mark as Paid
                         </button>
                       )}
+                      <button
+                        onClick={() => handleViewPdf(inv.id, inv.invoiceNumber)}
+                        className="flex items-center gap-1 text-xs text-[var(--primary)] hover:underline"
+                      >
+                        <Eye size={12} />
+                        View
+                      </button>
                       <button
                         onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
                         className="flex items-center gap-1 text-xs text-[var(--primary)] hover:underline"

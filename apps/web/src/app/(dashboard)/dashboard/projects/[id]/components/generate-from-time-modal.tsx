@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -15,21 +16,41 @@ interface GenerateInvoiceResponse {
   invoiceId: string;
 }
 
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function startOfMonthISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
+}
+
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function GenerateFromTimeModal({
   projectId,
   onClose,
   onCreated,
 }: GenerateFromTimeModalProps): React.ReactElement {
   const { success, error: showError } = useToast();
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+  const [from, setFrom] = useState<string>(() => startOfMonthISO());
+  const [to, setTo] = useState<string>(() => todayISO());
   const [includeNonBillable, setIncludeNonBillable] = useState<boolean>(false);
   const [mergeEntries, setMergeEntries] = useState<boolean>(true);
   const [busy, setBusy] = useState<boolean>(false);
+  const [noRateError, setNoRateError] = useState<boolean>(false);
 
   async function submit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    if (from && to && to < from) {
+      showError("End date must be on or after start date");
+      return;
+    }
     setBusy(true);
+    setNoRateError(false);
     try {
       const body: {
         projectId: string;
@@ -56,9 +77,12 @@ export function GenerateFromTimeModal({
       onClose();
     } catch (err) {
       console.error(err);
-      showError(
-        err instanceof Error ? err.message : "Failed to generate invoice",
-      );
+      const message = err instanceof Error ? err.message : "Failed to generate invoice";
+      if (message.toLowerCase().includes("hourly rate")) {
+        setNoRateError(true);
+      } else {
+        showError(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -89,8 +113,43 @@ export function GenerateFromTimeModal({
 
         <p className="text-xs text-[var(--muted-foreground)]">
           Creates a draft invoice from this project&apos;s un-invoiced time
-          entries. Optionally restrict to a date range.
+          entries. Defaults to month-to-date — clear both dates to include all
+          un-invoiced entries.
         </p>
+
+        {noRateError && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs space-y-2">
+            <p className="text-amber-900 dark:text-amber-200">
+              No hourly rate is set anywhere yet. Add one in either place and
+              then retry — entries created earlier will pick it up automatically.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  // Defer scroll until after the modal unmounts so the target
+                  // is actually visible.
+                  setTimeout(() => {
+                    document
+                      .getElementById("default-rate")
+                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }, 50);
+                }}
+                className="text-amber-900 dark:text-amber-200 underline hover:no-underline"
+              >
+                Set project rate
+              </button>
+              <Link
+                href="/dashboard/clients"
+                onClick={onClose}
+                className="text-amber-900 dark:text-amber-200 underline hover:no-underline"
+              >
+                Set member rate
+              </Link>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <div>
@@ -111,11 +170,17 @@ export function GenerateFromTimeModal({
             <input
               type="date"
               value={to}
+              min={from || undefined}
               onChange={(e) => setTo(e.target.value)}
               className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
             />
           </div>
         </div>
+        {from && to && to < from && (
+          <p className="text-xs text-red-600">
+            End date must be on or after start date.
+          </p>
+        )}
 
         <label className="flex items-center gap-2 text-sm">
           <input

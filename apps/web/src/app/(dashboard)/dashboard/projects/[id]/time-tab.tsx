@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { formatDuration, formatHours } from "@/lib/format-duration";
-import { Play, Square, Plus, Trash2, Lock, Pencil } from "lucide-react";
+import { Play, Square, Plus, Trash2, Lock, Pencil, X } from "lucide-react";
 import { ManualEntryModal, type EditableEntry } from "./manual-entry-modal";
 
 type ModalState = { mode: "closed" } | { mode: "new" } | { mode: "edit"; entry: EditableEntry };
@@ -36,10 +36,12 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
   const confirm = useConfirm();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
   const [now, setNow] = useState<number>(() => Date.now());
   const [draftDescription, setDraftDescription] = useState<string>("");
   const [timerBusy, setTimerBusy] = useState<boolean>(false);
+  const [stopPrompt, setStopPrompt] = useState<{ description: string } | null>(null);
 
   const runningEntry = entries.find((e) => !e.endedAt);
   const hasRunning = !!runningEntry;
@@ -51,6 +53,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await apiFetch<EntryListResponse>(
         `/time-entries?projectId=${projectId}&limit=200`,
@@ -58,10 +61,13 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
       setEntries(res.data);
     } catch (err) {
       console.error(err);
+      const msg = err instanceof Error ? err.message : "Could not load time entries";
+      setLoadError(msg);
+      showError("Could not load time entries — try again");
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, showError]);
 
   useEffect(() => {
     load();
@@ -101,11 +107,20 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
     }
   }
 
-  async function stopTimer(): Promise<void> {
-    if (timerBusy) return;
+  async function stopTimer(description: string): Promise<void> {
+    if (timerBusy || !runningEntry) return;
     setTimerBusy(true);
     try {
+      const trimmed = description.trim();
+      const current = runningEntry.description ?? "";
+      if (trimmed !== current) {
+        await apiFetch(`/time-entries/${runningEntry.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ description: trimmed || null }),
+        });
+      }
       await apiFetch("/time-entries/stop", { method: "POST" });
+      setStopPrompt(null);
       success("Timer stopped");
       load();
     } catch (err) {
@@ -187,7 +202,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
                   className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm w-full sm:w-56"
                 />
                 <button
-                  onClick={stopTimer}
+                  onClick={() => setStopPrompt({ description: runningEntry.description ?? "" })}
                   disabled={timerBusy}
                   title="Stop timer"
                   className="flex items-center gap-1 rounded-lg border border-red-500 text-red-600 dark:text-red-400 px-3 py-1.5 text-sm hover:bg-red-500/10 transition-colors disabled:opacity-50"
@@ -229,7 +244,17 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
         )}
       </div>
 
-      {loading ? (
+      {loadError ? (
+        <div className="border border-[var(--border)] rounded-lg p-6 text-center text-sm">
+          <div className="text-red-600 mb-2">Could not load time entries</div>
+          <button
+            onClick={() => load()}
+            className="px-3 py-1.5 border border-[var(--border)] rounded"
+          >
+            Retry
+          </button>
+        </div>
+      ) : loading ? (
         <div className="text-sm text-[var(--muted-foreground)]">Loading…</div>
       ) : entries.length === 0 ? (
         <div className="text-sm text-[var(--muted-foreground)] text-center py-8">
@@ -247,7 +272,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
                   <span className="font-mono">
                     {e.endedAt
                       ? formatDuration(e.durationSec ?? 0)
-                      : formatDuration((now - new Date(e.startedAt).getTime()) / 1000)}
+                      : formatDuration(Math.floor((now - new Date(e.startedAt).getTime()) / 1000))}
                   </span>
                   {!e.endedAt && (
                     <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 inline-flex items-center gap-1">
@@ -319,6 +344,103 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
           }}
         />
       )}
+
+      {stopPrompt && runningEntry && (
+        <StopTimerModal
+          elapsedSec={Math.floor((now - new Date(runningEntry.startedAt).getTime()) / 1000)}
+          initialDescription={stopPrompt.description}
+          busy={timerBusy}
+          onCancel={() => setStopPrompt(null)}
+          onStop={(desc) => stopTimer(desc)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface StopTimerModalProps {
+  elapsedSec: number;
+  initialDescription: string;
+  busy: boolean;
+  onCancel: () => void;
+  onStop: (description: string) => void;
+}
+
+function StopTimerModal({
+  elapsedSec,
+  initialDescription,
+  busy,
+  onCancel,
+  onStop,
+}: StopTimerModalProps): React.ReactElement {
+  const [description, setDescription] = useState<string>(initialDescription);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  function submit(e: React.FormEvent): void {
+    e.preventDefault();
+    onStop(description);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <form
+        onSubmit={submit}
+        className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md p-6 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-lg font-semibold">Stop timer</h3>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="text-sm text-[var(--muted-foreground)]">
+          Elapsed: <span className="font-mono text-[var(--foreground)]">{formatDuration(elapsedSec)}</span>
+        </div>
+        <div>
+          <label className="block text-xs text-[var(--muted-foreground)] mb-1">
+            Description
+          </label>
+          <input
+            ref={inputRef}
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What did you work on?"
+            className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {busy ? "Stopping…" : "Stop"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

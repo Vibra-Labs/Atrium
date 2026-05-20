@@ -60,6 +60,9 @@ else
   DATABASE_URL="$MIGRATION_URL" ./packages/database/node_modules/.bin/prisma db push --schema=./packages/database/prisma/schema.prisma --skip-generate --accept-data-loss
   echo "Database schema synced."
 
+  # Apply partial unique index on time_entry (one running entry per user)
+  DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/migrate-time-entry-running-unique.ts || true
+
   # Apply Row Level Security (locks out Supabase anon/authenticated roles)
   # Only needed when using Supabase — set SUPABASE=true to activate
   if [ "${SUPABASE}" = "true" ]; then

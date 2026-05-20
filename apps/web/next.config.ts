@@ -6,7 +6,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 // Copy CHANGELOG.md into the web app directory at config load time so webpack can resolve it
 const changelogSrc = join(__dirname, "../../CHANGELOG.md");
 const changelogDest = join(__dirname, "CHANGELOG.md");
-if (existsSync(changelogSrc) && !existsSync(changelogDest)) {
+if (existsSync(changelogSrc)) {
   try { copyFileSync(changelogSrc, changelogDest); } catch { /* ignore */ }
 }
 
@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "frame-src " +
+              "frame-src 'self' blob: " +
               // Regex-based providers (fast path)
               "https://www.youtube.com https://www.loom.com https://www.figma.com https://docs.google.com " +
               // oEmbed providers (resolved via /api/embeds/resolve)

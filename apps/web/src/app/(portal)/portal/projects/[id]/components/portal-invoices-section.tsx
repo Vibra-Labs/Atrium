@@ -5,9 +5,10 @@ import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Receipt, Download, CreditCard } from "lucide-react";
+import { Receipt, Download, CreditCard, Eye } from "lucide-react";
 import { downloadFile } from "@/lib/download";
 import { usePreviewMode } from "@/lib/preview-mode";
+import { PdfViewerModal } from "@/components/pdf-viewer-modal";
 
 interface LineItem {
   id: string;
@@ -55,6 +56,7 @@ export function PortalInvoicesSection({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [viewing, setViewing] = useState<{ url: string; invoiceNumber: string } | null>(null);
   const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
   const { success, info, error: showError } = useToast();
   const { preview } = usePreviewMode();
@@ -134,6 +136,28 @@ export function PortalInvoicesSection({
       showError(err instanceof Error ? err.message : "Failed to download PDF");
     }
   };
+
+  const handleViewPdf = async (invoiceId: string, invoiceNumber: string) => {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/invoices/mine/${invoiceId}/pdf`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Could not load PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setViewing({ url, invoiceNumber });
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to open invoice");
+    }
+  };
+
+  const closeViewer = useCallback(() => {
+    setViewing((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
 
   const handlePayNow = async (e: React.MouseEvent, invoiceId: string) => {
     e.stopPropagation(); // Prevent row expand/collapse
@@ -267,13 +291,22 @@ export function PortalInvoicesSection({
                           </button>
                         )}
                         {inv.type !== "uploaded" && (
-                          <button
-                            onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
-                            className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
-                          >
-                            <Download size={14} />
-                            Download PDF
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleViewPdf(inv.id, inv.invoiceNumber)}
+                              className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                            >
+                              <Eye size={14} />
+                              View
+                            </button>
+                            <button
+                              onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
+                              className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                            >
+                              <Download size={14} />
+                              Download PDF
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -361,6 +394,14 @@ export function PortalInvoicesSection({
         <div className="mt-3">
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
+      )}
+
+      {viewing && (
+        <PdfViewerModal
+          url={viewing.url}
+          title={viewing.invoiceNumber}
+          onClose={closeViewer}
+        />
       )}
     </div>
   );

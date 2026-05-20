@@ -532,7 +532,6 @@ export function InvoicesSection({
         <PdfViewerModal
           url={viewing.url}
           title={viewing.invoiceNumber}
-          downloadFilename={`${viewing.invoiceNumber}.pdf`}
           onClose={closeViewer}
         />
       )}

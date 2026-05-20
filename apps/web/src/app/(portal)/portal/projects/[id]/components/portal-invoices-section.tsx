@@ -400,7 +400,6 @@ export function PortalInvoicesSection({
         <PdfViewerModal
           url={viewing.url}
           title={viewing.invoiceNumber}
-          downloadFilename={`${viewing.invoiceNumber}.pdf`}
           onClose={closeViewer}
         />
       )}

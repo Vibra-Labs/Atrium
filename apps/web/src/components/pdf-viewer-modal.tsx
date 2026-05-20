@@ -1,19 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
-import { X, Download } from "lucide-react";
+import { X } from "lucide-react";
 
 interface PdfViewerModalProps {
   url: string;
   title: string;
-  downloadFilename?: string;
   onClose: () => void;
 }
 
 export function PdfViewerModal({
   url,
   title,
-  downloadFilename,
   onClose,
 }: PdfViewerModalProps): React.ReactElement {
   useEffect(() => {
@@ -34,27 +32,14 @@ export function PdfViewerModal({
       <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
           <h3 className="text-sm font-semibold truncate">{title}</h3>
-          <div className="flex items-center gap-1 shrink-0">
-            {downloadFilename && (
-              <a
-                href={url}
-                download={downloadFilename}
-                className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                aria-label="Download"
-                title="Download"
-              >
-                <Download size={16} />
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              aria-label="Close"
-            >
-              <X size={18} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] shrink-0"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
         </div>
         <iframe
           src={url}

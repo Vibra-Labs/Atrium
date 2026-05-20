@@ -6,7 +6,7 @@ import { formatCurrency } from "@/lib/format";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Plus, Trash2, Receipt, Download, Upload, Clock, FileText, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Receipt, Download, Upload, Clock, FileText, ChevronDown, Eye } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { track } from "@/lib/track";
 import { downloadFile, downloadCsv } from "@/lib/download";
@@ -384,6 +384,23 @@ export function InvoicesSection({
       URL.revokeObjectURL(url);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to download PDF");
+    }
+  };
+
+  const handleViewPdf = async (invoiceId: string) => {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/invoices/${invoiceId}/pdf`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Could not load PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      // Defer revoke so the opened tab has time to render the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to open invoice");
     }
   };
 
@@ -790,6 +807,13 @@ export function InvoicesSection({
                           Mark as Paid
                         </button>
                       )}
+                      <button
+                        onClick={() => handleViewPdf(inv.id)}
+                        className="flex items-center gap-1 text-xs text-[var(--primary)] hover:underline"
+                      >
+                        <Eye size={12} />
+                        View
+                      </button>
                       <button
                         onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
                         className="flex items-center gap-1 text-xs text-[var(--primary)] hover:underline"

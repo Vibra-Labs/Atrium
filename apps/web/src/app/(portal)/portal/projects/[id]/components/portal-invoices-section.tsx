@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
-import { Receipt, Download, CreditCard } from "lucide-react";
+import { Receipt, Download, CreditCard, Eye } from "lucide-react";
 import { downloadFile } from "@/lib/download";
 import { usePreviewMode } from "@/lib/preview-mode";
 
@@ -132,6 +132,22 @@ export function PortalInvoicesSection({
       URL.revokeObjectURL(url);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to download PDF");
+    }
+  };
+
+  const handleViewPdf = async (invoiceId: string) => {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/invoices/mine/${invoiceId}/pdf`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Could not load PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to open invoice");
     }
   };
 
@@ -267,13 +283,22 @@ export function PortalInvoicesSection({
                           </button>
                         )}
                         {inv.type !== "uploaded" && (
-                          <button
-                            onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
-                            className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
-                          >
-                            <Download size={14} />
-                            Download PDF
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleViewPdf(inv.id)}
+                              className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                            >
+                              <Eye size={14} />
+                              View
+                            </button>
+                            <button
+                              onClick={() => handleDownloadPdf(inv.id, inv.invoiceNumber)}
+                              className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                            >
+                              <Download size={14} />
+                              Download PDF
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

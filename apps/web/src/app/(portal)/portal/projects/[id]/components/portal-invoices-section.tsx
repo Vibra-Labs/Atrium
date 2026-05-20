@@ -8,6 +8,7 @@ import { Pagination } from "@/components/pagination";
 import { Receipt, Download, CreditCard, Eye } from "lucide-react";
 import { downloadFile } from "@/lib/download";
 import { usePreviewMode } from "@/lib/preview-mode";
+import { PdfViewerModal } from "@/components/pdf-viewer-modal";
 
 interface LineItem {
   id: string;
@@ -55,6 +56,7 @@ export function PortalInvoicesSection({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [viewing, setViewing] = useState<{ url: string; invoiceNumber: string } | null>(null);
   const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
   const { success, info, error: showError } = useToast();
   const { preview } = usePreviewMode();
@@ -135,7 +137,7 @@ export function PortalInvoicesSection({
     }
   };
 
-  const handleViewPdf = async (invoiceId: string) => {
+  const handleViewPdf = async (invoiceId: string, invoiceNumber: string) => {
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || ""}/api/invoices/mine/${invoiceId}/pdf`,
@@ -144,12 +146,18 @@ export function PortalInvoicesSection({
       if (!res.ok) throw new Error("Could not load PDF");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setViewing({ url, invoiceNumber });
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to open invoice");
     }
   };
+
+  const closeViewer = useCallback(() => {
+    setViewing((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
 
   const handlePayNow = async (e: React.MouseEvent, invoiceId: string) => {
     e.stopPropagation(); // Prevent row expand/collapse
@@ -285,7 +293,7 @@ export function PortalInvoicesSection({
                         {inv.type !== "uploaded" && (
                           <>
                             <button
-                              onClick={() => handleViewPdf(inv.id)}
+                              onClick={() => handleViewPdf(inv.id, inv.invoiceNumber)}
                               className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
                             >
                               <Eye size={14} />
@@ -386,6 +394,15 @@ export function PortalInvoicesSection({
         <div className="mt-3">
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
+      )}
+
+      {viewing && (
+        <PdfViewerModal
+          url={viewing.url}
+          title={viewing.invoiceNumber}
+          downloadFilename={`${viewing.invoiceNumber}.pdf`}
+          onClose={closeViewer}
+        />
       )}
     </div>
   );

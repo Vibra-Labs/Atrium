@@ -77,7 +77,8 @@ export default function TimeReportPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      <div className="flex items-start justify-between">
+        <h1 className="text-2xl font-bold">Time report</h1>
         <button
           onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-sm"

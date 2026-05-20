@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "frame-src " +
+              "frame-src 'self' blob: " +
               // Regex-based providers (fast path)
               "https://www.youtube.com https://www.loom.com https://www.figma.com https://docs.google.com " +
               // oEmbed providers (resolved via /api/embeds/resolve)

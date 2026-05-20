@@ -2,18 +2,19 @@
 
 All notable changes to Atrium will be documented in this file.
 
-## [1.9.0] — 2026-05-19
+## [1.8.0] — 2026-05-19
 
 ### Added
 
-- **Time tracking polish** — Stopping a timer now opens a quick prompt so you can confirm or edit the description before the entry is saved. Generate-from-time invoices default to month-to-date. If any tracked entries are missing an hourly rate at invoice time, the current project or member rate is applied automatically — and if no rate is set anywhere, an inline message points you to the right place to add one.
-- **Invoice preview in-app** — A new View button opens any invoice PDF in a modal directly inside Atrium (works in both the dashboard and the client portal), so you can check an invoice without leaving the page or downloading it.
+- **Time tracking, built for billable work** — Track every billable hour without leaving the project. Start and stop timers from the project's Time tab, watch elapsed time tick live, label work as you go, and never lose a session to a forgotten timer thanks to cross-project switch protection. Stopping a timer opens a quick prompt to confirm or edit the description. Add or edit past entries in seconds, then turn un-invoiced time into a polished invoice in one click — month-to-date by default and automatically grouped by hourly rate so mixed-rate work bills cleanly. If any entries are missing an hourly rate at invoice time, the current project or member rate is applied automatically, with a clear inline pointer when no rate is set anywhere.
+- **Redesigned calendar** — Get the whole month at a glance with a faster, more readable layout: roomy day cells, weekend shading, color-coded event chips for tasks, project milestones, and invoices, plus a month/year jumper and filters that show what's active at a glance. Toggle to Agenda view for a chronological run-down. Events respect your local timezone end-to-end.
+- **Invoice preview in-app** — A new View button opens any invoice PDF in a modal directly inside Atrium (dashboard and client portal), so you can check an invoice without leaving the page or downloading it.
 - **Reports section** — Dedicated Reports area in the sidebar with a Time report showing totals, per-project and per-user breakdowns, and CSV export. Designed to grow as more reports are added.
-- **Billing has its own Settings tab** — Plans and usage moved out of Account into a dedicated Billing tab for cleaner navigation.
+- **Streamlined invoice creation** — A single "New Invoice" button now opens a clean menu for creating from scratch, generating from tracked time, or uploading a PDF — replacing the old triple-button row.
+- **Reorganized Settings** — Settings is now a tabbed workspace (Account, Workspace, Billing, Payments) so each area has room to breathe and you always know where to find what you need.
 
 ### Fixed
 
-- **Calendar showed events on the wrong day for users outside UTC** — Events near midnight were grouping by UTC instead of the user's local timezone. The calendar now honors your timezone end-to-end.
 - **Merged invoice totals could drift by a cent or two** — When generating an invoice with merged line items, the displayed `Xh @ $Y/hr` math now matches the stored total exactly.
 - **Possible duplicate running timers** — Starting a timer from two tabs simultaneously could create two "running" entries. Only one running timer per user is now enforced at the database level.
 - **CSV export silently capped at 200 rows** — The time-entries CSV export was truncating large requests without warning; the cap has been raised to 50,000 rows and the export uses a dedicated path that doesn't share the paginated limit.
@@ -21,15 +22,6 @@ All notable changes to Atrium will be documented in this file.
 - **Rate visibility tightened** — Hourly rate values are no longer included in time-entry list and report responses for members (owner/admin only).
 - **Cross-project task assignment guard** — Editing a time entry now rejects task IDs that belong to a different project.
 - **Friendlier error states** — Time tab and manual-entry modal now surface load failures with a retry option instead of staying stuck on "Loading…". Settings nav no longer over-highlights sibling routes.
-
-## [1.8.0] — 2026-05-02
-
-### Added
-
-- **Time tracking, built for billable work** — Track every billable hour without leaving the project. Start and stop timers from the project's Time tab, watch elapsed time tick live, label work as you go, and never lose a session to a forgotten timer thanks to cross-project switch protection. Add or edit past entries in seconds, then turn un-invoiced time into a polished invoice in one click — automatically grouped by hourly rate so mixed-rate work bills cleanly.
-- **Redesigned calendar** — Get the whole month at a glance with a faster, more readable layout: roomy day cells, weekend shading, color-coded event chips for tasks, project milestones, and invoices, plus a month/year jumper and filters that show what's active at a glance. Toggle to Agenda view for a chronological run-down.
-- **Streamlined invoice creation** — A single "New Invoice" button now opens a clean menu for creating from scratch, generating from tracked time, or uploading a PDF — replacing the old triple-button row.
-- **Reorganized Settings** — Settings is now a tabbed workspace (General, Profile, Workspace, Payments, Branding, Billing) so each area has room to breathe and you always know where to find what you need.
 
 ## [1.7.0] — 2026-04-30
 

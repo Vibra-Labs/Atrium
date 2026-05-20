@@ -11,6 +11,7 @@ interface Section {
 const SECTIONS: Section[] = [
   { href: "/dashboard/settings/account", label: "Account" },
   { href: "/dashboard/settings/workspace", label: "Workspace" },
+  { href: "/dashboard/settings/billing", label: "Billing" },
   { href: "/dashboard/settings/payments", label: "Payments" },
 ];
 

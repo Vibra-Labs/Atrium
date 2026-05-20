@@ -2,6 +2,26 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.9.0] — 2026-05-19
+
+### Added
+
+- **Time tracking polish** — Stopping a timer now opens a quick prompt so you can confirm or edit the description before the entry is saved. Generate-from-time invoices default to month-to-date. If any tracked entries are missing an hourly rate at invoice time, the current project or member rate is applied automatically — and if no rate is set anywhere, an inline message points you to the right place to add one.
+- **Invoice preview in-app** — A new View button opens any invoice PDF in a modal directly inside Atrium (works in both the dashboard and the client portal), so you can check an invoice without leaving the page or downloading it.
+- **Reports section** — Dedicated Reports area in the sidebar with a Time report showing totals, per-project and per-user breakdowns, and CSV export. Designed to grow as more reports are added.
+- **Billing has its own Settings tab** — Plans and usage moved out of Account into a dedicated Billing tab for cleaner navigation.
+
+### Fixed
+
+- **Calendar showed events on the wrong day for users outside UTC** — Events near midnight were grouping by UTC instead of the user's local timezone. The calendar now honors your timezone end-to-end.
+- **Merged invoice totals could drift by a cent or two** — When generating an invoice with merged line items, the displayed `Xh @ $Y/hr` math now matches the stored total exactly.
+- **Possible duplicate running timers** — Starting a timer from two tabs simultaneously could create two "running" entries. Only one running timer per user is now enforced at the database level.
+- **CSV export silently capped at 200 rows** — The time-entries CSV export was truncating large requests without warning; the cap has been raised to 50,000 rows and the export uses a dedicated path that doesn't share the paginated limit.
+- **Version footer was hard-coded** — The version number at the bottom-right now reads from the changelog automatically, so it always reflects the deployed release.
+- **Rate visibility tightened** — Hourly rate values are no longer included in time-entry list and report responses for members (owner/admin only).
+- **Cross-project task assignment guard** — Editing a time entry now rejects task IDs that belong to a different project.
+- **Friendlier error states** — Time tab and manual-entry modal now surface load failures with a retry option instead of staying stuck on "Loading…". Settings nav no longer over-highlights sibling routes.
+
 ## [1.8.0] — 2026-05-02
 
 ### Added

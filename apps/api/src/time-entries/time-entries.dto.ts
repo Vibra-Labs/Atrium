@@ -6,8 +6,34 @@ import {
   IsString,
   MaxLength,
   Min,
+  registerDecorator,
+  type ValidationArguments,
+  type ValidationOptions,
 } from "class-validator";
 import { Type } from "class-transformer";
+
+function ExactlyOneOf(properties: string[], validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: "exactlyOneOf",
+      target: object.constructor,
+      propertyName,
+      constraints: properties,
+      options: validationOptions,
+      validator: {
+        validate(_value: unknown, args: ValidationArguments) {
+          const props = args.constraints as string[];
+          const dto = args.object as Record<string, unknown>;
+          return props.filter((prop) => dto[prop] !== undefined && dto[prop] !== null && dto[prop] !== "").length === 1;
+        },
+        defaultMessage(args: ValidationArguments) {
+          const props = args.constraints as string[];
+          return `Exactly one of ${props.join(" or ")} must be provided`;
+        },
+      },
+    });
+  };
+}
 
 export class StartTimerDto {
   @IsString() projectId!: string;
@@ -34,6 +60,7 @@ export class UpdateTimeEntryDto {
 
 export class TimeEntryListQueryDto {
   @IsOptional() @IsString() projectId?: string;
+  @IsOptional() @IsString() billingClientId?: string;
   @IsOptional() @IsString() userId?: string;
   @IsOptional() @IsDateString() from?: string;
   @IsOptional() @IsDateString() to?: string;
@@ -44,7 +71,12 @@ export class TimeEntryListQueryDto {
 }
 
 export class GenerateInvoiceDto {
-  @IsString() projectId!: string;
+  @IsOptional() @IsString() projectId?: string;
+  @IsOptional() @IsString() billingClientId?: string;
+  @ExactlyOneOf(["projectId", "billingClientId"], {
+    message: "Exactly one of projectId or billingClientId must be provided",
+  })
+  readonly invoiceScope?: never;
   @IsOptional() @IsDateString() from?: string;
   @IsOptional() @IsDateString() to?: string;
   @IsOptional() @IsBoolean() includeNonBillable?: boolean;

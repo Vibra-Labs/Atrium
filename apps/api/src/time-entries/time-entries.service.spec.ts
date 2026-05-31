@@ -421,6 +421,166 @@ describe("TimeEntriesService.list/report/generateInvoice", () => {
   });
 });
 
+describe("TimeEntriesService.billingClientId filters", () => {
+  it("list filters entries by project.billingClientId", async () => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const billingClient = await prisma.billingClient.create({
+      data: { organizationId: orgId, name: `CSP ${stamp}`, slug: `csp-${stamp}` },
+    });
+    await prisma.project.update({ where: { id: projectId }, data: { billingClientId: billingClient.id } });
+    const otherClientProject = await prisma.project.create({
+      data: { name: "CSP Ops", organizationId: orgId, billingClientId: billingClient.id },
+    });
+    const unlinkedProject = await prisma.project.create({
+      data: { name: "Internal", organizationId: orgId },
+    });
+
+    const e1 = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+    });
+    const e2 = await service.create(userId, orgId, {
+      projectId: otherClientProject.id,
+      startedAt: "2026-04-01T10:00:00Z",
+      endedAt: "2026-04-01T11:00:00Z",
+    });
+    await service.create(userId, orgId, {
+      projectId: unlinkedProject.id,
+      startedAt: "2026-04-01T11:00:00Z",
+      endedAt: "2026-04-01T12:00:00Z",
+    });
+
+    const res = await service.list(orgId, { billingClientId: billingClient.id }, "admin");
+    expect(res.meta.total).toBe(2);
+    expect(res.data.map((entry) => entry.id).sort()).toEqual([e1.id, e2.id].sort());
+  });
+
+  it("report filters aggregates by project.billingClientId", async () => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const billingClient = await prisma.billingClient.create({
+      data: { organizationId: orgId, name: `CSP ${stamp}`, slug: `csp-${stamp}` },
+    });
+    await prisma.project.update({ where: { id: projectId }, data: { billingClientId: billingClient.id } });
+    const otherClientProject = await prisma.project.create({
+      data: { name: "CSP Ops", organizationId: orgId, billingClientId: billingClient.id, hourlyRateCents: 10000 },
+    });
+    const unlinkedProject = await prisma.project.create({
+      data: { name: "Internal", organizationId: orgId, hourlyRateCents: 20000 },
+    });
+
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    await service.create(userId, orgId, {
+      projectId: otherClientProject.id,
+      startedAt: "2026-04-01T10:00:00Z",
+      endedAt: "2026-04-01T12:00:00Z",
+      billable: true,
+    });
+    await service.create(userId, orgId, {
+      projectId: unlinkedProject.id,
+      startedAt: "2026-04-01T12:00:00Z",
+      endedAt: "2026-04-01T13:00:00Z",
+      billable: true,
+    });
+
+    const report = await service.report(orgId, { billingClientId: billingClient.id }, "admin");
+    expect(report.totals.seconds).toBe(10_800);
+    expect(report.totals.billableSeconds).toBe(10_800);
+    expect(report.totals.valueCents).toBe(5000 + 20000);
+    expect(report.byProject.map((bucket) => bucket.projectId).sort()).toEqual([projectId, otherClientProject.id].sort());
+  });
+
+  it("generateInvoice with billingClientId spans projects and excludes ineligible entries", async () => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const billingClient = await prisma.billingClient.create({
+      data: { organizationId: orgId, name: `CSP ${stamp}`, slug: `csp-${stamp}` },
+    });
+    await prisma.project.update({ where: { id: projectId }, data: { billingClientId: billingClient.id } });
+    const otherClientProject = await prisma.project.create({
+      data: { name: "CSP Ops", organizationId: orgId, billingClientId: billingClient.id },
+    });
+    const unlinkedProject = await prisma.project.create({
+      data: { name: "Internal", organizationId: orgId },
+    });
+
+    const included1 = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const included2 = await service.create(userId, orgId, {
+      projectId: otherClientProject.id,
+      startedAt: "2026-04-02T09:00:00Z",
+      endedAt: "2026-04-02T10:30:00Z",
+      billable: true,
+    });
+    const nonBillable = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-03T09:00:00Z",
+      endedAt: "2026-04-03T10:00:00Z",
+      billable: false,
+    });
+    const unlinked = await service.create(userId, orgId, {
+      projectId: unlinkedProject.id,
+      startedAt: "2026-04-04T09:00:00Z",
+      endedAt: "2026-04-04T10:00:00Z",
+      billable: true,
+    });
+    const alreadyBilled = await service.create(userId, orgId, {
+      projectId: otherClientProject.id,
+      startedAt: "2026-04-05T09:00:00Z",
+      endedAt: "2026-04-05T10:00:00Z",
+      billable: true,
+    });
+
+    const invoice = await prisma.invoice.create({
+      data: { organizationId: orgId, invoiceNumber: `INV-BILLED-${stamp}`, status: "draft" },
+    });
+    const lineItem = await prisma.invoiceLineItem.create({
+      data: { invoiceId: invoice.id, description: "already billed", quantity: 1, unitPrice: 5000 },
+    });
+    await prisma.timeEntry.update({ where: { id: alreadyBilled.id }, data: { invoiceLineItemId: lineItem.id } });
+
+    const { invoiceId } = await service.generateInvoice(userId, orgId, { billingClientId: billingClient.id });
+    const generated = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { lineItems: true },
+    });
+    expect(generated?.projectId).toBeNull();
+    expect(generated?.lineItems.length).toBe(2);
+    const total = generated!.lineItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    expect(total).toBe(5000 + 7500);
+
+    const entries = await prisma.timeEntry.findMany({
+      where: { id: { in: [included1.id, included2.id, nonBillable.id, unlinked.id, alreadyBilled.id] } },
+    });
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    expect(byId.get(included1.id)?.invoiceLineItemId).not.toBeNull();
+    expect(byId.get(included2.id)?.invoiceLineItemId).not.toBeNull();
+    expect(byId.get(nonBillable.id)?.invoiceLineItemId).toBeNull();
+    expect(byId.get(unlinked.id)?.invoiceLineItemId).toBeNull();
+    expect(byId.get(alreadyBilled.id)?.invoiceLineItemId).toBe(lineItem.id);
+  });
+
+  it("generateInvoice requires exactly one of projectId or billingClientId", async () => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const billingClient = await prisma.billingClient.create({
+      data: { organizationId: orgId, name: `CSP ${stamp}`, slug: `csp-${stamp}` },
+    });
+
+    await expect(service.generateInvoice(userId, orgId, {})).rejects.toThrow(/exactly one/i);
+    await expect(
+      service.generateInvoice(userId, orgId, { projectId, billingClientId: billingClient.id }),
+    ).rejects.toThrow(/exactly one/i);
+  });
+});
+
 describe("TimeEntriesService.listForExport", () => {
   it("returns more than the 200-row paginated cap", async () => {
     // Create 210 short entries spanning different start times.

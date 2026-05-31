@@ -303,6 +303,7 @@ export class TimeEntriesService {
   private buildListWhere(orgId: string, query: TimeEntryListQueryDto): Record<string, unknown> {
     const where: Record<string, unknown> = { organizationId: orgId };
     if (query.projectId) where.projectId = query.projectId;
+    if (query.billingClientId) where.project = { billingClientId: query.billingClientId };
     if (query.userId) where.userId = query.userId;
     if (query.from || query.to) {
       where.startedAt = {
@@ -375,6 +376,7 @@ export class TimeEntriesService {
   async report(orgId: string, query: TimeEntryListQueryDto, role?: string): Promise<TimeReport> {
     const where: Record<string, unknown> = { organizationId: orgId };
     if (query.projectId) where.projectId = query.projectId;
+    if (query.billingClientId) where.project = { billingClientId: query.billingClientId };
     if (query.userId) where.userId = query.userId;
     if (query.from || query.to) {
       where.startedAt = {
@@ -508,15 +510,30 @@ export class TimeEntriesService {
   }
 
   async generateInvoice(userId: string, orgId: string, dto: GenerateInvoiceDto): Promise<GenerateInvoiceResult> {
-    const project = await this.prisma.project.findFirst({
-      where: { id: dto.projectId, organizationId: orgId },
-      select: { id: true, name: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
+    const hasProjectId = typeof dto.projectId === "string" && dto.projectId.length > 0;
+    const hasBillingClientId = typeof dto.billingClientId === "string" && dto.billingClientId.length > 0;
+    if (hasProjectId === hasBillingClientId) {
+      throw new BadRequestException("Exactly one of projectId or billingClientId must be provided");
+    }
+
+    const invoiceTarget = hasProjectId
+      ? await this.prisma.project.findFirst({
+          where: { id: dto.projectId, organizationId: orgId },
+          select: { id: true, name: true },
+        })
+      : await this.prisma.billingClient.findFirst({
+          where: { id: dto.billingClientId, organizationId: orgId, archivedAt: null },
+          select: { id: true, name: true },
+        });
+    if (!invoiceTarget) {
+      throw new NotFoundException(hasProjectId ? "Project not found" : "Billing client not found");
+    }
 
     const where: Record<string, unknown> = {
       organizationId: orgId,
-      projectId: dto.projectId,
+      ...(hasProjectId
+        ? { projectId: dto.projectId }
+        : { project: { billingClientId: dto.billingClientId } }),
       invoiceLineItemId: null,
       endedAt: { not: null },
       durationSec: { not: null },
@@ -536,7 +553,10 @@ export class TimeEntriesService {
 
     const entries = await this.prisma.timeEntry.findMany({
       where,
-      include: { task: { select: { title: true } } },
+      include: {
+        project: { select: { id: true, name: true } },
+        task: { select: { title: true } },
+      },
       orderBy: { startedAt: "asc" },
     });
     if (entries.length === 0) {
@@ -587,7 +607,7 @@ export class TimeEntriesService {
       const invoice = await tx.invoice.create({
         data: {
           organizationId: orgId,
-          projectId: dto.projectId,
+          projectId: hasProjectId ? dto.projectId : null,
           invoiceNumber,
           status: "draft",
         },
@@ -617,7 +637,7 @@ export class TimeEntriesService {
           const total = Math.round(hours * rate);
           const rateStr = (rate / 100).toFixed(2);
           const hoursStr = hours.toFixed(2);
-          const label = `${project.name} — ${hoursStr}h @ $${rateStr}/hr (${g.entryIds.length} entries)`;
+          const label = `${invoiceTarget.name} — ${hoursStr}h @ $${rateStr}/hr (${g.entryIds.length} entries)`;
           const lineItem = await tx.invoiceLineItem.create({
             data: {
               invoiceId: invoice.id,
@@ -637,7 +657,8 @@ export class TimeEntriesService {
           const hours = (e.durationSec ?? 0) / 3600;
           const total = Math.round(hours * rate);
           const dateStr = e.startedAt.toISOString().slice(0, 10);
-          const label = e.description ?? e.task?.title ?? "Time entry";
+          const labelBase = e.description ?? e.task?.title ?? "Time entry";
+          const label = hasBillingClientId ? `${e.project.name}: ${labelBase}` : labelBase;
           const rateStr = (rate / 100).toFixed(2);
           const hoursStr = hours.toFixed(2);
           const lineItem = await tx.invoiceLineItem.create({

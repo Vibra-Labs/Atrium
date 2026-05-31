@@ -74,6 +74,14 @@ export class ProjectsController {
     return this.projectsService.getStatuses(orgId);
   }
 
+  @Get("status/:slug")
+  findStatusPageProject(
+    @Param("slug") slug: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.projectsService.findStatusPageProjectBySlug(slug, userId);
+  }
+
   @Get("export")
   @Roles("owner", "admin")
   async exportCsv(@CurrentOrg("id") orgId: string, @Res() res: Response) {

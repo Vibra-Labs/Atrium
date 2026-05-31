@@ -1,6 +1,7 @@
+import { cookies } from "next/headers";
 import { forbidden, notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { safeJson } from "@/lib/safe-fetch";
 
 type SessionLike = { user?: { id?: string } } | null;
 type NavigationFns = {
@@ -8,16 +9,8 @@ type NavigationFns = {
   notFound: () => never;
   forbidden: () => never;
 };
-type StatusPrisma = {
-  member: {
-    findMany: (args: Record<string, unknown>) => Promise<Array<{ organizationId: string }>>;
-  };
-  organization: {
-    findUnique: (args: Record<string, unknown>) => Promise<{ id: string; name: string; slug: string | null } | null>;
-  };
-  project: {
-    findFirst: (args: Record<string, unknown>) => Promise<unknown>;
-  };
+type StatusApiClient = {
+  getStatusPageProject: (slug: string) => Promise<Response>;
 };
 
 export type StatusPageProject = {
@@ -61,78 +54,26 @@ export type StatusComment = {
   createdAt: Date;
 };
 
-type RawStatusProject = Omit<StatusPageProject, "organization">;
+const API_URL = process.env.API_URL || "http://localhost:3001";
 
 function statusSignInPath(slug: string): string {
   return `/portal/sign-in?callbackUrl=${encodeURIComponent(`/portal/status/${slug}`)}`;
 }
 
-async function findMemberVisibleProject(db: StatusPrisma, slug: string, userId: string) {
-  const memberships = await db.member.findMany({
-    where: { userId },
-    select: { organizationId: true },
+async function getStatusPageProjectFromApi(slug: string): Promise<Response> {
+  const cookieStore = await cookies();
+  return fetch(`${API_URL}/api/projects/status/${encodeURIComponent(slug)}`, {
+    headers: { Cookie: cookieStore.toString() },
+    cache: "no-store",
+    redirect: "manual",
   });
-  const organizationIds = memberships.map((member) => member.organizationId);
-  if (organizationIds.length === 0) return null;
-
-  const project = (await db.project.findFirst({
-    where: {
-      slug,
-      organizationId: { in: organizationIds },
-    },
-    include: {
-      clients: {
-        include: { user: { select: { id: true, name: true, email: true } } },
-        orderBy: { createdAt: "asc" },
-      },
-      updates: {
-        where: { clientVisible: true },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, title: true, content: true, createdAt: true },
-      },
-      comments: {
-        where: { clientVisible: true },
-        orderBy: { createdAt: "asc" },
-        select: { id: true, content: true, authorId: true, createdAt: true },
-      },
-      tasks: {
-        where: { clientVisible: true },
-        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
-        include: {
-          comments: {
-            where: { clientVisible: true },
-            orderBy: { createdAt: "asc" },
-            select: { id: true, content: true, authorId: true, createdAt: true },
-          },
-          deliverables: {
-            where: { clientVisible: true },
-            orderBy: { createdAt: "asc" },
-            include: {
-              file: { select: { filename: true, url: true } },
-            },
-          },
-        },
-      },
-    },
-  })) as RawStatusProject | null;
-
-  if (!project) return null;
-
-  const organization = await db.organization.findUnique({
-    where: { id: project.organizationId },
-    select: { id: true, name: true, slug: true },
-  });
-
-  if (!organization) return null;
-
-  return { ...project, organization } satisfies StatusPageProject;
 }
 
 export async function resolveStatusPageAccessWithDeps(
   slug: string,
   deps: {
     getSession: () => Promise<SessionLike>;
-    prisma: StatusPrisma;
+    apiClient: StatusApiClient;
     navigation: NavigationFns;
   },
 ) {
@@ -143,19 +84,27 @@ export async function resolveStatusPageAccessWithDeps(
     deps.navigation.redirect(statusSignInPath(slug));
   }
 
-  const projectExists = await deps.prisma.project.findFirst({
-    where: { slug },
-    select: { id: true },
-  });
+  const res = await deps.apiClient.getStatusPageProject(slug);
 
-  if (!projectExists) {
+  if (res.status === 401 || res.status === 302 || res.status === 307 || res.status === 308) {
+    deps.navigation.redirect(statusSignInPath(slug));
+  }
+
+  if (res.status === 404) {
     deps.navigation.notFound();
   }
 
-  const project = await findMemberVisibleProject(deps.prisma, slug, userId);
-
-  if (!project) {
+  if (res.status === 403) {
     deps.navigation.forbidden();
+  }
+
+  if (!res.ok) {
+    throw new Error(`Status page API request failed: ${res.status}`);
+  }
+
+  const project = await safeJson<StatusPageProject>(res);
+  if (!project) {
+    throw new Error("Status page API returned an empty project response");
   }
 
   return { session, project };
@@ -164,7 +113,7 @@ export async function resolveStatusPageAccessWithDeps(
 export async function resolveStatusPageAccess(slug: string) {
   return resolveStatusPageAccessWithDeps(slug, {
     getSession,
-    prisma: prisma as unknown as StatusPrisma,
+    apiClient: { getStatusPageProject: getStatusPageProjectFromApi },
     navigation: { redirect, notFound, forbidden },
   });
 }

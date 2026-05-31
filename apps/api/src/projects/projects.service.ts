@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { paginationArgs, paginatedResponse } from "../common";
@@ -20,6 +20,102 @@ interface ProjectUpdateInput {
 @Injectable()
 export class ProjectsService {
   constructor(private prisma: PrismaService) {}
+
+  async findStatusPageProjectBySlug(slug: string, userId: string) {
+    const projectExists = await this.prisma.project.findFirst({
+      where: { slug },
+      select: { id: true },
+    });
+
+    if (!projectExists) {
+      throw new NotFoundException("Project not found");
+    }
+
+    const memberships = await this.prisma.member.findMany({
+      where: { userId },
+      select: { organizationId: true },
+    });
+    const organizationIds = memberships.map((member) => member.organizationId);
+
+    if (organizationIds.length === 0) {
+      throw new ForbiddenException("Project access forbidden");
+    }
+
+    const project = await this.prisma.project.findFirst({
+      where: {
+        slug,
+        organizationId: { in: organizationIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        status: true,
+        createdAt: true,
+        completedAt: true,
+        organizationId: true,
+        clients: {
+          select: {
+            id: true,
+            user: { select: { id: true, name: true, email: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        updates: {
+          where: { clientVisible: true },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, title: true, content: true, createdAt: true },
+        },
+        comments: {
+          where: { clientVisible: true },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, content: true, authorId: true, createdAt: true },
+        },
+        tasks: {
+          where: { clientVisible: true },
+          orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            completedAt: true,
+            comments: {
+              where: { clientVisible: true },
+              orderBy: { createdAt: "asc" },
+              select: { id: true, content: true, authorId: true, createdAt: true },
+            },
+            deliverables: {
+              where: { clientVisible: true },
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                title: true,
+                type: true,
+                url: true,
+                file: { select: { filename: true, url: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!project) {
+      throw new ForbiddenException("Project access forbidden");
+    }
+
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: project.organizationId },
+      select: { id: true, name: true, slug: true },
+    });
+
+    if (!organization) {
+      throw new NotFoundException("Project organization not found");
+    }
+
+    return { ...project, organization };
+  }
 
   async findAll(
     organizationId: string,

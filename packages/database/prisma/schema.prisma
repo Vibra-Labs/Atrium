@@ -103,6 +103,7 @@ model Organization {
   apiKeys          ApiKey[]
   taskDeliverables TaskDeliverable[]
   auditEvents      AuditEvent[]
+  billingClients   BillingClient[]
 
   @@map("organization")
 }
@@ -175,28 +176,53 @@ model Project {
   updatedAt      DateTime  @updatedAt
   archivedAt     DateTime?
   slug           String?
-  completedAt    DateTime?
-  externalId     String?
-  source         String?
+  completedAt     DateTime?
+  externalId      String?
+  source          String?
+  billingClientId String?
 
   hourlyRateCents Int?
 
-  files       File[]
-  clients     ProjectClient[]
-  updates     ProjectUpdate[]
-  tasks       Task[]
-  invoices    Invoice[]
-  notes       ProjectNote[]
-  documents   Document[]
-  activities  ActivityLog[]
-  labels      ProjectLabel[]
-  timeEntries TimeEntry[]
-  comments    Comment[]       @relation("ProjectComments")
+  billingClient BillingClient? @relation(fields: [billingClientId], references: [id], onDelete: SetNull)
+  files         File[]
+  clients       ProjectClient[]
+  updates       ProjectUpdate[]
+  tasks         Task[]
+  invoices      Invoice[]
+  notes         ProjectNote[]
+  documents     Document[]
+  activities    ActivityLog[]
+  labels        ProjectLabel[]
+  timeEntries   TimeEntry[]
+  comments      Comment[]       @relation("ProjectComments")
 
   @@unique([organizationId, slug])
   @@unique([organizationId, externalId])
   @@index([organizationId])
+  @@index([billingClientId])
   @@map("project")
+}
+
+model BillingClient {
+  id                     String    @id @default(cuid())
+  organizationId         String
+  name                   String
+  slug                   String?
+  defaultHourlyRateCents Int?
+  billingPeriod          String?
+  billingNotes           String?
+  externalReference      String?
+  archivedAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projects     Project[]
+
+  @@unique([organizationId, slug])
+  @@unique([organizationId, name])
+  @@index([organizationId, archivedAt])
+  @@map("billing_client")
 }
 
 model ProjectClient {

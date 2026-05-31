@@ -219,6 +219,54 @@ describe("TimeEntriesService.list/report/generateInvoice", () => {
     expect(r.byUser[0].valueCents).toBe(5000);
   });
 
+  it("report breaks down billable time by task (only task-linked entries)", async () => {
+    const task = await prisma.task.create({
+      data: { title: "Auth refactor", projectId, organizationId: orgId },
+    });
+    // Task-linked billable entry: 1h @ $50 (member rate)
+    await service.create(userId, orgId, {
+      projectId,
+      taskId: task.id,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    // No-task entry: 30m billable — should count in project totals but NOT byTask
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T11:00:00Z",
+      endedAt: "2026-04-01T11:30:00Z",
+      billable: true,
+    });
+
+    const r = await service.report(orgId, {}, "admin");
+    expect(r.byTask.length).toBe(1);
+    expect(r.byTask[0].taskId).toBe(task.id);
+    expect(r.byTask[0].taskTitle).toBe("Auth refactor");
+    expect(r.byTask[0].projectName).toBe("P");
+    expect(r.byTask[0].seconds).toBe(3600);
+    expect(r.byTask[0].billableSeconds).toBe(3600);
+    expect(r.byTask[0].valueCents).toBe(5000);
+    // Project total still includes the no-task 30m
+    expect(r.byProject[0].seconds).toBe(5400);
+  });
+
+  it("report omits task valueCents for member role", async () => {
+    const task = await prisma.task.create({
+      data: { title: "Billing", projectId, organizationId: orgId },
+    });
+    await service.create(userId, orgId, {
+      projectId,
+      taskId: task.id,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const r = await service.report(orgId, {}, "member");
+    expect(r.byTask[0].seconds).toBe(3600);
+    expect(r.byTask[0].valueCents).toBe(0);
+  });
+
   it("report stitches multiple projects and users (groupBy path)", async () => {
     // Two projects, two users — verifies the groupBy + name-stitch path
     // produces correct per-project and per-user buckets.

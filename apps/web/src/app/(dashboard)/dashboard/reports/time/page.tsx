@@ -16,10 +16,21 @@ interface ReportRow {
   valueCents: number;
 }
 
+interface TaskRow {
+  taskId: string;
+  taskTitle: string;
+  projectId: string;
+  projectName: string;
+  seconds: number;
+  billableSeconds: number;
+  valueCents: number;
+}
+
 interface Report {
   totals: { seconds: number; billableSeconds: number; valueCents: number };
   byProject: ReportRow[];
   byUser: ReportRow[];
+  byTask: TaskRow[];
 }
 
 interface Project {
@@ -171,6 +182,37 @@ export default function TimeReportPage() {
               </tbody>
             </table>
           </div>
+
+          {report.byTask.length > 0 && (
+            <div>
+              <h2 className="text-sm font-medium mb-2">By task</h2>
+              <table className="w-full border border-[var(--border)] rounded-lg text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-[var(--muted-foreground)]">
+                    <th className="p-2">Task</th>
+                    <th className="p-2">Project</th>
+                    <th className="p-2">Hours</th>
+                    <th className="p-2">Billable</th>
+                    <th className="p-2">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.byTask.map((r) => (
+                    <tr
+                      key={r.taskId}
+                      className="border-t border-[var(--border)]"
+                    >
+                      <td className="p-2">{r.taskTitle}</td>
+                      <td className="p-2">{r.projectName}</td>
+                      <td className="p-2">{formatHours(r.seconds)}</td>
+                      <td className="p-2">{formatHours(r.billableSeconds)}</td>
+                      <td className="p-2">{fmtMoney(r.valueCents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div>
             <h2 className="text-sm font-medium mb-2">By user</h2>

@@ -107,9 +107,16 @@ export class TimeEntriesService {
   private async resolveRate(orgId: string, userId: string, projectId: string): Promise<number | null> {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId: orgId },
-      select: { hourlyRateCents: true },
+      select: { hourlyRateCents: true, billingClientId: true },
     });
     if (project?.hourlyRateCents != null) return project.hourlyRateCents;
+    if (project?.billingClientId) {
+      const billingClient = await this.prisma.billingClient.findFirst({
+        where: { id: project.billingClientId, organizationId: orgId },
+        select: { defaultHourlyRateCents: true },
+      });
+      if (billingClient?.defaultHourlyRateCents != null) return billingClient.defaultHourlyRateCents;
+    }
     const member = await this.prisma.member.findFirst({
       where: { organizationId: orgId, userId },
       select: { hourlyRateCents: true },

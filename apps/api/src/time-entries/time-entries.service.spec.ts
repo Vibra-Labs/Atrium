@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "bun:test";
-import { Test } from "@nestjs/testing";
 import { PrismaService } from "../prisma/prisma.service";
 import { TimeEntriesService } from "./time-entries.service";
 
@@ -11,11 +10,8 @@ let projectId: string;
 let memberId: string;
 
 beforeAll(async () => {
-  const mod = await Test.createTestingModule({
-    providers: [TimeEntriesService, PrismaService],
-  }).compile();
-  service = mod.get(TimeEntriesService);
-  prisma = mod.get(PrismaService);
+  prisma = new PrismaService();
+  service = new TimeEntriesService(prisma);
   // Apply the partial unique index used by start() to prevent duplicate
   // running entries. Mirrors what the dev script and Docker entrypoints
   // do in non-test environments.
@@ -57,6 +53,19 @@ async function createInvoiceLineItem(description = "time entry") {
   });
 }
 
+function uniqueName(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function createManualEntryForRate(project = projectId) {
+  return service.create(userId, orgId, {
+    projectId: project,
+    startedAt: "2026-05-01T10:00:00.000Z",
+    endedAt: "2026-05-01T11:00:00.000Z",
+    description: uniqueName("rate-entry"),
+  });
+}
+
 describe("TimeEntriesService.start/stop", () => {
   it("start creates a running entry", async () => {
     const entry = await service.start(userId, orgId, { projectId });
@@ -91,6 +100,104 @@ describe("TimeEntriesService.start/stop", () => {
     await prisma.project.update({ where: { id: projectId }, data: { hourlyRateCents: 12000 } });
     const entry = await service.start(userId, orgId, { projectId });
     expect(entry.hourlyRateCents).toBe(12000);
+  });
+});
+
+describe("TimeEntriesService rate resolution", () => {
+  it("uses project rate before billing client default", async () => {
+    const billingClient = await prisma.billingClient.create({
+      data: {
+        name: uniqueName("Rate Client"),
+        organizationId: orgId,
+        defaultHourlyRateCents: 8000,
+      },
+    });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { hourlyRateCents: 12000, billingClientId: billingClient.id },
+    });
+
+    const entry = await createManualEntryForRate();
+
+    expect(entry.hourlyRateCents).toBe(12000);
+  });
+
+  it("uses billing client default when project rate is null", async () => {
+    const billingClient = await prisma.billingClient.create({
+      data: {
+        name: uniqueName("Rate Client"),
+        organizationId: orgId,
+        defaultHourlyRateCents: 8000,
+      },
+    });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { hourlyRateCents: null, billingClientId: billingClient.id },
+    });
+
+    const entry = await createManualEntryForRate();
+
+    expect(entry.hourlyRateCents).toBe(8000);
+  });
+
+  it("falls back to member rate when project and billing client rates are null", async () => {
+    const billingClient = await prisma.billingClient.create({
+      data: {
+        name: uniqueName("Rate Client"),
+        organizationId: orgId,
+        defaultHourlyRateCents: null,
+      },
+    });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { hourlyRateCents: null, billingClientId: billingClient.id },
+    });
+
+    const entry = await createManualEntryForRate();
+
+    expect(entry.hourlyRateCents).toBe(5000);
+  });
+
+  it("returns null when project, billing client, and member rates are null", async () => {
+    await prisma.member.update({ where: { id: memberId }, data: { hourlyRateCents: null } });
+
+    const entry = await createManualEntryForRate();
+
+    expect(entry.hourlyRateCents).toBeNull();
+  });
+
+  it("does not read projects or billing clients from another org", async () => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const otherOrg = await prisma.organization.create({
+      data: { id: `te-other-org-${stamp}`, name: `te-other-org-${stamp}`, slug: `te-other-${stamp}` },
+    });
+    const otherBillingClient = await prisma.billingClient.create({
+      data: {
+        name: uniqueName("Other Org Client"),
+        organizationId: otherOrg.id,
+        defaultHourlyRateCents: 9900,
+      },
+    });
+    const otherProject = await prisma.project.create({
+      data: {
+        name: uniqueName("Other Org Project"),
+        organizationId: otherOrg.id,
+        billingClientId: otherBillingClient.id,
+        hourlyRateCents: 12345,
+      },
+    });
+
+    await expect(createManualEntryForRate(otherProject.id)).rejects.toThrow(/project not found/i);
+
+    await prisma.member.update({ where: { id: memberId }, data: { hourlyRateCents: null } });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { hourlyRateCents: null, billingClientId: otherBillingClient.id },
+    });
+
+    const entry = await createManualEntryForRate();
+
+    expect(entry.hourlyRateCents).toBeNull();
   });
 });
 

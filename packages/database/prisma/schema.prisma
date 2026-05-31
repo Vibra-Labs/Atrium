@@ -165,17 +165,17 @@ model ApiKey {
 }
 
 model Project {
-  id             String    @id @default(cuid())
-  name           String
-  description    String?
-  status         String    @default("not_started")
-  startDate      DateTime?
-  endDate        DateTime?
-  organizationId String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  archivedAt     DateTime?
-  slug           String?
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  status          String    @default("not_started")
+  startDate       DateTime?
+  endDate         DateTime?
+  organizationId  String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  archivedAt      DateTime?
+  slug            String?
   completedAt     DateTime?
   externalId      String?
   source          String?
@@ -183,7 +183,7 @@ model Project {
 
   hourlyRateCents Int?
 
-  billingClient BillingClient? @relation(fields: [billingClientId], references: [id], onDelete: SetNull)
+  billingClient BillingClient?  @relation(fields: [billingClientId], references: [id], onDelete: SetNull)
   files         File[]
   clients       ProjectClient[]
   updates       ProjectUpdate[]
@@ -218,6 +218,7 @@ model BillingClient {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projects     Project[]
+  invoices     Invoice[]
 
   @@unique([organizationId, slug])
   @@unique([organizationId, name])
@@ -428,18 +429,20 @@ model Comment {
 }
 
 model Invoice {
-  id             String    @id @default(cuid())
-  invoiceNumber  String
-  status         String    @default("draft")
-  type           String    @default("itemized") // "itemized" | "uploaded"
-  dueDate        DateTime?
-  notes          String?
-  amount         Int? // Total in cents, used for uploaded invoices
-  uploadedFileId String?
-  projectId      String?
-  organizationId String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  invoiceNumber     String
+  status            String    @default("draft")
+  type              String    @default("itemized") // "itemized" | "uploaded" | "external"
+  dueDate           DateTime?
+  notes             String?
+  amount            Int? // Total in cents, used for uploaded invoices
+  uploadedFileId    String?
+  projectId         String?
+  externalReference String?
+  billingClientId   String?
+  organizationId    String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   // Stripe Connect payment tracking
   stripeCheckoutSessionId String?
@@ -447,13 +450,15 @@ model Invoice {
   paidAt                  DateTime?
   paidAmount              Int? // Amount actually paid (cents)
 
-  project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  uploadedFile File?             @relation("UploadedInvoiceFile", fields: [uploadedFileId], references: [id])
-  lineItems    InvoiceLineItem[]
+  project       Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  uploadedFile  File?             @relation("UploadedInvoiceFile", fields: [uploadedFileId], references: [id])
+  billingClient BillingClient?    @relation(fields: [billingClientId], references: [id], onDelete: SetNull)
+  lineItems     InvoiceLineItem[]
 
   @@unique([organizationId, invoiceNumber])
   @@index([organizationId])
   @@index([projectId])
+  @@index([billingClientId])
   @@map("invoice")
 }
 

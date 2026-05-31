@@ -1,8 +1,9 @@
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, test, expect, beforeEach, mock } from "bun:test";
+import { Test } from "@nestjs/testing";
 import { InvoicesService } from "./invoices.service";
-import { NotFoundException } from "@nestjs/common";
-import type { PrismaService } from "../prisma/prisma.service";
-import type { NotificationsService } from "../notifications/notifications.service";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import type { CreateInvoiceDto } from "./invoices.dto";
 
 // --- Mock helpers ---
@@ -301,5 +302,247 @@ describe("InvoicesService", () => {
     await service.update("inv-1", { status: "sent" }, orgId);
 
     expect(mockNotifications.notifyInvoiceSent).toHaveBeenCalledWith("inv-1");
+  });
+});
+
+describe("InvoicesService.recordExternalInvoice", () => {
+  let integrationService: InvoicesService;
+  let realPrisma: PrismaService;
+  let createdOrgIds: string[] = [];
+  let createdUserIds: string[] = [];
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({
+      providers: [
+        InvoicesService,
+        PrismaService,
+        { provide: NotificationsService, useValue: mockNotifications },
+      ],
+    }).compile();
+
+    integrationService = mod.get(InvoicesService);
+    realPrisma = mod.get(PrismaService);
+  });
+
+  beforeEach(() => {
+    createdOrgIds = [];
+    createdUserIds = [];
+  });
+
+  afterEach(async () => {
+    if (createdOrgIds.length > 0) {
+      await realPrisma.invoice.deleteMany({ where: { organizationId: { in: createdOrgIds } } });
+      await realPrisma.organization.deleteMany({ where: { id: { in: createdOrgIds } } });
+    }
+    if (createdUserIds.length > 0) {
+      await realPrisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
+    }
+  });
+
+  afterAll(async () => {
+    await realPrisma.$disconnect();
+  });
+
+  async function createFixture(label = "record") {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const org = await realPrisma.organization.create({
+      data: { id: `${label}-org-${stamp}`, name: `${label} org ${stamp}`, slug: `${label}-${stamp}` },
+    });
+    const otherOrg = await realPrisma.organization.create({
+      data: { id: `${label}-other-org-${stamp}`, name: `${label} other org ${stamp}`, slug: `${label}-other-${stamp}` },
+    });
+    createdOrgIds.push(org.id, otherOrg.id);
+
+    const user = await realPrisma.user.create({
+      data: { id: `${label}-user-${stamp}`, name: "Invoice Test User", email: `${label}-${stamp}@example.com` },
+    });
+    createdUserIds.push(user.id);
+
+    const project = await realPrisma.project.create({
+      data: { name: `${label} project`, slug: `${label}-project-${stamp}`, organizationId: org.id },
+    });
+    const otherProject = await realPrisma.project.create({
+      data: { name: `${label} other project`, slug: `${label}-other-project-${stamp}`, organizationId: otherOrg.id },
+    });
+    const billingClient = await realPrisma.billingClient.create({
+      data: { name: `${label} client ${stamp}`, slug: `${label}-client-${stamp}`, organizationId: org.id },
+    });
+    const otherBillingClient = await realPrisma.billingClient.create({
+      data: { name: `${label} other client ${stamp}`, slug: `${label}-other-client-${stamp}`, organizationId: otherOrg.id },
+    });
+
+    const startedAt = new Date("2026-05-31T12:00:00.000Z");
+    const endedAt = new Date("2026-05-31T13:00:00.000Z");
+
+    return {
+      org,
+      otherOrg,
+      user,
+      project,
+      otherProject,
+      billingClient,
+      otherBillingClient,
+      startedAt,
+      endedAt,
+    };
+  }
+
+  async function createTimeEntry(args: {
+    orgId: string;
+    projectId: string;
+    userId: string;
+    description: string;
+    invoiceLineItemId?: string | null;
+  }) {
+    return realPrisma.timeEntry.create({
+      data: {
+        organizationId: args.orgId,
+        projectId: args.projectId,
+        userId: args.userId,
+        description: args.description,
+        startedAt: new Date("2026-05-31T12:00:00.000Z"),
+        endedAt: new Date("2026-05-31T13:00:00.000Z"),
+        durationSec: 3600,
+        billable: true,
+        hourlyRateCents: 15000,
+        invoiceLineItemId: args.invoiceLineItemId,
+      },
+    });
+  }
+
+  test("records an external Digits invoice with no file and marks selected time entries billed", async () => {
+    const fx = await createFixture("record-ok");
+    const firstEntry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Discovery",
+    });
+    const secondEntry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Build",
+    });
+
+    const invoice = await integrationService.recordExternalInvoice({
+      billingClientId: fx.billingClient.id,
+      externalReference: "DIG-1001",
+      amount: 27500,
+      timeEntryIds: [firstEntry.id, secondEntry.id],
+      notes: "Recorded from Digits",
+    }, fx.org.id);
+
+    expect(invoice.type).toBe("external");
+    expect(invoice.status).toBe("draft");
+    expect(invoice.amount).toBe(27500);
+    expect(invoice.externalReference).toBe("DIG-1001");
+    expect(invoice.billingClientId).toBe(fx.billingClient.id);
+    expect(invoice.lineItems).toHaveLength(1);
+    expect(invoice.lineItems[0].unitPrice).toBe(27500);
+
+    const entries = await realPrisma.timeEntry.findMany({
+      where: { id: { in: [firstEntry.id, secondEntry.id] } },
+      orderBy: { id: "asc" },
+    });
+    expect(entries.every((entry) => entry.invoiceLineItemId === invoice.lineItems[0].id)).toBe(true);
+  });
+
+  test("hard-rejects an already billed time entry and rolls back invoice creation plus entry updates", async () => {
+    const fx = await createFixture("record-billed");
+    const priorInvoice = await realPrisma.invoice.create({
+      data: { invoiceNumber: "INV-9000", organizationId: fx.org.id, status: "draft" },
+    });
+    const priorLineItem = await realPrisma.invoiceLineItem.create({
+      data: { invoiceId: priorInvoice.id, description: "Already billed", quantity: 1, unitPrice: 1000 },
+    });
+    const unbilledEntry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Should remain unbilled",
+    });
+    const billedEntry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Already billed",
+      invoiceLineItemId: priorLineItem.id,
+    });
+    const beforeInvoiceCount = await realPrisma.invoice.count({
+      where: { organizationId: fx.org.id, externalReference: "DIG-ROLLBACK" },
+    });
+
+    await expect(integrationService.recordExternalInvoice({
+      billingClientId: fx.billingClient.id,
+      externalReference: "DIG-ROLLBACK",
+      amount: 12500,
+      timeEntryIds: [unbilledEntry.id, billedEntry.id],
+    }, fx.org.id)).rejects.toBeInstanceOf(BadRequestException);
+
+    const afterInvoiceCount = await realPrisma.invoice.count({
+      where: { organizationId: fx.org.id, externalReference: "DIG-ROLLBACK" },
+    });
+    const reloaded = await realPrisma.timeEntry.findMany({
+      where: { id: { in: [unbilledEntry.id, billedEntry.id] } },
+    });
+    const reloadedById = new Map(reloaded.map((entry) => [entry.id, entry]));
+
+    expect(beforeInvoiceCount).toBe(0);
+    expect(afterInvoiceCount).toBe(0);
+    expect(reloadedById.get(unbilledEntry.id)?.invoiceLineItemId).toBeNull();
+    expect(reloadedById.get(billedEntry.id)?.invoiceLineItemId).toBe(priorLineItem.id);
+  });
+
+  test("rejects time entries from another organization or not found", async () => {
+    const fx = await createFixture("record-missing");
+    const ownEntry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Own org entry",
+    });
+    const otherOrgEntry = await createTimeEntry({
+      orgId: fx.otherOrg.id,
+      projectId: fx.otherProject.id,
+      userId: fx.user.id,
+      description: "Other org entry",
+    });
+
+    await expect(integrationService.recordExternalInvoice({
+      billingClientId: fx.billingClient.id,
+      externalReference: "DIG-MISSING",
+      amount: 10000,
+      timeEntryIds: [ownEntry.id, otherOrgEntry.id, "missing-time-entry-id"],
+    }, fx.org.id)).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(await realPrisma.invoice.count({
+      where: { organizationId: fx.org.id, externalReference: "DIG-MISSING" },
+    })).toBe(0);
+    const ownReloaded = await realPrisma.timeEntry.findUnique({ where: { id: ownEntry.id } });
+    expect(ownReloaded?.invoiceLineItemId).toBeNull();
+  });
+
+  test("rejects a billing client from another organization", async () => {
+    const fx = await createFixture("record-client-scope");
+    const entry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Own org entry",
+    });
+
+    await expect(integrationService.recordExternalInvoice({
+      billingClientId: fx.otherBillingClient.id,
+      externalReference: "DIG-OTHER-CLIENT",
+      amount: 10000,
+      timeEntryIds: [entry.id],
+    }, fx.org.id)).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(await realPrisma.invoice.count({
+      where: { organizationId: fx.org.id, externalReference: "DIG-OTHER-CLIENT" },
+    })).toBe(0);
+    const reloaded = await realPrisma.timeEntry.findUnique({ where: { id: entry.id } });
+    expect(reloaded?.invoiceLineItemId).toBeNull();
   });
 });

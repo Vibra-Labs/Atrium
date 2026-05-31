@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsString,
   IsNotEmpty,
@@ -8,6 +8,7 @@ import {
   IsArray,
   ArrayMinSize,
   ArrayMaxSize,
+  ArrayUnique,
   ValidateNested,
   ValidateIf,
   IsIn,
@@ -87,6 +88,53 @@ export class CreateUploadedInvoiceDto {
   @IsInt()
   @Min(1)
   amount!: number;
+
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2000)
+  notes?: string;
+}
+
+export class RecordInvoiceDto {
+  @IsString()
+  @IsNotEmpty()
+  billingClientId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  externalReference!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amount!: number;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(250)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== "string") return value;
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Fall through to comma-separated support for multipart form fields.
+    }
+    return value.split(",").map((item) => item.trim()).filter(Boolean);
+  })
+  timeEntryIds!: string[];
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 
   @IsDateString()
   @IsOptional()

@@ -21,6 +21,7 @@ import { FilesService, UploadedFile as UploadedFileType, INVOICE_ALLOWED_MIMES }
 import {
   CreateInvoiceDto,
   CreateUploadedInvoiceDto,
+  RecordInvoiceDto,
   UpdateInvoiceDto,
   InvoiceListQueryDto,
   MineInvoiceQueryDto,
@@ -82,6 +83,49 @@ export class InvoicesController {
     );
 
     return this.invoicesService.createUploaded(dto, fileRecord.id, orgId);
+  }
+
+  @Post("record")
+  @Roles("owner", "admin")
+  recordExternal(
+    @Body() dto: RecordInvoiceDto,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.invoicesService.recordExternalInvoice(dto, orgId);
+  }
+
+  @Post("record/upload")
+  @Roles("owner", "admin")
+  @PlanLimit("storage")
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }),
+  )
+  async recordExternalWithFile(
+    @UploadedFile() file: UploadedFileType,
+    @Body() dto: RecordInvoiceDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    if (!file) throw new BadRequestException("No file provided");
+    if (!INVOICE_ALLOWED_MIMES.has(file.mimetype)) {
+      throw new BadRequestException(
+        "Only PDF and image files are allowed for invoice uploads",
+      );
+    }
+    if (!dto.projectId) {
+      throw new BadRequestException(
+        "projectId is required when uploading an invoice file",
+      );
+    }
+
+    const fileRecord = await this.filesService.upload(
+      file,
+      dto.projectId,
+      orgId,
+      userId,
+    );
+
+    return this.invoicesService.recordExternalInvoice(dto, orgId, fileRecord.id);
   }
 
   @Get()

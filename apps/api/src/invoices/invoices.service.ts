@@ -8,7 +8,13 @@ import type { Invoice, InvoiceLineItem } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { paginationArgs, paginatedResponse } from "../common";
-import { CreateInvoiceDto, CreateUploadedInvoiceDto, UpdateInvoiceDto, InvoiceListQueryDto } from "./invoices.dto";
+import {
+  CreateInvoiceDto,
+  CreateUploadedInvoiceDto,
+  RecordInvoiceDto,
+  UpdateInvoiceDto,
+  InvoiceListQueryDto,
+} from "./invoices.dto";
 
 interface InvoiceWhereInput {
   organizationId?: string;
@@ -132,6 +138,125 @@ export class InvoicesService {
       this.notifications.notifyInvoiceSent(invoice.id);
     }
     return invoice;
+  }
+
+  async recordExternalInvoice(
+    dto: RecordInvoiceDto,
+    orgId: string,
+    fileId?: string,
+    retries = 0,
+  ): Promise<Invoice & { lineItems: InvoiceLineItem[] }> {
+    if (dto.projectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: dto.projectId, organizationId: orgId },
+      });
+      if (!project) {
+        throw new ForbiddenException("Project does not belong to this organization");
+      }
+    }
+
+    const timeEntryIds = Array.from(new Set(dto.timeEntryIds));
+    if (timeEntryIds.length !== dto.timeEntryIds.length) {
+      throw new BadRequestException("Duplicate timeEntryIds are not allowed");
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const billingClient = await tx.billingClient.findFirst({
+          where: { id: dto.billingClientId, organizationId: orgId },
+          select: { id: true },
+        });
+        if (!billingClient) {
+          throw new ForbiddenException("Billing client does not belong to this organization");
+        }
+
+        const timeEntries = await tx.timeEntry.findMany({
+          where: { id: { in: timeEntryIds }, organizationId: orgId },
+          select: { id: true, invoiceLineItemId: true },
+        });
+        const foundIds = new Set(timeEntries.map((entry) => entry.id));
+        const missingIds = timeEntryIds.filter((id) => !foundIds.has(id));
+        if (missingIds.length > 0) {
+          throw new BadRequestException(
+            `Time entries not found or not in this organization: ${missingIds.join(", ")}`,
+          );
+        }
+
+        const alreadyBilledIds = timeEntries
+          .filter((entry) => entry.invoiceLineItemId !== null)
+          .map((entry) => entry.id);
+        if (alreadyBilledIds.length > 0) {
+          throw new BadRequestException(
+            `Time entries already billed: ${alreadyBilledIds.join(", ")}`,
+          );
+        }
+
+        const lastInvoice = await tx.invoice.findFirst({
+          where: { organizationId: orgId },
+          orderBy: { invoiceNumber: "desc" },
+          select: { invoiceNumber: true },
+        });
+
+        let nextNumber = 1;
+        if (lastInvoice) {
+          const match = lastInvoice.invoiceNumber.match(/INV-(\d+)/);
+          if (match) nextNumber = parseInt(match[1], 10) + 1;
+        }
+        const invoiceNumber = `INV-${String(nextNumber).padStart(4, "0")}`;
+
+        const invoice = await tx.invoice.create({
+          data: {
+            invoiceNumber,
+            type: fileId ? "uploaded" : "external",
+            status: "draft",
+            amount: dto.amount,
+            externalReference: dto.externalReference,
+            billingClientId: dto.billingClientId,
+            dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+            notes: dto.notes,
+            uploadedFileId: fileId,
+            projectId: dto.projectId,
+            organizationId: orgId,
+          },
+        });
+
+        const lineItem = await tx.invoiceLineItem.create({
+          data: {
+            invoiceId: invoice.id,
+            description: `Recorded Digits invoice ${dto.externalReference}`,
+            quantity: 1,
+            unitPrice: dto.amount,
+          },
+        });
+
+        const updated = await tx.timeEntry.updateMany({
+          where: {
+            id: { in: timeEntryIds },
+            organizationId: orgId,
+            invoiceLineItemId: null,
+          },
+          data: { invoiceLineItemId: lineItem.id },
+        });
+        if (updated.count !== timeEntryIds.length) {
+          throw new BadRequestException("One or more time entries were already billed");
+        }
+
+        return tx.invoice.findUniqueOrThrow({
+          where: { id: invoice.id },
+          include: { lineItems: true },
+        });
+      }, { isolationLevel: "Serializable" });
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        "code" in err &&
+        (err as { code: string }).code === "P2002" &&
+        retries < 3
+      ) {
+        return this.recordExternalInvoice(dto, orgId, fileId, retries + 1);
+      }
+      throw err;
+    }
   }
 
   async findAll(orgId: string, query: InvoiceListQueryDto) {

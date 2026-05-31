@@ -33,6 +33,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_URL }}
+            NEXT_PUBLIC_WORKOS_REDIRECT_URI=${{ vars.WORKOS_REDIRECT_URI || 'https://portal.pexlo.com/auth/callback' }}
             NEXT_PUBLIC_BILLING_ENABLED=true
             NEXT_PUBLIC_STRIPE_MODE=${{ vars.STRIPE_MODE || 'test' }}
             NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}

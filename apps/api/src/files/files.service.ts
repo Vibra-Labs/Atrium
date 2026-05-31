@@ -7,6 +7,7 @@ import {
   PayloadTooLargeException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { File } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
 import type { StorageProvider } from "./storage/storage.interface";
@@ -20,6 +21,11 @@ export interface UploadedFile {
   buffer: Buffer;
   mimetype: string;
   size: number;
+}
+
+export interface FileAttribution {
+  projectId?: string;
+  billingClientId?: string;
 }
 
 /** Safe MIME types for document uploads (quotes, contracts, NDAs). */
@@ -50,12 +56,50 @@ export class FilesService {
     @Inject(STORAGE_PROVIDER) private storage: StorageProvider,
   ) {}
 
+  private async assertFileAccess(
+    file: { projectId: string | null },
+    userId: string,
+    role: string,
+    organizationId: string,
+  ) {
+    if (file.projectId) {
+      await assertProjectAccess(this.prisma, file.projectId, userId, role, organizationId);
+      return;
+    }
+
+    if (role !== "owner" && role !== "admin") {
+      throw new ForbiddenException("You do not have access to this file");
+    }
+  }
+
+  async upload(
+    file: UploadedFile,
+    attribution: FileAttribution,
+    organizationId: string,
+    uploadedById: string,
+  ): Promise<File>;
   async upload(
     file: UploadedFile,
     projectId: string,
     organizationId: string,
     uploadedById: string,
+  ): Promise<File>;
+  async upload(
+    file: UploadedFile,
+    attributionOrProjectId: FileAttribution | string | undefined,
+    organizationId: string,
+    uploadedById: string,
   ) {
+    const attribution = typeof attributionOrProjectId === "string"
+      ? { projectId: attributionOrProjectId }
+      : attributionOrProjectId ?? {};
+    const projectId = attribution.projectId || undefined;
+    const billingClientId = attribution.billingClientId || undefined;
+
+    if (!projectId && !billingClientId) {
+      throw new BadRequestException("Either projectId or billingClientId is required");
+    }
+
     // Early size check: validate against org-specific limit before any processing
     const maxFileSizeMb = await this.settingsService.getEffectiveMaxFileSize(organizationId);
     const maxFileSize = maxFileSizeMb * 1024 * 1024;
@@ -73,14 +117,23 @@ export class FilesService {
       );
     }
 
-    // Verify project belongs to org
-    const project = await this.prisma.project.findFirst({
-      where: { id: projectId, organizationId },
-    });
-    if (!project) throw new NotFoundException("Project not found");
+    if (projectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: projectId, organizationId },
+      });
+      if (!project) throw new NotFoundException("Project not found");
+    }
+
+    if (billingClientId) {
+      const billingClient = await this.prisma.billingClient.findFirst({
+        where: { id: billingClientId, organizationId },
+      });
+      if (!billingClient) throw new ForbiddenException("Billing client does not belong to this organization");
+    }
 
     const safeName = sanitizeFilename(file.originalname);
-    const storageKey = `${organizationId}/${projectId}/${randomUUID()}-${safeName}`;
+    const attributionPath = projectId ?? `billing-clients/${billingClientId}`;
+    const storageKey = `${organizationId}/${attributionPath}/${randomUUID()}-${safeName}`;
 
     await this.storage.upload(storageKey, file.buffer, file.mimetype);
 
@@ -91,6 +144,7 @@ export class FilesService {
         mimeType: file.mimetype,
         sizeBytes: file.size,
         projectId,
+        billingClientId,
         organizationId,
         uploadedById,
       },
@@ -189,7 +243,7 @@ export class FilesService {
       throw new NotFoundException("File has no storage object");
     }
 
-    await assertProjectAccess(this.prisma, file.projectId, userId, role);
+    await this.assertFileAccess(file, userId, role, organizationId);
 
     const { body, contentType } = await this.storage.download(file.storageKey);
     return { body, contentType, filename: file.filename };
@@ -204,7 +258,7 @@ export class FilesService {
       throw new BadRequestException("Cannot download a link entry");
     }
 
-    await assertProjectAccess(this.prisma, file.projectId, userId, role);
+    await this.assertFileAccess(file, userId, role, organizationId);
 
     return { url: `/api/files/${id}/download` };
   }
@@ -225,7 +279,7 @@ export class FilesService {
       throw new BadRequestException("url can only be updated on link-type files");
     }
 
-    await assertProjectAccess(this.prisma, file.projectId, userId, role, organizationId);
+    await this.assertFileAccess(file, userId, role, organizationId);
 
     const data: { filename?: string; description?: string; url?: string } = {};
     if (dto.filename !== undefined) data.filename = dto.filename;

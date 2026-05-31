@@ -14,8 +14,34 @@ import {
   IsIn,
   IsDateString,
   MaxLength,
+  registerDecorator,
+  type ValidationArguments,
+  type ValidationOptions,
 } from "class-validator";
 import { PaginationQueryDto } from "../common";
+
+function AtLeastOneOf(properties: string[], validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: "atLeastOneOf",
+      target: object.constructor,
+      propertyName,
+      constraints: properties,
+      options: validationOptions,
+      validator: {
+        validate(_value: unknown, args: ValidationArguments) {
+          const props = args.constraints as string[];
+          const dto = args.object as Record<string, unknown>;
+          return props.some((prop) => dto[prop] !== undefined && dto[prop] !== null && dto[prop] !== "");
+        },
+        defaultMessage(args: ValidationArguments) {
+          const props = args.constraints as string[];
+          return `At least one of ${props.join(" or ")} must be provided`;
+        },
+      },
+    });
+  };
+}
 
 export class LineItemDto {
   @IsString()
@@ -101,8 +127,8 @@ export class CreateUploadedInvoiceDto {
 
 export class RecordInvoiceDto {
   @IsString()
-  @IsNotEmpty()
-  billingClientId!: string;
+  @IsOptional()
+  billingClientId?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -135,6 +161,11 @@ export class RecordInvoiceDto {
   @IsString()
   @IsOptional()
   projectId?: string;
+
+  @AtLeastOneOf(["projectId", "billingClientId"], {
+    message: "Either projectId or billingClientId must be provided",
+  })
+  readonly invoiceScope?: never;
 
   @IsDateString()
   @IsOptional()

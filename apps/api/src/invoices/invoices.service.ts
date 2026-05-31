@@ -146,9 +146,16 @@ export class InvoicesService {
     fileId?: string,
     retries = 0,
   ): Promise<Invoice & { lineItems: InvoiceLineItem[] }> {
-    if (dto.projectId) {
+    const projectId = dto.projectId || undefined;
+    const billingClientId = dto.billingClientId || undefined;
+
+    if (!projectId && !billingClientId) {
+      throw new BadRequestException("Either projectId or billingClientId must be provided");
+    }
+
+    if (projectId) {
       const project = await this.prisma.project.findFirst({
-        where: { id: dto.projectId, organizationId: orgId },
+        where: { id: projectId, organizationId: orgId },
       });
       if (!project) {
         throw new ForbiddenException("Project does not belong to this organization");
@@ -162,12 +169,40 @@ export class InvoicesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const billingClient = await tx.billingClient.findFirst({
-          where: { id: dto.billingClientId, organizationId: orgId },
-          select: { id: true },
-        });
-        if (!billingClient) {
-          throw new ForbiddenException("Billing client does not belong to this organization");
+        if (billingClientId) {
+          const billingClient = await tx.billingClient.findFirst({
+            where: { id: billingClientId, organizationId: orgId },
+            select: { id: true },
+          });
+          if (!billingClient) {
+            throw new ForbiddenException("Billing client does not belong to this organization");
+          }
+        }
+
+        if (fileId) {
+          const file = await tx.file.findFirst({
+            where: { id: fileId, organizationId: orgId },
+            select: { id: true, projectId: true, billingClientId: true },
+          });
+          if (!file) {
+            throw new NotFoundException("Uploaded file not found");
+          }
+
+          if (projectId && file.projectId && file.projectId !== projectId) {
+            throw new BadRequestException("Uploaded file project does not match invoice project");
+          }
+
+          if (!projectId && billingClientId) {
+            if (file.billingClientId && file.billingClientId !== billingClientId) {
+              throw new BadRequestException("Uploaded file billing client does not match invoice billing client");
+            }
+            if (!file.billingClientId) {
+              await tx.file.update({
+                where: { id: fileId },
+                data: { billingClientId },
+              });
+            }
+          }
         }
 
         const timeEntries = await tx.timeEntry.findMany({
@@ -211,11 +246,11 @@ export class InvoicesService {
             status: "draft",
             amount: dto.amount,
             externalReference: dto.externalReference,
-            billingClientId: dto.billingClientId,
+            billingClientId,
             dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
             notes: dto.notes,
             uploadedFileId: fileId,
-            projectId: dto.projectId,
+            projectId,
             organizationId: orgId,
           },
         });

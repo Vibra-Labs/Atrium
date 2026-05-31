@@ -2,9 +2,13 @@ import { afterAll, afterEach, beforeAll, describe, test, expect, beforeEach, moc
 import { Test } from "@nestjs/testing";
 import { InvoicesService } from "./invoices.service";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { FilesService } from "../files/files.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { CreateInvoiceDto } from "./invoices.dto";
+import type { ConfigService } from "@nestjs/config";
+import type { SettingsService } from "../settings/settings.service";
+import type { StorageProvider } from "../files/storage/storage.interface";
 
 // --- Mock helpers ---
 
@@ -15,6 +19,17 @@ interface PrismaArgs {
 
 const mockNotifications = {
   notifyInvoiceSent: mock(() => {}),
+};
+
+const mockInvoiceFileStorage = {
+  upload: mock(() => Promise.resolve()),
+  download: mock(() => Promise.reject(new Error("download not used"))),
+  getSignedUrl: mock(() => Promise.reject(new Error("signed URL not used"))),
+  delete: mock(() => Promise.resolve()),
+};
+
+const mockInvoiceSettings = {
+  getEffectiveMaxFileSize: mock(() => Promise.resolve(50)),
 };
 
 function makeBasePrisma() {
@@ -307,9 +322,11 @@ describe("InvoicesService", () => {
 
 describe("InvoicesService.recordExternalInvoice", () => {
   let integrationService: InvoicesService;
+  let filesService: FilesService;
   let realPrisma: PrismaService;
   let createdOrgIds: string[] = [];
   let createdUserIds: string[] = [];
+  let createdFileIds: string[] = [];
 
   beforeAll(async () => {
     const mod = await Test.createTestingModule({
@@ -322,16 +339,28 @@ describe("InvoicesService.recordExternalInvoice", () => {
 
     integrationService = mod.get(InvoicesService);
     realPrisma = mod.get(PrismaService);
+    filesService = new FilesService(
+      realPrisma,
+      {} as ConfigService,
+      mockInvoiceSettings as unknown as SettingsService,
+      mockInvoiceFileStorage as unknown as StorageProvider,
+    );
   });
 
   beforeEach(() => {
     createdOrgIds = [];
     createdUserIds = [];
+    createdFileIds = [];
   });
 
   afterEach(async () => {
     if (createdOrgIds.length > 0) {
       await realPrisma.invoice.deleteMany({ where: { organizationId: { in: createdOrgIds } } });
+    }
+    if (createdFileIds.length > 0) {
+      await realPrisma.file.deleteMany({ where: { id: { in: createdFileIds } } });
+    }
+    if (createdOrgIds.length > 0) {
       await realPrisma.organization.deleteMany({ where: { id: { in: createdOrgIds } } });
     }
     if (createdUserIds.length > 0) {
@@ -409,6 +438,86 @@ describe("InvoicesService.recordExternalInvoice", () => {
       },
     });
   }
+
+  test("record/upload with billingClientId and no projectId succeeds and stores file billingClientId", async () => {
+    const fx = await createFixture("record-upload-client");
+    const entry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Billing-client upload entry",
+    });
+
+    const uploadedFile = await filesService.upload(
+      {
+        originalname: "digits-invoice.pdf",
+        buffer: Buffer.from("pdf"),
+        mimetype: "application/pdf",
+        size: 3,
+      },
+      { billingClientId: fx.billingClient.id },
+      fx.org.id,
+      fx.user.id,
+    );
+    createdFileIds.push(uploadedFile.id);
+
+    const invoice = await integrationService.recordExternalInvoice({
+      billingClientId: fx.billingClient.id,
+      externalReference: "DIG-UPLOAD-CLIENT",
+      amount: 17500,
+      timeEntryIds: [entry.id],
+    }, fx.org.id, uploadedFile.id);
+
+    const reloadedFile = await realPrisma.file.findUniqueOrThrow({ where: { id: uploadedFile.id } });
+
+    expect(invoice.type).toBe("uploaded");
+    expect(invoice.projectId).toBeNull();
+    expect(invoice.billingClientId).toBe(fx.billingClient.id);
+    expect(invoice.uploadedFileId).toBe(uploadedFile.id);
+    expect(reloadedFile.projectId).toBeNull();
+    expect(reloadedFile.billingClientId).toBe(fx.billingClient.id);
+  });
+
+  test("record/upload rejects when neither projectId nor billingClientId is provided", async () => {
+    const fx = await createFixture("record-upload-neither");
+    const entry = await createTimeEntry({
+      orgId: fx.org.id,
+      projectId: fx.project.id,
+      userId: fx.user.id,
+      description: "Neither scope entry",
+    });
+
+    await expect(integrationService.recordExternalInvoice({
+      externalReference: "DIG-NO-SCOPE",
+      amount: 10000,
+      timeEntryIds: [entry.id],
+    } as Parameters<InvoicesService["recordExternalInvoice"]>[0], fx.org.id)).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(await realPrisma.invoice.count({
+      where: { organizationId: fx.org.id, externalReference: "DIG-NO-SCOPE" },
+    })).toBe(0);
+  });
+
+  test("existing projectId-only upload path still creates a project-attributed file", async () => {
+    const fx = await createFixture("record-upload-project");
+
+    const uploadedFile = await filesService.upload(
+      {
+        originalname: "project-doc.pdf",
+        buffer: Buffer.from("pdf"),
+        mimetype: "application/pdf",
+        size: 3,
+      },
+      fx.project.id,
+      fx.org.id,
+      fx.user.id,
+    );
+    createdFileIds.push(uploadedFile.id);
+
+    const reloadedFile = await realPrisma.file.findUniqueOrThrow({ where: { id: uploadedFile.id } });
+    expect(reloadedFile.projectId).toBe(fx.project.id);
+    expect(reloadedFile.billingClientId).toBeNull();
+  });
 
   test("records an external Digits invoice with no file and marks selected time entries billed", async () => {
     const fx = await createFixture("record-ok");

@@ -112,15 +112,15 @@ export class InvoicesController {
         "Only PDF and image files are allowed for invoice uploads",
       );
     }
-    if (!dto.projectId) {
+    if (!dto.projectId && !dto.billingClientId) {
       throw new BadRequestException(
-        "projectId is required when uploading an invoice file",
+        "Either projectId or billingClientId is required when uploading an invoice file",
       );
     }
 
     const fileRecord = await this.filesService.upload(
       file,
-      dto.projectId,
+      { projectId: dto.projectId, billingClientId: dto.billingClientId },
       orgId,
       userId,
     );

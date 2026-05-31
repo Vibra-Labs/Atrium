@@ -42,6 +42,11 @@ const mockPrisma = {
       Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
     ),
   },
+  billingClient: {
+    findFirst: mock(() =>
+      Promise.resolve({ id: "bc-1", organizationId: "org-1" }),
+    ),
+  },
   file: {
     create: mock((args: PrismaArgs) =>
       Promise.resolve({ id: "file-1", ...args.data }),

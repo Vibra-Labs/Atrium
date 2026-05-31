@@ -384,8 +384,18 @@ export class TimeEntriesService {
         ...(query.to ? { lte: new Date(query.to) } : {}),
       };
     }
-    // Only consider finished entries (durationSec is set).
-    const reportWhere = { ...where, NOT: { durationSec: null } };
+    if (query.invoiced === "false") where.invoiceLineItemId = null;
+
+    // Only consider finished entries (durationSec is set). Keep NOT filters
+    // as separate AND clauses so invoiced=true cannot clobber the finished
+    // entry filter (NOT durationSec null) or collapse into NOT (A AND B).
+    const reportFilters: Record<string, unknown>[] = [
+      { NOT: { durationSec: null } },
+    ];
+    if (query.invoiced === "true") {
+      reportFilters.push({ NOT: { invoiceLineItemId: null } });
+    }
+    const reportWhere = { ...where, AND: reportFilters };
 
     // Aggregate at the database. We group by (projectId, userId, billable,
     // hourlyRateCents) so we can compute value cents per bucket without

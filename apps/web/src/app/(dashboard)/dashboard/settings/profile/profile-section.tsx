@@ -102,7 +102,7 @@ export function ProfileSection(): React.ReactElement {
         method: "DELETE",
         body: JSON.stringify({ password: deletePassword }),
       });
-      window.location.href = "/login";
+      window.location.href = "/portal/sign-in";
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to delete account");
       setDeletePassword("");

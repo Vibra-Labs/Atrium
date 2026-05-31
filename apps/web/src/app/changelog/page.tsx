@@ -7,7 +7,7 @@ export default function PublicChangelogPage() {
       <header className="border-b border-[var(--border)] px-6 py-4 flex items-center justify-between">
         <Link href="/" className="font-bold text-lg">Pexlo Portal</Link>
         <Link
-          href="/login"
+          href="/portal/sign-in"
           className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
         >
           Sign in

@@ -155,15 +155,15 @@ export function BrandingSection({
 
       {orgSlug && (
         <div className="p-3 bg-[var(--muted)] rounded-lg space-y-1.5">
-          <p className="text-xs font-medium">Branded login URL</p>
+          <p className="text-xs font-medium">Sign-in URL</p>
           <div className="flex items-center gap-2">
             <code className="text-xs text-[var(--muted-foreground)] flex-1 truncate">
-              {typeof window !== "undefined" ? window.location.origin : ""}/login/{orgSlug}
+              {typeof window !== "undefined" ? window.location.origin : ""}/portal/sign-in
             </code>
             <button
               type="button"
               onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/login/${orgSlug}`);
+                navigator.clipboard.writeText(`${window.location.origin}/portal/sign-in`);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
@@ -174,8 +174,8 @@ export function BrandingSection({
             </button>
           </div>
           <p className="text-xs text-[var(--muted-foreground)]">
-            Share this with your team and clients for a branded sign-in page.
-            On self-hosted instances, uploading a logo automatically shows it on <code className="text-[10px]">/login</code>.
+            Share this WorkOS AuthKit sign-in page with your team and clients.
+            Uploaded logos appear in the portal after sign-in.
           </p>
         </div>
       )}

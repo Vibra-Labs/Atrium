@@ -10,7 +10,7 @@ export function SignOutButton() {
       method: "POST",
       credentials: "include",
     });
-    window.location.href = "/login";
+    window.location.href = "/portal/sign-in";
   };
 
   return (

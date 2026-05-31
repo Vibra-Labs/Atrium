@@ -14,13 +14,13 @@ export default function Home() {
       </div>
       <div className="flex gap-4">
         <Link
-          href="/login"
+          href="/portal/sign-in"
           className="px-6 py-3 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity"
         >
           Sign In
         </Link>
         <Link
-          href="/signup"
+          href="/portal/sign-in"
           className="px-6 py-3 border border-[var(--border)] rounded-lg font-medium hover:bg-[var(--muted)] transition-colors"
         >
           Get Started

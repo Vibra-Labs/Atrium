@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, fetchAllPages } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
@@ -109,8 +109,8 @@ export function TasksSection({
   }, [loadTasks]);
 
   useEffect(() => {
-    apiFetch<PaginatedResponse<OrgMember>>("/clients?limit=100")
-      .then((res) => setMembers(res.data.filter((m) => m.role === "owner" || m.role === "admin")))
+    fetchAllPages<OrgMember>("/clients")
+      .then((rows) => setMembers(rows.filter((m) => m.role === "owner" || m.role === "admin")))
       .catch(console.error);
     apiFetch<TaskDetailLabel[]>("/labels")
       .then(setLabels)

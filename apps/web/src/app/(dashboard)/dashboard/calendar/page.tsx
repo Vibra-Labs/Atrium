@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, fetchAllPages } from "@/lib/api";
 import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal } from "lucide-react";
 import {
   ALL_TYPES,
@@ -16,7 +16,6 @@ import { MonthGrid } from "./month-grid";
 import { AgendaList } from "./agenda-list";
 
 interface ProjectOption { id: string; name: string }
-type ProjectsResponse = { data: ProjectOption[] } | ProjectOption[];
 
 const TYPE_LABEL: Record<CalendarEventType, string> = {
   task: "Tasks",
@@ -65,8 +64,8 @@ export default function CalendarPage(): React.ReactElement {
   }, [pickerOpen, filterOpen]);
 
   useEffect(() => {
-    apiFetch<ProjectsResponse>("/projects?limit=100")
-      .then((res) => setProjects(Array.isArray(res) ? res : res.data))
+    fetchAllPages<ProjectOption>("/projects")
+      .then((rows) => setProjects(rows))
       .catch((err: unknown) => { console.error(err); });
   }, []);
 

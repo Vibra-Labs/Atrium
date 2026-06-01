@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CreditCard, FileUp, Loader2, ReceiptText, X } from "lucide-react";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, fetchAllPages } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { formatHours } from "@/lib/format-duration";
 
@@ -715,11 +715,9 @@ export default function BillingPage(): React.ReactElement {
       setClientsLoading(true);
       setErrorMessage(null);
       try {
-        const response = await apiFetch<BillingClientsResponse | BillingClient[]>(
-          "/billing-clients?limit=200",
-        );
+        const allClients = await fetchAllPages<BillingClient>("/billing-clients");
         if (cancelled) return;
-        const activeClients = normalizeBillingClients(response);
+        const activeClients = normalizeBillingClients(allClients);
         setClients(activeClients);
         setClientId((current) => current || activeClients[0]?.id || "");
       } catch (err) {

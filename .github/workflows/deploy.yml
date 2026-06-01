@@ -2,30 +2,31 @@ name: Deploy
 
 # Push-button production deploy: on merge to main, SSH to the Hetzner box and run
 # the on-box deploy script (git pull -> docker build -> compose up -> health check
-# -> auto-rollback on failure). Replaces the old orphaned Docker Hub push workflow
-# and the manual SSH deploy. The box builds pexlo-portal:latest locally from source;
-# nothing is pulled from a registry.
+# -> auto-rollback on failure). The box builds pexlo-portal:latest locally from
+# source; nothing is pulled from a registry.
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:   # allow manual "Run workflow" from the Actions tab
+  workflow_dispatch:
 
 concurrency:
   group: production-deploy
-  cancel-in-progress: false   # never interrupt an in-flight deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Set up SSH (pinned host key)
+      - name: Set up SSH (base64 key + pinned host key)
         run: |
           mkdir -p ~/.ssh
-          install -m 600 /dev/null ~/.ssh/deploy_key
-          printf '%s' "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/deploy_key
+          echo "${{ secrets.HETZNER_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "${{ secrets.HETZNER_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          # Sanity-check the key parses before we try to use it
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null && echo "SSH key OK"
 
       - name: Deploy on Hetzner (build-on-box + health-gated rollback)
         run: |

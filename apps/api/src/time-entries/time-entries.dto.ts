@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsDateString,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
@@ -56,6 +57,31 @@ export class UpdateTimeEntryDto {
   @IsOptional() @IsDateString() endedAt?: string;
   @IsOptional() @IsBoolean() billable?: boolean;
   @IsOptional() @IsString() taskId?: string | null;
+}
+
+export class CreateTimeEntryLogDto {
+  @IsString()
+  @IsIn(["note", "progress"])
+  kind!: "note" | "progress";
+
+  @IsString()
+  @MaxLength(1000)
+  text!: string;
+
+  @IsOptional()
+  @IsString()
+  taskId?: string;
+}
+
+export class ResolvePendingTimeCaptureDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  durationSec!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  billable?: boolean;
 }
 
 export class TimeEntryListQueryDto {

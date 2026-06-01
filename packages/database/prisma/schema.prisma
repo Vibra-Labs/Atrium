@@ -183,18 +183,19 @@ model Project {
 
   hourlyRateCents Int?
 
-  billingClient BillingClient?  @relation(fields: [billingClientId], references: [id], onDelete: SetNull)
-  files         File[]
-  clients       ProjectClient[]
-  updates       ProjectUpdate[]
-  tasks         Task[]
-  invoices      Invoice[]
-  notes         ProjectNote[]
-  documents     Document[]
-  activities    ActivityLog[]
-  labels        ProjectLabel[]
-  timeEntries   TimeEntry[]
-  comments      Comment[]       @relation("ProjectComments")
+  billingClient   BillingClient?       @relation(fields: [billingClientId], references: [id], onDelete: SetNull)
+  files           File[]
+  clients         ProjectClient[]
+  updates         ProjectUpdate[]
+  tasks           Task[]
+  invoices        Invoice[]
+  notes           ProjectNote[]
+  documents       Document[]
+  activities      ActivityLog[]
+  labels          ProjectLabel[]
+  timeEntries     TimeEntry[]
+  pendingCaptures PendingTimeCapture[]
+  comments        Comment[]            @relation("ProjectComments")
 
   @@unique([organizationId, slug])
   @@unique([organizationId, externalId])
@@ -331,15 +332,17 @@ model Task {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  requester    User?             @relation("TaskRequester", fields: [requestedById], references: [id], onDelete: SetNull)
-  assignee     User?             @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  options      DecisionOption[]
-  votes        DecisionVote[]
-  comments     Comment[]
-  labels       TaskLabel[]
-  timeEntries  TimeEntry[]
-  deliverables TaskDeliverable[]
+  project         Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requester       User?                @relation("TaskRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  assignee        User?                @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  options         DecisionOption[]
+  votes           DecisionVote[]
+  comments        Comment[]
+  labels          TaskLabel[]
+  timeEntries     TimeEntry[]
+  deliverables    TaskDeliverable[]
+  timeLogs        TimeEntryLog[]
+  pendingCaptures PendingTimeCapture[]
 
   @@unique([organizationId, externalId])
   @@index([projectId])
@@ -938,6 +941,7 @@ model TimeEntry {
   hourlyRateCents   Int?
   invoiceLineItemId String?
   invoiceLineItem   InvoiceLineItem? @relation(fields: [invoiceLineItemId], references: [id], onDelete: SetNull)
+  logs              TimeEntryLog[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   // Partial unique index "time_entry_one_running_per_user" on
@@ -950,4 +954,44 @@ model TimeEntry {
   @@index([taskId])
   @@index([invoiceLineItemId])
   @@map("time_entry")
+}
+
+model TimeEntryLog {
+  id             String    @id @default(cuid())
+  timeEntryId    String
+  timeEntry      TimeEntry @relation(fields: [timeEntryId], references: [id], onDelete: Cascade)
+  organizationId String
+  userId         String
+  kind           String    @default("note")
+  text           String    @db.VarChar(1000)
+  taskId         String?
+  task           Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  actorType      String    @default("user")
+  createdAt      DateTime  @default(now())
+
+  @@index([timeEntryId, createdAt])
+  @@index([organizationId])
+  @@index([taskId])
+  @@map("time_entry_log")
+}
+
+model PendingTimeCapture {
+  id                  String    @id @default(cuid())
+  organizationId      String
+  projectId           String
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId              String?
+  task                Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  kind                String    @default("task_done")
+  label               String
+  completedByType     String    @default("agent")
+  completedByName     String?
+  completedAt         DateTime  @default(now())
+  resolvedAt          DateTime?
+  resolvedTimeEntryId String?
+  createdAt           DateTime  @default(now())
+
+  @@index([organizationId, resolvedAt])
+  @@index([projectId, resolvedAt])
+  @@map("pending_time_capture")
 }

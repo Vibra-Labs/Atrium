@@ -132,9 +132,10 @@ export class TasksController {
   @Roles("owner", "admin")
   closeVoting(
     @Param("id") id: string,
+    @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
   ) {
-    return this.tasksService.closeVoting(id, orgId);
+    return this.tasksService.closeVoting(id, orgId, userId);
   }
 
   // Client cancels their own open request
@@ -161,9 +162,10 @@ export class TasksController {
   update(
     @Param("id") id: string,
     @Body() dto: UpdateTaskDto,
+    @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
   ) {
-    return this.tasksService.update(id, dto, orgId);
+    return this.tasksService.update(id, dto, orgId, userId);
   }
 
   @Delete(":id")

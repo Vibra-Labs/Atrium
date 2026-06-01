@@ -12,6 +12,7 @@ describe("TasksService", () => {
     notifyDecisionClosed: mock(() => {}),
   };
   const mockActivity = { create: mock(() => Promise.resolve()) };
+  const mockCapture = { captureTaskCompletion: mock(() => Promise.resolve()) };
   const mockLogger = { warn: mock(() => {}), error: mock(() => {}) };
 
   describe("createForClient", () => {
@@ -40,6 +41,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
     });
@@ -66,6 +68,7 @@ describe("TasksService", () => {
         mockPrismaForbidden as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
       await expect(
@@ -93,6 +96,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
       const result = await service.create({ title: "Agency Task" }, "proj1", "org1");
@@ -117,6 +121,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
     }
@@ -225,6 +230,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
     }
@@ -255,6 +261,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
 
@@ -325,6 +332,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
       const result = await service.cancelClientTask("task1", "client1", "org1");
@@ -350,6 +358,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
       await expect(
@@ -376,6 +385,7 @@ describe("TasksService", () => {
         mockPrisma as never,
         mockNotifications as never,
         mockActivity as never,
+        mockCapture as never,
         mockLogger as never,
       );
       await expect(

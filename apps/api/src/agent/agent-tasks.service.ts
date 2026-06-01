@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
+import { TimeEntryCaptureService } from "../time-entries/time-entry-capture.service";
 import type { CurrentApiKeyContext } from "./decorators/current-api-key.decorator";
 import { AuditService } from "./services/audit.service";
 import { CreateAgentTaskDto } from "./dto/create-task.dto";
@@ -12,6 +13,7 @@ export class AgentTasksService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private timeEntryCapture: TimeEntryCaptureService,
   ) {}
 
   async create(dto: CreateAgentTaskDto, apiKey: CurrentApiKeyContext, requestId: string): Promise<AgentResult<unknown>> {
@@ -72,7 +74,7 @@ export class AgentTasksService {
     const statusChanged = dto.status !== undefined && dto.status !== existing.status;
     const shouldStampCompleted = statusChanged && dto.status === "done" && !existing.completedAt;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const task = await tx.task.update({
         where: { id },
         data: {
@@ -98,6 +100,19 @@ export class AgentTasksService {
       });
       return { data: task, auditEventId: event.id, created: false };
     });
+
+    if (statusChanged && dto.status === "done") {
+      await this.timeEntryCapture.captureTaskCompletion({
+        orgId: apiKey.organizationId,
+        projectId: existing.projectId,
+        taskId: existing.id,
+        actorType: "agent",
+        actorName: `API key ${apiKey.keyPrefix}`,
+        taskTitle: existing.title,
+      });
+    }
+
+    return result;
   }
 
   private async assertMember(userId: string, organizationId: string) {

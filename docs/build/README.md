@@ -16,6 +16,7 @@
 | 06 | [Docker Entrypoint Safety](./06-docker-entrypoint-safety.md) | ✅ Current | [PXL-18](https://linear.app/mastermind365/issue/PXL-18) |
 | 07 | [Agent Comments, Updates, Notes](./07-agent-comments-updates-notes.md) | ✅ Current | [PXL-19](https://linear.app/mastermind365/issue/PXL-19) |
 | 08 | [WorkOS Auth Migration](./08-workos-auth.md) | 🚧 Phase 3 linked | PXL-20 |
+| 10 | [Time Tracking — Session Journal](./time-tracking/01-session-journal.md) | ✅ Current | — |
 | 99 | Operational Runbook | 📋 Backlog | — |
 
 ## Linear Project
@@ -46,5 +47,6 @@ The first three docs establish the foundation for the Pexlo Portal AI-agent proj
 - `06-docker-entrypoint-safety.md` records the PXL-18 deploy safety fix: no `prisma db push`, migration-only startup, and rollback image discipline.
 - `07-agent-comments-updates-notes.md` records the PXL-19 restored agent backend surface for comments, project updates, and notes.
 - `08-workos-auth.md` records the PXL-20 WorkOS/AuthKit migration state and the Phase 3 Chris/Pexlo Internal user-org linkage.
+- `time-tracking/01-session-journal.md` records the Session Journal build: timer-bound notes/task completions, pending no-timer captures, and resolution into billable time entries.
 
 Do not close future PXL implementation issues as Done until the relevant build doc is created or updated in this directory and committed with the code.

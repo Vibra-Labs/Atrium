@@ -8,6 +8,7 @@ import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ActivityService } from "../activity/activity.service";
+import { TimeEntryCaptureService } from "../time-entries/time-entry-capture.service";
 import { paginationArgs, paginatedResponse } from "../common";
 import { CreateTaskDto, CreateClientTaskDto, UpdateTaskDto } from "./tasks.dto";
 
@@ -17,6 +18,7 @@ export class TasksService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private activityService: ActivityService,
+    private timeEntryCapture: TimeEntryCaptureService,
     @InjectPinoLogger(TasksService.name) private readonly logger: PinoLogger,
   ) {}
 
@@ -289,7 +291,7 @@ export class TasksService {
     return vote;
   }
 
-  async closeVoting(taskId: string, orgId: string) {
+  async closeVoting(taskId: string, orgId: string, actorUserId?: string) {
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, organizationId: orgId, type: "decision" },
     });
@@ -324,10 +326,19 @@ export class TasksService {
       })
       .catch((err) => this.logger.warn({ err }, "Failed to log decision closed activity"));
 
+    this.timeEntryCapture.captureTaskCompletion({
+      orgId,
+      projectId: task.projectId,
+      taskId: task.id,
+      actorType: "user",
+      actorName: actorUserId ? "User" : null,
+      taskTitle: task.title,
+    });
+
     return updated;
   }
 
-  async update(id: string, dto: UpdateTaskDto, orgId: string) {
+  async update(id: string, dto: UpdateTaskDto, orgId: string, actorUserId?: string) {
     const task = await this.prisma.task.findFirst({
       where: { id, organizationId: orgId },
     });
@@ -369,6 +380,17 @@ export class TasksService {
         task.requestedById,
         updated.assigneeId,
       );
+    }
+
+    if (dto.status === "done" && task.status !== "done") {
+      this.timeEntryCapture.captureTaskCompletion({
+        orgId,
+        projectId: task.projectId,
+        taskId: task.id,
+        actorType: "user",
+        actorName: actorUserId ? "User" : null,
+        taskTitle: task.title,
+      });
     }
 
     if (dto.assigneeId && dto.assigneeId !== task.assigneeId) {

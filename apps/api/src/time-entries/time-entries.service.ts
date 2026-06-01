@@ -7,6 +7,8 @@ import {
   UpdateTimeEntryDto,
   TimeEntryListQueryDto,
   GenerateInvoiceDto,
+  CreateTimeEntryLogDto,
+  ResolvePendingTimeCaptureDto,
 } from "./time-entries.dto";
 
 // Hard upper bound on rows returned by the unbounded export path. The
@@ -47,7 +49,38 @@ export type RunningEntry = {
   updatedAt: Date;
   project: { id: string; name: string };
   task: { id: string; title: string } | null;
+  logs: TimeEntryLogItem[];
 } | null;
+
+export type TimeEntryLogItem = {
+  id: string;
+  timeEntryId: string;
+  organizationId: string;
+  userId: string;
+  kind: string;
+  text: string;
+  taskId: string | null;
+  actorType: string;
+  createdAt: Date;
+  task?: { id: string; title: string } | null;
+};
+
+export type PendingTimeCaptureItem = {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  taskId: string | null;
+  kind: string;
+  label: string;
+  completedByType: string;
+  completedByName: string | null;
+  completedAt: Date;
+  resolvedAt: Date | null;
+  resolvedTimeEntryId: string | null;
+  createdAt: Date;
+  project: { id: string; name: string };
+  task: { id: string; title: string } | null;
+};
 
 export type TimeEntryListItem = Omit<TimeEntry, "hourlyRateCents"> & {
   hourlyRateCents?: number | null;
@@ -201,7 +234,151 @@ export class TimeEntriesService {
   async getRunning(userId: string, orgId: string): Promise<RunningEntry> {
     return this.prisma.timeEntry.findFirst({
       where: { userId, organizationId: orgId, endedAt: null },
-      include: { project: { select: { id: true, name: true } }, task: { select: { id: true, title: true } } },
+      include: {
+        project: { select: { id: true, name: true } },
+        task: { select: { id: true, title: true } },
+        logs: {
+          include: { task: { select: { id: true, title: true } } },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+  }
+
+  private async findEntryForOrgOrThrow(id: string, orgId: string): Promise<TimeEntry> {
+    const entry = await this.prisma.timeEntry.findFirst({
+      where: { id, organizationId: orgId },
+    });
+    if (!entry) throw new NotFoundException("Time entry not found");
+    return entry;
+  }
+
+  private async assertTaskInProject(taskId: string, projectId: string, orgId: string): Promise<void> {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, projectId, organizationId: orgId },
+      select: { id: true },
+    });
+    if (!task) throw new NotFoundException("Task not found");
+  }
+
+  async addLog(entryId: string, userId: string, orgId: string, dto: CreateTimeEntryLogDto): Promise<TimeEntryLogItem> {
+    const entry = await this.findEntryForOrgOrThrow(entryId, orgId);
+    if (entry.invoiceLineItemId) {
+      throw new ConflictException("Time entry is locked because it has been invoiced");
+    }
+    const text = dto.text.trim();
+    if (!text) throw new BadRequestException("text is required");
+    if (dto.taskId) await this.assertTaskInProject(dto.taskId, entry.projectId, orgId);
+
+    return this.prisma.timeEntryLog.create({
+      data: {
+        timeEntryId: entry.id,
+        organizationId: orgId,
+        userId,
+        kind: dto.kind,
+        text,
+        taskId: dto.taskId ?? null,
+        actorType: "user",
+      },
+      include: { task: { select: { id: true, title: true } } },
+    });
+  }
+
+  async listLogs(entryId: string, orgId: string): Promise<TimeEntryLogItem[]> {
+    await this.findEntryForOrgOrThrow(entryId, orgId);
+    return this.prisma.timeEntryLog.findMany({
+      where: { timeEntryId: entryId, organizationId: orgId },
+      include: { task: { select: { id: true, title: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async deleteLog(logId: string, orgId: string): Promise<void> {
+    const log = await this.prisma.timeEntryLog.findFirst({
+      where: { id: logId, organizationId: orgId },
+      include: { timeEntry: { select: { invoiceLineItemId: true } } },
+    });
+    if (!log) throw new NotFoundException("Log not found");
+    if (log.timeEntry.invoiceLineItemId) {
+      throw new ConflictException("Time entry is locked because it has been invoiced");
+    }
+    await this.prisma.timeEntryLog.delete({ where: { id: logId } });
+  }
+
+  async listPendingCaptures(orgId: string): Promise<PendingTimeCaptureItem[]> {
+    return this.prisma.pendingTimeCapture.findMany({
+      where: { organizationId: orgId, resolvedAt: null },
+      include: {
+        project: { select: { id: true, name: true } },
+        task: { select: { id: true, title: true } },
+      },
+      orderBy: { completedAt: "desc" },
+    });
+  }
+
+  async resolvePendingCapture(
+    id: string,
+    userId: string,
+    orgId: string,
+    dto: ResolvePendingTimeCaptureDto,
+  ): Promise<TimeEntry> {
+    if (dto.durationSec < 1) throw new BadRequestException("durationSec must be at least 1");
+
+    const captureForRate = await this.prisma.pendingTimeCapture.findFirst({
+      where: { id, organizationId: orgId, resolvedAt: null },
+      select: { projectId: true },
+    });
+    if (!captureForRate) throw new NotFoundException("Pending capture not found");
+    const rate = await this.resolveRate(orgId, userId, captureForRate.projectId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const capture = await tx.pendingTimeCapture.findFirst({
+        where: { id, organizationId: orgId, resolvedAt: null },
+        include: { task: { select: { id: true, title: true } } },
+      });
+      if (!capture) throw new NotFoundException("Pending capture not found");
+
+      const claimed = await tx.pendingTimeCapture.updateMany({
+        where: { id, organizationId: orgId, resolvedAt: null },
+        data: { resolvedAt: new Date() },
+      });
+      if (claimed.count !== 1) throw new ConflictException("Pending capture is already resolved");
+
+      const endedAt = capture.completedAt;
+      const startedAt = new Date(endedAt.getTime() - dto.durationSec * 1000);
+      const entry = await tx.timeEntry.create({
+        data: {
+          organizationId: orgId,
+          projectId: capture.projectId,
+          taskId: capture.taskId,
+          userId,
+          description: capture.label,
+          startedAt,
+          endedAt,
+          durationSec: dto.durationSec,
+          billable: dto.billable ?? true,
+          hourlyRateCents: rate,
+        },
+      });
+
+      await tx.timeEntryLog.create({
+        data: {
+          timeEntryId: entry.id,
+          organizationId: orgId,
+          userId,
+          kind: "task_done",
+          text: capture.task ? `Completed: ${capture.task.title}` : capture.label,
+          taskId: capture.taskId,
+          actorType: capture.completedByType,
+        },
+      });
+
+      await tx.pendingTimeCapture.update({
+        where: { id },
+        data: { resolvedTimeEntryId: entry.id },
+      });
+
+      return entry;
     });
   }
 

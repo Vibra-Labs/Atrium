@@ -8,10 +8,24 @@ import {
 } from "../common";
 import type { CsvColumn } from "../common";
 import { TimeEntriesService } from "./time-entries.service";
-import type { TimeEntryListResponse, TimeEntryListItem, TimeReport, RunningEntry, GenerateInvoiceResult } from "./time-entries.service";
+import type {
+  TimeEntryListResponse,
+  TimeEntryListItem,
+  TimeReport,
+  RunningEntry,
+  GenerateInvoiceResult,
+  TimeEntryLogItem,
+  PendingTimeCaptureItem,
+} from "./time-entries.service";
 import type { TimeEntry } from "@atrium/database";
 import {
-  StartTimerDto, CreateManualEntryDto, UpdateTimeEntryDto, TimeEntryListQueryDto, GenerateInvoiceDto,
+  StartTimerDto,
+  CreateManualEntryDto,
+  UpdateTimeEntryDto,
+  TimeEntryListQueryDto,
+  GenerateInvoiceDto,
+  CreateTimeEntryLogDto,
+  ResolvePendingTimeCaptureDto,
 } from "./time-entries.dto";
 
 @Controller("time-entries")
@@ -102,6 +116,47 @@ export class TimeEntriesController {
     @Body() dto: CreateManualEntryDto,
   ): Promise<TimeEntry> {
     return this.service.create(userId, orgId, dto);
+  }
+
+  @Get("pending-captures")
+  pendingCaptures(@CurrentOrg("id") orgId: string): Promise<PendingTimeCaptureItem[]> {
+    return this.service.listPendingCaptures(orgId);
+  }
+
+  @Post("pending-captures/:id/resolve")
+  resolvePendingCapture(
+    @Param("id") id: string,
+    @CurrentUser("id") userId: string,
+    @CurrentOrg("id") orgId: string,
+    @Body() dto: ResolvePendingTimeCaptureDto,
+  ): Promise<TimeEntry> {
+    return this.service.resolvePendingCapture(id, userId, orgId, dto);
+  }
+
+  @Post(":id/logs")
+  addLog(
+    @Param("id") id: string,
+    @CurrentUser("id") userId: string,
+    @CurrentOrg("id") orgId: string,
+    @Body() dto: CreateTimeEntryLogDto,
+  ): Promise<TimeEntryLogItem> {
+    return this.service.addLog(id, userId, orgId, dto);
+  }
+
+  @Get(":id/logs")
+  listLogs(
+    @Param("id") id: string,
+    @CurrentOrg("id") orgId: string,
+  ): Promise<TimeEntryLogItem[]> {
+    return this.service.listLogs(id, orgId);
+  }
+
+  @Delete("logs/:logId")
+  deleteLog(
+    @Param("logId") logId: string,
+    @CurrentOrg("id") orgId: string,
+  ): Promise<void> {
+    return this.service.deleteLog(logId, orgId);
   }
 
   @Patch(":id")

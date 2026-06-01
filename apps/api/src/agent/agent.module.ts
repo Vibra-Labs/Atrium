@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { PrismaModule } from "../prisma/prisma.module";
+import { TimeEntriesModule } from "../time-entries/time-entries.module";
 import { AgentProjectsController } from "./agent-projects.controller";
 import { AgentTasksController } from "./agent-tasks.controller";
 import { AgentDeliverablesController } from "./agent-deliverables.controller";
@@ -19,7 +20,7 @@ import { ApiKeyService } from "./services/api-key.service";
 import { AuditService } from "./services/audit.service";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, TimeEntriesModule],
   controllers: [
     AgentProjectsController,
     AgentTasksController,

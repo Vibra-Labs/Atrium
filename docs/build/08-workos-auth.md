@@ -202,10 +202,39 @@ users_linked=1
 - Microsoft/Google SSO configuration remains dashboard-only v2 work.
 - Default WorkOS test organization still exists and could not be renamed by API; it is harmless but should be ignored.
 
+## 9. Session Refresh Fix (PR #32, 2026-06-01)
+
+### What
+WorkOS sealed-session access tokens are short-lived. `SessionMiddleware` originally called `sealedSession.authenticate()` and, on the inevitable token expiry after a few minutes, every request 401'd with "Authentication required" until a full re-login.
+
+### Why
+The access token embedded in the `wos-session` cookie expires well before the user's working session does. Without a refresh step, the middleware treated an *expired-but-refreshable* session identically to an *unauthenticated* one.
+
+### What We Built
+In `apps/api/src/auth/session.middleware.ts`: on `authenticate()` failure, call `sealedSession.refresh()`, write the re-sealed `wos-session` cookie back on the response, and proceed with the refreshed identity. If `refresh()` itself fails (revoked/expired refresh token), fall through to `AuthGuard` (real 401). Covered by `session.middleware.spec.ts` (4 cases: valid, expired+refreshable, expired+unrefreshable, no cookie).
+
+Bundled billing fix: `/billing-clients?limit=200` was rejected by `PaginationQueryDto @Max(100)` → 400 surfaced on the billing page. Fixed with a paginated fetch helper in `apps/web/src/lib/api.ts`, applied across billing, calendar, clients, tasks-section, reports/time pages.
+
+### How to Extend
+The refresh-on-expiry pattern is the canonical handling for any new sealed-session consumer. Do not add a parallel auth check that skips refresh — route it through `SessionMiddleware`.
+
+### Verification (2026-06-01 prod deploy, commit e70da4a, image 9b9f830ec6f2)
+```
+portal.pexlo.com/        -> 200
+/api/health              -> 200
+/portal/sign-in          -> 307 -> WorkOS authorize, redirect_uri=https://portal.pexlo.com/auth/callback (PKCE S256)
+entrypoint migrations    -> image 8 = DB 8, "No pending migrations" (additive-only, abort-guard not tripped)
+RestartCount             -> 0; pexlo-portal + pexlo-caddy both Up
+```
+Rollback image retained: `pexlo-portal:rollback-pre-deploy32-20260601-134948` (prior-good 6e8c7d0).
+
+### Known Gaps / Deferred
+- Client-side session-survival test (leave billing tab open ~5 min, confirm no re-login) — owed at deploy time.
+
 ## 8. References
 
 - Migration plan: `docs/build/workos-migration-plan.md`
 - Verification script: `scripts/verify-workos-migration.sh`
 - Prisma schema: `packages/database/prisma/schema.prisma`
 - WorkOS docs: https://workos.com/docs/user-management
-- Linear: PXL-20 WorkOS migration
+- Linear: PXL-20 WorkOS migration, PR #32 session refresh

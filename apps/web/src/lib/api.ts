@@ -75,6 +75,65 @@ export async function apiFetch<T = unknown>(
 }
 
 /**
+ * Canonical shape returned by every paginated list endpoint
+ * (see apps/api/src/common/helpers/paginate.ts -> paginatedResponse).
+ */
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+/**
+ * Maximum `limit` the API accepts on paginated list endpoints
+ * (PaginationQueryDto enforces @Max(100)). Requesting more returns a 400.
+ */
+export const MAX_PAGE_LIMIT = 100;
+
+/**
+ * Fetch EVERY page of a paginated list endpoint and return the flattened rows.
+ *
+ * Use this instead of guessing a large `limit` (e.g. `?limit=200`, which the
+ * API rejects with 400 "limit must not be greater than 100"). It walks pages
+ * at the API maximum until all `meta.total` rows are collected, so it stays
+ * correct no matter how many records exist and never silently truncates.
+ *
+ * @param basePath  Endpoint path WITHOUT page/limit params, e.g.
+ *                  "/billing-clients" or "/projects?archived=false".
+ *                  Existing query strings are preserved.
+ * @param pageLimit Per-request page size (defaults to the API max of 100).
+ */
+export async function fetchAllPages<T>(
+  basePath: string,
+  pageLimit: number = MAX_PAGE_LIMIT,
+): Promise<T[]> {
+  const limit = Math.min(Math.max(1, pageLimit), MAX_PAGE_LIMIT);
+  const separator = basePath.includes("?") ? "&" : "?";
+  const rows: T[] = [];
+  let page = 1;
+  // Hard safety ceiling: prevents an infinite loop if the API ever returns
+  // malformed meta (e.g. totalPages that never converges).
+  const MAX_PAGES = 1000;
+
+  while (page <= MAX_PAGES) {
+    const res = await apiFetch<PaginatedResponse<T>>(
+      `${basePath}${separator}page=${page}&limit=${limit}`,
+    );
+    rows.push(...res.data);
+
+    const totalPages = res.meta?.totalPages ?? 1;
+    if (!res.data.length || page >= totalPages) break;
+    page += 1;
+  }
+
+  return rows;
+}
+
+/**
  * After authentication, sets the active org and returns the redirect path
  * based on the user's role (owner/admin -> /dashboard, member -> /portal).
  *

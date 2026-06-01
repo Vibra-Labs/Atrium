@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, fetchAllPages } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
@@ -120,10 +120,8 @@ export default function PeoplePage() {
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<PaginatedResponse<MemberRecord>>(
-        `/clients?page=1&limit=100`,
-      );
-      setMembers(res.data);
+      const rows = await fetchAllPages<MemberRecord>("/clients");
+      setMembers(rows);
     } catch (err) {
       console.error(err);
     } finally {

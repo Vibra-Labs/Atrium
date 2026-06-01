@@ -120,109 +120,54 @@ describe("AuthService", () => {
   });
 
   describe("generateResetLink", () => {
-    it("returns the URL and emailSent captured from the sendResetPassword callback context", async () => {
-      const expectedUrl =
-        "http://localhost:3001/api/auth/reset-password/token-abc?callbackURL=http%3A%2F%2Flocalhost%3A3000%2Freset-password";
-
-      const requestPasswordReset = mock(async () => {
-        const store = (
-          service as unknown as {
-            adminResetStorage: {
-              getStore: () => {
-                capturedUrl: string | null;
-                emailSent: boolean;
-                emailViaOrgConfig: boolean;
-              } | undefined;
-            };
-          }
-        ).adminResetStorage.getStore();
-        if (store) {
-          store.capturedUrl = expectedUrl;
-          store.emailSent = true;
-          store.emailViaOrgConfig = true;
+    // generateResetLink was migrated from Better Auth (ALS-captured reset URL)
+    // to WorkOS userManagement.createPasswordReset(). These tests track the
+    // current WorkOS implementation.
+    function mockCreatePasswordReset(
+      impl: (args: { email: string }) => Promise<{ passwordResetUrl?: string }>,
+    ) {
+      const fn = mock(impl);
+      // Inject a fake WorkOS client into the lazy getter's backing field so we
+      // never construct the real SDK (which needs WORKOS_API_KEY).
+      (
+        service as unknown as {
+          workosClient: { userManagement: { createPasswordReset: typeof fn } };
         }
-      });
-      (service.auth as unknown as {
-        api: { requestPasswordReset: typeof requestPasswordReset };
-      }).api.requestPasswordReset = requestPasswordReset;
+      ).workosClient = { userManagement: { createPasswordReset: fn } };
+      return fn;
+    }
+
+    it("returns the WorkOS password reset URL with emailSent=true", async () => {
+      const expectedUrl = "https://auth.workos.com/reset/token-abc";
+      const createPasswordReset = mockCreatePasswordReset(async () => ({
+        passwordResetUrl: expectedUrl,
+      }));
 
       const result = await service.generateResetLink("alice@example.com");
 
       expect(result).toEqual({
         url: expectedUrl,
         emailSent: true,
-        emailViaOrgConfig: true,
+        emailViaOrgConfig: false,
       });
-      expect(requestPasswordReset).toHaveBeenCalledTimes(1);
-      const callArg = requestPasswordReset.mock.calls[0][0] as {
-        body: { email: string; redirectTo: string };
-      };
-      expect(callArg.body.email).toBe("alice@example.com");
-      expect(callArg.body.redirectTo).toBe("http://localhost:3000/reset-password");
+      expect(createPasswordReset).toHaveBeenCalledTimes(1);
+      expect(createPasswordReset.mock.calls[0][0]).toEqual({
+        email: "alice@example.com",
+      });
     });
 
-    it("returns emailSent=false when no provider sent the email", async () => {
-      const requestPasswordReset = mock(async () => {
-        const store = (
-          service as unknown as {
-            adminResetStorage: {
-              getStore: () => {
-                capturedUrl: string | null;
-                emailSent: boolean;
-                emailViaOrgConfig: boolean;
-              } | undefined;
-            };
-          }
-        ).adminResetStorage.getStore();
-        if (store) {
-          store.capturedUrl = "https://example.test/reset/abc";
-          // emailSent and emailViaOrgConfig stay false
-        }
-      });
-      (service.auth as unknown as {
-        api: { requestPasswordReset: typeof requestPasswordReset };
-      }).api.requestPasswordReset = requestPasswordReset;
+    it("throws InternalServerErrorException when WorkOS returns no URL", async () => {
+      mockCreatePasswordReset(async () => ({ passwordResetUrl: undefined }));
 
-      const result = await service.generateResetLink("alice@example.com");
-
-      expect(result.emailSent).toBe(false);
-      expect(result.emailViaOrgConfig).toBe(false);
+      await expect(
+        service.generateResetLink("ghost@example.com"),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
     });
 
-    it("throws InternalServerErrorException when no URL was captured", async () => {
-      (service.auth as unknown as {
-        api: { requestPasswordReset: () => Promise<void> };
-      }).api.requestPasswordReset = mock(async () => {
-        // intentionally do not populate the ALS context
-      });
-
-      await expect(service.generateResetLink("ghost@example.com")).rejects.toBeInstanceOf(
-        InternalServerErrorException,
-      );
-    });
-
-    it("isolates ALS contexts so concurrent generates do not bleed URLs", async () => {
-      let call = 0;
-      (service.auth as unknown as {
-        api: { requestPasswordReset: (args: { body: { email: string } }) => Promise<void> };
-      }).api.requestPasswordReset = mock(async ({ body }) => {
-        const store = (
-          service as unknown as {
-            adminResetStorage: {
-              getStore: () => {
-                capturedUrl: string | null;
-                emailSent: boolean;
-                emailViaOrgConfig: boolean;
-              } | undefined;
-            };
-          }
-        ).adminResetStorage.getStore();
-        await new Promise((r) => setTimeout(r, ++call * 5));
-        if (store) {
-          store.capturedUrl = `https://example.test/reset/${body.email}`;
-          store.emailSent = true;
-          store.emailViaOrgConfig = true;
-        }
+    it("keeps reset URLs isolated across concurrent calls", async () => {
+      mockCreatePasswordReset(async ({ email }) => {
+        await new Promise((r) => setTimeout(r, 5));
+        return { passwordResetUrl: `https://auth.workos.com/reset/${email}` };
       });
 
       const [a, b] = await Promise.all([
@@ -230,8 +175,8 @@ describe("AuthService", () => {
         service.generateResetLink("b@example.com"),
       ]);
 
-      expect(a.url).toBe("https://example.test/reset/a@example.com");
-      expect(b.url).toBe("https://example.test/reset/b@example.com");
+      expect(a.url).toBe("https://auth.workos.com/reset/a@example.com");
+      expect(b.url).toBe("https://auth.workos.com/reset/b@example.com");
     });
   });
 });

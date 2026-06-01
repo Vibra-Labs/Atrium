@@ -27,6 +27,10 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       DATABASE_URL: postgresql://atrium:atrium@localhost:5432/atrium?schema=public
       DIRECT_URL: postgresql://atrium:atrium@localhost:5432/atrium?schema=public
+      # The bun-test guard refuses to run unless DATABASE_URL === TEST_DATABASE_URL
+      # (Hard Rule 7: never test against a non-test DB). In CI the postgres above
+      # is an ephemeral, disposable service container, so it IS the test DB.
+      TEST_DATABASE_URL: postgresql://atrium:atrium@localhost:5432/atrium?schema=public
       BETTER_AUTH_SECRET: ci-test-secret-that-is-at-least-32-chars
       BETTER_AUTH_URL: http://localhost:3001
       API_URL: http://localhost:3001

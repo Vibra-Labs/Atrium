@@ -3,6 +3,7 @@
   "globalPassThroughEnv": [
     "DATABASE_URL",
     "DIRECT_URL",
+    "TEST_DATABASE_URL",
     "BETTER_AUTH_SECRET",
     "BETTER_AUTH_URL",
     "API_URL",

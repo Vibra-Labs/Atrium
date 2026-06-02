@@ -1,0 +1,354 @@
+{
+  "apiBaseUrl": "http://localhost:3001",
+  "run1": {
+    "startedAt": "2026-05-29T16:34:38.455163Z",
+    "newProjectCount": 3,
+    "newTaskCount": 13,
+    "newDeliverableCount": 27,
+    "taskStatusPatchCount": 13,
+    "createdAuditEvents": 56,
+    "projects": [
+      {
+        "id": "cmpr56yzc0000xamc73anntuo",
+        "name": "CSP IT Onboarding \u2014 May 2026",
+        "externalId": "csp-it-onboarding-may-2026",
+        "created": true
+      },
+      {
+        "id": "cmpr5718s002vxamceml5h4yu",
+        "name": "CSP Internal Operations Platform \u2014 Phase 0 Discovery",
+        "externalId": "csp-internal-ops-phase-0-discovery",
+        "created": true
+      },
+      {
+        "id": "cmpr571tx003mxamcvrlwxy3o",
+        "name": "Pexlo R&D Tax Credit Briefing for CSP \u2014 Briefing No. 001",
+        "externalId": "pexlo-rd-tax-credit-briefing-csp-001",
+        "created": true
+      }
+    ],
+    "tasks": [
+      {
+        "id": "cmpr56z5r0004xamcdatvm8xm",
+        "title": "Full Microsoft Graph tenant audit + baseline health score",
+        "externalId": "csp-m365-tenant-audit-2026-05-25",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr56zmh000qxamcadabhvoy",
+        "title": "Entra/Intune cleanup strategy + field execution kit",
+        "externalId": "csp-entra-intune-cleanup-kit-2026-05-25",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr56zyw0018xamcbpfciz4r",
+        "title": "HP 8CG1108HR6 Autopilot infrastructure and enrollment repair",
+        "externalId": "csp-hp-8cg1108hr6-autopilot-2026-05-25",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr5708x001mxamckohxjhul",
+        "title": "CSP device naming convention decision",
+        "externalId": "csp-device-naming-convention-2026-05-26",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr570eb001sxamcgkrcgt3q",
+        "title": "SyncroMSP RMM installer link captured for CSP evaluation",
+        "externalId": "csp-syncromsp-rmm-link-2026-05-26",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr570lo0022xamcljn485cf",
+        "title": "Lenovo PF4TJXBM Autopilot enrollment + dynamic group fix",
+        "externalId": "csp-lenovo-pf4tjxbm-autopilot-2026-05-28",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr570rd0028xamcju4zk7c1",
+        "title": "Lenovo PF4TJXBM policy and BitLocker verification",
+        "externalId": "csp-lenovo-pf4tjxbm-policy-bitlocker-2026-05-28",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr570wy002examca10wbqx7",
+        "title": "Nitro PDF Pro 14 Intune Win32 deployment package build",
+        "externalId": "csp-nitro-pdf-pro-14-intune-package-2026-05-28",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr571cl002zxamcuioppwb9",
+        "title": "Pexlo Portal production launch with CSP onboarding queued for Phase 2",
+        "externalId": "csp-portal-onboarding-phase2-planning-2026-05-26",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr571kk0039xamc1qiexdz0",
+        "title": "CitySafe accounting platform comparison reviewed",
+        "externalId": "csp-accounting-comparison-2026-05-26",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr571xk003qxamcnwc0jct3",
+        "title": "CitySafe \u00a7174A / \u00a741 R&D credit one-pager",
+        "externalId": "citysafe-rd-tax-credit-onepager-2026-05-25",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr5727n0044xamcjod6076t",
+        "title": "Federal, NYS, and NYC R&D credit research memo",
+        "externalId": "csp-rd-credit-research-memo-2026-05-29",
+        "created": true,
+        "status": "done"
+      },
+      {
+        "id": "cmpr572fi004examcn8dk4kzj",
+        "title": "Pexlo R&D briefing template and PDF design iterations",
+        "externalId": "csp-rd-credit-briefing-template-iterations-2026-05-29",
+        "created": true,
+        "status": "done"
+      }
+    ],
+    "deliverables": [
+      {
+        "id": "cmpr56zbt000axamc7xho9qk8",
+        "taskId": "cmpr56z5r0004xamcdatvm8xm",
+        "title": "CitySafe tenant audit \u2014 technical deep dive",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr56zen000examcjs3uaqmg",
+        "taskId": "cmpr56z5r0004xamcdatvm8xm",
+        "title": "CitySafe tenant health scorecard",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr56zh1000ixamcue3ttlah",
+        "taskId": "cmpr56z5r0004xamcdatvm8xm",
+        "title": "Raw tenant snapshot JSON folder",
+        "type": "folder"
+      },
+      {
+        "id": "cmpr56zje000mxamcpis4u2y8",
+        "taskId": "cmpr56z5r0004xamcdatvm8xm",
+        "title": "Tenant snapshot PowerShell script",
+        "type": "script"
+      },
+      {
+        "id": "cmpr56zr5000wxamccu4g1w8j",
+        "taskId": "cmpr56zmh000qxamcadabhvoy",
+        "title": "Entra cleanup plan",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr56ztg0010xamcxlqct4rb",
+        "taskId": "cmpr56zmh000qxamcadabhvoy",
+        "title": "Entra field kit",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr56zvv0014xamc1ckz0b22",
+        "taskId": "cmpr56zmh000qxamcadabhvoy",
+        "title": "Entra bonus pack",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr5703k001examct7bdxjns",
+        "taskId": "cmpr56zyw0018xamcbpfciz4r",
+        "title": "CitySafe Autopilot setup spec",
+        "type": "markdown"
+      },
+      {
+        "id": "cmpr5705x001ixamc8d9ybwm7",
+        "taskId": "cmpr56zyw0018xamcbpfciz4r",
+        "title": "HP Autopilot hardware hash CSV",
+        "type": "csv"
+      },
+      {
+        "id": "cmpr570is001yxamchng9lxym",
+        "taskId": "cmpr570eb001sxamcgkrcgt3q",
+        "title": "SyncroMSP RMM download link",
+        "type": "link"
+      },
+      {
+        "id": "cmpr5711g002kxamc8dfxzpx6",
+        "taskId": "cmpr570wy002examca10wbqx7",
+        "title": "Mac Pro Nitro MSI path",
+        "type": "file"
+      },
+      {
+        "id": "cmpr5713s002oxamcylgfhrc1",
+        "taskId": "cmpr570wy002examca10wbqx7",
+        "title": "Mac Pro Nitro .intunewin path",
+        "type": "file"
+      },
+      {
+        "id": "cmpr57162002sxamcz1qgmd9s",
+        "taskId": "cmpr570wy002examca10wbqx7",
+        "title": "R2 Intune staging path",
+        "type": "r2"
+      },
+      {
+        "id": "cmpr571hf0035xamcuml516b2",
+        "taskId": "cmpr571cl002zxamcuioppwb9",
+        "title": "Live Pexlo Portal",
+        "type": "link"
+      },
+      {
+        "id": "cmpr571p9003fxamcwd7gx0ry",
+        "taskId": "cmpr571kk0039xamc1qiexdz0",
+        "title": "CitySafe accounting comparison PDF",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr571rf003jxamc8emy1syy",
+        "taskId": "cmpr571kk0039xamc1qiexdz0",
+        "title": "CitySafe accounting comparison HTML",
+        "type": "html"
+      },
+      {
+        "id": "cmpr57228003wxamc1fw2ffx0",
+        "taskId": "cmpr571xk003qxamcnwc0jct3",
+        "title": "CitySafe R&D tax credit one-pager PDF",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr5724m0040xamcbba5r1i7",
+        "taskId": "cmpr571xk003qxamcnwc0jct3",
+        "title": "CitySafe R&D tax credit one-pager HTML",
+        "type": "html"
+      },
+      {
+        "id": "cmpr572ce004axamczab6seq8",
+        "taskId": "cmpr5727n0044xamcjod6076t",
+        "title": "R&D tax credit research notes",
+        "type": "markdown"
+      },
+      {
+        "id": "cmpr572kb004kxamcankp92xf",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing source HTML",
+        "type": "html"
+      },
+      {
+        "id": "cmpr572mo004oxamck07ml9hu",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing PDF v1",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr572p4004sxamciewj79ki",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing PDF v2",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr572rg004wxamc03e3td8i",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing PDF v3",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr572tz0050xamcakl9aru9",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing PDF v4",
+        "type": "pdf"
+      },
+      {
+        "id": "cmpr572wc0054xamcuhoj1bso",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing PDF v4 text extract",
+        "type": "text"
+      },
+      {
+        "id": "cmpr572ys0058xamcy5l63nas",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing v4 page 1 screenshot",
+        "type": "image"
+      },
+      {
+        "id": "cmpr57316005cxamcuw84ewye",
+        "taskId": "cmpr572fi004examcn8dk4kzj",
+        "title": "R&D Credit Briefing v4 page 2 screenshot",
+        "type": "image"
+      }
+    ],
+    "projectDetails": [
+      {
+        "id": "cmpr56yzc0000xamc73anntuo",
+        "name": "CSP IT Onboarding \u2014 May 2026",
+        "taskSummary": {
+          "done": 8
+        }
+      },
+      {
+        "id": "cmpr5718s002vxamceml5h4yu",
+        "name": "CSP Internal Operations Platform \u2014 Phase 0 Discovery",
+        "taskSummary": {
+          "done": 2
+        }
+      },
+      {
+        "id": "cmpr571tx003mxamcvrlwxy3o",
+        "name": "Pexlo R&D Tax Credit Briefing for CSP \u2014 Briefing No. 001",
+        "taskSummary": {
+          "done": 3
+        }
+      }
+    ]
+  },
+  "run2": {
+    "startedAt": "2026-05-29T16:34:48.066967Z",
+    "newProjectCount": 0,
+    "newTaskCount": 0,
+    "newDeliverableCount": 0,
+    "taskStatusPatchCount": 0,
+    "createdAuditEvents": 0,
+    "projectDetails": [
+      {
+        "id": "cmpr56yzc0000xamc73anntuo",
+        "name": "CSP IT Onboarding \u2014 May 2026",
+        "taskSummary": {
+          "done": 8
+        }
+      },
+      {
+        "id": "cmpr5718s002vxamceml5h4yu",
+        "name": "CSP Internal Operations Platform \u2014 Phase 0 Discovery",
+        "taskSummary": {
+          "done": 2
+        }
+      },
+      {
+        "id": "cmpr571tx003mxamcvrlwxy3o",
+        "name": "Pexlo R&D Tax Credit Briefing for CSP \u2014 Briefing No. 001",
+        "taskSummary": {
+          "done": 3
+        }
+      }
+    ]
+  },
+  "auditFeed": {
+    "returned": 56,
+    "actions": {
+      "created": 43,
+      "status_changed": 13
+    },
+    "entityTypes": {
+      "deliverable": 27,
+      "task": 26,
+      "project": 3
+    }
+  }
+}

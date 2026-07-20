@@ -382,6 +382,104 @@ git commit -m "test(e2e): cover disabled signup state (#54)"
 
 ---
 
+### Task 5: Gate authenticated org creation on `ALLOW_SIGNUPS`
+
+**Context:** The signup guard (Task 1) only blocks `POST /onboarding/signup`. But the Better Auth proxy (`apps/api/src/auth/auth.controller.ts` → `@All("*path")`) also exposes `POST /api/auth/organization/create`, which any already-authenticated user (including an invited client) can call to create a new org — bypassing the signup gate. This task closes that path so a disabled instance truly stays "one company per host".
+
+**Files:**
+- Modify: `apps/api/src/auth/auth.service.ts` (the `organization({ ... })` plugin config, around line 130)
+- Modify: `apps/api/src/auth/auth.service.spec.ts`
+
+**Interfaces:**
+- Consumes: `this.config.get("ALLOW_SIGNUPS")`; Better Auth `organization()` plugin option `allowUserToCreateOrganization: boolean | ((user) => Awaitable<boolean>)`.
+- Produces: when `ALLOW_SIGNUPS === "false"`, `POST /api/auth/organization/create` is rejected by Better Auth; otherwise unchanged.
+
+**Verified against better-auth@1.4.18:** the option is named `allowUserToCreateOrganization`; in `dist/plugins/organization/routes/crud-org.mjs` the route computes `canCreateOrg = ... options.allowUserToCreateOrganization === void 0 ? true : options.allowUserToCreateOrganization`, so `false` blocks and `undefined` (unset) defaults to allowed. The resolved value is introspectable at `auth.options.plugins.find(p => p.id === "organization").options.allowUserToCreateOrganization`, which the unit test uses.
+
+**Note on the signup flow:** `onboarding.controller.ts` creates its org through this same Better Auth path. That is fine — when signups are enabled the option is `true` so signup works; when disabled, the Task 1 guard 403s before org creation is ever reached. No conflict.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `apps/api/src/auth/auth.service.spec.ts`, add this block (it builds its own config mock so `ALLOW_SIGNUPS` can vary, reusing the file's existing `mockPrisma`, `mockMail`, `mockBilling`):
+
+```ts
+  describe("organization creation gate", () => {
+    function makeServiceWith(allowSignups: string | undefined): AuthService {
+      const config = {
+        get: mock((key: string, fallback?: string) => {
+          if (key === "WEB_URL") return "http://localhost:3000";
+          if (key === "API_URL") return "http://localhost:3001";
+          if (key === "ALLOW_SIGNUPS") return allowSignups;
+          return fallback;
+        }),
+        getOrThrow: mock((key: string) => {
+          if (key === "BETTER_AUTH_SECRET") return "x".repeat(32);
+          throw new Error(`Missing ${key}`);
+        }),
+      };
+      return new AuthService(
+        config as unknown as ConfigService,
+        mockPrisma as unknown as PrismaService,
+        mockMail as unknown as MailService,
+        mockBilling as unknown as BillingService,
+      );
+    }
+
+    function orgCreateOption(service: AuthService): unknown {
+      interface OrgPlugin {
+        id: string;
+        options?: { allowUserToCreateOrganization?: unknown };
+      }
+      interface AuthWithOptions {
+        options: { plugins: OrgPlugin[] };
+      }
+      const plugins = (service.auth as unknown as AuthWithOptions).options.plugins;
+      return plugins.find((p) => p.id === "organization")?.options
+        ?.allowUserToCreateOrganization;
+    }
+
+    it("blocks org creation when ALLOW_SIGNUPS is 'false'", () => {
+      expect(orgCreateOption(makeServiceWith("false"))).toBe(false);
+    });
+
+    it("allows org creation when ALLOW_SIGNUPS is unset", () => {
+      expect(orgCreateOption(makeServiceWith(undefined))).toBe(true);
+    });
+  });
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `bun test apps/api/src/auth/auth.service.spec.ts`
+Expected: FAIL — the two new tests fail because `allowUserToCreateOrganization` is currently unset (`undefined`), so it is neither `false` nor `true`.
+
+- [ ] **Step 3: Add the option**
+
+In `apps/api/src/auth/auth.service.ts`, inside the `organization({ ... })` call, add `allowUserToCreateOrganization` as the FIRST property (immediately after `organization({`, before `sendInvitationEmail`):
+
+```ts
+        organization({
+          allowUserToCreateOrganization:
+            this.config.get("ALLOW_SIGNUPS") !== "false",
+          sendInvitationEmail: async ({ invitation, inviter, organization }) => {
+```
+
+Leave the rest of the plugin config unchanged.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `bun test apps/api/src/auth/auth.service.spec.ts`
+Expected: PASS (all tests in the file, including the two new ones).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/api/src/auth/auth.service.ts apps/api/src/auth/auth.service.spec.ts
+git commit -m "feat(api): block authenticated org creation when signups disabled (#54)"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage:**

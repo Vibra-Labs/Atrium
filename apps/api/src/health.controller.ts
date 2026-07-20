@@ -20,6 +20,7 @@ export class HealthController {
   getConfig() {
     return {
       billingEnabled: this.config.get("BILLING_ENABLED") === "true",
+      signupEnabled: this.config.get("ALLOW_SIGNUPS") !== "false",
     };
   }
 

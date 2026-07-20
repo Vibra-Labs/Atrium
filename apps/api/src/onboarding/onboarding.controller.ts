@@ -4,6 +4,7 @@ import {
   Post,
   Res,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { ConfigService } from "@nestjs/config";
@@ -35,6 +36,10 @@ export class OnboardingController {
     @Body() body: SignupDto,
     @Res({ passthrough: true }) res: Response,
   ) {
+    if (this.config.get("ALLOW_SIGNUPS") === "false") {
+      throw new ForbiddenException("Signups are disabled");
+    }
+
     const baseUrl = this.config.get(
       "BETTER_AUTH_URL",
       "http://localhost:3001",

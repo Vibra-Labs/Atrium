@@ -165,6 +165,7 @@ function PlanSelectionStep({
 export default function SignupPage() {
   const config = useAppConfig();
   const billingEnabled = config?.billingEnabled ?? false;
+  const signupsDisabled = config?.signupEnabled === false;
 
   const searchParams = new URLSearchParams(
     typeof window !== "undefined" ? window.location.search : "",
@@ -288,6 +289,26 @@ export default function SignupPage() {
       setLoading(false);
     }
   };
+
+  if (signupsDisabled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <h1 className="text-2xl font-bold">Signups are disabled</h1>
+          <p className="text-[var(--muted-foreground)]">
+            This Atrium instance isn&apos;t accepting new signups. If you already
+            have an account, you can sign in.
+          </p>
+          <Link
+            href="/login"
+            className="inline-block py-2 px-4 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity"
+          >
+            Go to sign in
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (step === "plan") {
     return (

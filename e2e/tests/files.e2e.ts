@@ -19,9 +19,14 @@ test.describe("Files", () => {
     const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
     if (await projectLink.isVisible({ timeout: 3000 }).catch(() => false)) {
       await projectLink.click();
-      // The detail page opens on the Updates tab; file upload lives under Files.
-      await page.getByTestId("project-tab-files").click();
-      await expect(page.getByText(/upload/i).first()).toBeVisible({ timeout: 5000 });
+      // The detail page opens on the Updates tab and file upload lives under
+      // Files. The tab's onClick is attached on hydration, so a click can land
+      // on inert markup and do nothing. Retry until the panel actually renders.
+      const uploadText = page.getByText(/upload/i).first();
+      await expect(async () => {
+        await page.getByTestId("project-tab-files").click();
+        await expect(uploadText).toBeVisible({ timeout: 1000 });
+      }).toPass({ timeout: 15000 });
       await expect(page.getByText(/files/i)).toBeVisible();
     }
   });

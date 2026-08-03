@@ -15,7 +15,7 @@ import {
   Inject,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Response } from "express";
+import type { Response } from "express";
 import { BrandingService } from "./branding.service";
 import { UpdateBrandingDto } from "./branding.dto";
 import { AuthGuard, RolesGuard, Roles, CurrentOrg, Public } from "../common";

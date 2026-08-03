@@ -3,7 +3,7 @@ import {
   NestMiddleware,
   UnauthorizedException,
 } from "@nestjs/common";
-import { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { ROLES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthenticatedRequest } from "../common";

@@ -8,7 +8,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
-import { Request } from "express";
+import type { Request } from "express";
 import { Public } from "../common";
 import { StripeService } from "../billing/stripe.service";
 import { PaymentsService } from "./payments.service";

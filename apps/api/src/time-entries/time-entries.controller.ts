@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query, Res, UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { Response } from "express";
+import type { Response } from "express";
 import {
   AuthGuard, RolesGuard, Roles, CurrentOrg, CurrentUser, CurrentMember, contentDisposition, toCsv,
 } from "../common";

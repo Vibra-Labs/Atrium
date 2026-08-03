@@ -14,7 +14,7 @@ import {
   UploadedFile,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Response } from "express";
+import type { Response } from "express";
 import type { File } from "@atrium/database";
 import { FilesService, UploadedFile as UploadedFileType } from "./files.service";
 import { CreateFileLinkDto, UpdateFileDto } from "./files.dto";

@@ -15,7 +15,7 @@ import {
   UploadedFile,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { DocumentsService } from "./documents.service";
 import { DocumentAuditService } from "./document-audit.service";
 import { FilesService, UploadedFile as UploadedFileType, DOCUMENT_ALLOWED_MIMES } from "../files/files.service";

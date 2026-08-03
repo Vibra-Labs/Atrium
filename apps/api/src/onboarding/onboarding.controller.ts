@@ -9,7 +9,7 @@ import {
 import { Throttle } from "@nestjs/throttler";
 import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
-import { Response } from "express";
+import type { Response } from "express";
 import { render } from "@react-email/render";
 import { WelcomeEmail } from "@atrium/email";
 import { Public } from "../common";

@@ -19,6 +19,8 @@ test.describe("Files", () => {
     const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
     if (await projectLink.isVisible({ timeout: 3000 }).catch(() => false)) {
       await projectLink.click();
+      // The detail page opens on the Updates tab; file upload lives under Files.
+      await page.getByTestId("project-tab-files").click();
       await expect(page.getByText(/upload/i).first()).toBeVisible({ timeout: 5000 });
       await expect(page.getByText(/files/i)).toBeVisible();
     }

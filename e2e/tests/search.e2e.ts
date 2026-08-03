@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, openSearchPalette } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -97,21 +97,14 @@ test.describe("Global Search", () => {
 
     test("Cmd+K opens the search palette", async ({ page }) => {
       await page.goto("/dashboard");
-      await page.keyboard.press("Meta+k");
-      await expect(
-        page.getByPlaceholder(/search projects, tasks, files, people/i),
-      ).toBeVisible({ timeout: 5000 });
+      await openSearchPalette(page);
     });
 
     test("typing 2+ chars shows results section headers", async ({ page }) => {
       test.skip(!uiProjectId, "No UI project available");
 
       await page.goto("/dashboard");
-      await page.keyboard.press("Meta+k");
-      const input = page.getByPlaceholder(
-        /search projects, tasks, files, people/i,
-      );
-      await expect(input).toBeVisible({ timeout: 5000 });
+      const input = await openSearchPalette(page);
       // Search for the prefix of the unique project name created in beforeAll
       await input.fill(uiProjectName.slice(0, 9));
       // Wait for debounce + fetch
@@ -122,10 +115,7 @@ test.describe("Global Search", () => {
 
     test("Escape closes the search palette", async ({ page }) => {
       await page.goto("/dashboard");
-      await page.keyboard.press("Meta+k");
-      await expect(
-        page.getByPlaceholder(/search projects, tasks, files, people/i),
-      ).toBeVisible({ timeout: 5000 });
+      await openSearchPalette(page);
       await page.keyboard.press("Escape");
       await expect(
         page.getByPlaceholder(/search projects, tasks, files, people/i),

@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { Response } from "express";
+import type { Response } from "express";
 import { TasksService } from "./tasks.service";
 import {
   CreateTaskDto,

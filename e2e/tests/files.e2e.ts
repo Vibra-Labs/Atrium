@@ -19,8 +19,19 @@ test.describe("Files", () => {
     const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
     if (await projectLink.isVisible({ timeout: 3000 }).catch(() => false)) {
       await projectLink.click();
-      await expect(page.getByText(/upload/i).first()).toBeVisible({ timeout: 5000 });
-      await expect(page.getByText(/files/i)).toBeVisible();
+
+      // The detail page opens on the Updates tab, and on the Files tab the
+      // upload action sits behind the "Add" menu rather than being visible
+      // outright. The tab handler is attached on hydration, so retry the click
+      // until the panel actually renders.
+      const filesHeading = page.getByRole("heading", { name: "Files" });
+      await expect(async () => {
+        await page.getByTestId("project-tab-files").click();
+        await expect(filesHeading).toBeVisible({ timeout: 1000 });
+      }).toPass({ timeout: 15000 });
+
+      await page.getByRole("button", { name: "Add", exact: true }).first().click();
+      await expect(page.getByText("Upload file")).toBeVisible({ timeout: 5000 });
     }
   });
 

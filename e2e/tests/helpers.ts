@@ -1,8 +1,28 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
-import type { APIRequestContext, BrowserContext } from "@playwright/test";
+import { expect } from "@playwright/test";
+import type { APIRequestContext, BrowserContext, Locator, Page } from "@playwright/test";
 
 const API = "http://localhost:3001/api";
+
+const SEARCH_PLACEHOLDER = /search projects, tasks, files, people/i;
+
+/**
+ * Open the global search palette and return its input.
+ *
+ * The Cmd+K handler is registered in a `useEffect`, so it does not exist until
+ * React has hydrated. A single press right after `goto` is silently dropped if
+ * it lands first, which made these tests flaky. Retry the press until the
+ * palette actually opens rather than assuming the first one registers.
+ */
+export async function openSearchPalette(page: Page): Promise<Locator> {
+  const input = page.getByPlaceholder(SEARCH_PLACEHOLDER);
+  await expect(async () => {
+    await page.keyboard.press("Meta+k");
+    await expect(input).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15000 });
+  return input;
+}
 
 /**
  * Read the CSRF token from the stored auth state file written by global-setup.

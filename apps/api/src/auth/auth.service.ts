@@ -128,6 +128,8 @@ export class AuthService {
       },
       plugins: [
         organization({
+          allowUserToCreateOrganization:
+            this.config.get("ALLOW_SIGNUPS") !== "false",
           sendInvitationEmail: async ({ invitation, inviter, organization }) => {
             const inviteUrl = `${webUrl}/accept-invite?id=${invitation.id}`;
             const html = await render(

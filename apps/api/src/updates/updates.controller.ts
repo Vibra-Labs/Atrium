@@ -14,7 +14,7 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Response } from "express";
+import type { Response } from "express";
 import type { ProjectUpdate } from "@atrium/database";
 import { UpdatesService } from "./updates.service";
 import { CreateUpdateDto, UpdateContentDto, UpdatePreviewPrefsDto } from "./updates.dto";

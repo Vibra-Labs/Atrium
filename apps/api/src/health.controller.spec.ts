@@ -52,6 +52,24 @@ describe("HealthController", () => {
     }
   });
 
+  describe("getConfig", () => {
+    it("reports signupEnabled true by default", () => {
+      const controller = new HealthController(
+        makePrisma({ dbOk: true }) as unknown as PrismaService,
+        makeConfig(),
+      );
+      expect(controller.getConfig().signupEnabled).toBe(true);
+    });
+
+    it("reports signupEnabled false when ALLOW_SIGNUPS is 'false'", () => {
+      const controller = new HealthController(
+        makePrisma({ dbOk: true }) as unknown as PrismaService,
+        makeConfig({ ALLOW_SIGNUPS: "false" }),
+      );
+      expect(controller.getConfig().signupEnabled).toBe(false);
+    });
+  });
+
   describe("domainCheck", () => {
     it("returns 403 for non-loopback callers", async () => {
       const controller = new HealthController(makePrisma({ dbOk: true }) as unknown as PrismaService, makeConfig());

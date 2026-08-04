@@ -1,5 +1,5 @@
 import { Injectable, NestMiddleware } from "@nestjs/common";
-import { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import type { AuthenticatedRequest, AuthUser, AuthSession, FullOrganization, OrgMember } from "../common";
 

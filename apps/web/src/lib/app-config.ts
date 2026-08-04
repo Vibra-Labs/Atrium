@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 export interface AppConfig {
   billingEnabled: boolean;
+  signupEnabled: boolean;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -20,7 +21,7 @@ function fetchConfig(): Promise<AppConfig> {
       })
       .catch(() => {
         pending = null; // allow retry on next mount
-        return { billingEnabled: false };
+        return { billingEnabled: false, signupEnabled: true };
       });
   }
   return pending;

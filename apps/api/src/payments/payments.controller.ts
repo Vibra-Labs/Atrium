@@ -8,7 +8,7 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { Response } from "express";
+import type { Response } from "express";
 import { PaymentsService } from "./payments.service";
 import { CreateCheckoutDto, ConnectAuthorizeDto, SaveDirectKeysDto, SavePaymentMethodsDto } from "./payments.dto";
 import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, Public } from "../common";

@@ -14,7 +14,7 @@ import {
   UploadedFile,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Response } from "express";
+import type { Response } from "express";
 import { InvoicesService } from "./invoices.service";
 import { InvoicePdfService } from "./invoice-pdf.service";
 import { FilesService, UploadedFile as UploadedFileType, INVOICE_ALLOWED_MIMES } from "../files/files.service";

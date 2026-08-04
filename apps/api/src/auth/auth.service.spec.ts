@@ -201,6 +201,53 @@ describe("AuthService", () => {
       );
     });
 
+  });
+
+  describe("organization creation gate", () => {
+    function makeServiceWith(allowSignups: string | undefined): AuthService {
+      const config = {
+        get: mock((key: string, fallback?: string) => {
+          if (key === "WEB_URL") return "http://localhost:3000";
+          if (key === "API_URL") return "http://localhost:3001";
+          if (key === "ALLOW_SIGNUPS") return allowSignups;
+          return fallback;
+        }),
+        getOrThrow: mock((key: string) => {
+          if (key === "BETTER_AUTH_SECRET") return "x".repeat(32);
+          throw new Error(`Missing ${key}`);
+        }),
+      };
+      return new AuthService(
+        config as unknown as ConfigService,
+        mockPrisma as unknown as PrismaService,
+        mockMail as unknown as MailService,
+        mockBilling as unknown as BillingService,
+      );
+    }
+
+    function orgCreateOption(service: AuthService): unknown {
+      interface OrgPlugin {
+        id: string;
+        options?: { allowUserToCreateOrganization?: unknown };
+      }
+      interface AuthWithOptions {
+        options: { plugins: OrgPlugin[] };
+      }
+      const plugins = (service.auth as unknown as AuthWithOptions).options.plugins;
+      return plugins.find((p) => p.id === "organization")?.options
+        ?.allowUserToCreateOrganization;
+    }
+
+    it("blocks org creation when ALLOW_SIGNUPS is 'false'", () => {
+      expect(orgCreateOption(makeServiceWith("false"))).toBe(false);
+    });
+
+    it("allows org creation when ALLOW_SIGNUPS is unset", () => {
+      expect(orgCreateOption(makeServiceWith(undefined))).toBe(true);
+    });
+  });
+
+  describe("generateResetLink (ALS isolation)", () => {
     it("isolates ALS contexts so concurrent generates do not bleed URLs", async () => {
       let call = 0;
       (service.auth as unknown as {

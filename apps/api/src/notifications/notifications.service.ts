@@ -470,8 +470,8 @@ export class NotificationsService {
           day: "numeric",
         })
       : "upon receipt";
-    const portalUrl = `${this.webUrl}/portal/invoices`;
     const link = `/portal/projects/${invoice.projectId}`;
+    const portalUrl = `${this.webUrl}${link}`;
 
     // In-app + push
     this.createInAppAndPush(

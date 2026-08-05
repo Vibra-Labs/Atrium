@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { render } from "@react-email/render";
 import { NotificationsService } from "./notifications.service";
 import type { MailService } from "../mail/mail.service";
 import type { PrismaService } from "../prisma/prisma.service";
@@ -321,6 +322,23 @@ describe("NotificationsService", () => {
 
     // Both were attempted (Promise.allSettled ensures non-blocking)
     expect(sendCount).toBe(2);
+  });
+
+  test("notifyInvoiceSent links the email to the project page, not /portal/invoices", async () => {
+    // render is mocked at module scope and shared across tests
+    (render as unknown as { mockClear: () => void }).mockClear();
+
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-1");
+
+    await done;
+
+    // The InvoiceSentEmail mock returns its props, so render's first argument
+    // is the props object the service built.
+    const props = (render as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]?.[0] as { portalUrl: string };
+    expect(props.portalUrl).toBe("http://localhost:3000/portal/projects/proj-1");
   });
 
   test("notifyInvoiceSent is fire-and-forget — does not throw on failure", async () => {

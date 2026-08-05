@@ -20,8 +20,14 @@ import { InAppNotificationsService } from "./in-app-notifications.service";
 import { PushService } from "./push.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 
-/** Tab ids on the portal project page (apps/web .../portal/projects/[id]). */
+/**
+ * Tab ids on the two project pages in apps/web. These mirror the `tabs` arrays
+ * in `(portal)/portal/projects/[id]/page.tsx` and
+ * `(dashboard)/dashboard/projects/[id]/page.tsx`; an id that no longer exists
+ * there is ignored by the page and the visitor lands on Updates.
+ */
 type PortalTab = "updates" | "tasks" | "files" | "invoices";
+type DashboardTab = PortalTab | "time" | "notes";
 
 @Injectable()
 export class NotificationsService {
@@ -52,6 +58,12 @@ export class NotificationsService {
    */
   private portalProjectPath(projectId: string, tab?: PortalTab): string {
     const path = `/portal/projects/${projectId}`;
+    return tab ? `${path}?tab=${tab}` : path;
+  }
+
+  /** Dashboard equivalent of {@link portalProjectPath}, for agency recipients. */
+  private dashboardProjectPath(projectId: string, tab?: DashboardTab): string {
+    const path = `/dashboard/projects/${projectId}`;
     return tab ? `${path}?tab=${tab}` : path;
   }
 
@@ -186,12 +198,10 @@ export class NotificationsService {
     const admins = await this.getOrgAdmins(invoice.organizationId, true);
     if (admins.length === 0) return;
 
-    const dashboardUrl = invoice.project
-      ? `${this.webUrl}/dashboard/projects/${invoice.project.id}`
-      : `${this.webUrl}/dashboard`;
     const link = invoice.project
-      ? `/dashboard/projects/${invoice.project.id}`
+      ? this.dashboardProjectPath(invoice.project.id, "invoices")
       : `/dashboard`;
+    const dashboardUrl = `${this.webUrl}${link}`;
 
     // In-app + push
     this.createInAppAndPush(
@@ -661,8 +671,8 @@ export class NotificationsService {
     const admins = await this.getOrgAdmins(doc.organizationId, true);
     if (admins.length === 0) return;
 
-    const dashboardUrl = `${this.webUrl}/dashboard/projects/${doc.projectId}`;
-    const link = `/dashboard/projects/${doc.projectId}`;
+    const link = this.dashboardProjectPath(doc.projectId, "files");
+    const dashboardUrl = `${this.webUrl}${link}`;
 
     // In-app + push
     this.createInAppAndPush(
@@ -1086,7 +1096,7 @@ export class NotificationsService {
   ): Promise<void> {
     const admins = await this.getOrgAdmins(orgId);
     if (admins.length === 0) return;
-    const link = `/dashboard/projects/${projectId}`;
+    const link = this.dashboardProjectPath(projectId, "tasks");
     this.createInAppAndPush(
       admins.map((a) => a.userId),
       orgId,
@@ -1130,7 +1140,7 @@ export class NotificationsService {
       const isClient = !memberUserIds.has(userId);
       const link = isClient
         ? this.portalProjectPath(projectId, "tasks")
-        : `/dashboard/projects/${projectId}?tab=tasks`;
+        : this.dashboardProjectPath(projectId, "tasks");
       this.createInAppAndPush(
         [userId],
         orgId,
@@ -1148,7 +1158,7 @@ export class NotificationsService {
     orgId: string,
     assigneeId: string,
   ): Promise<void> {
-    const link = `/dashboard/projects/${projectId}`;
+    const link = this.dashboardProjectPath(projectId, "tasks");
     this.createInAppAndPush(
       [assigneeId],
       orgId,

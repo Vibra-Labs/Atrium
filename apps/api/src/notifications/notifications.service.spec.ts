@@ -15,9 +15,12 @@ mock.module("@atrium/email", () => ({
   ProjectUpdateEmail: (props: Record<string, unknown>) => props,
   TaskAssignedEmail: (props: Record<string, unknown>) => props,
   InvoiceSentEmail: (props: Record<string, unknown>) => props,
+  InvoicePaidEmail: (props: Record<string, unknown>) => props,
   DecisionClosedEmail: (props: Record<string, unknown>) => props,
   DocumentUploadedEmail: (props: Record<string, unknown>) => props,
   DocumentRespondedEmail: (props: Record<string, unknown>) => props,
+  DocumentReminderEmail: (props: Record<string, unknown>) => props,
+  DocumentSigningTurnEmail: (props: Record<string, unknown>) => props,
 }));
 
 mock.module("@react-email/render", () => ({
@@ -477,6 +480,68 @@ describe("NotificationsService", () => {
       title: "Invoice INV-0001",
     });
     expect(createCall[0].message).toContain("$130.00");
+  });
+
+  // --- dashboard-side deep links ---
+
+  test("notifyInvoicePaid points admins at the invoices tab", async () => {
+    prisma.invoice.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        id: "inv-1",
+        invoiceNumber: "INV-0001",
+        organizationId: "org-1",
+        project: { id: "proj-1", name: "Test Project" },
+        lineItems: [{ quantity: 1, unitPrice: 5000 }],
+      }),
+    );
+    (prisma as any).member = {
+      findMany: mock(() =>
+        Promise.resolve([
+          { userId: "admin-1", user: { name: "Ada", email: "ada@example.com" } },
+        ]),
+      ),
+    };
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoicePaid("inv-1");
+
+    await done;
+
+    expect(render).toHaveBeenCalled();
+    expect(emailProps<{ dashboardUrl: string }>().dashboardUrl).toBe(
+      "http://localhost:3000/dashboard/projects/proj-1?tab=invoices",
+    );
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      link: "/dashboard/projects/proj-1?tab=invoices",
+    });
+  });
+
+  test("notifyTaskAssigned points the assignee at the tasks tab", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyTaskAssigned("Design hero", "proj-1", "org-1", "member-1");
+
+    await done;
+
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      userId: "member-1",
+      link: "/dashboard/projects/proj-1?tab=tasks",
+    });
+  });
+
+  test("notifyClientRequestCreated points admins at the tasks tab", async () => {
+    (prisma as any).member = {
+      findMany: mock(() => Promise.resolve([{ userId: "admin-1" }])),
+    };
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyClientRequestCreated("proj-1", "org-1", "New request", "Alice");
+
+    await done;
+
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      link: "/dashboard/projects/proj-1?tab=tasks",
+    });
   });
 
   // --- notifyComment ---

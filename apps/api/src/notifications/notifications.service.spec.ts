@@ -38,13 +38,25 @@ function makeMailService() {
   };
 }
 
-function makeConfig() {
+function makeConfig(webUrl = "http://localhost:3000") {
   return {
     get: (key: string, fallback?: string) => {
-      if (key === "WEB_URL") return "http://localhost:3000";
+      if (key === "WEB_URL") return webUrl;
       return fallback;
     },
   };
+}
+
+/**
+ * Props the service passed to the most recent email render.
+ *
+ * The `@atrium/email` mock above makes each template an identity function over
+ * its props, so `render`'s first argument is the props object under test.
+ */
+function emailProps<T>(): T {
+  const calls = (render as unknown as { mock: { calls: unknown[][] } }).mock
+    .calls;
+  return calls[calls.length - 1]?.[0] as T;
 }
 
 function makeInAppService() {
@@ -112,6 +124,8 @@ describe("NotificationsService", () => {
   let push: ReturnType<typeof makePushService>;
 
   beforeEach(() => {
+    // render is mocked at module scope, so its call log outlives each test
+    (render as unknown as { mockClear: () => void }).mockClear();
     mail = makeMailService();
     prisma = makePrisma();
     inApp = makeInAppService();
@@ -324,21 +338,50 @@ describe("NotificationsService", () => {
     expect(sendCount).toBe(2);
   });
 
-  test("notifyInvoiceSent links the email to the project page, not /portal/invoices", async () => {
-    // render is mocked at module scope and shared across tests
-    (render as unknown as { mockClear: () => void }).mockClear();
-
+  test("notifyInvoiceSent links the email to the invoices tab, not /portal/invoices", async () => {
     const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
 
     service.notifyInvoiceSent("inv-1");
 
     await done;
 
-    // The InvoiceSentEmail mock returns its props, so render's first argument
-    // is the props object the service built.
-    const props = (render as unknown as { mock: { calls: unknown[][] } }).mock
-      .calls[0]?.[0] as { portalUrl: string };
-    expect(props.portalUrl).toBe("http://localhost:3000/portal/projects/proj-1");
+    expect(render).toHaveBeenCalled();
+    expect(emailProps<{ portalUrl: string }>().portalUrl).toBe(
+      "http://localhost:3000/portal/projects/proj-1?tab=invoices",
+    );
+  });
+
+  test("notifyInvoiceSent points the in-app notification at the invoices tab", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-1");
+
+    await done;
+
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      link: "/portal/projects/proj-1?tab=invoices",
+    });
+  });
+
+  test("notifyInvoiceSent does not double the slash when WEB_URL has a trailing one", async () => {
+    service = new NotificationsService(
+      mail as unknown as MailService,
+      prisma as unknown as PrismaService,
+      makeConfig("https://app.example.com/") as unknown as ConfigService,
+      inApp as unknown as InAppNotificationsService,
+      push as unknown as PushService,
+      mockLogger as unknown as PinoLogger,
+    );
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-1");
+
+    await done;
+
+    expect(render).toHaveBeenCalled();
+    expect(emailProps<{ portalUrl: string }>().portalUrl).toBe(
+      "https://app.example.com/portal/projects/proj-1?tab=invoices",
+    );
   });
 
   test("notifyInvoiceSent is fire-and-forget — does not throw on failure", async () => {
@@ -416,7 +459,7 @@ describe("NotificationsService", () => {
       type: "task_created",
       title: "New task on Test Project",
       message: "Design hero section",
-      link: "/portal/projects/proj-1",
+      link: "/portal/projects/proj-1?tab=tasks",
     });
   });
 

@@ -20,6 +20,9 @@ import { InAppNotificationsService } from "./in-app-notifications.service";
 import { PushService } from "./push.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 
+/** Tab ids on the portal project page (apps/web .../portal/projects/[id]). */
+type PortalTab = "updates" | "tasks" | "files" | "invoices";
+
 @Injectable()
 export class NotificationsService {
   private webUrl: string;
@@ -33,7 +36,23 @@ export class NotificationsService {
     @InjectPinoLogger(NotificationsService.name)
     private readonly logger: PinoLogger,
   ) {
-    this.webUrl = this.config.get("WEB_URL", "http://localhost:3000");
+    // Every link here is built as `${webUrl}${path}`, so a configured trailing
+    // slash would produce a double slash in every notification URL.
+    this.webUrl = this.config
+      .get("WEB_URL", "http://localhost:3000")
+      .replace(/\/+$/, "");
+  }
+
+  /**
+   * Build a portal project path, optionally deep-linking to a tab.
+   *
+   * The portal project page renders invoices, files/documents and tasks as
+   * tabs, so a notification about one of those has to say which tab it means
+   * or the recipient lands on Updates and has to go hunting.
+   */
+  private portalProjectPath(projectId: string, tab?: PortalTab): string {
+    const path = `/portal/projects/${projectId}`;
+    return tab ? `${path}?tab=${tab}` : path;
   }
 
   /**
@@ -255,8 +274,8 @@ export class NotificationsService {
     const clients = await this.getProjectClients(projectId);
     if (clients.length === 0) return;
 
-    const portalUrl = `${this.webUrl}/portal/projects/${projectId}`;
-    const link = `/portal/projects/${projectId}`;
+    const link = this.portalProjectPath(projectId);
+    const portalUrl = `${this.webUrl}${link}`;
 
     // In-app + push (fire-and-forget)
     this.createInAppAndPush(
@@ -310,8 +329,8 @@ export class NotificationsService {
     const clients = await this.getProjectClients(projectId);
     if (clients.length === 0) return;
 
-    const portalUrl = `${this.webUrl}/portal/projects/${projectId}`;
-    const link = `/portal/projects/${projectId}`;
+    const link = this.portalProjectPath(projectId, "tasks");
+    const portalUrl = `${this.webUrl}${link}`;
     const formattedDueDate = dueDate
       ? dueDate.toLocaleDateString("en-US", {
           year: "numeric",
@@ -407,8 +426,8 @@ export class NotificationsService {
       }
     }
 
-    const portalUrl = `${this.webUrl}/portal/projects/${task.projectId}`;
-    const link = `/portal/projects/${task.projectId}`;
+    const link = this.portalProjectPath(task.projectId, "tasks");
+    const portalUrl = `${this.webUrl}${link}`;
 
     // In-app + push
     this.createInAppAndPush(
@@ -470,7 +489,7 @@ export class NotificationsService {
           day: "numeric",
         })
       : "upon receipt";
-    const link = `/portal/projects/${invoice.projectId}`;
+    const link = this.portalProjectPath(invoice.projectId, "invoices");
     const portalUrl = `${this.webUrl}${link}`;
 
     // In-app + push
@@ -567,8 +586,8 @@ export class NotificationsService {
     const clients = await this.getProjectClients(doc.projectId);
     if (clients.length === 0) return;
 
-    const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
-    const link = `/portal/projects/${doc.projectId}`;
+    const link = this.portalProjectPath(doc.projectId, "files");
+    const portalUrl = `${this.webUrl}${link}`;
 
     // In-app + push
     this.createInAppAndPush(
@@ -729,8 +748,8 @@ export class NotificationsService {
     );
     if (unrespondedClients.length === 0) return;
 
-    const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
-    const link = `/portal/projects/${doc.projectId}`;
+    const link = this.portalProjectPath(doc.projectId, "files");
+    const portalUrl = `${this.webUrl}${link}`;
     const expiresAt = doc.expiresAt
       ? doc.expiresAt.toLocaleDateString("en-US", {
           year: "numeric",
@@ -819,8 +838,8 @@ export class NotificationsService {
     ]);
     if (!project || !user) return;
 
-    const portalUrl = `${this.webUrl}/portal/projects/${doc.projectId}`;
-    const link = `/portal/projects/${doc.projectId}`;
+    const link = this.portalProjectPath(doc.projectId, "files");
+    const portalUrl = `${this.webUrl}${link}`;
 
     // In-app + push
     this.createInAppAndPush(
@@ -1110,8 +1129,8 @@ export class NotificationsService {
     for (const userId of userIds) {
       const isClient = !memberUserIds.has(userId);
       const link = isClient
-        ? `/portal/projects/${projectId}`
-        : `/dashboard/projects/${projectId}`;
+        ? this.portalProjectPath(projectId, "tasks")
+        : `/dashboard/projects/${projectId}?tab=tasks`;
       this.createInAppAndPush(
         [userId],
         orgId,

@@ -203,13 +203,23 @@ export default function PortalProjectDetailPage() {
   const [docsPage, setDocsPage] = useState(1);
   const [docsTotalPages, setDocsTotalPages] = useState(1);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>(() =>
-    searchParams.get("task") ? "tasks" : "updates",
-  );
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && tabs.some((t) => t.id === tabParam)) return tabParam as TabId;
+    if (searchParams.get("task")) return "tasks";
+    return "updates";
+  });
 
   // When a ?task=<id> deep link is set, jump to the Tasks tab so the detail
   // modal can open (it's rendered inside the tasks tab).
+  // When a ?tab=<id> deep link is set (e.g. from a notification email), jump to
+  // it so the client lands on what the notification was about.
   useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && tabs.some((t) => t.id === tabParam)) {
+      setActiveTab(tabParam as TabId);
+      return;
+    }
     if (searchParams.get("task")) setActiveTab("tasks");
   }, [searchParams]);
   const [uploading, setUploading] = useState(false);

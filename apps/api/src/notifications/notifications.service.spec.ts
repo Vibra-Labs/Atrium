@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { render } from "@react-email/render";
 import { NotificationsService } from "./notifications.service";
 import type { MailService } from "../mail/mail.service";
 import type { PrismaService } from "../prisma/prisma.service";
@@ -14,9 +15,12 @@ mock.module("@atrium/email", () => ({
   ProjectUpdateEmail: (props: Record<string, unknown>) => props,
   TaskAssignedEmail: (props: Record<string, unknown>) => props,
   InvoiceSentEmail: (props: Record<string, unknown>) => props,
+  InvoicePaidEmail: (props: Record<string, unknown>) => props,
   DecisionClosedEmail: (props: Record<string, unknown>) => props,
   DocumentUploadedEmail: (props: Record<string, unknown>) => props,
   DocumentRespondedEmail: (props: Record<string, unknown>) => props,
+  DocumentReminderEmail: (props: Record<string, unknown>) => props,
+  DocumentSigningTurnEmail: (props: Record<string, unknown>) => props,
 }));
 
 mock.module("@react-email/render", () => ({
@@ -37,13 +41,25 @@ function makeMailService() {
   };
 }
 
-function makeConfig() {
+function makeConfig(webUrl = "http://localhost:3000") {
   return {
     get: (key: string, fallback?: string) => {
-      if (key === "WEB_URL") return "http://localhost:3000";
+      if (key === "WEB_URL") return webUrl;
       return fallback;
     },
   };
+}
+
+/**
+ * Props the service passed to the most recent email render.
+ *
+ * The `@atrium/email` mock above makes each template an identity function over
+ * its props, so `render`'s first argument is the props object under test.
+ */
+function emailProps<T>(): T {
+  const calls = (render as unknown as { mock: { calls: unknown[][] } }).mock
+    .calls;
+  return calls[calls.length - 1]?.[0] as T;
 }
 
 function makeInAppService() {
@@ -111,6 +127,8 @@ describe("NotificationsService", () => {
   let push: ReturnType<typeof makePushService>;
 
   beforeEach(() => {
+    // render is mocked at module scope, so its call log outlives each test
+    (render as unknown as { mockClear: () => void }).mockClear();
     mail = makeMailService();
     prisma = makePrisma();
     inApp = makeInAppService();
@@ -323,6 +341,52 @@ describe("NotificationsService", () => {
     expect(sendCount).toBe(2);
   });
 
+  test("notifyInvoiceSent links the email to the invoices tab, not /portal/invoices", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-1");
+
+    await done;
+
+    expect(render).toHaveBeenCalled();
+    expect(emailProps<{ portalUrl: string }>().portalUrl).toBe(
+      "http://localhost:3000/portal/projects/proj-1?tab=invoices",
+    );
+  });
+
+  test("notifyInvoiceSent points the in-app notification at the invoices tab", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-1");
+
+    await done;
+
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      link: "/portal/projects/proj-1?tab=invoices",
+    });
+  });
+
+  test("notifyInvoiceSent does not double the slash when WEB_URL has a trailing one", async () => {
+    service = new NotificationsService(
+      mail as unknown as MailService,
+      prisma as unknown as PrismaService,
+      makeConfig("https://app.example.com/") as unknown as ConfigService,
+      inApp as unknown as InAppNotificationsService,
+      push as unknown as PushService,
+      mockLogger as unknown as PinoLogger,
+    );
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-1");
+
+    await done;
+
+    expect(render).toHaveBeenCalled();
+    expect(emailProps<{ portalUrl: string }>().portalUrl).toBe(
+      "https://app.example.com/portal/projects/proj-1?tab=invoices",
+    );
+  });
+
   test("notifyInvoiceSent is fire-and-forget — does not throw on failure", async () => {
     mail.send.mockImplementation(() => Promise.reject(new Error("Network failure")));
 
@@ -398,7 +462,7 @@ describe("NotificationsService", () => {
       type: "task_created",
       title: "New task on Test Project",
       message: "Design hero section",
-      link: "/portal/projects/proj-1",
+      link: "/portal/projects/proj-1?tab=tasks",
     });
   });
 
@@ -416,6 +480,68 @@ describe("NotificationsService", () => {
       title: "Invoice INV-0001",
     });
     expect(createCall[0].message).toContain("$130.00");
+  });
+
+  // --- dashboard-side deep links ---
+
+  test("notifyInvoicePaid points admins at the invoices tab", async () => {
+    prisma.invoice.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        id: "inv-1",
+        invoiceNumber: "INV-0001",
+        organizationId: "org-1",
+        project: { id: "proj-1", name: "Test Project" },
+        lineItems: [{ quantity: 1, unitPrice: 5000 }],
+      }),
+    );
+    (prisma as any).member = {
+      findMany: mock(() =>
+        Promise.resolve([
+          { userId: "admin-1", user: { name: "Ada", email: "ada@example.com" } },
+        ]),
+      ),
+    };
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoicePaid("inv-1");
+
+    await done;
+
+    expect(render).toHaveBeenCalled();
+    expect(emailProps<{ dashboardUrl: string }>().dashboardUrl).toBe(
+      "http://localhost:3000/dashboard/projects/proj-1?tab=invoices",
+    );
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      link: "/dashboard/projects/proj-1?tab=invoices",
+    });
+  });
+
+  test("notifyTaskAssigned points the assignee at the tasks tab", async () => {
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyTaskAssigned("Design hero", "proj-1", "org-1", "member-1");
+
+    await done;
+
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      userId: "member-1",
+      link: "/dashboard/projects/proj-1?tab=tasks",
+    });
+  });
+
+  test("notifyClientRequestCreated points admins at the tasks tab", async () => {
+    (prisma as any).member = {
+      findMany: mock(() => Promise.resolve([{ userId: "admin-1" }])),
+    };
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyClientRequestCreated("proj-1", "org-1", "New request", "Alice");
+
+    await done;
+
+    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+      link: "/dashboard/projects/proj-1?tab=tasks",
+    });
   });
 
   // --- notifyComment ---

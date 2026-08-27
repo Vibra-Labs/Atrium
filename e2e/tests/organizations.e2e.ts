@@ -42,6 +42,37 @@ async function createOrg(page: Page, name: string): Promise<void> {
 }
 
 test.describe("Organizations", () => {
+  // These tests create organizations on the shared global-setup account. Left
+  // behind, they change what the post-login handler picks as the active org
+  // (lib/api.ts takes orgs[0]), which strands later test files in an empty
+  // organization. So put the account back the way it was found.
+  let originalOrgId = "";
+
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    const active = await page.request
+      .get(`${API}/api/auth/organization/get-full-organization`)
+      .then((r) => r.json());
+    originalOrgId = active?.id ?? "";
+    await page.close();
+  });
+
+  test.afterAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await page.request.get(`${API}/api/auth/organization/list`);
+    const csrf = await getCsrfTokenFromContext(page.context());
+    // The orgs created here are left in place — deletion isn't exposed and
+    // each run uses a fresh account anyway. What matters is the active org:
+    // restore it, or later files run against an organization with no data.
+    if (originalOrgId) {
+      await page.request.post(`${API}/api/auth/organization/set-active`, {
+        headers: { "x-csrf-token": csrf, "Content-Type": "application/json" },
+        data: { organizationId: originalOrgId },
+      });
+    }
+    await page.close();
+  });
+
   test("settings has an Organizations tab listing the current org", async ({
     page,
   }) => {

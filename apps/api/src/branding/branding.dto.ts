@@ -13,11 +13,6 @@ export class UpdateBrandingDto {
   @Matches(/^#[0-9a-fA-F]{6}$/, { message: "Must be a valid hex color" })
   primaryColor?: string;
 
-  @IsString()
-  @IsOptional()
-  @Matches(/^#[0-9a-fA-F]{6}$/, { message: "Must be a valid hex color" })
-  accentColor?: string;
-
   @IsBoolean()
   @IsOptional()
   hideLogo?: boolean;

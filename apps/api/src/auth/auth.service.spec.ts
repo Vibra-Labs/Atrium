@@ -21,6 +21,10 @@ const mockConfig = {
 const mockPrisma = {
   member: {
     findFirst: mock(() => Promise.resolve(null)),
+    count: mock(() => Promise.resolve(0)),
+  },
+  projectClient: {
+    count: mock(() => Promise.resolve(0)),
   },
   user: {
     findUnique: mock(() => Promise.resolve(null)),
@@ -45,6 +49,8 @@ describe("AuthService", () => {
   beforeEach(() => {
     service = makeService();
     mockPrisma.member.findFirst.mockClear();
+    mockPrisma.member.count.mockClear();
+    mockPrisma.projectClient.count.mockClear();
     mockPrisma.user.findUnique.mockClear();
   });
 
@@ -238,12 +244,52 @@ describe("AuthService", () => {
         ?.allowUserToCreateOrganization;
     }
 
-    it("blocks org creation when ALLOW_SIGNUPS is 'false'", () => {
-      expect(orgCreateOption(makeServiceWith("false"))).toBe(false);
+    function gate(
+      service: AuthService,
+    ): (user: { id: string }) => Promise<boolean> {
+      return orgCreateOption(service) as (user: {
+        id: string;
+      }) => Promise<boolean>;
+    }
+
+    it("blocks org creation when ALLOW_SIGNUPS is 'false'", async () => {
+      expect(await gate(makeServiceWith("false"))({ id: "u1" })).toBe(
+        false,
+      );
     });
 
-    it("allows org creation when ALLOW_SIGNUPS is unset", () => {
-      expect(orgCreateOption(makeServiceWith(undefined))).toBe(true);
+    it("lets agency staff create an org (has a member row)", async () => {
+      mockPrisma.member.count.mockReturnValueOnce(Promise.resolve(1));
+
+      expect(
+        await gate(makeServiceWith(undefined))({ id: "staff-1" }),
+      ).toBe(true);
+    });
+
+    it("lets a brand-new signup create their first org (no rows at all)", async () => {
+      mockPrisma.member.count.mockReturnValueOnce(Promise.resolve(0));
+      mockPrisma.projectClient.count.mockReturnValueOnce(Promise.resolve(0));
+
+      expect(
+        await gate(makeServiceWith(undefined))({ id: "new-1" }),
+      ).toBe(true);
+    });
+
+    it("blocks a portal client (no member row, but is a project client)", async () => {
+      mockPrisma.member.count.mockReturnValueOnce(Promise.resolve(0));
+      mockPrisma.projectClient.count.mockReturnValueOnce(Promise.resolve(3));
+
+      expect(
+        await gate(makeServiceWith(undefined))({ id: "client-1" }),
+      ).toBe(false);
+    });
+
+    it("does not query project clients when the user is already a member", async () => {
+      mockPrisma.member.count.mockReturnValueOnce(Promise.resolve(2));
+
+      await gate(makeServiceWith(undefined))({ id: "staff-2" });
+
+      expect(mockPrisma.projectClient.count).not.toHaveBeenCalled();
     });
   });
 

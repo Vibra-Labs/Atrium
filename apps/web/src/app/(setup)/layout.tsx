@@ -34,7 +34,6 @@ async function getSessionWithRole() {
 
 async function getBranding(): Promise<{
   primaryColor?: string;
-  accentColor?: string;
 } | null> {
   try {
     const cookieStore = await cookies();
@@ -74,7 +73,6 @@ export default async function SetupLayout({
       style={
         {
           "--primary": branding?.primaryColor || DEFAULT_BRANDING.primaryColor,
-          "--accent": branding?.accentColor || DEFAULT_BRANDING.accentColor,
         } as React.CSSProperties
       }
     >

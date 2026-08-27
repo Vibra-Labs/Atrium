@@ -18,7 +18,6 @@ export class BrandingService {
       return {
         organizationId,
         primaryColor: null,
-        accentColor: null,
         logoKey: null,
         logoUrl: null,
         hideLogo: false,
@@ -38,7 +37,7 @@ export class BrandingService {
     const logoSrc = branding.logoKey
       ? `${apiUrl}/api/branding/logo/${org.id}`
       : branding.logoUrl ?? null;
-    return { orgName: org.name, orgId: org.id, primaryColor: branding.primaryColor, accentColor: branding.accentColor, logoSrc, hideLogo: branding.hideLogo };
+    return { orgName: org.name, orgId: org.id, primaryColor: branding.primaryColor, logoSrc, hideLogo: branding.hideLogo };
   }
 
   async findBySlug(slug: string) {

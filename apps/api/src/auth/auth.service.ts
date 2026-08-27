@@ -128,8 +128,8 @@ export class AuthService {
       },
       plugins: [
         organization({
-          allowUserToCreateOrganization:
-            this.config.get("ALLOW_SIGNUPS") !== "false",
+          allowUserToCreateOrganization: (user: { id: string }) =>
+            this.mayCreateOrganization(user.id),
           sendInvitationEmail: async ({ invitation, inviter, organization }) => {
             const inviteUrl = `${webUrl}/accept-invite?id=${invitation.id}`;
             const html = await render(
@@ -195,7 +195,6 @@ export class AuthService {
         data: {
           organizationId,
           primaryColor: DEFAULT_BRANDING.primaryColor,
-          accentColor: DEFAULT_BRANDING.accentColor,
         },
       });
       await tx.systemSettings.create({
@@ -206,6 +205,32 @@ export class AuthService {
 
   async handleRequest(request: Request) {
     return this.auth.handler(request);
+  }
+
+  /**
+   * Who is allowed to create an organization.
+   *
+   * `ALLOW_SIGNUPS=false` locks the deploy down entirely. Otherwise the rule
+   * distinguishes the three kinds of user by what rows they own:
+   *
+   * - agency staff (>=1 `Member` row) — allowed, this is the multi-org case
+   * - a brand-new signup (no rows at all) — allowed, because signup itself
+   *   creates the first org through this same endpoint
+   *   (see `OnboardingController.signup`), so denying it would break signup
+   * - a portal client (no `Member` row but >=1 `ProjectClient` row) — denied;
+   *   the auth proxy exposes `organization/create` to every logged-in user,
+   *   and a client of an agency has no business creating orgs on its deploy
+   */
+  async mayCreateOrganization(userId: string): Promise<boolean> {
+    if (this.config.get("ALLOW_SIGNUPS") === "false") return false;
+
+    const memberships = await this.prisma.member.count({ where: { userId } });
+    if (memberships > 0) return true;
+
+    const clientOf = await this.prisma.projectClient.count({
+      where: { userId },
+    });
+    return clientOf === 0;
   }
 
   // Picks the most recently created membership when the user belongs to

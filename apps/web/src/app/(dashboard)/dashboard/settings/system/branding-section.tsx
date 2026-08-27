@@ -10,7 +10,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface Branding {
   primaryColor: string;
-  accentColor: string;
   logoUrl?: string;
   logoKey?: string;
   organizationId?: string;
@@ -202,28 +201,6 @@ export function BrandingSection({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Accent Color</label>
-        <div className="flex items-center gap-3">
-          <input
-            type="color"
-            value={branding.accentColor}
-            onChange={(e) =>
-              onBrandingChange({ ...branding, accentColor: e.target.value })
-            }
-            className="w-10 h-10 rounded cursor-pointer border-0"
-          />
-          <input
-            type="text"
-            value={branding.accentColor}
-            onChange={(e) =>
-              onBrandingChange({ ...branding, accentColor: e.target.value })
-            }
-            className="px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] font-mono text-sm"
-          />
-        </div>
-      </div>
-
       <div className="p-4 rounded-lg border border-[var(--border)]">
         <p className="text-sm font-medium mb-3">Preview</p>
         <div className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)]">
@@ -240,10 +217,6 @@ export function BrandingSection({
             <div
               className="w-6 h-6 rounded"
               style={{ backgroundColor: branding.primaryColor }}
-            />
-            <div
-              className="w-6 h-6 rounded"
-              style={{ backgroundColor: branding.accentColor }}
             />
           </div>
         </div>

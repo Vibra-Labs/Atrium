@@ -80,7 +80,6 @@ export default async function PortalLayout({
           style={
             {
               "--primary": branding?.primaryColor || "#006b68",
-              "--accent": branding?.accentColor || "#ff6b5c",
             } as React.CSSProperties
           }
         >

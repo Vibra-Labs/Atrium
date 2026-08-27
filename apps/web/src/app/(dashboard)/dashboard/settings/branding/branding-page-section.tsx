@@ -9,7 +9,6 @@ import { LabelsSection } from "../system/labels-section";
 
 interface Branding {
   primaryColor: string;
-  accentColor: string;
   logoUrl?: string;
   logoKey?: string;
   organizationId?: string;
@@ -21,7 +20,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 export function BrandingPageSection(): React.ReactElement {
   const [branding, setBranding] = useState<Branding>({
     primaryColor: "#006b68",
-    accentColor: "#ff6b5c",
   });
   const [orgName, setOrgName] = useState<string>("");
   const [orgSlug, setOrgSlug] = useState<string>("");
@@ -59,7 +57,6 @@ export function BrandingPageSection(): React.ReactElement {
           method: "PUT",
           body: JSON.stringify({
             primaryColor: branding.primaryColor,
-            accentColor: branding.accentColor,
             hideLogo: branding.hideLogo ?? false,
           }),
         }),
@@ -88,7 +85,7 @@ export function BrandingPageSection(): React.ReactElement {
           <div>
             <h2 className="text-base font-semibold">Branding</h2>
             <p className="text-sm text-[var(--muted-foreground)] mt-0.5">
-              Customize your client portal appearance with your company name, logo, and brand colors.
+              Customize your client portal appearance with your company name, logo, and brand color.
             </p>
           </div>
           <div className="space-y-2">

@@ -8,7 +8,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface Branding {
   primaryColor: string;
-  accentColor: string;
   logoUrl?: string;
   logoKey?: string;
   organizationId?: string;
@@ -29,7 +28,6 @@ export function StepOrgProfile({ orgName, onNext }: StepOrgProfileProps) {
 
   const [branding, setBranding] = useState<Branding>({
     primaryColor: "#006b68",
-    accentColor: "#ff6b5c",
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -92,7 +90,6 @@ export function StepOrgProfile({ orgName, onNext }: StepOrgProfileProps) {
         method: "PUT",
         body: JSON.stringify({
           primaryColor: branding.primaryColor,
-          accentColor: branding.accentColor,
         }),
       });
 
@@ -223,28 +220,6 @@ export function StepOrgProfile({ orgName, onNext }: StepOrgProfileProps) {
             />
           </div>
         </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Accent Color</label>
-          <div className="flex items-center gap-3">
-            <input
-              type="color"
-              value={branding.accentColor}
-              onChange={(e) =>
-                setBranding({ ...branding, accentColor: e.target.value })
-              }
-              className="w-10 h-10 rounded cursor-pointer border-0"
-            />
-            <input
-              type="text"
-              value={branding.accentColor}
-              onChange={(e) =>
-                setBranding({ ...branding, accentColor: e.target.value })
-              }
-              className="px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] font-mono text-sm w-28"
-            />
-          </div>
-        </div>
       </div>
 
       {/* Preview */}
@@ -266,10 +241,6 @@ export function StepOrgProfile({ orgName, onNext }: StepOrgProfileProps) {
             <div
               className="w-6 h-6 rounded"
               style={{ backgroundColor: branding.primaryColor }}
-            />
-            <div
-              className="w-6 h-6 rounded"
-              style={{ backgroundColor: branding.accentColor }}
             />
           </div>
         </div>

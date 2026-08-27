@@ -36,7 +36,6 @@ describe("BrandingService", () => {
     expect(result).toEqual({
       organizationId: "org-1",
       primaryColor: null,
-      accentColor: null,
       logoKey: null,
       logoUrl: null,
       hideLogo: false,
@@ -48,7 +47,6 @@ describe("BrandingService", () => {
       id: "b1",
       organizationId: "org-1",
       primaryColor: "#006b68",
-      accentColor: "#ff6b5c",
     };
     mockPrisma.branding.findUnique.mockReturnValue(
       Promise.resolve(branding),
@@ -78,8 +76,7 @@ describe("BrandingService", () => {
         Promise.resolve({
           organizationId: "org-1",
           primaryColor: "#ff0000",
-          accentColor: null,
-          logoKey: "branding/org-1/logo.png",
+              logoKey: "branding/org-1/logo.png",
           logoUrl: null,
           hideLogo: false,
         }),
@@ -117,8 +114,7 @@ describe("BrandingService", () => {
         Promise.resolve({
           organizationId: "org-1",
           primaryColor: "#ff0000",
-          accentColor: null,
-          logoKey: "branding/org-1/logo.png",
+              logoKey: "branding/org-1/logo.png",
           logoUrl: null,
           hideLogo: false,
         }),
@@ -168,8 +164,7 @@ describe("BrandingService", () => {
         Promise.resolve({
           organizationId: "org-1",
           primaryColor: "#ff0000",
-          accentColor: null,
-          logoKey: "branding/org-1/logo.png",
+              logoKey: "branding/org-1/logo.png",
           logoUrl: null,
           hideLogo: false,
         }),

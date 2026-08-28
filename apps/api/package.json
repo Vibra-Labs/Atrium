@@ -9,7 +9,7 @@
     "start:prod": "node dist/main",
     "test": "bun test src",
     "test:integration": "bun test test/integration",
-    "lint": "eslint src/",
+    "lint": "eslint src/ test/",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {

@@ -10,9 +10,12 @@
  * explicit instead — refuse to run unless the target database is clearly
  * disposable.
  *
- * A database counts as disposable when its name ends in `_test`, it is the
- * database CI provisions, or the operator has said so with
- * ALLOW_DESTRUCTIVE_TESTS=1.
+ * A database counts as disposable when its name ends in `_test`, or the
+ * operator has said so with ALLOW_DESTRUCTIVE_TESTS=1. CI is not special-cased:
+ * its service container is named atrium_test so it passes the same rule as a
+ * developer's machine. (A CI=true bypass would have let any machine with that
+ * variable exported — GitHub Actions, GitLab, act, or a shell profile — skip
+ * the check against a real database.)
  */
 export function assertDisposableDatabase(): void {
   const url = process.env.DATABASE_URL;
@@ -27,7 +30,6 @@ export function assertDisposableDatabase(): void {
   }
 
   if (process.env.ALLOW_DESTRUCTIVE_TESTS === "1") return;
-  if (process.env.CI === "true") return;
 
   let databaseName: string;
   try {

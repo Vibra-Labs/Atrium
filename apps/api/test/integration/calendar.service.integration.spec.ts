@@ -50,7 +50,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 describe("CalendarService.list", () => {

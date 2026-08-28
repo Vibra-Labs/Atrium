@@ -3,6 +3,12 @@
 # Those tests truncate whole tables between cases, so they must never point at
 # the dev database. This one runs on a different port and, deliberately, has no
 # volume — stopping the container discards the data.
+#
+# Named explicitly: without this it would share the "atrium" project with
+# docker-compose.dev.yml, and `--remove-orphans` on either stack would delete
+# the other's container.
+name: atrium-test
+
 services:
   postgres-test:
     image: postgres:16-alpine

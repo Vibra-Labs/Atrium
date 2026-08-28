@@ -9,6 +9,10 @@ import { $ } from "bun";
  * 5433, tmpfs-backed, database "atrium_test"), pushes the schema, and points
  * the tests at it. apps/api/test/integration/guard.ts refuses to run against
  * anything that isn't clearly disposable, so the two work as a pair.
+ *
+ * The container is left running afterwards: it is tmpfs-backed, so nothing
+ * persists, and reusing it makes reruns fast. `docker compose -f
+ * docker-compose.test.yml down` removes it.
  */
 const root = join(import.meta.dirname, "..");
 const TEST_DB_URL = "postgresql://atrium:atrium@localhost:5433/atrium_test";
@@ -22,10 +26,14 @@ async function dockerAvailable(): Promise<boolean> {
   }
 }
 
+const composeFile = join(root, "docker-compose.test.yml");
+
 async function waitForPostgres(): Promise<void> {
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
-      await $`docker exec atrium-postgres-test-1 pg_isready -q`.quiet();
+      // Addressed by service, not container name, so it survives any change
+      // to the compose project name.
+      await $`docker compose -f ${composeFile} exec -T postgres-test pg_isready -q`.quiet();
       return;
     } catch {
       await Bun.sleep(1000);
@@ -44,7 +52,7 @@ async function main(): Promise<void> {
   }
 
   console.log("Starting disposable test database...");
-  await $`docker compose -f ${join(root, "docker-compose.test.yml")} up -d`;
+  await $`docker compose -f ${composeFile} up -d`;
   await waitForPostgres();
 
   console.log("Pushing schema...");

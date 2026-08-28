@@ -1,9 +1,13 @@
 import { All, Controller, Logger, Req, Res } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AuthService } from "./auth.service";
+import { Public } from "../common";
 import type { Request, Response } from "express";
 
+// Better Auth authenticates its own routes (sign-in lives here), so this proxy
+// is deliberately outside AuthGuard.
 @Controller("auth")
+@Public()
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
   private readonly publicOrigin: string;

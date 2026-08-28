@@ -6,13 +6,18 @@ import {
   Param,
   Query,
   Req,
+  UseGuards,
 } from "@nestjs/common";
 import { InAppNotificationsService } from "./in-app-notifications.service";
 import { ListNotificationsDto } from "./in-app-notifications.dto";
-import { paginatedResponse } from "../common";
+import { AuthGuard, paginatedResponse } from "../common";
 import type { AuthenticatedRequest } from "../common/types/authenticated-request";
 
+// AuthGuard is not global — every controller opts in. This one never did, so
+// anonymous requests reached the handlers and were only ever stopped by
+// req.user being undefined and crashing.
 @Controller("notifications")
+@UseGuards(AuthGuard)
 export class InAppNotificationsController {
   constructor(private readonly inApp: InAppNotificationsService) {}
 

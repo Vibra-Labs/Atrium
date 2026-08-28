@@ -4,10 +4,13 @@ import {
   Post,
   Body,
   Req,
+  UseGuards,
 } from "@nestjs/common";
 import { IsString, IsNotEmpty, IsDefined, ValidateNested, IsUrl } from "class-validator";
 import { Type } from "class-transformer";
 import { PushService } from "./push.service";
+import { AuthGuard } from "../common";
+import type { AuthenticatedRequest } from "../common/types/authenticated-request";
 
 class PushKeys {
   @IsString()
@@ -35,23 +38,24 @@ class UnsubscribeDto {
 }
 
 @Controller("push")
+@UseGuards(AuthGuard)
 export class PushController {
   constructor(private readonly pushService: PushService) {}
 
   @Get("vapid-key")
-  async getVapidKey(@Req() req: any) {
+  async getVapidKey(@Req() req: AuthenticatedRequest) {
     const publicKey = await this.pushService.getPublicKey(req.organization.id);
     return { publicKey };
   }
 
   @Post("subscribe")
-  async subscribe(@Body() dto: SubscribeDto, @Req() req: any) {
+  async subscribe(@Body() dto: SubscribeDto, @Req() req: AuthenticatedRequest) {
     await this.pushService.subscribe(req.user.id, req.organization.id, dto);
     return { ok: true };
   }
 
   @Post("unsubscribe")
-  async unsubscribe(@Body() dto: UnsubscribeDto, @Req() req: any) {
+  async unsubscribe(@Body() dto: UnsubscribeDto, @Req() req: AuthenticatedRequest) {
     await this.pushService.unsubscribe(req.user.id, req.organization.id, dto.endpoint);
     return { ok: true };
   }

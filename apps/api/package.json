@@ -7,8 +7,9 @@
     "dev": "nest start --watch",
     "start": "node dist/main",
     "start:prod": "node dist/main",
-    "test": "bun test",
-    "lint": "eslint src/",
+    "test": "bun test src",
+    "test:integration": "bun test test/integration",
+    "lint": "eslint src/ test/",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {

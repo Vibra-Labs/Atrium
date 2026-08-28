@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { PrismaService } from "../prisma/prisma.service";
-import { CalendarService } from "./calendar.service";
+import { assertDisposableDatabase } from "./guard";
+import { PrismaService } from "../../src/prisma/prisma.service";
+import { CalendarService } from "../../src/calendar/calendar.service";
 
 let service: CalendarService;
 let prisma: PrismaService;
@@ -10,6 +11,7 @@ let userId: string;
 let projectId: string;
 
 beforeAll(async () => {
+  assertDisposableDatabase();
   const mod = await Test.createTestingModule({
     providers: [CalendarService, PrismaService],
   }).compile();
@@ -48,7 +50,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 describe("CalendarService.list", () => {

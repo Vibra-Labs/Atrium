@@ -86,7 +86,15 @@ See `.env.example` for all variables.
 
 ## Testing
 
-- **Unit tests**: `apps/api/src/**/*.spec.ts` using Bun's test runner
+- **Unit tests**: `apps/api/src/**/*.spec.ts` using Bun's test runner. No I/O --
+  these must pass with no database running.
+- **Integration tests**: `apps/api/test/integration/*.integration.spec.ts`. These
+  use a real `PrismaService` and truncate whole tables between cases, so they run
+  only against a disposable database. `bun run test:integration` provisions one
+  (`docker-compose.test.yml`, Postgres on 5433, tmpfs-backed, database
+  `atrium_test`). `test/integration/guard.ts` refuses to run against any database
+  whose name doesn't end in `_test` -- pointing these at your dev `DATABASE_URL`
+  would delete every project, task and invoice you have.
 - **E2E tests**: `e2e/tests/*.e2e.ts` using Playwright
 - E2E global setup (`e2e/global-setup.ts`) creates a unique test account per run
 - Playwright auto-starts servers when not already running

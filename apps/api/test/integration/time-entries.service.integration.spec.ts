@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { PrismaService } from "../prisma/prisma.service";
-import { TimeEntriesService } from "./time-entries.service";
+import { assertDisposableDatabase } from "./guard";
+import { PrismaService } from "../../src/prisma/prisma.service";
+import { TimeEntriesService } from "../../src/time-entries/time-entries.service";
 
 let service: TimeEntriesService;
 let prisma: PrismaService;
@@ -11,6 +12,7 @@ let projectId: string;
 let memberId: string;
 
 beforeAll(async () => {
+  assertDisposableDatabase();
   const mod = await Test.createTestingModule({
     providers: [TimeEntriesService, PrismaService],
   }).compile();

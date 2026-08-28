@@ -1,0 +1,16 @@
+# Disposable Postgres for the API integration tests.
+#
+# Those tests truncate whole tables between cases, so they must never point at
+# the dev database. This one runs on a different port and, deliberately, has no
+# volume — stopping the container discards the data.
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atrium
+      POSTGRES_PASSWORD: atrium
+      POSTGRES_DB: atrium_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data

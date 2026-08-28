@@ -52,6 +52,11 @@ jobs:
 
       - run: bun run test
 
+      # Integration tests live in apps/api/test/integration and need a real
+      # database. CI's Postgres is a throwaway service container, which is the
+      # precondition they truncate tables under.
+      - run: bun run test:integration:ci
+
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 

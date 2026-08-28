@@ -28,6 +28,16 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "DIRECT_URL",
+        "ALLOW_DESTRUCTIVE_TESTS",
+        "CI"
+      ]
+    },
     "lint": {
       "dependsOn": ["^build"]
     },

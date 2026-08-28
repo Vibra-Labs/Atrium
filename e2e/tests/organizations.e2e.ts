@@ -48,17 +48,25 @@ test.describe("Organizations", () => {
   // organization. So put the account back the way it was found.
   let originalOrgId = "";
 
+  // browser.newPage() does not apply the config's storageState (only the
+  // page/context fixtures do), so build an authenticated context explicitly
+  // or these hooks run unauthenticated and silently do nothing.
+  const STORAGE_STATE = "e2e/.auth/user.json";
+
   test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+    const context = await browser.newContext({ storageState: STORAGE_STATE });
+    const page = await context.newPage();
     const active = await page.request
       .get(`${API}/api/auth/organization/get-full-organization`)
       .then((r) => r.json());
     originalOrgId = active?.id ?? "";
-    await page.close();
+    expect(originalOrgId, "beforeAll must resolve the active org").not.toBe("");
+    await context.close();
   });
 
   test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
+    const context = await browser.newContext({ storageState: STORAGE_STATE });
+    const page = await context.newPage();
     await page.request.get(`${API}/api/auth/organization/list`);
     const csrf = await getCsrfTokenFromContext(page.context());
     // The orgs created here are left in place — deletion isn't exposed and
@@ -70,7 +78,7 @@ test.describe("Organizations", () => {
         data: { organizationId: originalOrgId },
       });
     }
-    await page.close();
+    await context.close();
   });
 
   test("settings has an Organizations tab listing the current org", async ({

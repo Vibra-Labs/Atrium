@@ -211,21 +211,32 @@ export class AuthService {
    * Who is allowed to create an organization.
    *
    * `ALLOW_SIGNUPS=false` locks the deploy down entirely. Otherwise the rule
-   * distinguishes the three kinds of user by what rows they own:
+   * is about role, not mere membership: portal clients are invited with
+   * `role: "member"` and so hold a `Member` row just like staff do — the
+   * dashboard layout relies on exactly that to send them to /portal. So the
+   * question is whether the user runs an organization anywhere.
    *
-   * - agency staff (>=1 `Member` row) — allowed, this is the multi-org case
-   * - a brand-new signup (no rows at all) — allowed, because signup itself
-   *   creates the first org through this same endpoint
-   *   (see `OnboardingController.signup`), so denying it would break signup
-   * - a portal client (no `Member` row but >=1 `ProjectClient` row) — denied;
-   *   the auth proxy exposes `organization/create` to every logged-in user,
-   *   and a client of an agency has no business creating orgs on its deploy
+   * - owner or admin somewhere — allowed; this is the multi-org agency case
+   * - a brand-new signup (no rows at all) — allowed, because signup creates
+   *   the first org through this same endpoint (see
+   *   `OnboardingController.signup`), so denying it would break signup
+   * - anyone else — a portal client (`role: "member"` and/or a
+   *   `ProjectClient` row) — denied; the auth proxy exposes
+   *   `organization/create` to every logged-in user, and a client of an
+   *   agency has no business creating organizations on its deploy
    */
   async mayCreateOrganization(userId: string): Promise<boolean> {
     if (this.config.get("ALLOW_SIGNUPS") === "false") return false;
 
-    const memberships = await this.prisma.member.count({ where: { userId } });
-    if (memberships > 0) return true;
+    const memberships = await this.prisma.member.findMany({
+      where: { userId },
+      select: { role: true },
+    });
+    if (memberships.some((m) => m.role === "owner" || m.role === "admin")) {
+      return true;
+    }
+    // Only client-role memberships: this is a portal client.
+    if (memberships.length > 0) return false;
 
     const clientOf = await this.prisma.projectClient.count({
       where: { userId },

@@ -91,12 +91,22 @@ export default function OrganizationsSettingsPage(): React.ReactElement {
 
       const created = await res.json();
       if (created?.id) {
-        await fetch(`${API_URL}/api/auth/organization/set-active`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ organizationId: created.id }),
-        });
+        const activeRes = await fetch(
+          `${API_URL}/api/auth/organization/set-active`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ organizationId: created.id }),
+          },
+        );
+        // The org exists either way; say so rather than dropping the user on
+        // the old org's dashboard with no explanation.
+        if (!activeRes.ok) {
+          throw new Error(
+            `Created ${created.name}, but could not switch to it. Pick it from the list.`,
+          );
+        }
       }
       setName("");
       router.replace("/dashboard");

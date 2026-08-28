@@ -7,14 +7,23 @@ import { SidebarNav } from "./sidebar-nav";
 import { SignOutButton } from "./sign-out-button";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
+import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
 
 interface MobileNavProps {
   logoSrc: string | null;
   orgName: string | null;
   hideLogo?: boolean;
+  orgs: SwitchableOrg[];
+  activeOrgId: string | null;
 }
 
-export function MobileNav({ logoSrc, orgName, hideLogo }: MobileNavProps) {
+export function MobileNav({
+  logoSrc,
+  orgName,
+  hideLogo,
+  orgs,
+  activeOrgId,
+}: MobileNavProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -77,20 +86,14 @@ export function MobileNav({ logoSrc, orgName, hideLogo }: MobileNavProps) {
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2.5">
-            {!hideLogo && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={logoSrc || "/icon.png"}
-                alt=""
-                className="h-7 w-7 object-contain shrink-0"
-              />
-            )}
-            <span className="font-bold text-lg leading-none truncate">
-              {orgName || "Atrium"}
-            </span>
-          </div>
+        <div className="flex items-center justify-between gap-2 mb-6">
+          <OrgSwitcher
+            orgs={orgs}
+            activeOrgId={activeOrgId}
+            orgName={orgName}
+            logoSrc={logoSrc}
+            hideLogo={hideLogo}
+          />
           <button
             onClick={() => setOpen(false)}
             className="p-1.5 rounded-lg hover:bg-[var(--muted)]"

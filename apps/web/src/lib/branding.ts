@@ -4,7 +4,6 @@ export interface BrandingData {
   orgName: string;
   orgId?: string;
   primaryColor: string | null;
-  accentColor: string | null;
   logoSrc: string | null;
   hideLogo: boolean;
 }
@@ -37,6 +36,5 @@ export function getInstanceBranding() {
 export function buildBrandingStyle(branding: BrandingData | null): React.CSSProperties {
   const style: Record<string, string> = {};
   if (branding?.primaryColor) style["--primary"] = branding.primaryColor;
-  if (branding?.accentColor) style["--accent"] = branding.accentColor;
   return style as React.CSSProperties;
 }

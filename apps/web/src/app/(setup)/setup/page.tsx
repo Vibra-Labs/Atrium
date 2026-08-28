@@ -8,6 +8,7 @@ import { StepEmailConfig } from "./step-email-config";
 import { StepFirstProject } from "./step-first-project";
 import { StepInviteClient } from "./step-invite-client";
 import { StepComplete } from "./step-complete";
+import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
 
 const ALL_STEPS = [
   { key: "org", label: "Organization" },
@@ -23,6 +24,12 @@ function SetupWizardContent() {
   const [orgName, setOrgName] = useState("");
   const [loading, setLoading] = useState(true);
   const [emailPreConfigured, setEmailPreConfigured] = useState(false);
+  // The wizard also runs for a second organization created from settings, and
+  // "Welcome to Atrium" is wrong the second time around. Held as null until
+  // known so the first-run wording doesn't flash for a second-org user.
+  const [isFirstOrg, setIsFirstOrg] = useState<boolean | null>(null);
+  const [orgs, setOrgs] = useState<SwitchableOrg[]>([]);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [checkoutBanner, setCheckoutBanner] = useState<"success" | "cancelled" | null>(null);
 
   useEffect(() => {
@@ -33,6 +40,24 @@ function SetupWizardContent() {
       window.history.replaceState({}, "", "/setup");
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch<SwitchableOrg[]>("/auth/organization/list"),
+      apiFetch<{ id: string } | null>("/auth/organization/get-full-organization"),
+    ])
+      .then(([list, active]) => {
+        const all = Array.isArray(list) ? list : [];
+        setOrgs(all);
+        setActiveOrgId(active?.id ?? null);
+        setIsFirstOrg(all.length <= 1);
+      })
+      .catch((err) => {
+        // Non-fatal: fall back to the first-run wording.
+        console.error("Failed to load organizations", err);
+        setIsFirstOrg(true);
+      });
+  }, []);
 
   useEffect(() => {
     // Check if setup is already complete
@@ -106,11 +131,37 @@ function SetupWizardContent() {
       )}
 
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold">Welcome to Atrium</h1>
-        <p className="text-[var(--muted-foreground)] mt-1">
-          Let&apos;s get your client portal set up in a few quick steps.
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="min-h-[3.5rem]">
+          {isFirstOrg !== null && (
+            <>
+              <h1 className="text-2xl font-bold">
+                {isFirstOrg
+                  ? "Welcome to Atrium"
+                  : `Set up ${orgName || "your new organization"}`}
+              </h1>
+              <p className="text-[var(--muted-foreground)] mt-1">
+                {isFirstOrg
+                  ? "Let's get your client portal set up in a few quick steps."
+                  : "A few quick steps to get this organization ready."}
+              </p>
+            </>
+          )}
+        </div>
+        {/* A second org lands here with setupCompleted=false, and every
+            dashboard route redirects back until the wizard is finished. The
+            switcher is the way out: pick an org that is already set up. */}
+        {orgs.length > 1 && (
+          <div className="shrink-0 w-56">
+            <OrgSwitcher
+              orgs={orgs}
+              activeOrgId={activeOrgId}
+              orgName={orgName || null}
+              logoSrc={null}
+              hideLogo
+            />
+          </div>
+        )}
       </div>
 
       {/* Stepper */}

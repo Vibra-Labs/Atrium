@@ -51,7 +51,10 @@ The API uses `nest start --watch` for hot reload. The web app uses Next.js dev s
 - **Health**: `health.controller.ts` -- DB connectivity check
 
 Global middleware/guards applied in `app.module.ts` and `main.ts`:
-- `AuthGuard` + `RolesGuard` on all routes (bypass with `@Public()`)
+- `AuthGuard` + `RolesGuard` are **not** global. Every controller must declare
+  `@UseGuards(AuthGuard, ...)` or `@Public()` at class level — a controller with
+  neither is reachable anonymously. (Global guards are Throttler, CSRF, Plan,
+  PreviewMode.)
 - `ThrottlerGuard` (100 req/min)
 - `ValidationPipe` (whitelist + forbidNonWhitelisted)
 - `AllExceptionsFilter` (hides stack traces)

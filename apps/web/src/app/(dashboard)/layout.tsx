@@ -1,10 +1,11 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { TelemetryConsentBanner } from "@/components/telemetry-consent-banner";
 import { MobileNav } from "./mobile-nav";
+import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
@@ -48,7 +49,7 @@ async function getBranding() {
   }
 }
 
-async function getOrgName() {
+async function getActiveOrg(): Promise<{ id: string; name: string } | null> {
   try {
     const cookieStore = await cookies();
     const res = await fetch(
@@ -60,9 +61,32 @@ async function getOrgName() {
     );
     if (!res.ok) return null;
     const org = await res.json();
-    return org?.name || null;
-  } catch {
+    if (!org?.id) return null;
+    return { id: org.id, name: org.name };
+  } catch (err) {
+    // cookies() throws a control-flow signal during Next's static render
+    // pass; that must propagate, not be logged as a failure.
+    unstable_rethrow(err);
+    console.error("Failed to load active organization", err);
     return null;
+  }
+}
+
+// Every org this user is a member of, for the sidebar switcher.
+async function getOrgs(): Promise<SwitchableOrg[]> {
+  try {
+    const cookieStore = await cookies();
+    const res = await fetch(`${API_URL}/api/auth/organization/list`, {
+      headers: { Cookie: cookieStore.toString() },
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const orgs = await res.json();
+    return Array.isArray(orgs) ? orgs : [];
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error("Failed to load organizations", err);
+    return [];
   }
 }
 
@@ -107,11 +131,13 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [session, branding, orgName] = await Promise.all([
+  const [session, branding, activeOrg, orgs] = await Promise.all([
     getSessionWithRole(),
     getBranding(),
-    getOrgName(),
+    getActiveOrg(),
+    getOrgs(),
   ]);
+  const orgName = activeOrg?.name || null;
 
   if (!session) {
     redirect("/login");
@@ -144,29 +170,20 @@ export default async function DashboardLayout({
       style={
         {
           "--primary": branding?.primaryColor || DEFAULT_BRANDING.primaryColor,
-          "--accent": branding?.accentColor || DEFAULT_BRANDING.accentColor,
         } as React.CSSProperties
       }
     >
       <DynamicFavicon href={logoSrc || "/icon.png"} />
       {/* Desktop sidebar - hidden on mobile */}
       <aside className="hidden md:flex w-64 border-r border-[var(--border)] p-4 flex-col">
-        <div className="flex items-center gap-2.5 mb-6">
-          {!branding?.hideLogo && (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={logoSrc || "/icon.png"}
-              alt=""
-              className="h-7 w-7 object-contain shrink-0"
-            />
-          )}
-          <span className="font-bold text-lg leading-none truncate">
-            {orgName || "Atrium"}
-          </span>
-          <div className="ml-auto flex items-center gap-1">
-            <GlobalSearch iconOnly />
-            <NotificationBell align="left" />
-          </div>
+        <div className="flex items-center mb-6">
+          <OrgSwitcher
+            orgs={orgs}
+            activeOrgId={activeOrg?.id || null}
+            orgName={orgName}
+            logoSrc={logoSrc}
+            hideLogo={branding?.hideLogo}
+          />
         </div>
         <SidebarNav />
         <div className="mt-auto pt-4">
@@ -175,18 +192,34 @@ export default async function DashboardLayout({
       </aside>
 
       {/* Mobile nav */}
-      <MobileNav logoSrc={logoSrc} orgName={orgName} hideLogo={branding?.hideLogo} />
+      <MobileNav
+        logoSrc={logoSrc}
+        orgName={orgName}
+        hideLogo={branding?.hideLogo}
+        orgs={orgs}
+        activeOrgId={activeOrg?.id || null}
+      />
 
-      {/* pt-[4.5rem] on mobile = h-14 navbar (3.5rem) + 1rem spacing */}
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-md:pt-[4.5rem]">
-        {!session.user?.emailVerified && (
-          <EmailVerificationBanner email={session.user?.email} />
-        )}
-        {session.role === "owner" && telemetryEnabled === null && (
-          <TelemetryConsentBanner />
-        )}
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Global actions live here rather than in the sidebar, so the org
+            name gets the full sidebar width. Desktop only — MobileNav
+            carries its own copy of these. */}
+        <header className="hidden md:flex items-center justify-end gap-1 px-6 lg:px-8 pt-4">
+          <GlobalSearch iconOnly />
+          <NotificationBell />
+        </header>
+
+        {/* pt-[4.5rem] on mobile = h-14 navbar (3.5rem) + 1rem spacing */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-md:pt-[4.5rem] md:pt-4">
+          {!session.user?.emailVerified && (
+            <EmailVerificationBanner email={session.user?.email} />
+          )}
+          {session.role === "owner" && telemetryEnabled === null && (
+            <TelemetryConsentBanner />
+          )}
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

@@ -54,6 +54,23 @@ export class AuthService {
         expiresIn: 60 * 60 * 24 * 30,   // 30 days
         updateAge: 60 * 60 * 24,         // refresh if older than 1 day
       },
+      databaseHooks: {
+        session: {
+          create: {
+            // Stamp a deterministic active org on every new session. Without
+            // this the web app fell back to orgs[0] from an unordered list,
+            // so a user who owns one org and is a client of another could
+            // land on either, and on a different one each login.
+            before: async (session) => {
+              const activeOrganizationId =
+                await this.getPreferredActiveOrgForUserId(session.userId);
+              return activeOrganizationId
+                ? { data: { ...session, activeOrganizationId } }
+                : { data: session };
+            },
+          },
+        },
+      },
       trustedOrigins: [
         webUrl,
         this.config.get("API_URL") ??
@@ -128,8 +145,8 @@ export class AuthService {
       },
       plugins: [
         organization({
-          allowUserToCreateOrganization:
-            this.config.get("ALLOW_SIGNUPS") !== "false",
+          allowUserToCreateOrganization: (user: { id: string }) =>
+            this.mayCreateOrganization(user.id),
           sendInvitationEmail: async ({ invitation, inviter, organization }) => {
             const inviteUrl = `${webUrl}/accept-invite?id=${invitation.id}`;
             const html = await render(
@@ -195,7 +212,6 @@ export class AuthService {
         data: {
           organizationId,
           primaryColor: DEFAULT_BRANDING.primaryColor,
-          accentColor: DEFAULT_BRANDING.accentColor,
         },
       });
       await tx.systemSettings.create({
@@ -206,6 +222,75 @@ export class AuthService {
 
   async handleRequest(request: Request) {
     return this.auth.handler(request);
+  }
+
+  /**
+   * Who is allowed to create an organization.
+   *
+   * `ALLOW_SIGNUPS=false` locks the deploy down entirely. Otherwise the rule
+   * is about role, not mere membership: portal clients are invited with
+   * `role: "member"` and so hold a `Member` row just like staff do — the
+   * dashboard layout relies on exactly that to send them to /portal. So the
+   * question is whether the user runs an organization anywhere.
+   *
+   * - owner or admin somewhere — allowed; this is the multi-org agency case
+   * - a brand-new signup (no rows at all) — allowed, because signup creates
+   *   the first org through this same endpoint (see
+   *   `OnboardingController.signup`), so denying it would break signup
+   * - anyone else — a portal client (`role: "member"` and/or a
+   *   `ProjectClient` row) — denied; the auth proxy exposes
+   *   `organization/create` to every logged-in user, and a client of an
+   *   agency has no business creating organizations on its deploy
+   */
+  async mayCreateOrganization(userId: string): Promise<boolean> {
+    if (this.config.get("ALLOW_SIGNUPS") === "false") return false;
+
+    const memberships = await this.prisma.member.findMany({
+      where: { userId },
+      select: { role: true },
+    });
+    if (memberships.some((m) => m.role === "owner" || m.role === "admin")) {
+      return true;
+    }
+    // Only client-role memberships: this is a portal client.
+    if (memberships.length > 0) return false;
+
+    const clientOf = await this.prisma.projectClient.count({
+      where: { userId },
+    });
+    return clientOf === 0;
+  }
+
+  /**
+   * The org a fresh session should start in. Prefer somewhere the user runs
+   * things (owner/admin, most recent first) over somewhere they are merely a
+   * client, so an agency owner who is also a client elsewhere lands on their
+   * dashboard rather than another agency's portal.
+   */
+  async getPreferredActiveOrgForUserId(
+    userId: string,
+  ): Promise<string | undefined> {
+    try {
+      const staff = await this.prisma.member.findFirst({
+        where: { userId, role: { in: ["owner", "admin"] } },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
+      });
+      if (staff) return staff.organizationId;
+
+      const any = await this.prisma.member.findFirst({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
+      });
+      return any?.organizationId;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to resolve preferred active org for user",
+      );
+      return undefined;
+    }
   }
 
   // Picks the most recently created membership when the user belongs to

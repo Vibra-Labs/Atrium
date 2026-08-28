@@ -21,6 +21,10 @@ const mockConfig = {
 const mockPrisma = {
   member: {
     findFirst: mock(() => Promise.resolve(null)),
+    findMany: mock(() => Promise.resolve([])),
+  },
+  projectClient: {
+    count: mock(() => Promise.resolve(0)),
   },
   user: {
     findUnique: mock(() => Promise.resolve(null)),
@@ -45,6 +49,8 @@ describe("AuthService", () => {
   beforeEach(() => {
     service = makeService();
     mockPrisma.member.findFirst.mockClear();
+    mockPrisma.member.findMany.mockClear();
+    mockPrisma.projectClient.count.mockClear();
     mockPrisma.user.findUnique.mockClear();
   });
 
@@ -81,6 +87,48 @@ describe("AuthService", () => {
       const result = await service.getPrimaryOrgForUserId("user-1");
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe("getPreferredActiveOrgForUserId", () => {
+    it("prefers an owner/admin membership over a client one", async () => {
+      mockPrisma.member.findFirst.mockReturnValueOnce(
+        Promise.resolve({ organizationId: "org-i-run" }),
+      );
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBe(
+        "org-i-run",
+      );
+      const where = mockPrisma.member.findFirst.mock.calls[0][0] as {
+        where: { role: { in: string[] } };
+      };
+      expect(where.where.role.in).toEqual(["owner", "admin"]);
+    });
+
+    it("falls back to any membership when the user runs nothing", async () => {
+      mockPrisma.member.findFirst
+        .mockReturnValueOnce(Promise.resolve(null))
+        .mockReturnValueOnce(Promise.resolve({ organizationId: "org-client" }));
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBe(
+        "org-client",
+      );
+    });
+
+    it("returns undefined for a user with no memberships", async () => {
+      mockPrisma.member.findFirst
+        .mockReturnValueOnce(Promise.resolve(null))
+        .mockReturnValueOnce(Promise.resolve(null));
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBeUndefined();
+    });
+
+    it("returns undefined rather than throwing on a DB error", async () => {
+      mockPrisma.member.findFirst.mockReturnValueOnce(
+        Promise.reject(new Error("boom")),
+      );
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBeUndefined();
     });
   });
 
@@ -238,12 +286,92 @@ describe("AuthService", () => {
         ?.allowUserToCreateOrganization;
     }
 
-    it("blocks org creation when ALLOW_SIGNUPS is 'false'", () => {
-      expect(orgCreateOption(makeServiceWith("false"))).toBe(false);
+    function gate(
+      service: AuthService,
+    ): (user: { id: string }) => Promise<boolean> {
+      return orgCreateOption(service) as (user: {
+        id: string;
+      }) => Promise<boolean>;
+    }
+
+    it("blocks org creation when ALLOW_SIGNUPS is 'false' without querying", async () => {
+      // No fixture queued on purpose: the gate must short-circuit before any
+      // DB access. (A queued-but-unconsumed once-value would also survive
+      // mockClear and shift every later test's fixture by one.)
+      expect(await gate(makeServiceWith("false"))({ id: "u1" })).toBe(false);
+      expect(mockPrisma.member.findMany).not.toHaveBeenCalled();
     });
 
-    it("allows org creation when ALLOW_SIGNUPS is unset", () => {
-      expect(orgCreateOption(makeServiceWith(undefined))).toBe(true);
+    it("lets an owner create another org", async () => {
+      mockPrisma.member.findMany.mockReturnValueOnce(
+        Promise.resolve([{ role: "owner" }]),
+      );
+
+      expect(await gate(makeServiceWith(undefined))({ id: "owner-1" })).toBe(
+        true,
+      );
+    });
+
+    it("lets an admin create an org", async () => {
+      mockPrisma.member.findMany.mockReturnValueOnce(
+        Promise.resolve([{ role: "admin" }]),
+      );
+
+      expect(await gate(makeServiceWith(undefined))({ id: "admin-1" })).toBe(
+        true,
+      );
+    });
+
+    it("lets a brand-new signup create their first org (no rows at all)", async () => {
+      mockPrisma.member.findMany.mockReturnValueOnce(Promise.resolve([]));
+      mockPrisma.projectClient.count.mockReturnValueOnce(Promise.resolve(0));
+
+      expect(await gate(makeServiceWith(undefined))({ id: "new-1" })).toBe(
+        true,
+      );
+    });
+
+    // Portal clients are invited with role "member" and therefore DO hold a
+    // Member row. This is the case the original gate got wrong: it treated any
+    // membership as staff and let every client through.
+    it("blocks a portal client whose only membership is role 'member'", async () => {
+      mockPrisma.member.findMany.mockReturnValueOnce(
+        Promise.resolve([{ role: "member" }]),
+      );
+
+      expect(
+        await gate(makeServiceWith(undefined))({ id: "client-1" }),
+      ).toBe(false);
+      expect(mockPrisma.projectClient.count).not.toHaveBeenCalled();
+    });
+
+    it("blocks a client of several orgs (all role 'member')", async () => {
+      mockPrisma.member.findMany.mockReturnValueOnce(
+        Promise.resolve([{ role: "member" }, { role: "member" }]),
+      );
+
+      expect(
+        await gate(makeServiceWith(undefined))({ id: "client-2" }),
+      ).toBe(false);
+    });
+
+    it("blocks a user with no membership but a ProjectClient row", async () => {
+      mockPrisma.member.findMany.mockReturnValueOnce(Promise.resolve([]));
+      mockPrisma.projectClient.count.mockReturnValueOnce(Promise.resolve(2));
+
+      expect(
+        await gate(makeServiceWith(undefined))({ id: "client-3" }),
+      ).toBe(false);
+    });
+
+    it("allows someone who is a client of one org but an owner of another", async () => {
+      mockPrisma.member.findMany.mockReturnValueOnce(
+        Promise.resolve([{ role: "member" }, { role: "owner" }]),
+      );
+
+      expect(await gate(makeServiceWith(undefined))({ id: "mixed-1" })).toBe(
+        true,
+      );
     });
   });
 

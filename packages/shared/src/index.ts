@@ -17,7 +17,6 @@ export const DEFAULT_STATUSES = [
 
 export const DEFAULT_BRANDING = {
   primaryColor: "#006b68",
-  accentColor: "#ff6b5c",
 };
 
 export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB

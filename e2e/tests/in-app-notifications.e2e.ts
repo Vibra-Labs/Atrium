@@ -142,13 +142,18 @@ test.describe("In-App Notifications API", () => {
     expect(res.status()).toBe(400);
   });
 
-  test("unauthenticated request to /notifications is rejected", async ({
-    request,
-  }) => {
-    // Without session cookies, the auth guard rejects the request.
-    // AllExceptionsFilter masks the error as 500 for security.
-    const res = await fetch(`${API}/notifications/unread-count`);
-    expect(res.ok).toBe(false);
+  test("unauthenticated requests to /notifications get 401", async () => {
+    // No session cookies. Must be a real 401 from AuthGuard — this controller
+    // once had no guard and only "rejected" anonymous calls by crashing.
+    for (const path of ["/notifications/unread-count", "/notifications"]) {
+      const res = await fetch(`${API}${path}`);
+      expect(res.status, path).toBe(401);
+    }
+  });
+
+  test("unauthenticated requests to /push get 401", async () => {
+    const res = await fetch(`${API}/push/vapid-key`);
+    expect(res.status).toBe(401);
   });
 });
 

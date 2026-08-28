@@ -23,6 +23,9 @@ function SetupWizardContent() {
   const [orgName, setOrgName] = useState("");
   const [loading, setLoading] = useState(true);
   const [emailPreConfigured, setEmailPreConfigured] = useState(false);
+  // The wizard also runs for a second organization created from settings, and
+  // "Welcome to Atrium" is wrong the second time around.
+  const [isFirstOrg, setIsFirstOrg] = useState(true);
   const [checkoutBanner, setCheckoutBanner] = useState<"success" | "cancelled" | null>(null);
 
   useEffect(() => {
@@ -33,6 +36,15 @@ function SetupWizardContent() {
       window.history.replaceState({}, "", "/setup");
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    apiFetch<{ id: string }[]>("/auth/organization/list")
+      .then((orgs) => setIsFirstOrg(!Array.isArray(orgs) || orgs.length <= 1))
+      .catch((err) => {
+        // Non-fatal: fall back to the first-run wording.
+        console.error("Failed to load organizations", err);
+      });
+  }, []);
 
   useEffect(() => {
     // Check if setup is already complete
@@ -107,9 +119,15 @@ function SetupWizardContent() {
 
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold">Welcome to Atrium</h1>
+        <h1 className="text-2xl font-bold">
+          {isFirstOrg
+            ? "Welcome to Atrium"
+            : `Set up ${orgName || "your new organization"}`}
+        </h1>
         <p className="text-[var(--muted-foreground)] mt-1">
-          Let&apos;s get your client portal set up in a few quick steps.
+          {isFirstOrg
+            ? "Let's get your client portal set up in a few quick steps."
+            : "A few quick steps to get this organization ready."}
         </p>
       </div>
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Patch,
@@ -8,37 +9,52 @@ import {
 } from "@nestjs/common";
 import { InAppNotificationsService } from "./in-app-notifications.service";
 import { ListNotificationsDto } from "./in-app-notifications.dto";
+import { paginatedResponse } from "../common";
 
 @Controller("notifications")
 export class InAppNotificationsController {
   constructor(private readonly inApp: InAppNotificationsService) {}
 
+  /**
+   * Notifications are organization-scoped, but a session has no active
+   * organization between sign-in and the web app's set-active call, and
+   * API-only clients may never set one. Reads answer "nothing" in that
+   * window; writes say so rather than pretending to have done something.
+   */
+  private orgIdOrNull(req: { organization?: { id: string } }): string | null {
+    return req.organization?.id ?? null;
+  }
+
+  private requireOrgId(req: { organization?: { id: string } }): string {
+    const orgId = this.orgIdOrNull(req);
+    if (!orgId) throw new BadRequestException("No active organization");
+    return orgId;
+  }
+
   @Get()
   list(@Query() dto: ListNotificationsDto, @Req() req: any) {
-    return this.inApp.findByUser(
-      req.user.id,
-      req.organization.id,
-      dto.page,
-      dto.limit,
-    );
+    const orgId = this.orgIdOrNull(req);
+    if (!orgId) return paginatedResponse([], 0, dto.page ?? 1, dto.limit ?? 10);
+
+    return this.inApp.findByUser(req.user.id, orgId, dto.page, dto.limit);
   }
 
   @Get("unread-count")
   async unreadCount(@Req() req: any) {
-    const count = await this.inApp.unreadCount(
-      req.user.id,
-      req.organization.id,
-    );
+    const orgId = this.orgIdOrNull(req);
+    if (!orgId) return { count: 0 };
+
+    const count = await this.inApp.unreadCount(req.user.id, orgId);
     return { count };
   }
 
   @Patch("read-all")
   markAllRead(@Req() req: any) {
-    return this.inApp.markAllRead(req.user.id, req.organization.id);
+    return this.inApp.markAllRead(req.user.id, this.requireOrgId(req));
   }
 
   @Patch(":id/read")
   markRead(@Param("id") id: string, @Req() req: any) {
-    return this.inApp.markRead(id, req.user.id, req.organization.id);
+    return this.inApp.markRead(id, req.user.id, this.requireOrgId(req));
   }
 }

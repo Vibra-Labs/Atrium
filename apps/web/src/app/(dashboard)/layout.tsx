@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
@@ -64,6 +64,9 @@ async function getActiveOrg(): Promise<{ id: string; name: string } | null> {
     if (!org?.id) return null;
     return { id: org.id, name: org.name };
   } catch (err) {
+    // cookies() throws a control-flow signal during Next's static render
+    // pass; that must propagate, not be logged as a failure.
+    unstable_rethrow(err);
     console.error("Failed to load active organization", err);
     return null;
   }
@@ -81,6 +84,7 @@ async function getOrgs(): Promise<SwitchableOrg[]> {
     const orgs = await res.json();
     return Array.isArray(orgs) ? orgs : [];
   } catch (err) {
+    unstable_rethrow(err);
     console.error("Failed to load organizations", err);
     return [];
   }

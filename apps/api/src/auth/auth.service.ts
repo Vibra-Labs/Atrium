@@ -54,6 +54,23 @@ export class AuthService {
         expiresIn: 60 * 60 * 24 * 30,   // 30 days
         updateAge: 60 * 60 * 24,         // refresh if older than 1 day
       },
+      databaseHooks: {
+        session: {
+          create: {
+            // Stamp a deterministic active org on every new session. Without
+            // this the web app fell back to orgs[0] from an unordered list,
+            // so a user who owns one org and is a client of another could
+            // land on either, and on a different one each login.
+            before: async (session) => {
+              const activeOrganizationId =
+                await this.getPreferredActiveOrgForUserId(session.userId);
+              return activeOrganizationId
+                ? { data: { ...session, activeOrganizationId } }
+                : { data: session };
+            },
+          },
+        },
+      },
       trustedOrigins: [
         webUrl,
         this.config.get("API_URL") ??
@@ -242,6 +259,38 @@ export class AuthService {
       where: { userId },
     });
     return clientOf === 0;
+  }
+
+  /**
+   * The org a fresh session should start in. Prefer somewhere the user runs
+   * things (owner/admin, most recent first) over somewhere they are merely a
+   * client, so an agency owner who is also a client elsewhere lands on their
+   * dashboard rather than another agency's portal.
+   */
+  async getPreferredActiveOrgForUserId(
+    userId: string,
+  ): Promise<string | undefined> {
+    try {
+      const staff = await this.prisma.member.findFirst({
+        where: { userId, role: { in: ["owner", "admin"] } },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
+      });
+      if (staff) return staff.organizationId;
+
+      const any = await this.prisma.member.findFirst({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: { organizationId: true },
+      });
+      return any?.organizationId;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to resolve preferred active org for user",
+      );
+      return undefined;
+    }
   }
 
   // Picks the most recently created membership when the user belongs to

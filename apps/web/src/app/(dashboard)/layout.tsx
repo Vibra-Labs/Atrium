@@ -5,7 +5,7 @@ import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { TelemetryConsentBanner } from "@/components/telemetry-consent-banner";
 import { MobileNav } from "./mobile-nav";
-import { OrgSwitcher, type SwitchableOrg } from "./org-switcher";
+import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";

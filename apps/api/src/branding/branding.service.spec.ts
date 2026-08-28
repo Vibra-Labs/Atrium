@@ -76,7 +76,7 @@ describe("BrandingService", () => {
         Promise.resolve({
           organizationId: "org-1",
           primaryColor: "#ff0000",
-              logoKey: "branding/org-1/logo.png",
+          logoKey: "branding/org-1/logo.png",
           logoUrl: null,
           hideLogo: false,
         }),
@@ -114,7 +114,7 @@ describe("BrandingService", () => {
         Promise.resolve({
           organizationId: "org-1",
           primaryColor: "#ff0000",
-              logoKey: "branding/org-1/logo.png",
+          logoKey: "branding/org-1/logo.png",
           logoUrl: null,
           hideLogo: false,
         }),
@@ -164,7 +164,7 @@ describe("BrandingService", () => {
         Promise.resolve({
           organizationId: "org-1",
           primaryColor: "#ff0000",
-              logoKey: "branding/org-1/logo.png",
+          logoKey: "branding/org-1/logo.png",
           logoUrl: null,
           hideLogo: false,
         }),

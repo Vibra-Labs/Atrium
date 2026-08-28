@@ -79,9 +79,10 @@ export async function apiFetch<T = unknown>(
  * based on the user's role (owner/admin -> /dashboard, member -> /portal).
  *
  * `preferredOrgId` is used when the caller knows which org the user is acting
- * on (e.g. the org they just accepted an invite to). Without it, users who
- * belong to multiple orgs would be routed by an arbitrary `orgs[0]`, which
- * can land an invited client on the dashboard of an unrelated org they own.
+ * on (e.g. the org they just accepted an invite to). Otherwise the session's
+ * own active org is used — the API stamps one deterministically at session
+ * creation (see AuthService.getPreferredActiveOrgForUserId). `orgs[0]` is the
+ * last resort only, because the list is unordered.
  */
 export async function setActiveOrgAndRedirect(
   defaultPath = "/portal",
@@ -95,9 +96,26 @@ export async function setActiveOrgAndRedirect(
   const orgs: { id: string }[] = await orgsRes.json();
   if (!orgs?.length) return defaultPath;
 
-  const targetOrgId =
-    preferredOrgId && orgs.some((o) => o.id === preferredOrgId)
-      ? preferredOrgId
+  let sessionOrgId: string | undefined;
+  try {
+    const sessionRes = await fetch(`${API_URL}/api/auth/get-session`, {
+      credentials: "include",
+    });
+    if (sessionRes.ok) {
+      const session = await sessionRes.json();
+      sessionOrgId = session?.session?.activeOrganizationId ?? undefined;
+    }
+  } catch (err) {
+    console.error("Failed to read session active org", err);
+  }
+
+  const isMember = (id?: string): id is string =>
+    !!id && orgs.some((o) => o.id === id);
+
+  const targetOrgId = isMember(preferredOrgId)
+    ? preferredOrgId
+    : isMember(sessionOrgId)
+      ? sessionOrgId
       : orgs[0].id;
 
   await fetch(`${API_URL}/api/auth/organization/set-active`, {

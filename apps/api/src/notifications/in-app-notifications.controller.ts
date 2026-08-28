@@ -10,6 +10,7 @@ import {
 import { InAppNotificationsService } from "./in-app-notifications.service";
 import { ListNotificationsDto } from "./in-app-notifications.dto";
 import { paginatedResponse } from "../common";
+import type { AuthenticatedRequest } from "../common/types/authenticated-request";
 
 @Controller("notifications")
 export class InAppNotificationsController {
@@ -21,18 +22,18 @@ export class InAppNotificationsController {
    * API-only clients may never set one. Reads answer "nothing" in that
    * window; writes say so rather than pretending to have done something.
    */
-  private orgIdOrNull(req: { organization?: { id: string } }): string | null {
+  private orgIdOrNull(req: AuthenticatedRequest): string | null {
     return req.organization?.id ?? null;
   }
 
-  private requireOrgId(req: { organization?: { id: string } }): string {
+  private requireOrgId(req: AuthenticatedRequest): string {
     const orgId = this.orgIdOrNull(req);
     if (!orgId) throw new BadRequestException("No active organization");
     return orgId;
   }
 
   @Get()
-  list(@Query() dto: ListNotificationsDto, @Req() req: any) {
+  list(@Query() dto: ListNotificationsDto, @Req() req: AuthenticatedRequest) {
     const orgId = this.orgIdOrNull(req);
     if (!orgId) return paginatedResponse([], 0, dto.page ?? 1, dto.limit ?? 10);
 
@@ -40,7 +41,7 @@ export class InAppNotificationsController {
   }
 
   @Get("unread-count")
-  async unreadCount(@Req() req: any) {
+  async unreadCount(@Req() req: AuthenticatedRequest) {
     const orgId = this.orgIdOrNull(req);
     if (!orgId) return { count: 0 };
 
@@ -49,12 +50,12 @@ export class InAppNotificationsController {
   }
 
   @Patch("read-all")
-  markAllRead(@Req() req: any) {
+  markAllRead(@Req() req: AuthenticatedRequest) {
     return this.inApp.markAllRead(req.user.id, this.requireOrgId(req));
   }
 
   @Patch(":id/read")
-  markRead(@Param("id") id: string, @Req() req: any) {
+  markRead(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
     return this.inApp.markRead(id, req.user.id, this.requireOrgId(req));
   }
 }

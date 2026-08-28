@@ -90,6 +90,48 @@ describe("AuthService", () => {
     });
   });
 
+  describe("getPreferredActiveOrgForUserId", () => {
+    it("prefers an owner/admin membership over a client one", async () => {
+      mockPrisma.member.findFirst.mockReturnValueOnce(
+        Promise.resolve({ organizationId: "org-i-run" }),
+      );
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBe(
+        "org-i-run",
+      );
+      const where = mockPrisma.member.findFirst.mock.calls[0][0] as {
+        where: { role: { in: string[] } };
+      };
+      expect(where.where.role.in).toEqual(["owner", "admin"]);
+    });
+
+    it("falls back to any membership when the user runs nothing", async () => {
+      mockPrisma.member.findFirst
+        .mockReturnValueOnce(Promise.resolve(null))
+        .mockReturnValueOnce(Promise.resolve({ organizationId: "org-client" }));
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBe(
+        "org-client",
+      );
+    });
+
+    it("returns undefined for a user with no memberships", async () => {
+      mockPrisma.member.findFirst
+        .mockReturnValueOnce(Promise.resolve(null))
+        .mockReturnValueOnce(Promise.resolve(null));
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBeUndefined();
+    });
+
+    it("returns undefined rather than throwing on a DB error", async () => {
+      mockPrisma.member.findFirst.mockReturnValueOnce(
+        Promise.reject(new Error("boom")),
+      );
+
+      expect(await service.getPreferredActiveOrgForUserId("u1")).toBeUndefined();
+    });
+  });
+
   describe("getPrimaryOrgForEmail", () => {
     it("resolves orgId via a single member query joined on user.email", async () => {
       mockPrisma.member.findFirst.mockReturnValueOnce(

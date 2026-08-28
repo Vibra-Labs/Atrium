@@ -13,6 +13,28 @@ test.describe("Branding", () => {
 
   // Accent color was removed in #43: it saved, but nothing in the UI ever read
   // the variable it set. Guard against it creeping back without a job to do.
+  // An old dashboard tab may still send accentColor for one release. It must
+  // be accepted and ignored, not rejected by forbidNonWhitelisted.
+  test("PUT still accepts a stale accentColor and ignores it", async ({
+    page,
+    context,
+  }) => {
+    await page.request.get("http://localhost:3001/api/branding");
+    const csrfToken =
+      (await context.cookies()).find((c) => c.name === "csrf-token")?.value ||
+      "";
+
+    const res = await page.request.put("http://localhost:3001/api/branding", {
+      headers: { "x-csrf-token": csrfToken, "Content-Type": "application/json" },
+      data: { primaryColor: "#123456", accentColor: "#abcdef" },
+    });
+    expect(res.status(), await res.text()).toBe(200);
+
+    const saved = await res.json();
+    expect(saved.primaryColor).toBe("#123456");
+    expect(saved.accentColor).not.toBe("#abcdef");
+  });
+
   test("accent color picker is gone", async ({ page }) => {
     await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText(/accent color/i)).toHaveCount(0);

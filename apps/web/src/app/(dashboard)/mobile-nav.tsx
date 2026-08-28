@@ -7,7 +7,7 @@ import { SidebarNav } from "./sidebar-nav";
 import { SignOutButton } from "./sign-out-button";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
-import { OrgSwitcher, type SwitchableOrg } from "./org-switcher";
+import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
 
 interface MobileNavProps {
   logoSrc: string | null;

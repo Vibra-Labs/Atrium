@@ -48,7 +48,10 @@ export class BrandingController {
   @Put()
   @Roles("owner", "admin")
   update(@CurrentOrg("id") orgId: string, @Body() dto: UpdateBrandingDto) {
-    return this.brandingService.update(orgId, dto);
+    // Tolerated on input for one release (see the DTO); never persisted.
+    const data = { ...dto };
+    delete data.accentColor;
+    return this.brandingService.update(orgId, data);
   }
 
   @Post("logo")

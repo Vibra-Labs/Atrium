@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, fetchAllPages } from "@/lib/api";
 import { downloadCsv } from "@/lib/download";
 import { formatHours } from "@/lib/format-duration";
 import { Download } from "lucide-react";
@@ -38,8 +38,8 @@ export default function TimeReportPage() {
   const [to, setTo] = useState<string>("");
 
   useEffect(() => {
-    apiFetch<{ data: Project[] } | Project[]>("/projects?limit=200")
-      .then((res) => setProjects(Array.isArray(res) ? res : res.data))
+    fetchAllPages<Project>("/projects")
+      .then(setProjects)
       .catch((err) => console.error(err));
   }, []);
 

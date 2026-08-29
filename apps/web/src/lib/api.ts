@@ -74,6 +74,32 @@ export async function apiFetch<T = unknown>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+/** Max `limit` accepted by paginated list endpoints (PaginationQueryDto @Max(100)). */
+export const MAX_PAGE_LIMIT = 100;
+
+/**
+ * Fetch every page of a paginated list endpoint and return the flattened rows.
+ * Use instead of a large `?limit=`, which the API rejects with a 400.
+ */
+export async function fetchAllPages<T>(basePath: string): Promise<T[]> {
+  const separator = basePath.includes("?") ? "&" : "?";
+  const rows: T[] = [];
+  const maxPages = 1000;
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await apiFetch<PaginatedResponse<T>>(
+      `${basePath}${separator}page=${page}&limit=${MAX_PAGE_LIMIT}`,
+    );
+    rows.push(...res.data);
+    if (!res.data.length || page >= (res.meta?.totalPages ?? 1)) break;
+  }
+  return rows;
+}
+
 /**
  * After authentication, sets the active org and returns the redirect path
  * based on the user's role (owner/admin -> /dashboard, member -> /portal).

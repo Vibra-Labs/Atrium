@@ -229,7 +229,17 @@ export function TasksSection({
     }
   };
 
-  const openTaskRecord = openTaskId ? tasks.find((t) => t.id === openTaskId) : null;
+  // Keep the open task's record across list refreshes so the detail modal
+  // doesn't unmount when a status change filters the task out of the list.
+  const [openTaskRecord, setOpenTaskRecord] = useState<TaskRecord | null>(null);
+  useEffect(() => {
+    if (!openTaskId) {
+      setOpenTaskRecord(null);
+      return;
+    }
+    const found = tasks.find((t) => t.id === openTaskId);
+    if (found) setOpenTaskRecord(found);
+  }, [openTaskId, tasks]);
 
   return (
     <div>
@@ -596,6 +606,7 @@ export function TasksSection({
         <TaskDetailModal
           task={openTaskRecord}
           viewer="agency"
+          projectId={projectId}
           members={members.map((m) => ({ userId: m.userId, user: m.user }))}
           labels={labels}
           onLabelsChange={setLabels}

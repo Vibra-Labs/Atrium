@@ -45,6 +45,20 @@ afterAll(async () => {
   await prisma?.$disconnect();
 });
 
+async function createInvoiceLineItem(description = "time entry") {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const invoice = await prisma.invoice.create({
+    data: {
+      organizationId: orgId,
+      invoiceNumber: `INV-TE-${stamp}`,
+      status: "draft",
+    },
+  });
+  return prisma.invoiceLineItem.create({
+    data: { invoiceId: invoice.id, description, quantity: 1, unitPrice: 5000 },
+  });
+}
+
 describe("TimeEntriesService.start/stop", () => {
   it("start creates a running entry", async () => {
     const entry = await service.start(userId, orgId, { projectId });
@@ -219,6 +233,173 @@ describe("TimeEntriesService.list/report/generateInvoice", () => {
     expect(r.byProject[0].valueCents).toBe(5000);
     expect(r.byUser[0].seconds).toBe(5400);
     expect(r.byUser[0].valueCents).toBe(5000);
+  });
+
+  it("report with invoiced=false includes only uninvoiced finished entries", async () => {
+    const uninvoiced = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const invoiced = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T10:00:00Z",
+      endedAt: "2026-04-01T12:00:00Z",
+      billable: true,
+    });
+    const otherProject = await prisma.project.create({
+      data: { name: "Unfinished", organizationId: orgId },
+    });
+    await prisma.timeEntry.create({
+      data: {
+        organizationId: orgId,
+        projectId: otherProject.id,
+        userId,
+        startedAt: new Date("2026-04-01T12:00:00Z"),
+        billable: true,
+        hourlyRateCents: 5000,
+      },
+    });
+    const lineItem = await createInvoiceLineItem("already invoiced");
+    await prisma.timeEntry.update({ where: { id: invoiced.id }, data: { invoiceLineItemId: lineItem.id } });
+
+    const r = await service.report(orgId, { invoiced: "false" }, "admin");
+    expect(r.totals.seconds).toBe(3600);
+    expect(r.totals.billableSeconds).toBe(3600);
+    expect(r.totals.valueCents).toBe(5000);
+    expect(r.byProject.map((bucket) => bucket.projectId)).toEqual([uninvoiced.projectId]);
+  });
+
+  it("report with invoiced=true includes only invoiced finished entries", async () => {
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const invoiced = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T10:00:00Z",
+      endedAt: "2026-04-01T12:00:00Z",
+      billable: true,
+    });
+    const lineItem = await createInvoiceLineItem("already invoiced");
+    await prisma.timeEntry.update({ where: { id: invoiced.id }, data: { invoiceLineItemId: lineItem.id } });
+
+    const r = await service.report(orgId, { invoiced: "true" }, "admin");
+    expect(r.totals.seconds).toBe(7200);
+    expect(r.totals.billableSeconds).toBe(7200);
+    expect(r.totals.valueCents).toBe(10000);
+    expect(r.byProject[0].seconds).toBe(7200);
+    expect(r.byProject[0].projectId).toBe(projectId);
+  });
+
+  it("report invoiced=true and invoiced=false totals sum to the unfiltered total", async () => {
+    const uninvoiced = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T09:30:00Z",
+      billable: true,
+    });
+    const invoiced = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T10:00:00Z",
+      endedAt: "2026-04-01T11:30:00Z",
+      billable: true,
+    });
+    const lineItem = await createInvoiceLineItem("already invoiced");
+    await prisma.timeEntry.update({ where: { id: invoiced.id }, data: { invoiceLineItemId: lineItem.id } });
+
+    const [unfiltered, withoutInvoice, withInvoice] = await Promise.all([
+      service.report(orgId, {}, "admin"),
+      service.report(orgId, { invoiced: "false" }, "admin"),
+      service.report(orgId, { invoiced: "true" }, "admin"),
+    ]);
+
+    expect(unfiltered.totals.seconds).toBe(7200);
+    expect(withoutInvoice.totals.seconds).toBe(1800);
+    expect(withInvoice.totals.seconds).toBe(5400);
+    expect(withoutInvoice.totals.seconds + withInvoice.totals.seconds).toBe(unfiltered.totals.seconds);
+    expect(withoutInvoice.byProject[0].seconds + withInvoice.byProject[0].seconds).toBe(unfiltered.byProject[0].seconds);
+    expect(uninvoiced.invoiceLineItemId).toBeNull();
+  });
+
+  it("report keeps durationSec=null entries excluded when applying invoiced=true", async () => {
+    const finished = await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const unfinishedProject = await prisma.project.create({
+      data: { name: "Unfinished billed", organizationId: orgId },
+    });
+    const lineItem = await createInvoiceLineItem("already invoiced");
+    await prisma.timeEntry.update({ where: { id: finished.id }, data: { invoiceLineItemId: lineItem.id } });
+    await prisma.timeEntry.create({
+      data: {
+        organizationId: orgId,
+        projectId: unfinishedProject.id,
+        userId,
+        startedAt: new Date("2026-04-01T11:00:00Z"),
+        billable: true,
+        hourlyRateCents: 5000,
+        invoiceLineItemId: lineItem.id,
+      },
+    });
+
+    const r = await service.report(orgId, { invoiced: "true" }, "admin");
+    expect(r.totals.seconds).toBe(3600);
+    expect(r.byProject.map((bucket) => bucket.projectId)).toEqual([projectId]);
+  });
+
+  it("report breaks down billable time by task (only task-linked entries)", async () => {
+    const task = await prisma.task.create({
+      data: { title: "Auth refactor", projectId, organizationId: orgId },
+    });
+    // Task-linked billable entry: 1h @ $50 (member rate)
+    await service.create(userId, orgId, {
+      projectId,
+      taskId: task.id,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    // No-task entry: 30m billable — should count in project totals but NOT byTask
+    await service.create(userId, orgId, {
+      projectId,
+      startedAt: "2026-04-01T11:00:00Z",
+      endedAt: "2026-04-01T11:30:00Z",
+      billable: true,
+    });
+
+    const r = await service.report(orgId, {}, "admin");
+    expect(r.byTask.length).toBe(1);
+    expect(r.byTask[0].taskId).toBe(task.id);
+    expect(r.byTask[0].taskTitle).toBe("Auth refactor");
+    expect(r.byTask[0].projectName).toBe("P");
+    expect(r.byTask[0].seconds).toBe(3600);
+    expect(r.byTask[0].billableSeconds).toBe(3600);
+    expect(r.byTask[0].valueCents).toBe(5000);
+    // Project total still includes the no-task 30m
+    expect(r.byProject[0].seconds).toBe(5400);
+  });
+
+  it("report omits task valueCents for member role", async () => {
+    const task = await prisma.task.create({
+      data: { title: "Billing", projectId, organizationId: orgId },
+    });
+    await service.create(userId, orgId, {
+      projectId,
+      taskId: task.id,
+      startedAt: "2026-04-01T09:00:00Z",
+      endedAt: "2026-04-01T10:00:00Z",
+      billable: true,
+    });
+    const r = await service.report(orgId, {}, "member");
+    expect(r.byTask[0].seconds).toBe(3600);
+    expect(r.byTask[0].valueCents).toBe(0);
   });
 
   it("report stitches multiple projects and users (groupBy path)", async () => {

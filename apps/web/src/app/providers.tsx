@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { ThemeProvider } from "next-themes";
 import { ConfirmProvider } from "@/components/confirm-modal";
 import { ToastProvider } from "@/components/toast";
 import { NotificationProvider } from "@/components/notification-bell";
@@ -13,10 +14,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <ConfirmProvider>
-      <ToastProvider>
-        <NotificationProvider>{children}</NotificationProvider>
-      </ToastProvider>
-    </ConfirmProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+      <ConfirmProvider>
+        <ToastProvider>
+          <NotificationProvider>{children}</NotificationProvider>
+        </ToastProvider>
+      </ConfirmProvider>
+    </ThemeProvider>
   );
 }

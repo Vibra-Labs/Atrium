@@ -8,6 +8,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
 import { PreviewModeProvider } from "@/lib/preview-mode";
 import { PreviewBanner } from "@/components/preview-banner";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
 
@@ -104,6 +105,7 @@ export default async function PortalLayout({
               Settings
             </Link>
             <NotificationBell />
+            <ThemeToggle />
             <SignOutButton />
           </header>
           <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">{children}</main>

@@ -28,6 +28,7 @@ import {
   ExternalLink,
   Link as LinkIcon,
   Pencil,
+  ArrowLeft,
 } from "lucide-react";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
@@ -513,7 +514,7 @@ export default function PortalProjectDetailPage() {
 
   if (!project) return <ProjectDetailSkeleton />;
 
-  const currentIndex = statuses.findIndex((s) => s.slug === project.status);
+  const currentStatus = statuses.find((s) => s.slug === project.status);
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -523,6 +524,14 @@ export default function PortalProjectDetailPage() {
 
       {/* Left sidebar */}
       <aside className="w-full lg:w-72 lg:shrink-0 lg:sticky lg:top-8 space-y-4">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors -mb-1"
+        >
+          <ArrowLeft size={14} />
+          Back
+        </button>
         <h1 className="text-lg font-bold leading-tight">{project.name}</h1>
         {project.description && (
           <p className="text-xs text-[var(--muted-foreground)] leading-relaxed -mt-1">
@@ -530,21 +539,18 @@ export default function PortalProjectDetailPage() {
           </p>
         )}
 
-        {/* Progress bar */}
-        <div className="flex gap-1">
-          {statuses.map((s, i) => (
-            <div
-              key={s.id}
-              className="flex-1 text-center py-1.5 text-[10px] font-medium rounded overflow-hidden text-ellipsis whitespace-nowrap px-0.5"
-              style={{
-                backgroundColor: i <= currentIndex ? s.color : "var(--muted)",
-                color: i <= currentIndex ? "#fff" : "var(--muted-foreground)",
-              }}
-            >
-              {s.name}
-            </div>
-          ))}
-        </div>
+        {/* Current status */}
+        {currentStatus && (
+          <div
+            className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
+            style={{
+              backgroundColor: currentStatus.color,
+              color: "#fff",
+            }}
+          >
+            {currentStatus.name}
+          </div>
+        )}
 
         {/* Timeline */}
         {(project.startDate || project.endDate) && (

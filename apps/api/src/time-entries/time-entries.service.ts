@@ -81,10 +81,21 @@ export type ReportUserBucket = {
   valueCents: number;
 };
 
+export type ReportTaskBucket = {
+  taskId: string;
+  taskTitle: string;
+  projectId: string;
+  projectName: string;
+  seconds: number;
+  billableSeconds: number;
+  valueCents: number;
+};
+
 export type TimeReport = {
   totals: { seconds: number; billableSeconds: number; valueCents: number };
   byProject: ReportProjectBucket[];
   byUser: ReportUserBucket[];
+  byTask: ReportTaskBucket[];
 };
 
 export type GenerateInvoiceResult = { invoiceId: string };
@@ -379,19 +390,21 @@ export class TimeEntriesService {
     // pulling full rows. Two passes — one DB groupBy + a final fold — keeps
     // memory bounded regardless of row count.
     const groups = await this.prisma.timeEntry.groupBy({
-      by: ["projectId", "userId", "billable", "hourlyRateCents"],
+      by: ["projectId", "userId", "taskId", "billable", "hourlyRateCents"],
       where: reportWhere,
       _sum: { durationSec: true },
     });
 
     const projectIds = new Set<string>();
     const userIds = new Set<string>();
+    const taskIds = new Set<string>();
     for (const g of groups) {
       projectIds.add(g.projectId);
       userIds.add(g.userId);
+      if (g.taskId) taskIds.add(g.taskId);
     }
 
-    const [projects, users] = await Promise.all([
+    const [projects, users, tasks] = await Promise.all([
       projectIds.size > 0
         ? this.prisma.project.findMany({
             where: { id: { in: Array.from(projectIds) } },
@@ -404,13 +417,21 @@ export class TimeEntriesService {
             select: { id: true, name: true },
           })
         : Promise.resolve([] as { id: string; name: string }[]),
+      taskIds.size > 0
+        ? this.prisma.task.findMany({
+            where: { id: { in: Array.from(taskIds) } },
+            select: { id: true, title: true },
+          })
+        : Promise.resolve([] as { id: string; title: string }[]),
     ]);
     const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
     const userNameById = new Map(users.map((u) => [u.id, u.name]));
+    const taskTitleById = new Map(tasks.map((t) => [t.id, t.title]));
 
     const totals = { seconds: 0, billableSeconds: 0, valueCents: 0 };
     const byProjectMap = new Map<string, ReportProjectBucket>();
     const byUserMap = new Map<string, ReportUserBucket>();
+    const byTaskMap = new Map<string, ReportTaskBucket>();
 
     for (const g of groups) {
       const sec = g._sum.durationSec ?? 0;
@@ -430,9 +451,23 @@ export class TimeEntriesService {
         billableSeconds: 0,
         valueCents: 0,
       };
+      // Only entries linked to a task contribute to the by-task breakdown.
+      // Untracked-task time still counts toward project/user/totals above.
+      const t = g.taskId
+        ? byTaskMap.get(g.taskId) ?? {
+            taskId: g.taskId,
+            taskTitle: taskTitleById.get(g.taskId) ?? "",
+            projectId: g.projectId,
+            projectName: projectNameById.get(g.projectId) ?? "",
+            seconds: 0,
+            billableSeconds: 0,
+            valueCents: 0,
+          }
+        : null;
 
       p.seconds += sec;
       u.seconds += sec;
+      if (t) t.seconds += sec;
 
       if (g.billable) {
         const value = Math.round((sec / 3600) * (g.hourlyRateCents ?? 0));
@@ -442,16 +477,22 @@ export class TimeEntriesService {
         p.valueCents += value;
         u.billableSeconds += sec;
         u.valueCents += value;
+        if (t) {
+          t.billableSeconds += sec;
+          t.valueCents += value;
+        }
       }
 
       byProjectMap.set(g.projectId, p);
       byUserMap.set(g.userId, u);
+      if (t) byTaskMap.set(g.taskId as string, t);
     }
 
     const report: TimeReport = {
       totals,
       byProject: Array.from(byProjectMap.values()).sort((a, b) => b.seconds - a.seconds),
       byUser: Array.from(byUserMap.values()).sort((a, b) => b.seconds - a.seconds),
+      byTask: Array.from(byTaskMap.values()).sort((a, b) => b.seconds - a.seconds),
     };
 
     // Hide monetary totals from non-rate-visible roles (member). durationSec
@@ -460,6 +501,7 @@ export class TimeEntriesService {
       report.totals.valueCents = 0;
       for (const b of report.byProject) b.valueCents = 0;
       for (const b of report.byUser) b.valueCents = 0;
+      for (const b of report.byTask) b.valueCents = 0;
     }
 
     return report;

@@ -9,6 +9,7 @@ import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { DEFAULT_BRANDING } from "@atrium/shared";
 
 const API_URL = process.env.API_URL || "http://localhost:3001";
@@ -207,6 +208,7 @@ export default async function DashboardLayout({
         <header className="hidden md:flex items-center justify-end gap-1 px-6 lg:px-8 pt-4">
           <GlobalSearch iconOnly />
           <NotificationBell />
+          <ThemeToggle />
         </header>
 
         {/* pt-[4.5rem] on mobile = h-14 navbar (3.5rem) + 1rem spacing */}

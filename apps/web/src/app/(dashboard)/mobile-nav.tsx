@@ -7,6 +7,7 @@ import { SidebarNav } from "./sidebar-nav";
 import { SignOutButton } from "./sign-out-button";
 import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
 
 interface MobileNavProps {
@@ -69,6 +70,7 @@ export function MobileNav({
         <div className="ml-auto flex items-center gap-1">
           <GlobalSearch iconOnly />
           <NotificationBell align="left" />
+          <ThemeToggle />
         </div>
       </div>
 

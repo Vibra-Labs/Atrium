@@ -175,7 +175,7 @@ export default async function DashboardLayout({
     >
       <DynamicFavicon href={logoSrc || "/icon.png"} />
       {/* Desktop sidebar - hidden on mobile */}
-      <aside className="hidden md:flex w-64 border-r border-[var(--border)] p-4 flex-col">
+      <aside className="hidden md:flex w-64 border-r border-[var(--border)] p-4 flex-col sticky top-0 h-screen overflow-y-auto">
         <div className="flex items-center mb-6">
           <OrgSwitcher
             orgs={orgs}

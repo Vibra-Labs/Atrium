@@ -42,4 +42,39 @@ test.describe("Time report", () => {
     });
     await expect(page.getByRole("cell", { name: taskTitle })).toBeVisible();
   });
+
+  test("report honors the invoiced filter", async ({ request }) => {
+    const projectId = await getOrCreateProject(request, "Time Tracking E2E");
+    const end = new Date();
+    end.setDate(end.getDate() - 2);
+    end.setHours(15, 0, 0, 0);
+    const start = new Date(end);
+    start.setHours(14, 0, 0, 0);
+    const created = await request.post(`${API}/time-entries`, {
+      data: {
+        projectId,
+        startedAt: start.toISOString(),
+        endedAt: end.toISOString(),
+        billable: true,
+      },
+      headers: { "x-csrf-token": getCsrfToken() },
+    });
+    expect(created.ok()).toBeTruthy();
+
+    // Fresh entries are un-invoiced: they count under invoiced=false only.
+    const notInvoiced = await request.get(
+      `${API}/time-entries/report?projectId=${projectId}&invoiced=false`,
+    );
+    expect(notInvoiced.ok()).toBeTruthy();
+    const all = await request.get(`${API}/time-entries/report?projectId=${projectId}`);
+    const invoiced = await request.get(
+      `${API}/time-entries/report?projectId=${projectId}&invoiced=true`,
+    );
+    const a = (await all.json()).totals.seconds as number;
+    const n = (await notInvoiced.json()).totals.seconds as number;
+    const i = (await invoiced.json()).totals.seconds as number;
+    expect(n).toBeGreaterThan(0);
+    expect(n + i).toBe(a);
+    expect(i).toBeLessThan(a);
+  });
 });

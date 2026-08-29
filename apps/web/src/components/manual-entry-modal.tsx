@@ -15,7 +15,11 @@ export interface EditableEntry {
 
 interface ManualEntryModalProps {
   projectId: string;
+  /** Link the new entry to a task (create only). */
+  taskId?: string;
   entry?: EditableEntry;
+  title?: string;
+  cancelLabel?: string;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -33,7 +37,10 @@ function localDateParts(iso: string): { date: string; time: string } {
 
 export function ManualEntryModal({
   projectId,
+  taskId,
   entry,
+  title,
+  cancelLabel,
   onClose,
   onSaved,
 }: ManualEntryModalProps): React.ReactElement {
@@ -80,6 +87,7 @@ export function ManualEntryModal({
           method: "POST",
           body: JSON.stringify({
             projectId,
+            taskId,
             startedAt: startedAt.toISOString(),
             endedAt: endedAt.toISOString(),
             description: description || undefined,
@@ -107,7 +115,7 @@ export function ManualEntryModal({
         className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md p-6 space-y-4"
       >
         <div className="flex items-start justify-between">
-          <h3 className="text-lg font-semibold">{isEdit ? "Edit time entry" : "Add time entry"}</h3>
+          <h3 className="text-lg font-semibold">{title ?? (isEdit ? "Edit time entry" : "Add time entry")}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -199,7 +207,7 @@ export function ManualEntryModal({
             onClick={onClose}
             className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
           >
-            Cancel
+            {cancelLabel ?? "Cancel"}
           </button>
           <button
             type="submit"

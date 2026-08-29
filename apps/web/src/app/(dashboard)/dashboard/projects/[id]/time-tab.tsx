@@ -6,7 +6,7 @@ import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { formatDuration, formatHours } from "@/lib/format-duration";
 import { Play, Square, Plus, Trash2, Lock, Pencil, X } from "lucide-react";
-import { ManualEntryModal, type EditableEntry } from "./manual-entry-modal";
+import { ManualEntryModal, type EditableEntry } from "@/components/manual-entry-modal";
 
 type ModalState = { mode: "closed" } | { mode: "new" } | { mode: "edit"; entry: EditableEntry };
 

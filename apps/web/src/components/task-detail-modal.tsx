@@ -10,6 +10,7 @@ import { LabelBadge } from "@/components/label-badge";
 import { Avatar } from "@/components/avatar";
 import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
 import { TASK_STATUS_OPTIONS } from "@/lib/task-status";
+import { ManualEntryModal } from "@/components/manual-entry-modal";
 
 export interface TaskDetailRecord {
   id: string;
@@ -50,6 +51,7 @@ const STATUS_OPTIONS = TASK_STATUS_OPTIONS;
 export function TaskDetailModal({
   task,
   viewer,
+  projectId,
   currentUserId,
   members,
   labels,
@@ -60,6 +62,8 @@ export function TaskDetailModal({
 }: {
   task: TaskDetailRecord;
   viewer: TaskDetailViewer;
+  /** When set (agency only), marking the task done prompts to log time. */
+  projectId?: string;
   currentUserId?: string | null;
   members?: TaskDetailMember[];
   labels?: TaskDetailLabel[];
@@ -84,6 +88,7 @@ export function TaskDetailModal({
   const [dueDate, setDueDate] = useState(task.dueDate ? task.dueDate.split("T")[0] : "");
   const [dueEditing, setDueEditing] = useState(false);
   const [status, setStatus] = useState(task.status);
+  const [logTimeOpen, setLogTimeOpen] = useState(false);
   const [assigneeId, setAssigneeId] = useState(task.assigneeId ?? "");
   const [assignedLabels, setAssignedLabels] = useState<string[]>(
     task.labels?.map((l) => l.label.id) ?? [],
@@ -98,11 +103,16 @@ export function TaskDetailModal({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (logTimeOpen) {
+        setLogTimeOpen(false);
+        return;
+      }
+      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, logTimeOpen]);
 
   const patch = useCallback(
     async (body: Record<string, unknown>) => {
@@ -173,7 +183,23 @@ export function TaskDetailModal({
       await patch({ status: next });
     } catch {
       setStatus(prev);
+      return;
     }
+    if (isAgency && projectId && next === "done" && prev !== "done") {
+      await promptLogTime();
+    }
+  };
+
+  // Offer to log time for a just-completed task, unless a timer is already
+  // running on it (that timer will capture the time when stopped).
+  const promptLogTime = async (): Promise<void> => {
+    try {
+      const running = await apiFetch<{ taskId: string | null } | null>("/time-entries/running");
+      if (running?.taskId === task.id) return;
+    } catch (err) {
+      console.error(err);
+    }
+    setLogTimeOpen(true);
   };
 
   const handleAssigneeChange = async (next: string) => {
@@ -828,6 +854,19 @@ export function TaskDetailModal({
           </div>
         </div>
       </div>
+      {logTimeOpen && projectId && (
+        <ManualEntryModal
+          projectId={projectId}
+          taskId={task.id}
+          title="Log time for this task"
+          cancelLabel="Skip"
+          onClose={() => setLogTimeOpen(false)}
+          onSaved={() => {
+            setLogTimeOpen(false);
+            success("Time logged");
+          }}
+        />
+      )}
     </div>
   );
 }

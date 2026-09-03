@@ -215,6 +215,10 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
 
+    // Fires before validation so signup_started - signup_completed measures
+    // everyone who tried, including those turned away by the password rules.
+    track("signup_started", { plan: selectedPlan });
+
     if (password.length < 8) {
       setError("Password must be at least 8 characters");
       setLoading(false);
@@ -284,7 +288,9 @@ export default function SignupPage() {
       track("signup_completed", { plan: selectedPlan });
       window.location.href = "/setup";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Signup failed");
+      const reason = err instanceof Error ? err.message : "Signup failed";
+      track("signup_failed", { reason, plan: selectedPlan });
+      setError(reason);
     } finally {
       setLoading(false);
     }

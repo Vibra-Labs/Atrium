@@ -307,7 +307,7 @@ export default function PeoplePage() {
         method: "POST",
         body: JSON.stringify({ email: clientEmail, role: "member" }),
       });
-      track("client_invited");
+      track("client_invited", { source: "dashboard" });
       const submittedEmail = clientEmail;
       setClientEmail("");
       success("Invitation sent");

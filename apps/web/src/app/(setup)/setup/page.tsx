@@ -236,7 +236,9 @@ function SetupWizardContent() {
         {STEPS[currentStep]?.key === "invite" && (
           <StepInviteClient onNext={goNext} onBack={goBack} />
         )}
-        {STEPS[currentStep]?.key === "complete" && <StepComplete onBack={goBack} />}
+        {STEPS[currentStep]?.key === "complete" && (
+          <StepComplete onBack={goBack} isFirstOrg={isFirstOrg} />
+        )}
       </div>
     </div>
   );

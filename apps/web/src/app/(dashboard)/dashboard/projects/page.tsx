@@ -138,7 +138,7 @@ export default function ProjectsPage() {
         method: "POST",
         body: JSON.stringify({ name, description }),
       });
-      track("project_created");
+      track("project_created", { source: "dashboard" });
       setName("");
       setDescription("");
       setShowCreate(false);

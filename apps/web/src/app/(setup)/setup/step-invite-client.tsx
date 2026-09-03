@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { UserPlus, Copy, Check } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface StepInviteClientProps {
   onNext: () => void;
@@ -29,6 +30,9 @@ export function StepInviteClient({ onNext, onBack }: StepInviteClientProps) {
         method: "POST",
         body: JSON.stringify({ email: email.trim(), role: "member" }),
       });
+      // Mirrors the dashboard's client_invited so onboarding invites are not
+      // invisible in activation reporting.
+      track("client_invited", { source: "setup" });
       setInvited(true);
 
       // Try to get the invite link
@@ -154,7 +158,10 @@ export function StepInviteClient({ onNext, onBack }: StepInviteClientProps) {
         <div className="flex gap-3">
           {!invited && (
             <button
-              onClick={onNext}
+              onClick={() => {
+                track("setup_step_skipped", { step: "invite" });
+                onNext();
+              }}
               className="px-6 py-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
             >
               Skip

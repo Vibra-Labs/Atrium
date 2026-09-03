@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { track } from "@/lib/track";
 import { Mail, Send, CheckCircle, XCircle } from "lucide-react";
 
 interface StepEmailConfigProps {
@@ -57,6 +58,9 @@ export function StepEmailConfig({ onNext, onBack }: StepEmailConfigProps) {
 
   const handleNext = async () => {
     if (provider === "none") {
+      // An org that finishes setup without email cannot deliver client
+      // invitations, so this is worth separating from a real configuration.
+      track("setup_email_configured", { provider: "none" });
       onNext();
       return;
     }
@@ -79,6 +83,7 @@ export function StepEmailConfig({ onNext, onBack }: StepEmailConfigProps) {
         method: "PUT",
         body: JSON.stringify(payload),
       });
+      track("setup_email_configured", { provider });
       onNext();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -319,7 +324,10 @@ export function StepEmailConfig({ onNext, onBack }: StepEmailConfigProps) {
         <div className="flex gap-3">
           {provider !== "none" && (
             <button
-              onClick={onNext}
+              onClick={() => {
+                track("setup_step_skipped", { step: "email" });
+                onNext();
+              }}
               className="px-6 py-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
             >
               Skip

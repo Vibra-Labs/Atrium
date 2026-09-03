@@ -41,11 +41,16 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
 
       await res.json();
 
+      // Without a success counterpart, login_failed is uninterpretable: there
+      // is no denominator to compute a success rate from.
+      track("login_succeeded", { branded: Boolean(orgName) });
+
       setRedirecting(true);
       window.location.href = await setActiveOrgAndRedirect("/portal/projects");
     } catch (err) {
-      track("login_failed");
-      setError(err instanceof Error ? err.message : "Login failed");
+      const reason = err instanceof Error ? err.message : "Login failed";
+      track("login_failed", { reason, branded: Boolean(orgName) });
+      setError(reason);
       setLoading(false);
     }
   };

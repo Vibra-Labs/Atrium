@@ -7,9 +7,11 @@ import { track } from "@/lib/track";
 
 interface StepCompleteProps {
   onBack: () => void;
+  /** Null until the org list has loaded. */
+  isFirstOrg: boolean | null;
 }
 
-export function StepComplete({ onBack }: StepCompleteProps) {
+export function StepComplete({ onBack, isFirstOrg }: StepCompleteProps) {
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState("");
 
@@ -18,7 +20,10 @@ export function StepComplete({ onBack }: StepCompleteProps) {
     setError("");
     try {
       await apiFetch("/setup/complete", { method: "POST" });
-      track("setup_completed");
+      // The wizard runs again for every additional organization, so a bare
+      // setup_completed count can't be compared against signups. first_org
+      // separates genuine first-run setups from second-org repeats.
+      track("setup_completed", { first_org: isFirstOrg ?? true });
       window.location.href = "/dashboard";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to complete setup");

@@ -34,6 +34,7 @@ import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
 import { Embeds, type PreviewPrefs } from "@/lib/embeds";
 import { downloadFile } from "@/lib/download";
+import { track } from "@/lib/track";
 import { SigningViewer } from "@/components/signing-viewer";
 import { DocumentViewer } from "@/components/document-viewer";
 import { useToast } from "@/components/toast";
@@ -396,6 +397,7 @@ export default function PortalProjectDetailPage() {
           description: newRequestDesc || undefined,
         }),
       });
+      track("portal_request_posted");
       setNewRequestTitle("");
       setNewRequestDesc("");
       setShowNewRequest(false);
@@ -451,6 +453,7 @@ export default function PortalProjectDetailPage() {
         method: "POST",
         body: JSON.stringify({ action, ...(reason ? { reason } : {}) }),
       });
+      track("portal_document_responded", { action });
       loadDocuments();
     } catch (err) {
       console.error(err);
@@ -507,6 +510,11 @@ export default function PortalProjectDetailPage() {
   const handleDownload = async (fileId: string, filename: string) => {
     try {
       await downloadFile(fileId, filename);
+      // Extension only. File names carry client and project detail.
+      const ext: string = filename.includes(".")
+        ? filename.split(".").pop()!.toLowerCase().slice(0, 8)
+        : "none";
+      track("portal_file_downloaded", { type: ext });
     } catch (err) {
       console.error(err);
     }

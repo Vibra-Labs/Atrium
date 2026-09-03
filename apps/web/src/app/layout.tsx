@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Providers } from "./providers";
+import { maskAnalyticsEvent } from "@/lib/mask-analytics";
 // @ts-expect-error — raw string import via webpack asset/source
 import changelogRaw from "../../CHANGELOG.md";
 import "./globals.css";
@@ -14,6 +15,12 @@ export const metadata: Metadata = {
   title: "Atrium",
   description: "Client portal for agencies and freelancers",
 };
+
+// Analytics must never carry identifiers. The hook is defined in
+// lib/mask-analytics.ts and serialised into the page here so it runs for every
+// event, including Umami's auto-tracked pageviews.
+const MASK_FN = "atriumMaskAnalyticsEvent";
+const MASK_SCRIPT = `window.${MASK_FN}=${maskAnalyticsEvent.toString()};`;
 
 const ALLOWED_TRACKER_KEYS = new Set([
   "src",
@@ -39,6 +46,8 @@ function getTrackers(): Array<Record<string, string>> {
             safe[k] = String(v);
           }
         }
+        // Default the masking hook on; an operator can point it elsewhere.
+        if (!safe["data-before-send"]) safe["data-before-send"] = MASK_FN;
         return safe;
       })
       .filter((t) => t.src);
@@ -57,6 +66,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Must be defined before the tracker loads: it is read per event. */}
+        {trackers.length > 0 && (
+          <script dangerouslySetInnerHTML={{ __html: MASK_SCRIPT }} />
+        )}
         {/* A plain tag, not next/script: afterInteractive scripts are not
             emitted on statically prerendered routes (/signup, /accept-invite),
             which silently dropped ~85% of signups from analytics. */}

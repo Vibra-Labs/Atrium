@@ -71,3 +71,64 @@ After these steps, no Sentry code will be present in the build at all.
 ## Data retention and access
 
 Error reports are stored in Sentry and accessible only to the Atrium maintainers. Reports are used solely to identify and fix bugs in the Atrium codebase. Data is retained according to Sentry's default retention policy (90 days on the free tier).
+
+---
+
+# Product Analytics
+
+Separate from error reporting, Atrium supports optional web analytics via the
+`NEXT_PUBLIC_TRACKERS` environment variable. This is **off by default and
+self-directed**: nothing loads unless you configure it, and the data goes to
+*your* analytics instance, never to the Atrium maintainers.
+
+## Enabling it
+
+```bash
+NEXT_PUBLIC_TRACKERS='[{"src":"https://umami.example.com/script.js","data-website-id":"your-id"}]'
+```
+
+`NEXT_PUBLIC_*` values are resolved at **build time** for statically
+prerendered routes (`/signup`, `/accept-invite`, `/forgot-password`, ...). If
+you build your own image, pass it as a build argument or those pages will be
+baked without the tracker and will never report, regardless of the runtime
+environment:
+
+```bash
+docker build --build-arg NEXT_PUBLIC_TRACKERS='[...]' -f docker/unified.Dockerfile .
+```
+
+## Identifiers are stripped before sending
+
+Analytics scripts normally transmit the full URL and page title. In Atrium
+those contain identifiers — project ids, organization slugs, task ids in query
+strings, and titles carrying client names. `apps/web/src/lib/mask-analytics.ts`
+rewrites every payload in the browser before it is sent:
+
+| Sent as | Instead of |
+|---------|------------|
+| `/portal/projects/[id]` | `/portal/projects/cm...` |
+| `/login/[slug]` | `/login/<your-org-slug>` |
+| `/portal/sign/[token]` | `/portal/sign/<token>` |
+| *(no query string)* | `?task=<id>`, `?id=<invitation>` |
+| *(no page title)* | `Client Project Name \| Atrium` |
+
+The identifiers are never transmitted, rather than being sent and trusted to
+stay private. This is wired up automatically via the tracker's
+`data-before-send` hook; set your own `data-before-send` value if you want
+different handling.
+
+## No individual user tracking
+
+Atrium does **not** identify users to analytics. There is no user id, no
+account id, and no per-person attribute in any event. Product events are
+aggregate counts only:
+
+- **Onboarding** — `signup_started`, `signup_completed`, `signup_failed`,
+  `setup_completed`, `setup_step_skipped`, `setup_email_configured`
+- **Portal usage** — `portal_file_downloaded` (file extension only, never the
+  name), `portal_request_posted`, `portal_document_responded` (approve/reject
+  only, never the document or the stated reason)
+
+These answer "do invited clients use their portals" without answering "what did
+this particular client do". If you fork Atrium and add user identification, say
+so in your own privacy policy.

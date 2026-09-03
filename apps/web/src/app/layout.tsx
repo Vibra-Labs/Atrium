@@ -70,9 +70,12 @@ export default function RootLayout({
         {trackers.length > 0 && (
           <script dangerouslySetInnerHTML={{ __html: MASK_SCRIPT }} />
         )}
-        {/* A plain tag, not next/script: afterInteractive scripts are not
-            emitted on statically prerendered routes (/signup, /accept-invite),
-            which silently dropped ~85% of signups from analytics. */}
+        {/* A plain tag rather than next/script: afterInteractive injects the
+            script after hydration on every route, so the served HTML never
+            contains it. Emitting it directly is more robust and lets the e2e
+            test assert on the response body. Note this alone is not what fixed
+            tracking -- see the NEXT_PUBLIC_TRACKERS build arg in the
+            Dockerfiles, which is why prerendered routes reported nothing. */}
         {trackers.map((tracker, i) => (
           <script key={tracker.src || i} defer {...tracker} />
         ))}

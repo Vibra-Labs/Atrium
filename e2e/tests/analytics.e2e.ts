@@ -88,3 +88,25 @@ test.describe("Analytics instrumentation", () => {
       .toContain("signup_started");
   });
 });
+
+test.describe("Tracker injection", () => {
+  // NEXT_PUBLIC_TRACKERS is inlined at build/dev-server start, so this can
+  // only assert anything when the server under test was started with it.
+  test.skip(
+    !process.env.NEXT_PUBLIC_TRACKERS,
+    "NEXT_PUBLIC_TRACKERS not set for the server under test",
+  );
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("statically prerendered pages still get the tracker tag", async ({ page }) => {
+    // /signup is prerendered (no server layout above it). next/script with
+    // afterInteractive was never emitted here, so assert on a fresh load
+    // rather than a client-side navigation from a dynamic page.
+    await page.goto("/signup");
+    const trackers: string[] = JSON.parse(process.env.NEXT_PUBLIC_TRACKERS ?? "[]")
+      .map((t: { src: string }) => t.src);
+    for (const src of trackers) {
+      await expect(page.locator(`script[src="${src}"]`)).toHaveCount(1);
+    }
+  });
+});

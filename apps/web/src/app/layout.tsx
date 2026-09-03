@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import Link from "next/link";
 import { Providers } from "./providers";
 // @ts-expect-error — raw string import via webpack asset/source
@@ -18,7 +17,6 @@ export const metadata: Metadata = {
 
 const ALLOWED_TRACKER_KEYS = new Set([
   "src",
-  "strategy",
   "async",
   "defer",
   "crossOrigin",
@@ -59,13 +57,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* A plain tag, not next/script: afterInteractive scripts are not
+            emitted on statically prerendered routes (/signup, /accept-invite),
+            which silently dropped ~85% of signups from analytics. */}
         {trackers.map((tracker, i) => (
-          <Script
-            key={tracker.src || i}
-            defer
-            strategy="afterInteractive"
-            {...tracker}
-          />
+          <script key={tracker.src || i} defer {...tracker} />
         ))}
       </head>
       <body suppressHydrationWarning>

@@ -90,23 +90,29 @@ test.describe("Analytics instrumentation", () => {
 });
 
 test.describe("Tracker injection", () => {
-  // NEXT_PUBLIC_TRACKERS is inlined at build/dev-server start, so this can
-  // only assert anything when the server under test was started with it.
-  test.skip(
-    !process.env.NEXT_PUBLIC_TRACKERS,
-    "NEXT_PUBLIC_TRACKERS not set for the server under test",
-  );
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("statically prerendered pages still get the tracker tag", async ({ page }) => {
-    // /signup is prerendered (no server layout above it). next/script with
-    // afterInteractive was never emitted here, so assert on a fresh load
-    // rather than a client-side navigation from a dynamic page.
-    await page.goto("/signup");
-    const trackers: string[] = JSON.parse(process.env.NEXT_PUBLIC_TRACKERS ?? "[]")
-      .map((t: { src: string }) => t.src);
-    for (const src of trackers) {
-      await expect(page.locator(`script[src="${src}"]`)).toHaveCount(1);
-    }
-  });
+  // Regression guard for the real defect: NEXT_PUBLIC_* is resolved at BUILD
+  // time for statically prerendered routes, so a build without it bakes those
+  // pages with no tracker forever. Assert on the raw HTML response, NOT the
+  // DOM -- next/script injects client-side after hydration, so a DOM query
+  // passes even when the served HTML has no tag at all.
+  const PRERENDERED: string[] = ["/signup", "/accept-invite", "/forgot-password"];
+
+  for (const path of PRERENDERED) {
+    test(`${path} is served with the tracker tag in its HTML`, async ({ request }) => {
+      const trackers: Array<{ src: string }> = JSON.parse(
+        process.env.NEXT_PUBLIC_TRACKERS ?? "[]",
+      );
+      expect(
+        trackers.length,
+        "NEXT_PUBLIC_TRACKERS must be set for the server under test",
+      ).toBeGreaterThan(0);
+
+      const html: string = await (await request.get(path)).text();
+      for (const { src } of trackers) {
+        expect(html).toContain(src);
+      }
+    });
+  }
 });

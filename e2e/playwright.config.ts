@@ -58,6 +58,14 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
+      // Must also be set for the CI build step: NEXT_PUBLIC_* is inlined at
+      // build time for prerendered routes, so setting it only here would
+      // leave `next start` serving a build that never had it.
+      env: {
+        NEXT_PUBLIC_TRACKERS:
+          process.env.NEXT_PUBLIC_TRACKERS ??
+          '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]',
+      },
     },
   ],
 });

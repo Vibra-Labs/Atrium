@@ -94,11 +94,11 @@ test.describe("Analytics instrumentation", () => {
 test.describe("Tracker injection", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  // Regression guard for the real defect: NEXT_PUBLIC_* is resolved at BUILD
-  // time for statically prerendered routes, so a build without it bakes those
-  // pages with no tracker forever. Assert on the raw HTML response, NOT the
-  // DOM -- next/script injects client-side after hydration, so a DOM query
-  // passes even when the served HTML has no tag at all.
+  // Regression guard: these routes were statically prerendered, which resolved
+  // NEXT_PUBLIC_TRACKERS at build time and left them permanently untracked in
+  // any image built without it. Assert on the raw HTML response, NOT the DOM --
+  // a client-injected tag shows up in the DOM even when the served HTML has no
+  // tag at all, which is what made the first version of this test useless.
   const PRERENDERED: string[] = ["/signup", "/accept-invite", "/forgot-password"];
 
   for (const path of PRERENDERED) {

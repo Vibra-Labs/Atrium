@@ -13,7 +13,7 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
-# NEXT_PUBLIC_* is resolved at build time for statically prerendered routes.
+# Optional; analytics is normally configured at runtime. See docs/telemetry.md.
 ARG NEXT_PUBLIC_TRACKERS=
 ENV NEXT_PUBLIC_TRACKERS=${NEXT_PUBLIC_TRACKERS}
 RUN bun run --filter @atrium/web build

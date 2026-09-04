@@ -32,6 +32,9 @@ jobs:
       API_URL: http://localhost:3001
       WEB_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:3001
+      # Must be present for `bun run build`: NEXT_PUBLIC_* is inlined at build
+      # time for prerendered routes, which is the regression under test.
+      NEXT_PUBLIC_TRACKERS: '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]'
       STORAGE_PROVIDER: local
       UPLOAD_DIR: ./uploads
 

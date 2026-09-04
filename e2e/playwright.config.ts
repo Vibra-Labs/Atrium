@@ -22,6 +22,15 @@ if (existsSync(rootEnvPath)) {
   }
 }
 
+// Shared by the test runner and the web server it starts, so assertions read
+// the same value the page was built with. CI sets this at the job level so the
+// build step inlines it into prerendered routes; this default covers local runs
+// against the dev server, which reads it at startup.
+const TRACKERS: string =
+  process.env.NEXT_PUBLIC_TRACKERS ??
+  '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]';
+process.env.NEXT_PUBLIC_TRACKERS = TRACKERS;
+
 export default defineConfig({
   testDir: "./tests",
   testMatch: "*.e2e.ts",
@@ -58,14 +67,7 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
-      // Must also be set for the CI build step: NEXT_PUBLIC_* is inlined at
-      // build time for prerendered routes, so setting it only here would
-      // leave `next start` serving a build that never had it.
-      env: {
-        NEXT_PUBLIC_TRACKERS:
-          process.env.NEXT_PUBLIC_TRACKERS ??
-          '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]',
-      },
+      env: { NEXT_PUBLIC_TRACKERS: TRACKERS },
     },
   ],
 });

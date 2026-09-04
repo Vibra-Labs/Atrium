@@ -78,9 +78,11 @@ test.describe("Analytics instrumentation", () => {
     await page.getByLabel(/your name/i).fill("Analytics Test");
     await page.getByLabel(/agency/i).fill("Analytics Test Co");
     await page.getByLabel(/email/i).fill(`analytics-${Date.now()}@example.com`);
-    // Deliberately too weak: signup_started must fire even when the client
-    // side rejects the password, otherwise the attempt is invisible.
-    await page.getByLabel(/password/i).fill("weak");
+    // Long enough to clear the input's native minLength=8 -- otherwise the
+    // browser blocks submission and handleSubmit never runs -- but missing the
+    // uppercase/number/symbol the app requires. signup_started must still fire,
+    // or attempts rejected by our own rules stay invisible.
+    await page.getByLabel(/password/i).fill("weakpassword");
     await page.getByRole("button", { name: /create account|sign up/i }).click();
 
     await expect

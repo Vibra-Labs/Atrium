@@ -97,6 +97,16 @@ environment:
 docker build --build-arg NEXT_PUBLIC_TRACKERS='[...]' -f docker/unified.Dockerfile .
 ```
 
+On Coolify (and similar platforms that build from source), a plain environment
+variable is applied at **runtime only** and will not reach the build. Add the
+variable and enable the **"Build Variable?"** toggle so it is passed as
+`--build-arg`. Without it, dynamic routes will report and prerendered ones
+silently will not.
+
+The published `vibralabs/atrium` image deliberately ships with **no** tracker
+configured. Analytics is always something you opt into for your own instance;
+a self-hosted Atrium never reports to the maintainers.
+
 ## Identifiers are stripped before sending
 
 Analytics scripts normally transmit the full URL and page title. In Atrium

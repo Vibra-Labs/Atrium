@@ -31,13 +31,16 @@ jobs:
           file: docker/unified.Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
+          # Deliberately no NEXT_PUBLIC_TRACKERS here. This image is the
+          # public self-hosting build: baking a tracker in would make every
+          # self-hosted Atrium report to the maintainers' analytics. Operators
+          # opt in by passing their own --build-arg (see docs/telemetry.md).
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_URL }}
             NEXT_PUBLIC_BILLING_ENABLED=true
             NEXT_PUBLIC_STRIPE_MODE=${{ vars.STRIPE_MODE || 'test' }}
             NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENABLED=${{ vars.NEXT_PUBLIC_SENTRY_ENABLED || 'false' }}
-            NEXT_PUBLIC_TRACKERS=${{ vars.NEXT_PUBLIC_TRACKERS }}
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: |
             vibralabs/atrium:${{ github.sha }}

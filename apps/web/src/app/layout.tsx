@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import Link from "next/link";
 import { Providers } from "./providers";
+import { maskAnalyticsEvent } from "@/lib/mask-analytics";
 // @ts-expect-error — raw string import via webpack asset/source
 import changelogRaw from "../../CHANGELOG.md";
 import "./globals.css";
@@ -16,9 +16,14 @@ export const metadata: Metadata = {
   description: "Client portal for agencies and freelancers",
 };
 
+// Analytics must never carry identifiers. The hook is defined in
+// lib/mask-analytics.ts and serialised into the page here so it runs for every
+// event, including Umami's auto-tracked pageviews.
+const MASK_FN = "atriumMaskAnalyticsEvent";
+const MASK_SCRIPT = `window.${MASK_FN}=${maskAnalyticsEvent.toString()};`;
+
 const ALLOWED_TRACKER_KEYS = new Set([
   "src",
-  "strategy",
   "async",
   "defer",
   "crossOrigin",
@@ -41,6 +46,8 @@ function getTrackers(): Array<Record<string, string>> {
             safe[k] = String(v);
           }
         }
+        // Default the masking hook on; an operator can point it elsewhere.
+        if (!safe["data-before-send"]) safe["data-before-send"] = MASK_FN;
         return safe;
       })
       .filter((t) => t.src);
@@ -59,13 +66,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Must be defined before the tracker loads: it is read per event. */}
+        {trackers.length > 0 && (
+          <script dangerouslySetInnerHTML={{ __html: MASK_SCRIPT }} />
+        )}
+        {/* A plain tag rather than next/script: afterInteractive injects the
+            script after hydration on every route, so the served HTML never
+            contains it. Emitting it directly is more robust and lets the e2e
+            test assert on the response body. Note this alone is not what fixed
+            tracking -- see the NEXT_PUBLIC_TRACKERS build arg in the
+            Dockerfiles, which is why prerendered routes reported nothing. */}
         {trackers.map((tracker, i) => (
-          <Script
-            key={tracker.src || i}
-            defer
-            strategy="afterInteractive"
-            {...tracker}
-          />
+          <script key={tracker.src || i} defer {...tracker} />
         ))}
       </head>
       <body suppressHydrationWarning>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { FolderKanban } from "lucide-react";
+import { track } from "@/lib/track";
 
 interface StepFirstProjectProps {
   onNext: () => void;
@@ -30,6 +31,9 @@ export function StepFirstProject({ onNext, onBack }: StepFirstProjectProps) {
           description: description.trim() || undefined,
         }),
       });
+      // Same event name as the dashboard so activation counts are complete;
+      // source separates onboarding creation from day-to-day creation.
+      track("project_created", { source: "setup" });
       onNext();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
@@ -101,7 +105,10 @@ export function StepFirstProject({ onNext, onBack }: StepFirstProjectProps) {
         </button>
         <div className="flex gap-3">
           <button
-            onClick={onNext}
+            onClick={() => {
+              track("setup_step_skipped", { step: "project" });
+              onNext();
+            }}
             className="px-6 py-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
           >
             Skip

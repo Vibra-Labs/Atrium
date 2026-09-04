@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Check, Zap, Crown } from "lucide-react";
 import { track } from "@/lib/track";
@@ -210,10 +210,21 @@ export default function SignupPage() {
       .finally(() => setPlansLoading(false));
   }, [billingEnabled]);
 
+  const signupStartedRef = useRef<boolean>(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+
+    // Fires before validation so signup_started - signup_completed measures
+    // everyone who tried, including those turned away by the password rules.
+    // Once per page session: a user who trips the rules repeatedly is one
+    // attempt, not four, or the funnel denominator inflates.
+    if (!signupStartedRef.current) {
+      signupStartedRef.current = true;
+      track("signup_started", { plan: selectedPlan });
+    }
 
     if (password.length < 8) {
       setError("Password must be at least 8 characters");
@@ -264,6 +275,10 @@ export default function SignupPage() {
       }
 
       if (res.status === 207) {
+        // Account created but org creation failed: a User with no Organization.
+        // Tracked neither as completed nor failed before, which is exactly the
+        // population that makes user and org counts disagree.
+        track("signup_failed", { reason: "org_setup_failed", plan: selectedPlan });
         setError(
           data.message ||
             "Account created but organization setup failed. Redirecting to login...",
@@ -284,7 +299,9 @@ export default function SignupPage() {
       track("signup_completed", { plan: selectedPlan });
       window.location.href = "/setup";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Signup failed");
+      const reason = err instanceof Error ? err.message : "Signup failed";
+      track("signup_failed", { reason, plan: selectedPlan });
+      setError(reason);
     } finally {
       setLoading(false);
     }

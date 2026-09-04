@@ -24,6 +24,8 @@ Coolify substitutes these at deploy time. They are what make the template safe t
 | `SERVICE_BASE64_64_AUTH` | Generates a random 64-character secret for `BETTER_AUTH_SECRET` |
 | `SERVICE_PASSWORD_POSTGRES` | Generates a random password for the built-in database |
 
+`WEB_URL` and `API_URL` are both set from `$SERVICE_URL_ATRIUM`, the URL Coolify derives from that domain. They are what email invitation and password-reset links are built from, so they must match the domain your clients actually visit — if you change the domain in Coolify later, redeploy so both pick up the new value.
+
 Generated values are stored per deployment, so they survive restarts and redeploys.
 
 ## Optional configuration

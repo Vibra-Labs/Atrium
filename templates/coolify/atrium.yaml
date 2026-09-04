@@ -10,6 +10,8 @@ services:
     image: vibralabs/atrium:latest
     environment:
       - SERVICE_FQDN_ATRIUM_8080
+      - WEB_URL=$SERVICE_URL_ATRIUM
+      - API_URL=$SERVICE_URL_ATRIUM
       - BETTER_AUTH_SECRET=$SERVICE_BASE64_64_AUTH
       - POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES
       # Built-in PostgreSQL is used unless DATABASE_URL is set.

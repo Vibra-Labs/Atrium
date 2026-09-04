@@ -18,6 +18,32 @@ docker run -d \
 
 Open `http://localhost:8080` and create your account.
 
+## Public URL
+
+Set `WEB_URL` to the address people actually open in a browser. Nothing in the image infers it, and it defaults to `http://localhost:3000`, so if you skip it:
+
+- invitation, password-reset and notification emails link to `localhost` and are unusable for your clients
+- the API's CORS origin and CSP `connect-src` point at `localhost:3000`
+- Stripe return URLs and custom-domain detection resolve against the wrong host
+
+```bash
+docker run -d \
+  --name atrium \
+  -p 8080:8080 \
+  -v atrium-db:/var/lib/postgresql/data \
+  -v atrium-uploads:/app/uploads \
+  -e WEB_URL=https://portal.example.com \
+  -e API_URL=https://portal.example.com \
+  -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
+  vibralabs/atrium:latest
+```
+
+The unified image serves the web app and the API from the same origin behind its built-in Caddy proxy, so `WEB_URL` and `API_URL` are the same value. Put an HTTPS reverse proxy in front of port 8080 — Caddy inside the container speaks plain HTTP there, on the assumption that TLS is terminated upstream.
+
+### Custom client domains
+
+The container also listens on 443 with on-demand TLS, used when a client's own domain points straight at Atrium rather than through your proxy. Publish `-p 443:443` as well if you offer that; otherwise 8080 is all you need.
+
 ## Docker Compose
 
 ```yaml
@@ -28,6 +54,8 @@ services:
       - "8080:8080"
     environment:
       BETTER_AUTH_SECRET: "change-me-to-a-random-string-at-least-32-chars"
+      WEB_URL: "https://portal.example.com"
+      API_URL: "https://portal.example.com"
     volumes:
       - atrium-db:/var/lib/postgresql/data
       - atrium-uploads:/app/uploads
@@ -65,6 +93,8 @@ services:
       USE_BUILT_IN_DB: "false"
       DATABASE_URL: "postgresql://user:password@your-db-host:5432/atrium"
       BETTER_AUTH_SECRET: "change-me-to-a-random-string-at-least-32-chars"
+      WEB_URL: "https://portal.example.com"
+      API_URL: "https://portal.example.com"
     volumes:
       - atrium-uploads:/app/uploads
     restart: unless-stopped
@@ -80,6 +110,8 @@ The database schema is automatically applied on startup. To skip this (e.g. when
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `BETTER_AUTH_SECRET` | Yes | -- | Random string (min 32 chars) for signing auth tokens |
+| `WEB_URL` | No | `http://localhost:3000` | Public URL users visit. See [Public URL](#public-url) — leaving it unset sends broken links in email. |
+| `API_URL` | No | `http://localhost:3001` | Public URL of the API. In the unified image this is the same origin as `WEB_URL`. |
 | `USE_BUILT_IN_DB` | No | `true` | Set to `false` to use an external database |
 | `DATABASE_URL` | No | auto-generated | PostgreSQL connection string (required when built-in DB is disabled) |
 | `STORAGE_PROVIDER` | No | `local` | File storage backend: `local`, `s3`, `minio`, or `r2` |
@@ -89,9 +121,9 @@ The database schema is automatically applied on startup. To skip this (e.g. when
 | `S3_ACCESS_KEY` | No | -- | S3 access key |
 | `S3_SECRET_KEY` | No | -- | S3 secret key |
 | `RESEND_API_KEY` | No | -- | Resend API key for email notifications |
-| `EMAIL_FROM` | No | `noreply@yourdomain.com` | Sender address for outbound email |
+| `EMAIL_FROM` | No | `noreply@atrium.local` | Sender address for outbound email |
 | `MAX_FILE_SIZE_MB` | No | `50` | Maximum upload size in megabytes |
-| `SECURE_COOKIES` | No | `true` | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. See [Unraid / Plain HTTP Setup](#unraid--plain-http-setup). |
+| `SECURE_COOKIES` | No | `true` in the image | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. Falls back to `NODE_ENV=production`, which the published image sets. See [Unraid](unraid.md). |
 | `SKIP_DB_PUSH` | No | `false` | Skip automatic schema sync on startup |
 | `DIRECT_URL` | No | -- | Direct (non-pooled) database URL for schema sync |
 | `STRIPE_CONNECT_CLIENT_ID` | No | -- | Stripe Connect platform client ID (`ca_...`). Enables the OAuth "Connect with Stripe" flow for client invoice payments. See [Stripe setup](stripe.md). |
@@ -107,6 +139,8 @@ The database schema is automatically applied on startup. To skip this (e.g. when
 
 ## Platform Guides
 
+- [Coolify](coolify.md) — compose template with generated domain and secrets
+- [Portainer](portainer.md) — app template and stack deployment
 - [Unraid](unraid.md) — step-by-step setup for Unraid with plain HTTP
 
 ## Building from Source
@@ -119,4 +153,4 @@ docker build -f docker/unified.Dockerfile -t atrium .
 
 ## Platform Support
 
-The image runs on any platform that supports Docker: Docker Compose, Portainer, Coolify, Unraid, Synology, etc. For Unraid, an official Community Applications template is available.
+The image runs on any platform that supports Docker: Docker Compose, Portainer, Coolify, Unraid, Synology, etc. Ready-made templates live in [`templates/`](../templates) for Coolify and Portainer, and in [`unraid/`](../unraid) for Unraid Community Applications — see the [Platform Guides](#platform-guides) above.

@@ -23,6 +23,8 @@ Click the Atrium template and fill in:
 | Field | Value |
 |---|---|
 | **Auth secret** | Required. At least 32 characters — generate with `openssl rand -base64 32` |
+| **Public URL** | The address clients open, e.g. `https://portal.example.com`. Email links are built from this — a blank value sends `localhost` links. |
+| **Public API URL** | The same value; the image serves the app and API from one origin. |
 | **Secure cookies** | `true` behind an HTTPS reverse proxy, `false` for plain HTTP |
 | **External database URL** | Leave blank to use the built-in PostgreSQL |
 | **Storage provider** | `local` (default), or `s3` / `minio` / `r2` |

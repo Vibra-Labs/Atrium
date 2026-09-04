@@ -7,15 +7,25 @@
       "name": "atrium",
       "description": "Self-hosted client portal for agencies and freelancers. Share project progress, files, and updates with your clients through a branded portal. Ships with a built-in PostgreSQL database — no separate container needed.",
       "note": "Set an auth secret of at least 32 characters or the container will refuse to start. Generate one with <code>openssl rand -base64 32</code>. If you are accessing Atrium over plain HTTP rather than through an HTTPS reverse proxy, set SECURE_COOKIES to false or logins will fail with a CSRF error.",
-      "categories": ["productivity"],
+      "categories": [
+        "productivity"
+      ],
       "platform": "linux",
       "logo": "https://raw.githubusercontent.com/Vibra-Labs/unraid-templates/main/images/atrium-icon.png",
       "image": "vibralabs/atrium:latest",
       "restart_policy": "unless-stopped",
-      "ports": ["8080:8080/tcp"],
+      "ports": [
+        "8080:8080/tcp"
+      ],
       "volumes": [
-        { "container": "/var/lib/postgresql/data", "bind": "/opt/atrium/db" },
-        { "container": "/app/uploads", "bind": "/opt/atrium/uploads" }
+        {
+          "container": "/var/lib/postgresql/data",
+          "bind": "/opt/atrium/db"
+        },
+        {
+          "container": "/app/uploads",
+          "bind": "/opt/atrium/uploads"
+        }
       ],
       "env": [
         {
@@ -24,13 +34,30 @@
           "description": "Random string, minimum 32 characters. Generate with: openssl rand -base64 32"
         },
         {
+          "name": "WEB_URL",
+          "label": "Public URL",
+          "description": "The address people open in a browser, e.g. https://portal.example.com. Leave blank only for local testing — email invitation and password-reset links are built from this."
+        },
+        {
+          "name": "API_URL",
+          "label": "Public API URL",
+          "description": "Same value as the public URL — the unified image serves the app and API from one origin."
+        },
+        {
           "name": "SECURE_COOKIES",
           "label": "Secure cookies",
           "description": "Set to false when accessing over plain HTTP. Leave as true behind an HTTPS reverse proxy.",
           "default": "true",
           "select": [
-            { "text": "true (HTTPS reverse proxy)", "value": "true", "default": true },
-            { "text": "false (plain HTTP)", "value": "false" }
+            {
+              "text": "true (HTTPS reverse proxy)",
+              "value": "true",
+              "default": true
+            },
+            {
+              "text": "false (plain HTTP)",
+              "value": "false"
+            }
           ]
         },
         {
@@ -45,10 +72,23 @@
           "description": "Where uploaded files are stored.",
           "default": "local",
           "select": [
-            { "text": "Local disk", "value": "local", "default": true },
-            { "text": "S3", "value": "s3" },
-            { "text": "MinIO", "value": "minio" },
-            { "text": "Cloudflare R2", "value": "r2" }
+            {
+              "text": "Local disk",
+              "value": "local",
+              "default": true
+            },
+            {
+              "text": "S3",
+              "value": "s3"
+            },
+            {
+              "text": "MinIO",
+              "value": "minio"
+            },
+            {
+              "text": "Cloudflare R2",
+              "value": "r2"
+            }
           ]
         },
         {

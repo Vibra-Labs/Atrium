@@ -139,7 +139,6 @@ The database schema is automatically applied on startup. To skip this (e.g. when
 
 ## Platform Guides
 
-- [Coolify](coolify.md) — compose template with generated domain and secrets
 - [Portainer](portainer.md) — app template and stack deployment
 - [Unraid](unraid.md) — step-by-step setup for Unraid with plain HTTP
 
@@ -153,4 +152,4 @@ docker build -f docker/unified.Dockerfile -t atrium .
 
 ## Platform Support
 
-The image runs on any platform that supports Docker: Docker Compose, Portainer, Coolify, Unraid, Synology, etc. Ready-made templates live in [`templates/`](../templates) for Coolify and Portainer, and in [`unraid/`](../unraid) for Unraid Community Applications — see the [Platform Guides](#platform-guides) above.
+The image runs on any platform that supports Docker: Docker Compose, Portainer, Coolify, Unraid, Synology, etc. Ready-made templates live in [`templates/portainer`](../templates/portainer) and [`unraid/`](../unraid) — see the [Platform Guides](#platform-guides) above. On Coolify, paste the compose file from this page into New > Docker Compose.

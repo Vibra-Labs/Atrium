@@ -34,9 +34,9 @@ ENV NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}
 ARG NEXT_PUBLIC_SENTRY_ENABLED=false
 ENV NEXT_PUBLIC_SENTRY_ENABLED=${NEXT_PUBLIC_SENTRY_ENABLED}
 ARG SENTRY_AUTH_TOKEN=
-# Statically prerendered routes (/signup, /accept-invite, /forgot-password, ...)
-# read this at BUILD time. Without it as a build arg they are baked with no
-# tracker and can never report, no matter what the runtime env says.
+# Optional. Analytics is normally configured at runtime -- the auth routes are
+# rendered per request so they pick up the running container's environment.
+# This exists only for operators who prefer to bake a tracker into an image.
 ARG NEXT_PUBLIC_TRACKERS=
 ENV NEXT_PUBLIC_TRACKERS=${NEXT_PUBLIC_TRACKERS}
 RUN bun run --filter @atrium/web build

@@ -87,25 +87,20 @@ self-directed**: nothing loads unless you configure it, and the data goes to
 NEXT_PUBLIC_TRACKERS='[{"src":"https://umami.example.com/script.js","data-website-id":"your-id"}]'
 ```
 
-`NEXT_PUBLIC_*` values are resolved at **build time** for statically
-prerendered routes (`/signup`, `/accept-invite`, `/forgot-password`, ...). If
-you build your own image, pass it as a build argument or those pages will be
-baked without the tracker and will never report, regardless of the runtime
-environment:
+Set it as a normal runtime environment variable on your container. Every route
+that can report is rendered per request, so the running container's environment
+is read directly — no rebuild required, and changing the value takes effect on
+restart.
 
-```bash
-docker build --build-arg NEXT_PUBLIC_TRACKERS='[...]' -f docker/unified.Dockerfile .
-```
+The published `vibralabs/atrium` image ships with **no** tracker configured, and
+this is deliberate: because analytics is runtime configuration, the image the
+maintainers publish is the same one everyone runs, and it reports nowhere by
+default. A self-hosted Atrium never sends anything to the maintainers.
 
-On Coolify (and similar platforms that build from source), a plain environment
-variable is applied at **runtime only** and will not reach the build. Add the
-variable and enable the **"Build Variable?"** toggle so it is passed as
-`--build-arg`. Without it, dynamic routes will report and prerendered ones
-silently will not.
-
-The published `vibralabs/atrium` image deliberately ships with **no** tracker
-configured. Analytics is always something you opt into for your own instance;
-a self-hosted Atrium never reports to the maintainers.
+> Historical note: the auth pages (`/signup`, `/accept-invite`, ...) used to be
+> statically prerendered, which resolved this variable at build time and left
+> them permanently untracked in any image built without it. They are now
+> rendered per request (`apps/web/src/app/(auth)/layout.tsx`).
 
 ## Identifiers are stripped before sending
 

@@ -1,0 +1,73 @@
+{
+  "version": "3",
+  "templates": [
+    {
+      "type": 1,
+      "title": "Atrium",
+      "name": "atrium",
+      "description": "Self-hosted client portal for agencies and freelancers. Share project progress, files, and updates with your clients through a branded portal. Ships with a built-in PostgreSQL database — no separate container needed.",
+      "note": "Set an auth secret of at least 32 characters or the container will refuse to start. Generate one with <code>openssl rand -base64 32</code>. If you are accessing Atrium over plain HTTP rather than through an HTTPS reverse proxy, set SECURE_COOKIES to false or logins will fail with a CSRF error.",
+      "categories": ["productivity"],
+      "platform": "linux",
+      "logo": "https://raw.githubusercontent.com/Vibra-Labs/unraid-templates/main/images/atrium-icon.png",
+      "image": "vibralabs/atrium:latest",
+      "restart_policy": "unless-stopped",
+      "ports": ["8080:8080/tcp"],
+      "volumes": [
+        { "container": "/var/lib/postgresql/data", "bind": "/opt/atrium/db" },
+        { "container": "/app/uploads", "bind": "/opt/atrium/uploads" }
+      ],
+      "env": [
+        {
+          "name": "BETTER_AUTH_SECRET",
+          "label": "Auth secret",
+          "description": "Random string, minimum 32 characters. Generate with: openssl rand -base64 32"
+        },
+        {
+          "name": "SECURE_COOKIES",
+          "label": "Secure cookies",
+          "description": "Set to false when accessing over plain HTTP. Leave as true behind an HTTPS reverse proxy.",
+          "default": "true",
+          "select": [
+            { "text": "true (HTTPS reverse proxy)", "value": "true", "default": true },
+            { "text": "false (plain HTTP)", "value": "false" }
+          ]
+        },
+        {
+          "name": "DATABASE_URL",
+          "label": "External database URL (optional)",
+          "description": "Leave blank to use the built-in PostgreSQL. Example: postgresql://user:pass@host:5432/atrium",
+          "default": ""
+        },
+        {
+          "name": "STORAGE_PROVIDER",
+          "label": "Storage provider",
+          "description": "Where uploaded files are stored.",
+          "default": "local",
+          "select": [
+            { "text": "Local disk", "value": "local", "default": true },
+            { "text": "S3", "value": "s3" },
+            { "text": "MinIO", "value": "minio" },
+            { "text": "Cloudflare R2", "value": "r2" }
+          ]
+        },
+        {
+          "name": "MAX_FILE_SIZE_MB",
+          "label": "Max upload size (MB)",
+          "default": "50"
+        },
+        {
+          "name": "RESEND_API_KEY",
+          "label": "Resend API key (optional)",
+          "description": "Enables invitation and password-reset emails.",
+          "default": ""
+        },
+        {
+          "name": "EMAIL_FROM",
+          "label": "Email from address (optional)",
+          "default": ""
+        }
+      ]
+    }
+  ]
+}

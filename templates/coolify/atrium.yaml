@@ -1,0 +1,34 @@
+# documentation: https://github.com/Vibra-Labs/Atrium/blob/main/docs/coolify.md
+# slogan: Self-hosted client portal for agencies and freelancers.
+# category: productivity
+# tags: portal,clients,projects,files,agency,freelance
+# logo: svgs/atrium.svg
+# port: 8080
+
+services:
+  atrium:
+    image: vibralabs/atrium:latest
+    environment:
+      - SERVICE_FQDN_ATRIUM_8080
+      - BETTER_AUTH_SECRET=$SERVICE_BASE64_64_AUTH
+      - POSTGRES_PASSWORD=$SERVICE_PASSWORD_POSTGRES
+      # Built-in PostgreSQL is used unless DATABASE_URL is set.
+      # To use an external database, set USE_BUILT_IN_DB=false and DATABASE_URL.
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      # Optional email notifications (invites, password resets)
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM}
+    volumes:
+      - atrium-db:/var/lib/postgresql/data
+      - atrium-uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+volumes:
+  atrium-db:
+  atrium-uploads:

@@ -99,6 +99,9 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 ## Documentation
 
 - [Docker Deployment](docs/docker.md)
+- [Coolify Deployment](docs/coolify.md)
+- [Portainer Deployment](docs/portainer.md)
+- [Unraid Installation](docs/unraid.md)
 - [Configuration & Environment Variables](docs/configuration.md)
 - [Stripe Payments Setup](docs/stripe.md)
 - [Development Guide & Scripts](docs/development.md)

@@ -5,8 +5,8 @@
       "type": 1,
       "title": "Atrium",
       "name": "atrium",
-      "description": "Self-hosted client portal for agencies and freelancers. Share project progress, files, and updates with your clients through a branded portal. Ships with a built-in PostgreSQL database — no separate container needed.",
-      "note": "Set an auth secret of at least 32 characters or the container will refuse to start. Generate one with <code>openssl rand -base64 32</code>. If you are accessing Atrium over plain HTTP rather than through an HTTPS reverse proxy, set SECURE_COOKIES to false or logins will fail with a CSRF error.",
+      "description": "Client portal for agencies and freelancers. Share project progress, files, tasks and invoices through a branded portal. Includes a built-in PostgreSQL database.",
+      "note": "Needs an auth secret of at least 32 characters — generate one with <code>openssl rand -base64 32</code>. Over plain HTTP set SECURE_COOKIES to false, or sign-in fails with a CSRF error.",
       "categories": [
         "productivity"
       ],

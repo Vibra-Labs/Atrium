@@ -6,10 +6,14 @@ import type { PrismaService } from "../prisma/prisma.service";
 import type { MailService } from "../mail/mail.service";
 import type { BillingService } from "../billing/billing.service";
 
+// Mutable so individual tests can flip the deploy between open and locked down.
+let allowSignups: string | undefined;
+
 const mockConfig = {
   get: mock((key: string, fallback?: string) => {
     if (key === "WEB_URL") return "http://localhost:3000";
     if (key === "API_URL") return "http://localhost:3001";
+    if (key === "ALLOW_SIGNUPS") return allowSignups;
     return fallback;
   }),
   getOrThrow: mock((key: string) => {
@@ -28,6 +32,9 @@ const mockPrisma = {
   },
   user: {
     findUnique: mock(() => Promise.resolve(null)),
+  },
+  invitation: {
+    findFirst: mock(() => Promise.resolve(null)),
   },
 };
 
@@ -52,6 +59,83 @@ describe("AuthService", () => {
     mockPrisma.member.findMany.mockClear();
     mockPrisma.projectClient.count.mockClear();
     mockPrisma.user.findUnique.mockClear();
+    mockPrisma.invitation.findFirst.mockClear();
+    mockConfig.get.mockClear();
+    allowSignups = undefined;
+  });
+
+  describe("maySignUp", () => {
+    it("allows anyone when ALLOW_SIGNUPS is unset", async () => {
+      expect(await service.maySignUp("stranger@example.com")).toBe(true);
+      expect(mockPrisma.invitation.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("allows anyone when ALLOW_SIGNUPS is explicitly true", async () => {
+      allowSignups = "true";
+
+      expect(await service.maySignUp("stranger@example.com")).toBe(true);
+      expect(mockPrisma.invitation.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("refuses an uninvited stranger when signups are disabled", async () => {
+      allowSignups = "false";
+      mockPrisma.invitation.findFirst.mockReturnValueOnce(
+        Promise.resolve(null),
+      );
+
+      expect(await service.maySignUp("stranger@example.com")).toBe(false);
+    });
+
+    it("allows an invited client through even when signups are disabled", async () => {
+      allowSignups = "false";
+      mockPrisma.invitation.findFirst.mockReturnValueOnce(
+        Promise.resolve({ id: "inv-1" }),
+      );
+
+      expect(await service.maySignUp("client@acme.com")).toBe(true);
+    });
+
+    it("only counts invitations that are pending and unexpired", async () => {
+      allowSignups = "false";
+      mockPrisma.invitation.findFirst.mockReturnValueOnce(
+        Promise.resolve(null),
+      );
+
+      await service.maySignUp("client@acme.com");
+
+      const call = mockPrisma.invitation.findFirst.mock.calls[0][0] as {
+        where: {
+          email: { equals: string; mode: string };
+          status: string;
+          expiresAt: { gt: Date };
+        };
+      };
+      expect(call.where.status).toBe("pending");
+      expect(call.where.expiresAt.gt).toBeInstanceOf(Date);
+    });
+
+    it("matches the invitation email case-insensitively", async () => {
+      allowSignups = "false";
+      mockPrisma.invitation.findFirst.mockReturnValueOnce(
+        Promise.resolve({ id: "inv-1" }),
+      );
+
+      expect(await service.maySignUp("Client@Acme.com")).toBe(true);
+
+      const call = mockPrisma.invitation.findFirst.mock.calls[0][0] as {
+        where: { email: { equals: string; mode: string } };
+      };
+      expect(call.where.email.mode).toBe("insensitive");
+    });
+
+    it("fails closed when the invitation lookup errors", async () => {
+      allowSignups = "false";
+      mockPrisma.invitation.findFirst.mockReturnValueOnce(
+        Promise.reject(new Error("db down")),
+      );
+
+      expect(await service.maySignUp("client@acme.com")).toBe(false);
+    });
   });
 
   describe("getPrimaryOrgForUserId", () => {

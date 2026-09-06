@@ -5,6 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { organization, magicLink } from "better-auth/plugins";
+import { APIError } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
@@ -55,6 +56,22 @@ export class AuthService {
         updateAge: 60 * 60 * 24,         // refresh if older than 1 day
       },
       databaseHooks: {
+        user: {
+          create: {
+            // Every route that can mint a user funnels through here: the
+            // email/password endpoint /accept-invite posts to directly, the
+            // onboarding endpoint, and social sign-in. See maySignUp.
+            before: async (user) => {
+              if (!(await this.maySignUp(user.email))) {
+                throw new APIError("FORBIDDEN", {
+                  message:
+                    "Signups are disabled on this instance. Ask the workspace owner for an invitation.",
+                });
+              }
+              return { data: user };
+            },
+          },
+        },
         session: {
           create: {
             // Stamp a deterministic active org on every new session. Without
@@ -222,6 +239,42 @@ export class AuthService {
 
   async handleRequest(request: Request) {
     return this.auth.handler(request);
+  }
+
+  /**
+   * Whether a brand-new account may be created for this email address.
+   *
+   * `ALLOW_SIGNUPS=false` has never meant "no new users" — `/accept-invite`
+   * creates accounts by posting straight to `/api/auth/sign-up/email`, and an
+   * operator who closes public signup still needs invited clients to get in.
+   * What it means is no *unsolicited* users, so the test is whether someone
+   * already asked this address to join.
+   *
+   * Enforced in the `user.create` database hook rather than at any one
+   * endpoint, because the auth proxy is `@All("*path") @Public()` and exposes
+   * every Better Auth route, social providers included. Gating a single
+   * controller would leave the rest open.
+   *
+   * Fails closed: if the invitation lookup errors we refuse rather than let an
+   * outage turn a locked-down deploy into an open one.
+   */
+  async maySignUp(email: string): Promise<boolean> {
+    if (this.config.get("ALLOW_SIGNUPS") !== "false") return true;
+
+    try {
+      const invitation = await this.prisma.invitation.findFirst({
+        where: {
+          email: { equals: email, mode: "insensitive" },
+          status: "pending",
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      return invitation !== null;
+    } catch (err) {
+      this.logger.warn({ err }, "Invitation lookup failed; refusing signup");
+      return false;
+    }
   }
 
   /**

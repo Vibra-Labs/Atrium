@@ -6,6 +6,7 @@ type FakeTextarea = {
   style: Record<string, string>;
   setAttribute: (name: string, value: string) => void;
   select: () => void;
+  setSelectionRange: (start: number, end: number) => void;
   focus: () => void;
 };
 
@@ -13,6 +14,10 @@ const originalNavigator = globalThis.navigator;
 const originalDocument = globalThis.document;
 
 function setGlobal(name: "navigator" | "document", value: unknown): void {
+  if (value === undefined) {
+    delete (globalThis as Record<string, unknown>)[name];
+    return;
+  }
   Object.defineProperty(globalThis, name, {
     value,
     configurable: true,
@@ -37,6 +42,7 @@ function fakeExecCommandDocument(execCommandResult: boolean): {
       style: {},
       setAttribute: () => {},
       select: () => {},
+      setSelectionRange: () => {},
       focus: () => {},
     }),
     body: {
@@ -47,6 +53,7 @@ function fakeExecCommandDocument(execCommandResult: boolean): {
         attached = null;
       },
     },
+    activeElement: null,
     execCommand: (command: string): boolean => {
       if (command === "copy" && attached) copiedText = attached.value;
       return execCommandResult;

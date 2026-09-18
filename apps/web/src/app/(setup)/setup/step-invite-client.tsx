@@ -62,6 +62,7 @@ export function StepInviteClient({ onNext, onBack }: StepInviteClientProps) {
   };
 
   const copyLink = async () => {
+    setError("");
     if (!(await copyToClipboard(inviteLink))) {
       setError("Could not copy link");
       return;

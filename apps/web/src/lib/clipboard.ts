@@ -20,6 +20,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
 function legacyCopy(text: string): boolean {
   try {
+    const previouslyFocused = document.activeElement as { focus?: () => void } | null;
     const textarea = document.createElement("textarea");
     textarea.value = text;
     textarea.setAttribute("readonly", "");
@@ -27,8 +28,11 @@ function legacyCopy(text: string): boolean {
     textarea.style.opacity = "0";
     document.body.appendChild(textarea);
     textarea.select();
+    // iOS Safari ignores select() on its own.
+    textarea.setSelectionRange(0, text.length);
     const copied = document.execCommand("copy");
     document.body.removeChild(textarea);
+    previouslyFocused?.focus?.();
     return copied;
   } catch (err) {
     console.error("Clipboard fallback copy failed", err);

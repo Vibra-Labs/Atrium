@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { UserPlus, Copy, Check } from "lucide-react";
 import { track } from "@/lib/track";
+import { copyToClipboard } from "@/lib/clipboard";
 
 interface StepInviteClientProps {
   onNext: () => void;
@@ -60,8 +61,11 @@ export function StepInviteClient({ onNext, onBack }: StepInviteClientProps) {
     }
   };
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(inviteLink);
+  const copyLink = async () => {
+    if (!(await copyToClipboard(inviteLink))) {
+      setError("Could not copy link");
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

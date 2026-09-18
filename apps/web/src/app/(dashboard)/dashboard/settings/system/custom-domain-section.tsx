@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Copy, RefreshCw, Sparkles, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { copyToClipboard } from "@/lib/clipboard";
 
 interface Subscription {
   subscription: { plan: { slug: string } } | null;
@@ -109,10 +110,14 @@ function getInstructions(provider: ProviderId, domain: string, target: string): 
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
+  const { error: showError } = useToast();
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
-  const copy = () => {
-    navigator.clipboard.writeText(value);
+  const copy = async () => {
+    if (!(await copyToClipboard(value))) {
+      showError("Could not copy");
+      return;
+    }
     setCopied(true);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 2000);

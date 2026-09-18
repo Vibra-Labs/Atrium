@@ -10,6 +10,7 @@ import { track } from "@/lib/track";
 import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
+import { copyToClipboard } from "@/lib/clipboard";
 import Link from "next/link";
 import { useAppConfig } from "@/lib/app-config";
 
@@ -162,8 +163,11 @@ export default function PeoplePage() {
   const atMemberLimit = planLimits !== null && planLimits.maxMembers !== -1 && planLimits.membersUsed >= planLimits.maxMembers;
   const atClientLimit = planLimits !== null && planLimits.maxClients !== -1 && planLimits.clientsUsed >= planLimits.maxClients;
 
-  const copyLink = (link: string) => {
-    navigator.clipboard.writeText(link);
+  const copyLink = async (link: string) => {
+    if (!(await copyToClipboard(link))) {
+      showError("Could not copy link");
+      return;
+    }
     setCopied(link);
     setTimeout(() => setCopied(""), 2000);
   };

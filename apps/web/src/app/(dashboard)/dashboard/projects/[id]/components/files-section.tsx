@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
+import { copyToClipboard } from "@/lib/clipboard";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
@@ -1278,9 +1279,13 @@ export function FilesSection({
                     onFocus={(e) => e.target.select()}
                   />
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/portal/sign/${newLinkToken}`);
-                      success("Link copied!");
+                    onClick={async () => {
+                      const link = `${window.location.origin}/portal/sign/${newLinkToken}`;
+                      if (await copyToClipboard(link)) {
+                        success("Link copied!");
+                      } else {
+                        showError("Could not copy link");
+                      }
                     }}
                     className="p-1.5 rounded hover:bg-green-100 text-green-700 transition-colors"
                     title="Copy link"

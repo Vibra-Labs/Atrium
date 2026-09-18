@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { Upload, Copy, Check } from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -161,8 +162,12 @@ export function BrandingSection({
             </code>
             <button
               type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/login/${orgSlug}`);
+              onClick={async () => {
+                const link = `${window.location.origin}/login/${orgSlug}`;
+                if (!(await copyToClipboard(link))) {
+                  showError("Could not copy link");
+                  return;
+                }
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}

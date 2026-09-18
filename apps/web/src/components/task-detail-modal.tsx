@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { X, Link2, Trash2, Check, Plus, Vote, Lock } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { CommentsSection } from "@/components/comments-section";
@@ -259,10 +260,9 @@ export function TaskDetailModal({
   const handleCopyLink = async () => {
     const url = new URL(window.location.href);
     url.searchParams.set("task", task.id);
-    try {
-      await navigator.clipboard.writeText(url.toString());
+    if (await copyToClipboard(url.toString())) {
       success("Link copied");
-    } catch {
+    } else {
       showError("Could not copy link");
     }
   };

@@ -41,7 +41,9 @@ An authorization code cannot be exchanged before the user has pressed Allow. In 
 Better Auth version the consent code *is* the authorization code, and the token endpoint
 checks only that the code exists and has not expired, so Atrium checks the code's own
 `requireConsent` flag first and answers `400 invalid_grant` until consent has actually
-been given.
+been given. The token endpoint also accepts a JSON body of any shape and coerces the
+presented code with `toString()`, so the check coerces it identically -- a code wrapped
+in an array or sent as a number is refused just the same.
 
 OAuth access tokens are honoured **only** on `POST /api/mcp` (with or without a trailing
 slash -- both reach the same route), and only when they arrive as a bearer token: a
@@ -51,11 +53,13 @@ per RFC 7235. Tokens cannot call the REST API, and API keys cannot create or rem
 grants -- both require a dashboard session. Each grant is bound to one workspace, chosen
 on the consent screen, and resolves only while the user is an owner or admin there.
 
-The workspace choice takes effect only once consent succeeds. Pressing Allow first parks
-the choice against the consent code (`mcp_pending_grant`); the grant itself is written by
-a server-side hook after the plugin's consent endpoint has returned successfully, in the
-same transaction that clears the parked row. Abandoning the consent page -- or a consent
-that fails -- therefore leaves any existing connection exactly as it was. When a
+The workspace choice takes effect only once consent succeeds. The consent screen records
+the chosen workspace against the consent code before it submits the approval
+(`mcp_pending_grant`), and that parked choice grants nothing on its own: the grant is
+written afterwards by a server-side hook, only once the plugin's consent endpoint has
+returned successfully, in the same transaction that clears the parked row. Abandoning the
+consent page -- or a consent that fails -- therefore leaves any existing connection
+exactly as it was. When a
 completed consent does move a client to a different workspace, that client's older tokens
 are deleted in that transaction, so a session authorized for the previous workspace is
 signed out rather than silently moved. Parked choices whose consent code has expired are

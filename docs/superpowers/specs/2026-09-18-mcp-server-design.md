@@ -404,8 +404,14 @@ expired. This is the only code path that writes an `McpGrant`.
 `hooks.before` guards the other side of the same flow: in this Better Auth
 version the consent code *is* the authorization code (the consent endpoint
 renames the verification row and flips `requireConsent` to false), and
-`mcp/token` never checks that flag, so the hook rejects a code exchange with
-`400 invalid_grant` while the row still says `requireConsent: true`.
+`mcp/token` never checks that flag, so `guardTokenExchange` rejects a code
+exchange with `400 invalid_grant` while the row still says
+`requireConsent: true`. It mirrors the plugin's own handling exactly: the
+endpoint's body schema is `z.record(z.any(), z.any())` and it accepts JSON, so
+the code is coerced with `String(...)` just as the plugin does `code.toString()`
+(a code wrapped in an array would otherwise slip past a string-only check), and
+the branch fires for any `grant_type` other than the literal `"refresh_token"`,
+because that is the strict comparison the plugin itself makes.
 
 ### Resolving OAuth tokens
 

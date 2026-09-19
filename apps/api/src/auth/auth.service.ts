@@ -8,11 +8,7 @@ import { organization, magicLink, mcp } from "better-auth/plugins";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
-import {
-  assertConsentGranted,
-  discardPendingGrant,
-  promoteGrantOnConsent,
-} from "../mcp-auth/consent-hooks";
+import { applyConsentOutcome, guardTokenExchange } from "../mcp-auth/consent-hooks";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
@@ -90,16 +86,9 @@ export class AuthService {
 
       // /mcp/token hands out an access token for any unexpired verification
       // row, without ever checking whether the user actually pressed Allow.
-      // See assertConsentGranted.
+      // See guardTokenExchange.
       if (ctx.path === "/mcp/token") {
-        const body = ctx.body as Record<string, unknown> | undefined;
-        const code: unknown = body?.code;
-        // The plugin treats every grant type that is not `refresh_token` as a
-        // code exchange, so gate on that rather than on the literal
-        // `authorization_code` — omitting grant_type must not slip past.
-        if (body?.grant_type !== "refresh_token" && typeof code === "string" && code) {
-          await assertConsentGranted(this.prisma, code);
-        }
+        await guardTokenExchange(this.prisma, ctx.body);
         return;
       }
 
@@ -162,28 +151,18 @@ export class AuthService {
     // keeps whatever connection they already had.
     const mcpOAuthAfterHook = createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/oauth2/consent") return;
-      // runAfterHooks puts the endpoint's own APIError in `returned` rather
-      // than throwing, so this is how a failed consent is recognised.
-      const returned: unknown = (ctx.context as { returned?: unknown }).returned;
-      if (returned instanceof APIError) return;
-
-      const body = ctx.body as { accept?: unknown; consent_code?: unknown } | undefined;
-      const consentCode: unknown = body?.consent_code;
-      if (typeof consentCode !== "string" || !consentCode) return;
-
-      if (body?.accept !== true) {
-        await discardPendingGrant(this.prisma, consentCode);
-        return;
-      }
-
       // /oauth2/consent runs behind sessionMiddleware, so the signed-in user
-      // is on the context by the time an after-hook sees it.
-      const session = (
-        ctx.context as { session?: { user?: { id?: string } } }
-      ).session;
-      const sessionUserId: string | undefined = session?.user?.id;
-      if (!sessionUserId) return;
-      await promoteGrantOnConsent(this.prisma, consentCode, sessionUserId);
+      // is on the context by the time an after-hook sees it; `returned` holds
+      // the endpoint's APIError when it failed. See applyConsentOutcome.
+      const context = ctx.context as {
+        returned?: unknown;
+        session?: { user?: { id?: string } };
+      };
+      await applyConsentOutcome(this.prisma, {
+        returned: context.returned,
+        body: ctx.body,
+        sessionUserId: context.session?.user?.id,
+      });
     });
 
     this.auth = betterAuth({

@@ -23,7 +23,12 @@ interface AuthorizationCodeValue {
  * code is unknown, and the plugin's own `invalid_grant` answer is the right one.
  */
 export async function assertConsentGranted(prisma: PrismaService, code: string): Promise<void> {
-  const row = await prisma.verification.findFirst({ where: { identifier: code } });
+  // Identifiers are not unique, and the plugin's own findVerificationValue
+  // sorts by createdAt desc with limit 1 — read the same row it will.
+  const row = await prisma.verification.findFirst({
+    where: { identifier: code },
+    orderBy: { createdAt: "desc" },
+  });
   if (!row) return;
 
   let value: AuthorizationCodeValue;
@@ -44,6 +49,34 @@ export async function assertConsentGranted(prisma: PrismaService, code: string):
       error_description: "Consent has not been granted.",
     });
   }
+}
+
+/**
+ * The `hooks.before` gate for `POST /mcp/token`.
+ *
+ * `/mcp/token` also accepts `application/json`, its body schema is
+ * `z.record(z.any(), z.any())`, and better-call passes JSON through untouched —
+ * so `code` can arrive as any shape at all. The plugin then does
+ * `code.toString()`, which means `["<consentCode>"]` resolves to the very same
+ * verification row. The check therefore coerces exactly as the plugin does,
+ * rather than only looking at strings.
+ *
+ * The branch condition mirrors the plugin's too: it compares
+ * `grant_type === "refresh_token"` strictly, so anything else — an array, a
+ * number, or nothing at all — falls through to the code exchange and must be
+ * checked here.
+ */
+export async function guardTokenExchange(prisma: PrismaService, body: unknown): Promise<void> {
+  const fields = (typeof body === "object" && body !== null ? body : {}) as {
+    grant_type?: unknown;
+    code?: unknown;
+  };
+  if (fields.grant_type === "refresh_token") return;
+  const code: unknown = fields.code;
+  if (code === undefined || code === null) return;
+  const presented: string = String(code);
+  if (!presented) return;
+  await assertConsentGranted(prisma, presented);
 }
 
 /**
@@ -100,4 +133,63 @@ export async function discardPendingGrant(
   consentCode: string,
 ): Promise<void> {
   await prisma.mcpPendingGrant.deleteMany({ where: { consentCode } });
+}
+
+/** What the `hooks.after` on `/oauth2/consent` observed. */
+export interface ConsentOutcome {
+  /** The endpoint's result; an `APIError` means it failed. */
+  returned: unknown;
+  /** The request body, as the router parsed it. */
+  body: unknown;
+  /** The signed-in user, from the endpoint's session middleware. */
+  sessionUserId: string | undefined;
+}
+
+/**
+ * The `hooks.after` body for `POST /oauth2/consent`, kept here so it can be
+ * exercised without a Better Auth request.
+ *
+ * Only a successful consent may move a grant: `runAfterHooks` hands a failed
+ * endpoint's `APIError` back as `returned` instead of throwing it, so that is
+ * what "succeeded" is decided on.
+ */
+export async function applyConsentOutcome(
+  prisma: PrismaService,
+  outcome: ConsentOutcome,
+): Promise<void> {
+  if (outcome.returned instanceof APIError) return;
+
+  const body = (typeof outcome.body === "object" && outcome.body !== null ? outcome.body : {}) as {
+    accept?: unknown;
+    consent_code?: unknown;
+  };
+  const consentCode: unknown = body.consent_code;
+  if (typeof consentCode !== "string" || !consentCode) return;
+
+  if (body.accept !== true) {
+    await discardPendingGrant(prisma, consentCode);
+    return;
+  }
+
+  if (!outcome.sessionUserId) return;
+  try {
+    await promoteGrantOnConsent(prisma, consentCode, outcome.sessionUserId);
+  } catch (err) {
+    // better-call swallows this into its own console output, so record it
+    // here: a consent the user saw succeed would otherwise have left no grant
+    // and no trace. The consent code is exchangeable, so it is never logged.
+    const pending = await prisma.mcpPendingGrant
+      .findUnique({ where: { consentCode }, select: { clientId: true } })
+      .catch((lookupErr: unknown) => {
+        logger.error(
+          `Could not read the pending MCP grant while reporting a failed promotion: ${lookupErr instanceof Error ? lookupErr.message : String(lookupErr)}`,
+        );
+        return null;
+      });
+    logger.error(
+      `Failed to promote the MCP grant for client ${pending?.clientId ?? "unknown"} and user ${outcome.sessionUserId}`,
+      err instanceof Error ? err.stack : String(err),
+    );
+    throw err;
+  }
 }

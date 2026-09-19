@@ -759,6 +759,89 @@ describe("token exchange before consent", () => {
     expect(await prisma.oauthAccessToken.count({ where: { clientId } })).toBe(0);
   });
 
+  it("refuses a consent code smuggled through a JSON body as an array", async () => {
+    // /mcp/token also accepts application/json, its body schema is
+    // z.record(z.any(), z.any()), and the plugin does `code.toString()` — so
+    // ["<consentCode>"] reaches the same verification row as the bare string.
+    const clientId = await registerClient("IT Client JSON Bypass");
+    const { consentCode, verifier } = await mintConsentCodeWithPkce(clientId);
+
+    const res = await call("/mcp/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code: [consentCode],
+        redirect_uri: REDIRECT_URI,
+        client_id: clientId,
+        code_verifier: verifier,
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error?: string }).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Consent has not been granted.",
+    });
+    expect(await prisma.oauthAccessToken.count({ where: { clientId } })).toBe(0);
+    // The code survives: the exchange never got far enough to consume it.
+    expect(await prisma.verification.count({ where: { identifier: consentCode } })).toBe(1);
+  });
+
+  it("refuses a JSON body that hides the code exchange behind an array grant_type", async () => {
+    // The plugin compares `grant_type === "refresh_token"` strictly, so this
+    // is still a code exchange as far as it is concerned.
+    const clientId = await registerClient("IT Client JSON Grant Type");
+    const { consentCode, verifier } = await mintConsentCodeWithPkce(clientId);
+
+    const res = await call("/mcp/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: ["refresh_token"],
+        code: consentCode,
+        redirect_uri: REDIRECT_URI,
+        client_id: clientId,
+        code_verifier: verifier,
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await prisma.oauthAccessToken.count({ where: { clientId } })).toBe(0);
+  });
+
+  it("still exchanges a JSON-bodied code after Allow", async () => {
+    const clientId = await registerClient("IT Client JSON Allowed");
+    const { consentCode, verifier } = await mintConsentCodeWithPkce(clientId);
+
+    const consent = await call("/oauth2/consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accept: true, consent_code: consentCode }),
+    });
+    expect(consent.status).toBe(200);
+    const code = new URL(((await consent.json()) as { redirectURI: string }).redirectURI)
+      .searchParams.get("code")!;
+
+    const token = await call("/mcp/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: REDIRECT_URI,
+        client_id: clientId,
+        code_verifier: verifier,
+      }),
+    });
+
+    expect(token.status).toBe(200);
+    const { access_token } = (await token.json()) as { access_token: string };
+    expect(
+      await prisma.oauthAccessToken.count({ where: { accessToken: access_token } }),
+    ).toBe(1);
+  });
+
   it("still exchanges the code the consent screen hands back after Allow", async () => {
     const clientId = await registerClient("IT Client Allowed Exchange");
     const tokens = await authorizeAndExchange(clientId);

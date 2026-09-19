@@ -531,6 +531,27 @@ describe("MCP_OAUTH_ENABLED=false", () => {
   });
 });
 
+describe("GET /mcp/get-session", () => {
+  /**
+   * The plugin endpoint hands back the whole oauthAccessToken row — refresh
+   * token and all — for any presented access token, with no expiry or grant
+   * check. Atrium never calls it, so the before-hook takes it off the air.
+   */
+  it("is not served, so an access token cannot be traded for its refresh token", async () => {
+    const clientId = await registerClient("IT Client GetSession");
+    const tokens = await authorizeAndExchange(clientId);
+
+    const res = await call("/mcp/get-session", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+
+    expect(res.status).toBe(404);
+    const body: string = await res.text();
+    expect(body).not.toContain(tokens.refresh_token);
+    expect(body).not.toContain("refreshToken");
+  });
+});
+
 describe("OAuth token → MCP actor", () => {
   it("resolves only after a grant exists, and stops after disconnect", async () => {
     const mcpAuth = new McpAuthService(prisma);

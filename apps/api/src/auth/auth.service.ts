@@ -69,6 +69,16 @@ export class AuthService {
     // the plugin stashes ctx.query in the signed `oidc_login_prompt` cookie and
     // replays it after login, so the continuation lands on the consent page too.
     const mcpOAuthBeforeHook = createAuthMiddleware(async (ctx) => {
+      // /mcp/get-session hands back the whole oauthAccessToken row — refresh
+      // token and client id included — for any presented access token, with
+      // no expiry and no grant check. That turns a leaked or expired one-hour
+      // access token into 30 days of renewable access, since public clients
+      // refresh with `client_id` alone. Atrium never calls this endpoint, so
+      // take it off the air rather than leave the downgrade path open.
+      if (ctx.path === "/mcp/get-session") {
+        throw new APIError("NOT_FOUND");
+      }
+
       if (ctx.path === "/mcp/register") {
         // Dynamic registration is anonymous, and the consent page navigates
         // the browser to whatever redirect URI was registered — a

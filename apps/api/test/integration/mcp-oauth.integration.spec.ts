@@ -180,6 +180,25 @@ async function mintConsentCode(clientId: string): Promise<string> {
   return new URL(res.headers.get("location")!).searchParams.get("consent_code")!;
 }
 
+/**
+ * The same, but with a real PKCE pair, so the consent code it returns is one
+ * the token endpoint would otherwise honour in full.
+ */
+async function mintConsentCodeWithPkce(
+  clientId: string,
+): Promise<{ consentCode: string; verifier: string }> {
+  const verifier: string = randomBytes(32).toString("base64url");
+  const challenge: string = createHash("sha256").update(verifier).digest("base64url");
+  const res = await call(
+    `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=x&code_challenge=${challenge}&code_challenge_method=S256`,
+  );
+  expect(res.status).toBe(302);
+  const consentCode: string = new URL(res.headers.get("location")!).searchParams.get(
+    "consent_code",
+  )!;
+  return { consentCode, verifier };
+}
+
 beforeAll(async () => {
   assertDisposableDatabase();
   prisma = new PrismaService();
@@ -623,6 +642,49 @@ describe("consent is bound to the consent code", () => {
   });
 });
 
+describe("token exchange before consent", () => {
+  /**
+   * In this Better Auth version the consent code IS the authorization code:
+   * /oauth2/consent renames the same verification row and flips
+   * `requireConsent` to false. /mcp/token never looks at that flag, so the
+   * code handed to the browser on the way to the consent page could be
+   * exchanged for a real token without anyone pressing Allow.
+   */
+  it("refuses a consent code presented as an authorization code", async () => {
+    const clientId = await registerClient("IT Client Early Exchange");
+    // A real PKCE pair, so nothing but the consent check stands in the way.
+    const { consentCode, verifier } = await mintConsentCodeWithPkce(clientId);
+
+    const res = await call("/mcp/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: consentCode,
+        redirect_uri: REDIRECT_URI,
+        client_id: clientId,
+        code_verifier: verifier,
+      }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error?: string }).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Consent has not been granted.",
+    });
+    expect(await prisma.oauthAccessToken.count({ where: { clientId } })).toBe(0);
+  });
+
+  it("still exchanges the code the consent screen hands back after Allow", async () => {
+    const clientId = await registerClient("IT Client Allowed Exchange");
+    const tokens = await authorizeAndExchange(clientId);
+
+    expect(await prisma.oauthAccessToken.count({
+      where: { accessToken: tokens.access_token },
+    })).toBe(1);
+  });
+});
+
 describe("OAuth token → MCP actor", () => {
   it("resolves only after a grant exists, and stops after disconnect", async () => {
     const mcpAuth = new McpAuthService(prisma);
@@ -674,10 +736,12 @@ describe("OAuth token → MCP actor", () => {
     await prisma.organization.deleteMany({ where: { id: movedOrgId } });
   });
 
-  it("issues a usable token before any grant exists, which resolves to nobody", async () => {
+  it("issues a usable token before any workspace grant exists, which resolves to nobody", async () => {
     // Better Auth's consent only records that the user pressed Allow; the
-    // workspace binding is Atrium's. A code exchanged without that binding
-    // therefore yields a real token that authenticates nothing.
+    // workspace binding is Atrium's. A code exchanged after Allow but with no
+    // workspace chosen therefore yields a real token that authenticates
+    // nothing. (Exchanging *before* Allow is refused outright — see
+    // "token exchange before consent" above.)
     const mcpAuth = new McpAuthService(prisma);
     const clientId = await registerClient("IT Client Pre Consent");
     const tokens = await authorizeAndExchange(clientId);

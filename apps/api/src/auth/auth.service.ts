@@ -8,6 +8,7 @@ import { organization, magicLink, mcp } from "better-auth/plugins";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
+import { assertConsentGranted } from "../mcp-auth/consent-hooks";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
@@ -81,6 +82,21 @@ export class AuthService {
       // take it off the air rather than leave the downgrade path open.
       if (ctx.path === "/mcp/get-session") {
         throw new APIError("NOT_FOUND");
+      }
+
+      // /mcp/token hands out an access token for any unexpired verification
+      // row, without ever checking whether the user actually pressed Allow.
+      // See assertConsentGranted.
+      if (ctx.path === "/mcp/token") {
+        const body = ctx.body as Record<string, unknown> | undefined;
+        const code: unknown = body?.code;
+        // The plugin treats every grant type that is not `refresh_token` as a
+        // code exchange, so gate on that rather than on the literal
+        // `authorization_code` — omitting grant_type must not slip past.
+        if (body?.grant_type !== "refresh_token" && typeof code === "string" && code) {
+          await assertConsentGranted(this.prisma, code);
+        }
+        return;
       }
 
       if (ctx.path === "/mcp/register") {

@@ -37,15 +37,40 @@ unparseable, contain a comma, or use the `javascript:`, `data:`, `vbscript:`, `b
 `file:`, or `about:` schemes (checked again at authorize time), is rate limited to 10
 per hour per IP, and unused registrations are pruned after 7 days.
 
-OAuth access tokens are honoured **only** on `POST /api/mcp`. They cannot call the REST
+OAuth access tokens are honoured **only** on `POST /api/mcp`, and only when they arrive
+as a bearer token: a browser session cookie does not authenticate that endpoint, so a
+logged-in user cannot be made to drive it from another site. Tokens cannot call the REST
 API, and API keys cannot create or remove MCP grants -- both require a dashboard
 session. Each grant is bound to one workspace, chosen on the consent screen, and
-resolves only while the user is an owner or admin there. The plugin stores access and
-refresh tokens unhashed; the short lifetime and the single-endpoint rule bound the
-impact of a database leak. Disconnecting an app deletes its tokens, consent, and grant;
-because of the 30-second auth cache, a token can keep working for up to 30 seconds
-after disconnect or expiry.
+resolves only while the user is an owner or admin there. Re-consenting the same client
+into a different workspace deletes that client's older tokens, so a session authorized
+for the previous workspace is signed out rather than silently moved.
+
+The plugin stores access **and refresh** tokens unhashed. A database leak therefore
+exposes refresh tokens that stay redeemable for 30 days, and MCP clients are public
+clients that refresh with `client_id` alone -- no secret is involved. The
+single-endpoint rule, not the access token's one-hour lifetime, is what bounds the
+impact. The plugin's own `GET /api/auth/mcp/mcp/get-session` endpoint, which returns the
+whole token row (refresh token included) for any presented access token, is blocked and
+answers 404. Token rows whose refresh window has closed are deleted nightly.
+
+Disconnecting an app deletes its tokens and workspace grant; because of the 30-second
+auth cache, a token can keep working for up to 30 seconds after disconnect or expiry.
+The recorded consent is kept on purpose -- it grants nothing, but it marks the
+registration as one a person approved, so the nightly prune of abandoned registrations
+leaves it in place and the client can reconnect by signing in again instead of failing
+with `invalid_client`.
+
+Setting `MCP_OAUTH_ENABLED="false"` unmounts the OAuth endpoints *and* stops honouring
+access tokens that were already issued, so turning the feature off disconnects existing
+clients immediately rather than an hour later.
+
+Better Auth's own rate limiter -- including the 10-per-hour rule on dynamic client
+registration -- is active only when `NODE_ENV=production`. The application's other
+limits (the global throttler, the per-key MCP limit, the failed-key limiter) apply in
+every environment.
 
 Because registration is anonymous, the consent screen shows a client-chosen name --
-only approve a connection you started yourself. Review and disconnect apps anytime
+so it also shows where approving will send you, read from the pending request itself.
+Only approve a connection you started yourself. Review and disconnect apps anytime
 under Settings → API & MCP → Connected apps.

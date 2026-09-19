@@ -25,12 +25,16 @@ The assistant acts as you in the workspace you picked. Only owners and admins ca
 connect. See and disconnect assistants under **Settings → API & MCP → Connected apps**;
 disconnecting takes effect within 30 seconds. Consent is shown every time you connect, so
 to move an assistant to a different workspace, just reconnect it and pick another
-workspace on the consent screen -- there's no need to disconnect first.
+workspace on the consent screen -- there's no need to disconnect first. Switching
+workspace signs the assistant's older sessions out, so anything still running under the
+previous workspace stops working and the assistant has to use its new connection.
 
 **When to use an API key instead:** headless agents and scripts, the Anthropic or OpenAI
 APIs, n8n, local-model front ends, and any instance on plain HTTP or a private network.
 
-To turn sign-in connections off entirely, set `MCP_OAUTH_ENABLED="false"`.
+To turn sign-in connections off entirely, set `MCP_OAUTH_ENABLED="false"`. That also
+rejects access tokens that were already issued, so connected assistants stop working
+straight away rather than when their tokens expire.
 
 If you run a split deployment (API and web on different hosts) behind your own reverse
 proxy, route `/.well-known/oauth-*` to the API -- the discovery documents are served at

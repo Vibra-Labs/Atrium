@@ -161,11 +161,13 @@ servers that do not push server-initiated messages.
 
 ### Authentication on the endpoint
 
-`McpService.handle` reads `req.user`, `req.organization`, and `req.member`.
-If any is missing it responds `401` with `WWW-Authenticate: Bearer` and a
-JSON-RPC error body. Cookie sessions also satisfy this, which lets the e2e
-suite and curious users hit the endpoint from the browser, but the documented
-path is the bearer key.
+`McpService.handle` reads `req.user`, `req.organization`, `req.member`, and
+`req.bearerKind`. If any is missing it responds `401` with
+`WWW-Authenticate: Bearer` and a JSON-RPC error body. `bearerKind` is set by
+`SessionMiddleware` only for identity derived from an `Authorization: Bearer`
+token, so a cookie session does **not** satisfy the endpoint: the route is
+`@Public()` and CSRF-exempt and every tool changes state, so browser-session
+identity is treated as no identity at all.
 
 Because a server is built per request, the identity (`Actor`:
 `{ user, organization, member }`) is closed over when tools are registered.
@@ -349,11 +351,18 @@ model McpGrant {
 ```
 
 On Allow, the consent page first calls `POST /api/mcp-grants`
-(`{ clientId, organizationId }`, cookie session, owner or admin of that org
-required), then posts to the plugin's `oauth2/consent`. Better Auth remembers
-consent per user and client, and the grant row is keyed the same way, so a
-grant row is upserted on every approval. To switch workspaces the user
-reconnects the app and picks a different one.
+(`{ consentCode, organizationId }`, cookie session, owner or admin of that org
+required), then posts to the plugin's `oauth2/consent`. The client id is never
+taken from the request or from the consent page's own URL: both
+`GET /api/mcp-grants/consent-info?consentCode=…` and the POST read it, with the
+request's redirect URI, out of the `verification` row the consent code
+identifies, after checking that the row is unexpired, belongs to the signed-in
+user, and is a consent request. Better Auth remembers consent per user and
+client, and the grant row is keyed the same way, so a grant row is upserted on
+every approval. To switch workspaces the user reconnects the app and picks a
+different one; the upsert then deletes that client's older access tokens in the
+same transaction, so a session authorized for the previous workspace is signed
+out rather than re-pointed.
 
 ### Resolving OAuth tokens
 
@@ -376,8 +385,10 @@ REST API or mint API keys. API keys keep working on both.
 ### Connected apps
 
 The settings page (section 4) lists the user's OAuth grants: client name,
-workspace, connected date. **Disconnect** deletes the `McpGrant`, the
-`oauthConsent` row, and all `oauthAccessToken` rows for that user and client
+workspace, connected date. **Disconnect** deletes the `McpGrant` and all
+`oauthAccessToken` rows for that user and client. The `oauthConsent` row is
+kept: it grants nothing, but it marks the registration as approved so the
+nightly prune does not delete it and strand a client on `invalid_client`
 via `DELETE /api/mcp-grants/:id`. Owners also see, and can disconnect, grants
 made by other admins in their workspace.
 
@@ -388,13 +399,19 @@ made by other admins in their workspace.
   and unused applications with no tokens are pruned after 7 days by the
   existing scheduler.
 - PKCE is required. Redirect URIs are exact-match, enforced by the plugin.
-- The plugin stores access and refresh tokens unhashed. They are short-lived
-  (1 hour access, 30 day refresh) and scoped to `/api/mcp` only. Recorded in
+- The plugin stores access and refresh tokens unhashed. The access token lasts
+  1 hour, but the refresh token stays redeemable for 30 days and public clients
+  refresh with `client_id` alone, so a database leak is bounded by the
+  `/api/mcp`-only rule rather than by the access token's lifetime. Recorded in
   `docs/security.md`.
+- `GET /mcp/get-session` is blocked in the top-level `hooks.before`: it hands
+  the whole token row, refresh token included, to anyone holding an access
+  token. Atrium never calls it.
 - A new env flag `MCP_OAUTH_ENABLED` (default `true`) lets an operator turn
   login off. When off, the plugin is not registered, the discovery routes
-  return 404, and the 401 header falls back to a bare `Bearer`. API keys are
-  unaffected.
+  return 404, the 401 header falls back to a bare `Bearer`, and
+  `SessionMiddleware` stops honouring access tokens issued before the switch.
+  API keys are unaffected.
 
 ## 4. Settings UI
 

@@ -45,3 +45,59 @@ export async function assertConsentGranted(prisma: PrismaService, code: string):
     });
   }
 }
+
+/**
+ * Applies the workspace choice the consent screen parked for this code.
+ *
+ * Better Auth consumes the consent-code row when the user presses Allow, so
+ * the browser cannot write the grant first and consent second — a consent that
+ * then failed would have re-pointed (and signed out) a connection the user
+ * still had. The choice is therefore recorded as an `McpPendingGrant` and only
+ * becomes an `McpGrant` here, once `/oauth2/consent` has actually succeeded.
+ *
+ * This is the only code path that writes an `McpGrant`.
+ */
+export async function promoteGrantOnConsent(
+  prisma: PrismaService,
+  consentCode: string,
+  sessionUserId: string,
+): Promise<void> {
+  const pending = await prisma.mcpPendingGrant.findUnique({ where: { consentCode } });
+  if (!pending) return;
+  // The pending row and the consent that promotes it must belong to the same
+  // person; otherwise anyone who learned a consent code could bind it.
+  if (pending.userId !== sessionUserId) {
+    logger.warn(`Refusing to promote a pending MCP grant for a different user (client ${pending.clientId})`);
+    return;
+  }
+
+  const { userId, clientId, organizationId } = pending;
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.mcpGrant.findUnique({
+      where: { userId_clientId: { userId, clientId } },
+      select: { organizationId: true },
+    });
+    // Access tokens carry no workspace of their own — they resolve through
+    // this grant — so re-consenting into a different workspace would silently
+    // re-point a session the user authorized for the old one. Those tokens are
+    // signed out instead. The token for this consent is issued afterwards, so
+    // it is unaffected.
+    if (existing && existing.organizationId !== organizationId) {
+      await tx.oauthAccessToken.deleteMany({ where: { userId, clientId } });
+    }
+    await tx.mcpGrant.upsert({
+      where: { userId_clientId: { userId, clientId } },
+      create: { userId, clientId, organizationId },
+      update: { organizationId },
+    });
+    await tx.mcpPendingGrant.delete({ where: { consentCode } });
+  });
+}
+
+/** Drops a parked workspace choice the user did not go through with. */
+export async function discardPendingGrant(
+  prisma: PrismaService,
+  consentCode: string,
+): Promise<void> {
+  await prisma.mcpPendingGrant.deleteMany({ where: { consentCode } });
+}

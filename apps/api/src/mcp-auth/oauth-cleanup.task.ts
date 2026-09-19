@@ -5,8 +5,9 @@ import { PrismaService } from "../prisma/prisma.service";
 const UNUSED_CLIENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Dynamic client registration is open and every refresh inserts a new token
- * row, so both tables grow without an upper bound. This trims them nightly.
+ * Dynamic client registration is open, every refresh inserts a new token row,
+ * and an abandoned consent page leaves a pending grant behind, so these tables
+ * grow without an upper bound. This trims them nightly.
  */
 @Injectable()
 export class OAuthCleanupTask {
@@ -23,6 +24,7 @@ export class OAuthCleanupTask {
   async nightlyCleanup(): Promise<void> {
     await this.pruneExpiredTokens();
     await this.pruneUnusedClients();
+    await this.pruneExpiredPendingGrants();
   }
 
   /** Drops abandoned registrations: never used, never approved, never granted. */
@@ -44,6 +46,25 @@ export class OAuthCleanupTask {
       if (result.count > 0) this.logger.log(`Pruned ${result.count} unused OAuth client(s)`);
     } catch (err) {
       this.logger.error("Failed to prune OAuth clients", err instanceof Error ? err.stack : String(err));
+    }
+  }
+
+  /**
+   * Drops workspace choices whose consent code has expired. A user who opens
+   * the consent page and walks away leaves one behind; it can never be
+   * promoted once the code it names is dead.
+   */
+  async pruneExpiredPendingGrants(): Promise<void> {
+    try {
+      const result = await this.prisma.mcpPendingGrant.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+      if (result.count > 0) this.logger.log(`Deleted ${result.count} expired pending MCP grant(s)`);
+    } catch (err) {
+      this.logger.error(
+        "Failed to delete expired pending MCP grants",
+        err instanceof Error ? err.stack : String(err),
+      );
     }
   }
 

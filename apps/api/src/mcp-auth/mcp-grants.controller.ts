@@ -50,8 +50,14 @@ export class McpConsentController {
     }
     // The client id comes from the consent code's own row, so the grant can
     // only ever be written for the client the user is actually being asked about.
-    const { clientId } = await this.mcpAuth.consentRequest(dto.consentCode, userId);
-    await this.mcpAuth.saveGrant(userId, clientId, dto.organizationId);
+    const { clientId, expiresAt } = await this.mcpAuth.consentRequest(dto.consentCode, userId);
+    await this.mcpAuth.savePendingGrant(
+      dto.consentCode,
+      userId,
+      clientId,
+      dto.organizationId,
+      expiresAt,
+    );
   }
 }
 

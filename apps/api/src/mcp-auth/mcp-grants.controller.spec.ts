@@ -3,14 +3,20 @@ import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { McpConsentController, McpGrantsController } from "./mcp-grants.controller";
 import type { AuthenticatedRequest } from "../common";
 
+const CODE_EXPIRY = new Date(Date.now() + 60_000);
+
 function build() {
   const service = {
     consentRequest: mock(() =>
-      Promise.resolve({ clientId: "c1", redirectURI: "http://localhost:9999/callback" }),
+      Promise.resolve({
+        clientId: "c1",
+        redirectURI: "http://localhost:9999/callback",
+        expiresAt: CODE_EXPIRY,
+      }),
     ),
     getClient: mock(() => Promise.resolve({ clientId: "c1", name: "Claude" })),
     adminOrganizations: mock(() => Promise.resolve([{ id: "org1", name: "Acme" }])),
-    saveGrant: mock(() => Promise.resolve()),
+    savePendingGrant: mock(() => Promise.resolve()),
     listGrants: mock(() => Promise.resolve([])),
     revokeGrant: mock(() => Promise.resolve()),
   };
@@ -40,12 +46,18 @@ describe("MCP grants controllers", () => {
     await expect(build().consent.consentInfo("", "u1")).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it("create saves the grant for the client the consent code names", async () => {
+  it("create parks the choice for the client the consent code names, with the code's expiry", async () => {
     const { consent, service } = build();
     const req = {} as AuthenticatedRequest;
     await consent.create({ consentCode: "code1", organizationId: "org1" }, req, "u1");
     expect(service.consentRequest).toHaveBeenCalledWith("code1", "u1");
-    expect(service.saveGrant).toHaveBeenCalledWith("u1", "c1", "org1");
+    expect(service.savePendingGrant).toHaveBeenCalledWith(
+      "code1",
+      "u1",
+      "c1",
+      "org1",
+      CODE_EXPIRY,
+    );
   });
 
   it("refuses to create a grant when the request itself used an API key", async () => {
@@ -59,7 +71,7 @@ describe("MCP grants controllers", () => {
     }
     expect(error).toBeInstanceOf(ForbiddenException);
     expect(service.consentRequest).not.toHaveBeenCalled();
-    expect(service.saveGrant).not.toHaveBeenCalled();
+    expect(service.savePendingGrant).not.toHaveBeenCalled();
   });
 
   it("list and revoke pass the caller's identity and role", async () => {

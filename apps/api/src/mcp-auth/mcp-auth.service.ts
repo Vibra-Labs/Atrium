@@ -10,6 +10,8 @@ export type ResolvedOAuthToken = Actor & { oauthClientId: string };
 export interface ConsentRequest {
   clientId: string;
   redirectURI: string;
+  /** When the code stops being exchangeable; a parked choice dies with it. */
+  expiresAt: Date;
 }
 
 /** What Better Auth's mcp plugin stores in the consent code's verification row. */
@@ -70,7 +72,11 @@ export class McpAuthService {
     ) {
       throw new NotFoundException(EXPIRED_CONSENT);
     }
-    return { clientId: value.clientId, redirectURI: value.redirectURI };
+    return {
+      clientId: value.clientId,
+      redirectURI: value.redirectURI,
+      expiresAt: row.expiresAt,
+    };
   }
 
   /** OAuth access token → actor. Same role rule as API keys; expiry is checked here
@@ -112,33 +118,33 @@ export class McpAuthService {
     return memberships.map((m) => m.organization);
   }
 
-  async saveGrant(userId: string, clientId: string, organizationId: string): Promise<void> {
+  /**
+   * Records which workspace the user picked for this consent code.
+   *
+   * Deliberately writes nothing but the pending row: Better Auth consumes the
+   * consent code when the user presses Allow, so the grant cannot be written
+   * first and consent second without a failed consent leaving a working
+   * connection re-pointed at a workspace it was never approved for.
+   * `promoteGrantOnConsent` turns this into an `McpGrant` once the consent
+   * endpoint has actually succeeded.
+   */
+  async savePendingGrant(
+    consentCode: string,
+    userId: string,
+    clientId: string,
+    organizationId: string,
+    expiresAt: Date,
+  ): Promise<void> {
     const member = await this.prisma.member.findFirst({ where: { userId, organizationId } });
     if (!member || !GRANT_ROLES.includes(member.role)) {
       throw new ForbiddenException("You must be an owner or admin of that workspace");
     }
     await this.getClient(clientId);
-    const existing = await this.prisma.mcpGrant.findUnique({
-      where: { userId_clientId: { userId, clientId } },
-      select: { organizationId: true },
+    await this.prisma.mcpPendingGrant.upsert({
+      where: { consentCode },
+      create: { consentCode, userId, clientId, organizationId, expiresAt },
+      update: { userId, clientId, organizationId, expiresAt },
     });
-    // Access tokens carry no workspace of their own — they resolve through
-    // this grant — so re-consenting into a different workspace would silently
-    // re-point a session the user authorized for the old one. Those tokens are
-    // signed out instead. The token for this consent is issued afterwards, so
-    // it is unaffected.
-    const movedWorkspace: boolean =
-      existing !== null && existing.organizationId !== organizationId;
-    await this.prisma.$transaction([
-      ...(movedWorkspace
-        ? [this.prisma.oauthAccessToken.deleteMany({ where: { userId, clientId } })]
-        : []),
-      this.prisma.mcpGrant.upsert({
-        where: { userId_clientId: { userId, clientId } },
-        create: { userId, clientId, organizationId },
-        update: { organizationId },
-      }),
-    ]);
   }
 
   /** Admins see their own grants in this workspace; the owner sees everyone's. */

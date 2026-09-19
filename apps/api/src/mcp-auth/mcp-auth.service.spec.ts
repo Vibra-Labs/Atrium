@@ -36,6 +36,9 @@ function build(
       upsert: mock(() => Promise.resolve({})),
       delete: mock(() => Promise.resolve({})),
     },
+    mcpPendingGrant: {
+      upsert: mock(() => Promise.resolve({})),
+    },
     verification: {
       findFirst: mock(() => Promise.resolve(opts.verification ?? null)),
     },
@@ -83,46 +86,44 @@ describe("McpAuthService.resolve", () => {
 });
 
 describe("McpAuthService grants", () => {
-  it("saveGrant refuses an org where the user is not owner or admin", async () => {
+  it("savePendingGrant refuses an org where the user is not owner or admin", async () => {
     const { service, prisma } = build({ app: { clientId: "c1" }, member: { ...owner, role: "member" } });
-    await expect(service.saveGrant("u1", "c1", "org1")).rejects.toBeInstanceOf(ForbiddenException);
-    expect(prisma.mcpGrant.upsert).not.toHaveBeenCalled();
+    await expect(
+      service.savePendingGrant("code1", "u1", "c1", "org1", future),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.mcpPendingGrant.upsert).not.toHaveBeenCalled();
   });
 
-  it("saveGrant refuses an unknown client", async () => {
-    const { service } = build({ member: owner });
-    await expect(service.saveGrant("u1", "ghost", "org1")).rejects.toBeInstanceOf(NotFoundException);
+  it("savePendingGrant refuses an unknown client", async () => {
+    const { service, prisma } = build({ member: owner });
+    await expect(
+      service.savePendingGrant("code1", "u1", "ghost", "org1", future),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.mcpPendingGrant.upsert).not.toHaveBeenCalled();
   });
 
-  it("saveGrant upserts on (userId, clientId) so re-consent can move the workspace", async () => {
+  it("savePendingGrant parks the choice on the consent code, touching no grant", async () => {
+    // Pressing Allow is what turns this into a grant; until then an existing
+    // connection must keep working exactly as it did.
     const { service, prisma } = build({ app: { clientId: "c1" }, member: owner });
-    await service.saveGrant("u1", "c1", "org1");
-    const args = prisma.mcpGrant.upsert.mock.calls[0][0];
-    expect(args.where).toEqual({ userId_clientId: { userId: "u1", clientId: "c1" } });
-    expect(args.update).toEqual({ organizationId: "org1" });
-  });
-
-  it("saveGrant signs older sessions out when the client moves workspace", async () => {
-    // Tokens carry no workspace, so a still-running session authorized for the
-    // old org would silently start acting in the new one.
-    const { service, prisma } = build({
-      app: { clientId: "c1" },
-      member: owner,
-      grant: { ...grant, organizationId: "org-old" },
+    await service.savePendingGrant("code1", "u1", "c1", "org1", future);
+    const args = prisma.mcpPendingGrant.upsert.mock.calls[0][0];
+    expect(args.where).toEqual({ consentCode: "code1" });
+    expect(args.create).toEqual({
+      consentCode: "code1",
+      userId: "u1",
+      clientId: "c1",
+      organizationId: "org1",
+      expiresAt: future,
     });
-    await service.saveGrant("u1", "c1", "org1");
-    expect(prisma.oauthAccessToken.deleteMany).toHaveBeenCalledWith({
-      where: { userId: "u1", clientId: "c1" },
+    expect(args.update).toEqual({
+      userId: "u1",
+      clientId: "c1",
+      organizationId: "org1",
+      expiresAt: future,
     });
-    // Deletion and upsert land together, so consent can never half-apply.
-    expect(prisma.$transaction.mock.calls[0][0].length).toBe(2);
-  });
-
-  it("saveGrant leaves tokens alone when the workspace is unchanged", async () => {
-    const { service, prisma } = build({ app: { clientId: "c1" }, member: owner, grant });
-    await service.saveGrant("u1", "c1", "org1");
+    expect(prisma.mcpGrant.upsert).not.toHaveBeenCalled();
     expect(prisma.oauthAccessToken.deleteMany).not.toHaveBeenCalled();
-    expect(prisma.$transaction.mock.calls[0][0].length).toBe(1);
   });
 
   it("revokeGrant deletes the grant and tokens, but keeps the consent record", async () => {
@@ -228,6 +229,7 @@ describe("McpAuthService.consentRequest", () => {
     expect(await service.consentRequest("code1", "u1")).toEqual({
       clientId: "c1",
       redirectURI: "https://claude.ai/cb",
+      expiresAt: future,
     });
     expect(prisma.verification.findFirst.mock.calls[0][0].where).toEqual({ identifier: "code1" });
   });

@@ -15,6 +15,7 @@ import type { BillingService } from "../../src/billing/billing.service";
 import { McpAuthService } from "../../src/mcp-auth/mcp-auth.service";
 import { McpConsentController } from "../../src/mcp-auth/mcp-grants.controller";
 import { OAuthCleanupTask } from "../../src/mcp-auth/oauth-cleanup.task";
+import { promoteGrantOnConsent } from "../../src/mcp-auth/consent-hooks";
 import type { AuthenticatedRequest } from "../../src/common";
 
 const API = "http://localhost:3001";
@@ -199,6 +200,76 @@ async function mintConsentCodeWithPkce(
   return { consentCode, verifier };
 }
 
+/** Pending rows this run parked directly, so cleanup can find them again. */
+let pendingSeq = 0;
+
+/**
+ * Binds a client to a workspace the way the consent screen does: park the
+ * choice, then promote it. There is no other code path that writes a grant.
+ */
+async function grantWorkspace(
+  clientId: string,
+  organizationId: string,
+  user: string = userId,
+): Promise<void> {
+  const consentCode = `pending-${stamp}-${pendingSeq++}`;
+  await prisma.mcpPendingGrant.create({
+    data: {
+      consentCode,
+      userId: user,
+      clientId,
+      organizationId,
+      expiresAt: new Date(Date.now() + 600_000),
+    },
+  });
+  await promoteGrantOnConsent(prisma, consentCode, user);
+}
+
+/**
+ * The whole browser flow: authorize → the consent screen's POST /mcp-grants →
+ * POST /oauth2/consent → token exchange. `accept: false` stops after the
+ * consent call and returns no tokens.
+ */
+async function connectViaConsentPage(
+  clientId: string,
+  organizationId: string,
+  accept = true,
+): Promise<{ access_token: string; refresh_token: string } | null> {
+  const { consentCode, verifier } = await mintConsentCodeWithPkce(clientId);
+  const consentController = new McpConsentController(new McpAuthService(prisma));
+  await consentController.create(
+    { consentCode, organizationId },
+    {} as AuthenticatedRequest,
+    userId,
+  );
+
+  const consent = await call("/oauth2/consent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accept, consent_code: consentCode }),
+  });
+  expect(consent.status).toBe(200);
+  const redirect = new URL(((await consent.json()) as { redirectURI: string }).redirectURI);
+  if (!accept) {
+    expect(redirect.searchParams.get("error")).toBe("access_denied");
+    return null;
+  }
+
+  const token = await call("/mcp/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: redirect.searchParams.get("code")!,
+      redirect_uri: REDIRECT_URI,
+      client_id: clientId,
+      code_verifier: verifier,
+    }).toString(),
+  });
+  expect(token.status).toBe(200);
+  return (await token.json()) as { access_token: string; refresh_token: string };
+}
+
 beforeAll(async () => {
   assertDisposableDatabase();
   prisma = new PrismaService();
@@ -261,6 +332,12 @@ afterAll(async () => {
       where: { value: { contains: `"clientId":"${clientId}"` } },
     });
   }
+  await prisma.mcpPendingGrant.deleteMany({
+    where: { clientId: { in: registeredClientIds } },
+  });
+  await prisma.mcpPendingGrant.deleteMany({
+    where: { consentCode: { startsWith: `pending-${stamp}-` } },
+  });
   await prisma.oauthApplication.deleteMany({
     where: { name: { endsWith: stamp } },
   });
@@ -625,10 +702,11 @@ describe("consent is bound to the consent code", () => {
     await expect(
       consent.create({ consentCode: code, organizationId: orgId }, anyRequest, otherUserId),
     ).rejects.toThrow(/expired/i);
+    expect(await prisma.mcpPendingGrant.count({ where: { clientId } })).toBe(0);
     expect(await prisma.mcpGrant.count({ where: { clientId } })).toBe(0);
   });
 
-  it("writes the grant for the client the code names, whatever the caller asks for", async () => {
+  it("parks the choice for the client the code names, whatever the caller asks for", async () => {
     const clientId = await registerClient("IT Client Consent Bound");
     const decoy = await registerClient("IT Client Consent Decoy");
     const code = await mintConsentCode(clientId);
@@ -636,9 +714,15 @@ describe("consent is bound to the consent code", () => {
 
     await consent.create({ consentCode: code, organizationId: orgId }, anyRequest, userId);
 
-    expect(await prisma.mcpGrant.count({ where: { clientId, userId } })).toBe(1);
-    expect(await prisma.mcpGrant.count({ where: { clientId: decoy } })).toBe(0);
-    await prisma.mcpGrant.deleteMany({ where: { clientId, userId } });
+    const pendingRow = await prisma.mcpPendingGrant.findUniqueOrThrow({
+      where: { consentCode: code },
+    });
+    expect(pendingRow.clientId).toBe(clientId);
+    expect(pendingRow.organizationId).toBe(orgId);
+    expect(await prisma.mcpPendingGrant.count({ where: { clientId: decoy } })).toBe(0);
+    // Still only a choice: nothing is granted until /oauth2/consent succeeds.
+    expect(await prisma.mcpGrant.count({ where: { userId } })).toBe(0);
+    await prisma.mcpPendingGrant.deleteMany({ where: { consentCode: code } });
   });
 });
 
@@ -685,6 +769,162 @@ describe("token exchange before consent", () => {
   });
 });
 
+describe("the workspace choice takes effect only when consent succeeds", () => {
+  const anyRequest = {} as AuthenticatedRequest;
+
+  it("writes no grant until Allow, then binds the workspace the page chose", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client Promote");
+    const { consentCode, verifier } = await mintConsentCodeWithPkce(clientId);
+    const consentController = new McpConsentController(new McpAuthService(prisma));
+
+    await consentController.create({ consentCode, organizationId: orgId }, anyRequest, userId);
+
+    // Parked, not granted.
+    expect(await prisma.mcpPendingGrant.count({ where: { consentCode } })).toBe(1);
+    expect(await prisma.mcpGrant.count({ where: { clientId, userId } })).toBe(0);
+
+    const consent = await call("/oauth2/consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accept: true, consent_code: consentCode }),
+    });
+    expect(consent.status).toBe(200);
+
+    const grantRow = await prisma.mcpGrant.findUniqueOrThrow({
+      where: { userId_clientId: { userId, clientId } },
+    });
+    expect(grantRow.organizationId).toBe(orgId);
+    // The pending row is consumed by the promotion.
+    expect(await prisma.mcpPendingGrant.count({ where: { consentCode } })).toBe(0);
+
+    const code = new URL(((await consent.json()) as { redirectURI: string }).redirectURI)
+      .searchParams.get("code")!;
+    const token = await call("/mcp/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: REDIRECT_URI,
+        client_id: clientId,
+        code_verifier: verifier,
+      }).toString(),
+    });
+    expect(token.status).toBe(200);
+    const { access_token } = (await token.json()) as { access_token: string };
+    expect((await mcpAuth.resolve(access_token))?.organization.id).toBe(orgId);
+  });
+
+  it("leaves a working connection alone when the user abandons a workspace move", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client Abandoned Move");
+    const tokens = (await connectViaConsentPage(clientId, orgId))!;
+    expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(orgId);
+
+    const otherOrgId = `org-abandon-${stamp}`;
+    await prisma.organization.create({
+      data: { id: otherOrgId, name: "Abandoned Org", slug: `abandon-${stamp}` },
+    });
+    await prisma.member.create({
+      data: { id: `m-abandon-${stamp}`, organizationId: otherOrgId, userId, role: "owner" },
+    });
+
+    // The consent page posts its choice, then the tab is closed.
+    const { consentCode } = await mintConsentCodeWithPkce(clientId);
+    await new McpConsentController(new McpAuthService(prisma)).create(
+      { consentCode, organizationId: otherOrgId },
+      anyRequest,
+      userId,
+    );
+
+    // The old session still works, in the workspace it was approved for.
+    expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(orgId);
+    const grantRow = await prisma.mcpGrant.findUniqueOrThrow({
+      where: { userId_clientId: { userId, clientId } },
+    });
+    expect(grantRow.organizationId).toBe(orgId);
+
+    await prisma.mcpPendingGrant.deleteMany({ where: { consentCode } });
+    await prisma.mcpGrant.deleteMany({ where: { userId, clientId } });
+    await prisma.organization.deleteMany({ where: { id: otherOrgId } });
+  });
+
+  it("signs the old session out once a workspace move is consented to", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client Completed Move");
+    const first = (await connectViaConsentPage(clientId, orgId))!;
+    expect((await mcpAuth.resolve(first.access_token))?.organization.id).toBe(orgId);
+
+    const nextOrgId = `org-completed-${stamp}`;
+    await prisma.organization.create({
+      data: { id: nextOrgId, name: "Completed Org", slug: `completed-${stamp}` },
+    });
+    await prisma.member.create({
+      data: { id: `m-completed-${stamp}`, organizationId: nextOrgId, userId, role: "owner" },
+    });
+
+    const second = (await connectViaConsentPage(clientId, nextOrgId))!;
+
+    expect(await mcpAuth.resolve(first.access_token)).toBeNull();
+    expect((await mcpAuth.resolve(second.access_token))?.organization.id).toBe(nextOrgId);
+
+    await prisma.mcpGrant.deleteMany({ where: { userId, clientId } });
+    await prisma.organization.deleteMany({ where: { id: nextOrgId } });
+  });
+
+  it("Deny drops the parked choice and writes no grant", async () => {
+    const clientId = await registerClient("IT Client Denied");
+
+    // connectViaConsentPage posts the workspace choice first, exactly as the
+    // page does, and then denies.
+    const denied = await connectViaConsentPage(clientId, orgId, false);
+
+    expect(denied).toBeNull();
+    expect(await prisma.mcpPendingGrant.count({ where: { clientId } })).toBe(0);
+    expect(await prisma.mcpGrant.count({ where: { clientId } })).toBe(0);
+  });
+
+  it("refuses to promote a pending row that belongs to another user", async () => {
+    const clientId = await registerClient("IT Client Foreign Promote");
+    const consentCode = `pending-foreign-${stamp}`;
+    await prisma.mcpPendingGrant.create({
+      data: {
+        consentCode,
+        userId,
+        clientId,
+        organizationId: orgId,
+        expiresAt: new Date(Date.now() + 600_000),
+      },
+    });
+
+    await promoteGrantOnConsent(prisma, consentCode, otherUserId);
+
+    expect(await prisma.mcpGrant.count({ where: { clientId } })).toBe(0);
+    // The row survives: it is still the first user's to complete.
+    expect(await prisma.mcpPendingGrant.count({ where: { consentCode } })).toBe(1);
+    await prisma.mcpPendingGrant.deleteMany({ where: { consentCode } });
+  });
+
+  it("the nightly sweep clears a choice whose consent code has expired", async () => {
+    const clientId = await registerClient("IT Client Stale Pending");
+    const consentCode = `pending-stale-${stamp}`;
+    await prisma.mcpPendingGrant.create({
+      data: {
+        consentCode,
+        userId,
+        clientId,
+        organizationId: orgId,
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    await new OAuthCleanupTask(prisma).pruneExpiredPendingGrants();
+
+    expect(await prisma.mcpPendingGrant.count({ where: { consentCode } })).toBe(0);
+  });
+});
+
 describe("OAuth token → MCP actor", () => {
   it("resolves only after a grant exists, and stops after disconnect", async () => {
     const mcpAuth = new McpAuthService(prisma);
@@ -693,7 +933,7 @@ describe("OAuth token → MCP actor", () => {
 
     expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
 
-    await mcpAuth.saveGrant(userId, clientId, orgId);
+    await grantWorkspace(clientId, orgId);
     const actor = await mcpAuth.resolve(tokens.access_token);
     expect(actor?.organization.id).toBe(orgId);
     expect(actor?.member.role).toBe("owner");
@@ -713,7 +953,7 @@ describe("OAuth token → MCP actor", () => {
     const mcpAuth = new McpAuthService(prisma);
     const clientId = await registerClient("IT Client Move");
     const tokens = await authorizeAndExchange(clientId);
-    await mcpAuth.saveGrant(userId, clientId, orgId);
+    await grantWorkspace(clientId, orgId);
     expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(orgId);
 
     const movedOrgId = `org-move-${stamp}`;
@@ -724,7 +964,7 @@ describe("OAuth token → MCP actor", () => {
       data: { id: `m-move-${stamp}`, organizationId: movedOrgId, userId, role: "owner" },
     });
 
-    await mcpAuth.saveGrant(userId, clientId, movedOrgId);
+    await grantWorkspace(clientId, movedOrgId);
 
     // The session authorized for the old workspace is gone, not re-pointed.
     expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
@@ -755,7 +995,7 @@ describe("OAuth token → MCP actor", () => {
     const mcpAuth = new McpAuthService(prisma);
     const clientId = await registerClient("IT Client Refresh");
     const tokens = await authorizeAndExchange(clientId);
-    await mcpAuth.saveGrant(userId, clientId, orgId);
+    await grantWorkspace(clientId, orgId);
     const grant = (await mcpAuth.listGrants(userId, orgId, "owner")).find(
       (g) => g.clientName === clientName("IT Client Refresh"),
     )!;
@@ -785,7 +1025,7 @@ describe("OAuth token → MCP actor", () => {
     await prisma.member.create({
       data: { id: `m-demo-${stamp}`, organizationId: demoOrgId, userId, role: "admin" },
     });
-    await mcpAuth.saveGrant(userId, clientId, demoOrgId);
+    await grantWorkspace(clientId, demoOrgId);
     expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(demoOrgId);
 
     await prisma.member.update({ where: { id: `m-demo-${stamp}` }, data: { role: "member" } });
@@ -798,7 +1038,7 @@ describe("OAuth token → MCP actor", () => {
     const mcpAuth = new McpAuthService(prisma);
     const clientId = await registerClient("IT Client G");
     const tokens = await authorizeAndExchange(clientId);
-    await mcpAuth.saveGrant(userId, clientId, orgId);
+    await grantWorkspace(clientId, orgId);
     await prisma.oauthAccessToken.update({
       where: { accessToken: tokens.access_token },
       data: { accessTokenExpiresAt: new Date(Date.now() - 1000) },

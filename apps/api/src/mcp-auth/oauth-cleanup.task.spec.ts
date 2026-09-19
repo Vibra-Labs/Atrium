@@ -8,6 +8,7 @@ function build(overrides: { appDelete?: () => Promise<unknown> } = {}) {
       deleteMany: mock(overrides.appDelete ?? (() => Promise.resolve({ count: 2 }))),
     },
     oauthAccessToken: { deleteMany: mock(() => Promise.resolve({ count: 3 })) },
+    mcpPendingGrant: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
   };
   const task = new OAuthCleanupTask(prisma as never);
   // The failure case logs an error on purpose; keep the output pristine.
@@ -48,12 +49,25 @@ describe("OAuthCleanupTask.pruneExpiredTokens", () => {
   });
 });
 
+describe("OAuthCleanupTask.pruneExpiredPendingGrants", () => {
+  it("deletes workspace choices whose consent code can no longer be used", async () => {
+    const { prisma, task } = build();
+    await task.pruneExpiredPendingGrants();
+
+    const where = prisma.mcpPendingGrant.deleteMany.mock.calls[0][0].where;
+    const skewMs: number = Date.now() - where.expiresAt.lt.getTime();
+    expect(skewMs).toBeGreaterThanOrEqual(0);
+    expect(skewMs).toBeLessThan(5_000);
+  });
+});
+
 describe("OAuthCleanupTask nightly run", () => {
-  it("runs both sweeps, tokens first so newly dead clients become prunable", async () => {
+  it("runs every sweep, tokens first so newly dead clients become prunable", async () => {
     const { prisma, task } = build();
     await task.nightlyCleanup();
     expect(prisma.oauthAccessToken.deleteMany).toHaveBeenCalledTimes(1);
     expect(prisma.oauthApplication.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.mcpPendingGrant.deleteMany).toHaveBeenCalledTimes(1);
   });
 
   it("still prunes clients when the token sweep is the one that fails", async () => {
@@ -61,5 +75,6 @@ describe("OAuthCleanupTask nightly run", () => {
     await task.nightlyCleanup();
     expect(prisma.oauthAccessToken.deleteMany).toHaveBeenCalledTimes(1);
     expect(prisma.oauthApplication.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.mcpPendingGrant.deleteMany).toHaveBeenCalledTimes(1);
   });
 });

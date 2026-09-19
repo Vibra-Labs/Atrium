@@ -8,7 +8,11 @@ import { organization, magicLink, mcp } from "better-auth/plugins";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
-import { assertConsentGranted } from "../mcp-auth/consent-hooks";
+import {
+  assertConsentGranted,
+  discardPendingGrant,
+  promoteGrantOnConsent,
+} from "../mcp-auth/consent-hooks";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
@@ -151,6 +155,37 @@ export class AuthService {
       return { context: { query: { ...ctx.query, prompt: "consent" } } };
     });
 
+    // The other half of R2's two-step consent: /oauth2/consent consumes the
+    // consent code, so the workspace choice is parked as an McpPendingGrant
+    // beforehand and only becomes a grant here, after the endpoint has
+    // actually succeeded. A user who closes the tab mid-consent therefore
+    // keeps whatever connection they already had.
+    const mcpOAuthAfterHook = createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/oauth2/consent") return;
+      // runAfterHooks puts the endpoint's own APIError in `returned` rather
+      // than throwing, so this is how a failed consent is recognised.
+      const returned: unknown = (ctx.context as { returned?: unknown }).returned;
+      if (returned instanceof APIError) return;
+
+      const body = ctx.body as { accept?: unknown; consent_code?: unknown } | undefined;
+      const consentCode: unknown = body?.consent_code;
+      if (typeof consentCode !== "string" || !consentCode) return;
+
+      if (body?.accept !== true) {
+        await discardPendingGrant(this.prisma, consentCode);
+        return;
+      }
+
+      // /oauth2/consent runs behind sessionMiddleware, so the signed-in user
+      // is on the context by the time an after-hook sees it.
+      const session = (
+        ctx.context as { session?: { user?: { id?: string } } }
+      ).session;
+      const sessionUserId: string | undefined = session?.user?.id;
+      if (!sessionUserId) return;
+      await promoteGrantOnConsent(this.prisma, consentCode, sessionUserId);
+    });
+
     this.auth = betterAuth({
       database: prismaAdapter(this.prisma, { provider: "postgresql" }),
       secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
@@ -201,7 +236,10 @@ export class AuthService {
         },
       },
       trustedOrigins: [webUrl, apiUrl],
-      hooks: { before: mcpOAuthEnabled ? mcpOAuthBeforeHook : undefined },
+      hooks: {
+        before: mcpOAuthEnabled ? mcpOAuthBeforeHook : undefined,
+        after: mcpOAuthEnabled ? mcpOAuthAfterHook : undefined,
+      },
       // Firebase Hosting strips all cookies except "__session".
       // When FIREBASE_HOSTING=true, override the cookie name.
       // On other hosts (Coolify, VPS, etc.) use Better Auth defaults.

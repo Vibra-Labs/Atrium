@@ -33,6 +33,7 @@ model User {
   oauthAccessTokens  OauthAccessToken[]
   oauthConsents      OauthConsent[]
   mcpGrants          McpGrant[]
+  mcpPendingGrants   McpPendingGrant[]
 
   @@map("user")
 }
@@ -95,14 +96,15 @@ model Organization {
   metadata       String?
   setupCompleted Boolean  @default(false)
 
-  members        Member[]
-  invitations    Invitation[]
-  systemSettings SystemSettings?
-  subscription   Subscription?
-  labels         Label[]
-  timeEntries    TimeEntry[]
-  apiKeys        ApiKey[]
-  mcpGrants      McpGrant[]
+  members          Member[]
+  invitations      Invitation[]
+  systemSettings   SystemSettings?
+  subscription     Subscription?
+  labels           Label[]
+  timeEntries      TimeEntry[]
+  apiKeys          ApiKey[]
+  mcpGrants        McpGrant[]
+  mcpPendingGrants McpPendingGrant[]
 
   @@map("organization")
 }
@@ -234,6 +236,26 @@ model McpGrant {
   @@unique([userId, clientId])
   @@index([organizationId])
   @@map("mcp_grant")
+}
+
+/// A workspace choice the consent screen has recorded but Better Auth has not
+/// yet confirmed. Promoted to an McpGrant only when /oauth2/consent succeeds,
+/// so abandoning the consent page leaves an existing connection untouched.
+model McpPendingGrant {
+  consentCode    String   @id
+  userId         String
+  clientId       String
+  organizationId String
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("mcp_pending_grant")
 }
 
 // ─── Application tables ───

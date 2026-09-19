@@ -28,6 +28,7 @@ model User {
   tasksRequested     Task[]              @relation("TaskRequester")
   tasksAssigned      Task[]              @relation("TaskAssignee")
   timeEntries        TimeEntry[]
+  apiKeys            ApiKey[]
 
   @@map("user")
 }
@@ -96,6 +97,7 @@ model Organization {
   subscription   Subscription?
   labels         Label[]
   timeEntries    TimeEntry[]
+  apiKeys        ApiKey[]
 
   @@map("organization")
 }
@@ -131,6 +133,24 @@ model Invitation {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("invitation")
+}
+
+model ApiKey {
+  id             String    @id @default(cuid())
+  name           String
+  keyHash        String    @unique
+  keyPrefix      String
+  userId         String
+  organizationId String
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("api_key")
 }
 
 // ─── Application tables ───

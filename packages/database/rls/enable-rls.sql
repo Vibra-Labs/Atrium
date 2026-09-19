@@ -37,6 +37,7 @@ ALTER TABLE "system_settings"   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "project_status"    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "subscription_plan" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "subscription"      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "api_key"           ENABLE ROW LEVEL SECURITY;
 
 -- ─── Revoke direct access from anon and authenticated roles ─────────────────
 -- REVOKE is idempotent -- revoking a privilege that was never granted is a no-op.
@@ -62,5 +63,6 @@ REVOKE ALL ON "system_settings"   FROM anon, authenticated;
 REVOKE ALL ON "project_status"    FROM anon, authenticated;
 REVOKE ALL ON "subscription_plan" FROM anon, authenticated;
 REVOKE ALL ON "subscription"      FROM anon, authenticated;
+REVOKE ALL ON "api_key"           FROM anon, authenticated;
 
 COMMIT;

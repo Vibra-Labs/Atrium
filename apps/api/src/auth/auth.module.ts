@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthController } from "./auth.controller";
+import { WellKnownController } from "./well-known.controller";
 import { AuthService } from "./auth.service";
 import { SessionMiddleware } from "./session.middleware";
 import { PreviewModeMiddleware } from "./preview-mode.middleware";
@@ -10,7 +11,7 @@ import { McpAuthModule } from "../mcp-auth/mcp-auth.module";
 
 @Module({
   imports: [MailModule, BillingModule, ApiKeysModule, McpAuthModule],
-  controllers: [AuthController],
+  controllers: [AuthController, WellKnownController],
   providers: [AuthService, SessionMiddleware, PreviewModeMiddleware],
   exports: [AuthService, SessionMiddleware, PreviewModeMiddleware],
 })

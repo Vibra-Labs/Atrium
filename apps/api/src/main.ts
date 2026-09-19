@@ -124,7 +124,15 @@ async function bootstrap() {
     }),
   );
 
-  app.setGlobalPrefix("api");
+  // OAuth discovery documents must live at the origin root, not under /api.
+  app.setGlobalPrefix("api", {
+    exclude: [
+      ".well-known/oauth-authorization-server",
+      ".well-known/oauth-authorization-server/api/auth",
+      ".well-known/oauth-protected-resource",
+      ".well-known/oauth-protected-resource/api/mcp",
+    ],
+  });
 
   const port = process.env.PORT || 3001;
   await app.listen(port);

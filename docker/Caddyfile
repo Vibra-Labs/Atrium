@@ -23,6 +23,11 @@
 		header Cache-Control "no-store, no-cache, must-revalidate"
 	}
 
+	# OAuth discovery for MCP clients is served by the API, not the web app
+	handle /.well-known/oauth-* {
+		reverse_proxy 127.0.0.1:3001
+	}
+
 	handle {
 		reverse_proxy 127.0.0.1:3000
 	}

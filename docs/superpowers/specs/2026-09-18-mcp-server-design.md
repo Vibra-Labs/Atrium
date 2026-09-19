@@ -237,7 +237,10 @@ DTO field is not in this table, it is omitted from the tool for now.
 
 The controller skips the global IP-based `ThrottlerGuard`. The MCP
 handler applies its own limit of 300 requests per minute per API key using an
-in-memory sliding window, returning 429 with `Retry-After`. Generous enough
+in-memory sliding window, returning 429 with `Retry-After`. Requests that fail
+authentication (missing, invalid, or revoked key) are limited separately to
+30 per minute per client IP, because the controller skips the global throttle
+and each bad key costs a database lookup. Generous enough
 for an agent loop, tight enough to notice a runaway.
 
 ## 3. Login (OAuth)

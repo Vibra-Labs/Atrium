@@ -37,6 +37,18 @@ async function connect(key: string): Promise<Client> {
   return client;
 }
 
+/**
+ * `Project.organizationId` is a plain column, not a Prisma relation, so deleting
+ * the organization leaves its projects (and everything cascading off them)
+ * behind. Invoice is the only child of Project that does not cascade, so its
+ * rows are removed first.
+ */
+async function purgeOrg(organizationId: string): Promise<void> {
+  await prisma.invoice.deleteMany({ where: { organizationId } });
+  await prisma.project.deleteMany({ where: { organizationId } });
+  await prisma.organization.deleteMany({ where: { id: organizationId } });
+}
+
 function textOf(result: { content?: unknown }): string {
   const content = result.content as { type: string; text: string }[];
   return content[0].text;
@@ -76,7 +88,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server?.close();
-  await prisma.organization.deleteMany({ where: { id: orgId } });
+  await purgeOrg(orgId);
   await prisma.user.deleteMany({ where: { id: `admin-${stamp}` } });
   await prisma.$disconnect();
 });
@@ -118,7 +130,7 @@ describe("MCP endpoint", () => {
     expect(result.isError).toBe(true);
     expect(textOf(result)).toBe("Project not found");
     await client.close();
-    await prisma.organization.deleteMany({ where: { id: `other-${stamp}` } });
+    await purgeOrg(`other-${stamp}`);
   });
 
   it("blocks delete_project for an admin", async () => {

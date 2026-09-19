@@ -23,6 +23,8 @@ export class RateLimiter {
   /** Records a hit and returns whether it was within the budget. */
   allow(key: string, now: number = Date.now()): boolean {
     const bucket: string = RateLimiter.normalize(key);
+    // Checked before either outcome, so the map is still swept while refusing.
+    const full: boolean = this.atCapacity(now);
     const known: boolean = this.hits.has(bucket);
     const recent: number[] = this.recentHits(bucket, now);
 
@@ -31,7 +33,7 @@ export class RateLimiter {
       return false;
     }
     // Fail closed: a new key cannot be tracked once the map is full.
-    if (!known && this.atCapacity(now)) return false;
+    if (!known && full) return false;
 
     recent.push(now);
     this.hits.set(bucket, recent);

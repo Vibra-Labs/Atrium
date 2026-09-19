@@ -144,6 +144,33 @@ describe("MCP endpoint", () => {
     await client.close();
   });
 
+  it("refuses a JSON-RPC batch and runs none of its messages", async () => {
+    const batchName = `Batch ${stamp}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: `Bearer ${adminKey}`,
+      },
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "create_project", arguments: { name: batchName } } },
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "create_project", arguments: { name: batchName } } },
+      ]),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      jsonrpc: "2.0",
+      error: {
+        code: -32600,
+        message: "Batch requests are not supported. Send one JSON-RPC message per request.",
+      },
+      id: null,
+    });
+    expect(await prisma.project.count({ where: { organizationId: orgId, name: batchName } })).toBe(0);
+  });
+
   it("rejects requests with no key and with a revoked key", async () => {
     const noKey = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     expect(noKey.status).toBe(401);

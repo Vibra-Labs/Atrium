@@ -106,6 +106,20 @@ export class McpService {
       this.tooManyRequests(res);
       return;
     }
+    // The current MCP spec removed JSON-RPC batching, and the rate limiter
+    // counts HTTP requests: one POST carrying an array of tool calls would
+    // otherwise spend a single token and run all of them.
+    if (Array.isArray(req.body)) {
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32600,
+          message: "Batch requests are not supported. Send one JSON-RPC message per request.",
+        },
+        id: null,
+      });
+      return;
+    }
     if (!MCP_ROLES.includes(member.role)) {
       res.status(403).json({
         jsonrpc: "2.0",

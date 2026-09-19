@@ -208,6 +208,37 @@ describe("McpService", () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it("refuses a JSON-RPC batch without serving any of its messages", async () => {
+    const service = buildTestService();
+    const req = ownerReq("k1");
+    (req as unknown as { body: unknown }).body = [
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: {} },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: {} },
+    ];
+    const res = buildRes();
+    await service.handle(req, res as unknown as Response);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      jsonrpc: "2.0",
+      error: {
+        code: -32600,
+        message: "Batch requests are not supported. Send one JSON-RPC message per request.",
+      },
+      id: null,
+    });
+    expect(service.served).toBe(0);
+  });
+
+  it("serves a single JSON-RPC message body", async () => {
+    const service = buildTestService();
+    const req = ownerReq("k1");
+    (req as unknown as { body: unknown }).body = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+    const res = buildRes();
+    await service.handle(req, res as unknown as Response);
+    expect(res.statusCode).toBe(200);
+    expect(service.served).toBe(1);
+  });
+
   it("charges the per-user bucket even when the role check refuses", async () => {
     const service = buildTestService();
     for (let i = 0; i < 300; i++) {

@@ -76,10 +76,10 @@ export async function registerClient(name: string): Promise<string> {
 /**
  * Runs authorize → consent → token and returns the token response.
  *
- * `prompt=consent` is not optional: authorize.mjs only redirects to the
- * consent page (and only preserves `state`) when the request asks for it.
- * Without it the plugin bounces straight back to the client's redirect_uri
- * with a code and the consent screen never runs.
+ * Deliberately sends no `prompt` — real MCP clients don't — to prove Atrium's
+ * before-hook forces the consent step server-side. Without that hook the
+ * plugin would bounce straight back to the client's redirect_uri with a code
+ * and drop `state` on the floor.
  */
 export async function authorizeAndExchange(clientId: string): Promise<{
   access_token: string;
@@ -96,7 +96,6 @@ export async function authorizeAndExchange(clientId: string): Promise<{
     redirect_uri: REDIRECT_URI,
     scope: "openid profile email offline_access",
     state: "st8",
-    prompt: "consent",
     code_challenge: challenge,
     code_challenge_method: "S256",
   });
@@ -252,5 +251,57 @@ describe("Better Auth mcp plugin on Atrium's schema", () => {
     // The whole request is stashed in a signed cookie so the post-login hook
     // can resume authorize without the login page having to replay it.
     expect(res.headers.get("set-cookie")).toContain("oidc_login_prompt");
+  });
+
+  it("forces the consent page even when the client asks for prompt=none", async () => {
+    const clientId = await registerClient("IT Client C");
+    const res = await call(
+      `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=x&prompt=none&code_challenge=abc&code_challenge_method=S256`,
+    );
+
+    expect(res.status).toBe(302);
+    const target = new URL(res.headers.get("location")!);
+    expect(`${target.origin}${target.pathname}`).toBe(`${WEB}/oauth/consent`);
+    // A silent grant would have sent a code to the client instead.
+    expect(target.searchParams.get("code")).toBeNull();
+    expect(target.searchParams.get("consent_code")).toBeTruthy();
+  });
+
+  it("resumes a signed-out authorize at the consent page after login, not at the client", async () => {
+    const clientId = await registerClient("IT Client D");
+    const saved = sessionCookie;
+    sessionCookie = "";
+    const authorize = await call(
+      `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=resume&code_challenge=abc&code_challenge_method=S256`,
+    );
+    sessionCookie = saved;
+
+    expect(authorize.status).toBe(302);
+    const promptCookie: string = authorize.headers
+      .getSetCookie()
+      .map((c) => c.split(";")[0])
+      .filter((c) => c.startsWith("oidc_login_prompt="))
+      .join("; ");
+    expect(promptCookie).not.toBe("");
+
+    // The plugin's after-hook replays the stashed query on any response that
+    // mints a session, so signing in is what continues the OAuth flow.
+    const signIn = await auth.auth.handler(
+      new Request(`${API}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: API,
+          Cookie: promptCookie,
+        },
+        body: JSON.stringify({ email, password: "correct-horse-battery" }),
+      }),
+    );
+
+    expect(signIn.status).toBe(302);
+    const resumed = new URL(signIn.headers.get("location")!);
+    expect(`${resumed.origin}${resumed.pathname}`).toBe(`${WEB}/oauth/consent`);
+    expect(resumed.searchParams.get("client_id")).toBe(clientId);
+    expect(resumed.searchParams.get("code")).toBeNull();
   });
 });

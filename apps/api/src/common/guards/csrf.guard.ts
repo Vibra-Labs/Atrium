@@ -27,6 +27,20 @@ export class CsrfGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
 
+    // Skip CSRF entirely for auth proxy routes -- Better Auth handles its own
+    // CSRF protection. This must happen before the cookie is set below: Better
+    // Auth's own origin-check middleware treats ANY cookie on the request
+    // (not just its session cookie) as reason to require a matching Origin
+    // header. If we set our own csrf-token cookie here and a client's HTTP
+    // library persists cookies (as many do, e.g. requests.Session()), that
+    // stray cookie alone would make legitimate, cookie-less OAuth clients
+    // (which never send an Origin header) get rejected by Better Auth on
+    // their next call, such as the token exchange.
+    const url: string = request.originalUrl || request.url || "";
+    if (url.startsWith("/api/auth/")) {
+      return true;
+    }
+
     // Only set the CSRF cookie when one does not already exist.
     // Re-generating on every request would invalidate in-flight requests
     // that already read the previous token value.
@@ -48,12 +62,6 @@ export class CsrfGuard implements CanActivate {
 
     // Safe methods don't need CSRF validation
     if (SAFE_METHODS.has(request.method)) {
-      return true;
-    }
-
-    // Skip CSRF for auth proxy routes -- Better Auth handles its own CSRF protection
-    const url: string = request.originalUrl || request.url || "";
-    if (url.startsWith("/api/auth/")) {
       return true;
     }
 

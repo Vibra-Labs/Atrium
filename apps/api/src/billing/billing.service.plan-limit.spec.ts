@@ -20,6 +20,12 @@ describe("BillingService.assertPlanLimit", () => {
     await expect(build("true", 99, -1).assertPlanLimit("org1", "projects")).resolves.toBeUndefined();
   });
 
+  it("passes when the org has no subscription", async () => {
+    const service = build("true", 99, 1);
+    service.getSubscription = mock(() => Promise.resolve(null)) as never;
+    await expect(service.assertPlanLimit("org1", "projects")).resolves.toBeUndefined();
+  });
+
   it("throws Forbidden with the upgrade message at the limit", async () => {
     await expect(build("true", 3, 3).assertPlanLimit("org1", "projects")).rejects.toThrow(
       "You've reached the projects limit (3/3) on your Free plan. Please upgrade to continue.",

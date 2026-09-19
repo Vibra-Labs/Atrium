@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, Post, Req, Res } from "@nestjs/common";
+import { Controller, Delete, Get, Post, Req, Res } from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { Public } from "../common";
@@ -17,7 +17,6 @@ export class McpController {
   constructor(private mcp: McpService) {}
 
   @Post()
-  @HttpCode(200)
   async post(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.mcp.handle(req, res);
   }

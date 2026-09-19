@@ -29,11 +29,19 @@ export class ApiKeysController {
     if (req.apiKeyId) {
       throw new ForbiddenException("API keys cannot create API keys. Sign in to the dashboard.");
     }
-    return this.apiKeys.create(dto.name.trim(), userId, orgId);
+    return this.apiKeys.create(dto.name, userId, orgId);
   }
 
   @Delete(":id")
-  revoke(@Param("id") id: string, @CurrentOrg("id") orgId: string): Promise<void> {
+  revoke(
+    @Param("id") id: string,
+    @Req() req: AuthenticatedRequest,
+    @CurrentOrg("id") orgId: string,
+  ): Promise<void> {
+    // A leaked key must not be able to revoke the workspace's other keys.
+    if (req.apiKeyId) {
+      throw new ForbiddenException("API keys cannot revoke API keys. Sign in to the dashboard.");
+    }
     return this.apiKeys.revoke(id, orgId);
   }
 }

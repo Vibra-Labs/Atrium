@@ -47,3 +47,20 @@ describe("task tools", () => {
     expect(tasks.remove).toHaveBeenCalledWith("t1", "org1");
   });
 });
+
+describe("task tool date validation", () => {
+  it("rejects prose dates and accepts ISO dates", () => {
+    const { get } = build();
+    const schema = get("create_task").inputSchema;
+    expect(schema.safeParse({ projectId: "p1", title: "Ship", dueDate: "next friday" }).success).toBe(false);
+    expect(schema.safeParse({ projectId: "p1", title: "Ship", dueDate: "2026-10-01" }).success).toBe(true);
+    expect(schema.safeParse({ projectId: "p1", title: "Ship", dueDate: "2026-10-01T12:00:00Z" }).success).toBe(true);
+  });
+
+  it("still accepts null for update_task.dueDate", () => {
+    const { get } = build();
+    const schema = get("update_task").inputSchema;
+    expect(schema.safeParse({ taskId: "t1", dueDate: null }).success).toBe(true);
+    expect(schema.safeParse({ taskId: "t1", dueDate: "tomorrow" }).success).toBe(false);
+  });
+});

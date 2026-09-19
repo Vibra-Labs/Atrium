@@ -1,9 +1,7 @@
 import * as z from "zod/v4";
-import { defineTool, paging } from "../tool-kit";
+import { defineTool, isoDate, paging } from "../tool-kit";
 import type { McpTool } from "../tool-kit";
 import type { TasksService } from "../../tasks/tasks.service";
-
-const isoDate = z.string().describe("ISO 8601 date, e.g. 2026-10-01");
 
 export function taskTools(deps: { tasks: TasksService }): McpTool[] {
   const { tasks } = deps;

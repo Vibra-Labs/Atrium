@@ -100,3 +100,13 @@ describe("workspace tools", () => {
     });
   });
 });
+
+describe("project tool date validation", () => {
+  it("rejects prose dates and accepts ISO dates", () => {
+    const { get } = build();
+    const schema = get("create_project").inputSchema;
+    expect(schema.safeParse({ name: "Site", startDate: "next friday" }).success).toBe(false);
+    expect(schema.safeParse({ name: "Site", startDate: "2026-10-01" }).success).toBe(true);
+    expect(schema.safeParse({ name: "Site", endDate: "2026-10-01T12:00:00Z" }).success).toBe(true);
+  });
+});

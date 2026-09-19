@@ -36,8 +36,23 @@ describe("ApiKeysController", () => {
   it("lists and revokes within the current org", async () => {
     const { controller, service } = build();
     await controller.list("org1");
-    await controller.revoke("k1", "org1");
+    await controller.revoke("k1", {} as AuthenticatedRequest, "org1");
     expect(service.list).toHaveBeenCalledWith("org1");
     expect(service.revoke).toHaveBeenCalledWith("k1", "org1");
+  });
+});
+
+describe("ApiKeysController revocation", () => {
+  it("refuses to revoke a key when the request itself used an API key", async () => {
+    const { controller, service } = build();
+    const req = { apiKeyId: "k0" } as AuthenticatedRequest;
+    let error: Error | null = null;
+    try {
+      await controller.revoke("k1", req, "org1");
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeInstanceOf(ForbiddenException);
+    expect(service.revoke).not.toHaveBeenCalled();
   });
 });

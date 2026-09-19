@@ -72,3 +72,8 @@ export const paging = {
   page: z.number().int().min(1).default(1).describe("Page number, starting at 1"),
   limit: z.number().int().min(1).max(50).default(20).describe("Results per page (max 50)"),
 };
+
+/** Shared ISO 8601 date input. Keeps prose like "next friday" out of `new Date()`. */
+export const isoDate = z
+  .union([z.iso.date(), z.iso.datetime({ offset: true })])
+  .describe("ISO 8601 date, e.g. 2026-10-01");

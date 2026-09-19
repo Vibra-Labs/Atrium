@@ -21,6 +21,7 @@ export class HealthController {
     return {
       billingEnabled: this.config.get("BILLING_ENABLED") === "true",
       signupEnabled: this.config.get("ALLOW_SIGNUPS") !== "false",
+      mcpOAuthEnabled: this.config.get("MCP_OAUTH_ENABLED", "true") !== "false",
     };
   }
 

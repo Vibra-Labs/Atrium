@@ -50,7 +50,7 @@ function configuredMcpUrl(): string {
   return `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/mcp`;
 }
 
-export function ConnectCard(): React.ReactElement {
+export function ConnectCard({ oauthEnabled }: { oauthEnabled: boolean }): React.ReactElement {
   const [active, setActive] = useState<ClientId>("claude-code");
   const [url, setUrl] = useState<string>(configuredMcpUrl());
   const { success, error: showError } = useToast();
@@ -69,13 +69,22 @@ export function ConnectCard(): React.ReactElement {
   };
 
   return (
-    <section className="space-y-4 pt-8">
+    <section className="space-y-4 pb-8">
       <div>
         <h2 className="text-base font-semibold">Connect an AI assistant</h2>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          Atrium speaks the Model Context Protocol (MCP). Point any MCP client at this URL and send an API
-          key as a bearer token. Works with Claude, OpenAI, local models, and agent frameworks.
-        </p>
+        {oauthEnabled ? (
+          <p className="text-sm text-[var(--muted-foreground)]">
+            <strong>Sign in to connect:</strong> in Claude, ChatGPT, Claude Code, or Cursor, add a custom
+            MCP connector with the URL below. You will be sent here to sign in and approve. Needs a public
+            HTTPS address. <strong>For agents and scripts,</strong> or a server on your local network,
+            use an API key with the snippets below.
+          </p>
+        ) : (
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Atrium speaks the Model Context Protocol (MCP). Point any MCP client at this URL and send an
+            API key as a bearer token. Works with Claude, OpenAI, local models, and agent frameworks.
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-2">

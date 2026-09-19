@@ -69,3 +69,34 @@ describe("RateLimiter key hygiene", () => {
     expect(limiter.allow("c", 91_000)).toBe(true);
   });
 });
+
+describe("RateLimiter fail-open at capacity", () => {
+  it("admits unknown keys without tracking them once the map is full", () => {
+    const limiter = new RateLimiter(1, 60_000, 2, false);
+    expect(limiter.allow("a", 0)).toBe(true);
+    expect(limiter.allow("b", 0)).toBe(true);
+
+    // An unknown key arriving at capacity is neither limited nor recorded.
+    for (let i = 0; i < 3; i++) {
+      expect(limiter.isLimited("c", 30_000)).toBe(false);
+      expect(limiter.allow("c", 30_000)).toBe(true);
+    }
+
+    // The two known keys still own the map, so "c" never displaced them.
+    expect(limiter.isLimited("a", 30_000)).toBe(true);
+    expect(limiter.isLimited("b", 30_000)).toBe(true);
+
+    // Once a and b expire and a sweep is due, a new key is tracked again.
+    expect(limiter.allow("c", 91_000)).toBe(true);
+    expect(limiter.allow("c", 91_000)).toBe(false);
+  });
+
+  it("still limits known keys while failing open for unknown ones", () => {
+    const limiter = new RateLimiter(1, 60_000, 2, false);
+    expect(limiter.allow("a", 0)).toBe(true);
+    expect(limiter.allow("b", 0)).toBe(true);
+    expect(limiter.allow("a", 0)).toBe(false);
+    expect(limiter.isLimited("a", 0)).toBe(true);
+    expect(limiter.allow("z", 0)).toBe(true);
+  });
+});

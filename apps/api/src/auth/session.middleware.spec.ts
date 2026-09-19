@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { NextFunction, Request, Response } from "express";
 import { SessionMiddleware } from "./session.middleware";
 import { hashApiKey } from "../api-keys/api-keys.service";
+import { RateLimiter } from "../common";
 
 const resolved = {
   apiKeyId: "k1",
@@ -193,5 +194,59 @@ describe("SessionMiddleware failed-key limiter", () => {
       expect(r.user.id).toBe("u1");
     }
     expect(apiKeys.resolve).toHaveBeenCalledTimes(40);
+  });
+});
+
+describe("SessionMiddleware failed-key limiter at capacity", () => {
+  /** The limiter is a gate in front of auth, so a full map must not block valid keys. */
+  function fillLimiter(mw: SessionMiddleware): void {
+    const holder = mw as unknown as { failedBearer: RateLimiter };
+    holder.failedBearer = new RateLimiter(30, 60_000, 1, false);
+    holder.failedBearer.allow("9.9.9.9");
+  }
+
+  it("still authenticates a valid key from a never-seen IP", async () => {
+    const { mw, apiKeys } = build();
+    fillLimiter(mw);
+
+    const r = req({ authorization: "Bearer atr_abc" }, {}, "1.2.3.4") as Request &
+      Record<string, any>;
+    const next = mock(() => {}) as unknown as NextFunction;
+    await mw.use(r, {} as Response, next);
+
+    expect(apiKeys.resolve).toHaveBeenCalledTimes(1);
+    expect(r.user.id).toBe("u1");
+    expect(r.authRateLimited).toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a failure when resolve rejects", async () => {
+    const resolve = mock(() => Promise.reject(new Error("db down")));
+    const mw = new SessionMiddleware(
+      { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
+      { resolve } as never,
+    );
+    // 30 expected rejections would otherwise fill the test output with warnings.
+    (mw as unknown as { logger: { warn: () => void } }).logger = { warn: mock(() => {}) };
+
+    for (let i = 0; i < 30; i++) {
+      const r = req({ authorization: "Bearer atr_bad" }, {}, "1.2.3.4") as Request &
+        Record<string, any>;
+      const next = mock(() => {}) as unknown as NextFunction;
+      await mw.use(r, {} as Response, next);
+      expect(r.authRateLimited).toBeUndefined();
+      expect(next).toHaveBeenCalledTimes(1);
+    }
+    expect(resolve).toHaveBeenCalledTimes(30);
+
+    const blocked = req({ authorization: "Bearer atr_bad" }, {}, "1.2.3.4") as Request &
+      Record<string, any>;
+    const next = mock(() => {}) as unknown as NextFunction;
+    await mw.use(blocked, {} as Response, next);
+
+    expect(resolve).toHaveBeenCalledTimes(30);
+    expect(blocked.authRateLimited).toBe(true);
+    expect(blocked.user).toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

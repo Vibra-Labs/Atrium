@@ -10,13 +10,21 @@ export class RateLimiter {
     private readonly limit: number,
     private readonly windowMs: number,
     private readonly maxKeys: number = 10_000,
+    /**
+     * What an unknown key arriving at capacity means. True refuses it, which
+     * suits a throttle. False admits it untracked, which is what a gate in
+     * front of authentication needs: a flood of spoofed keys must never lock
+     * out a legitimate caller the map has no room for.
+     */
+    private readonly failClosedAtCapacity: boolean = true,
   ) {}
 
-  /** True when the key has already spent its budget. Records nothing. */
+  /** True when the key has already spent its budget. May sweep, but records no hit. */
   isLimited(key: string, now: number = Date.now()): boolean {
     const bucket: string = RateLimiter.normalize(key);
     const recent: number[] = this.recentHits(bucket, now);
     if (recent.length >= this.limit) return true;
+    if (!this.failClosedAtCapacity) return false;
     return !this.hits.has(bucket) && this.atCapacity(now);
   }
 
@@ -32,8 +40,9 @@ export class RateLimiter {
       this.hits.set(bucket, recent);
       return false;
     }
-    // Fail closed: a new key cannot be tracked once the map is full.
-    if (!known && full) return false;
+    // A new key cannot be tracked once the map is full: refuse it, or admit
+    // it untracked when this limiter gates authentication.
+    if (!known && full) return !this.failClosedAtCapacity;
 
     recent.push(now);
     this.hits.set(bucket, recent);

@@ -17,6 +17,12 @@ interface CachedSession {
 const SESSION_CACHE_TTL = 30_000; // 30 seconds
 const FAILED_KEY_LIMIT = 30;
 const FAILED_KEY_WINDOW_MS = 60_000;
+const FAILED_KEY_MAX_IPS = 10_000;
+/**
+ * This limiter gates authentication, so it fails open at capacity: a flood of
+ * spoofed client IPs must not lock out valid keys whose cache entry expired.
+ */
+const FAILED_KEY_FAIL_CLOSED = false;
 
 /** Bucket for the failed-key limiter. `trust proxy` makes this client-supplied. */
 function clientIp(req: Request): string {
@@ -45,7 +51,12 @@ export class SessionMiddleware implements NestMiddleware {
    * Bad API keys cost a database lookup each, and the MCP controller skips the
    * global throttle, so failures are capped per IP before the lookup runs.
    */
-  private readonly failedBearer = new RateLimiter(FAILED_KEY_LIMIT, FAILED_KEY_WINDOW_MS);
+  private readonly failedBearer = new RateLimiter(
+    FAILED_KEY_LIMIT,
+    FAILED_KEY_WINDOW_MS,
+    FAILED_KEY_MAX_IPS,
+    FAILED_KEY_FAIL_CLOSED,
+  );
   private readonly logger = new Logger(SessionMiddleware.name);
 
   constructor(
@@ -86,7 +97,15 @@ export class SessionMiddleware implements NestMiddleware {
         authReq.authRateLimited = true;
         return;
       }
-      const resolved = await this.apiKeys.resolve(apiKey);
+      let resolved: Awaited<ReturnType<ApiKeysService["resolve"]>>;
+      try {
+        resolved = await this.apiKeys.resolve(apiKey);
+      } catch (err) {
+        // A lookup that throws still cost us a database round trip, so it
+        // counts against the IP. use() logs and continues unauthenticated.
+        this.failedBearer.allow(ip);
+        throw err;
+      }
       if (!resolved) {
         this.failedBearer.allow(ip);
         return;

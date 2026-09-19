@@ -6,9 +6,40 @@ and any model provider: Claude, OpenAI, local models behind Open WebUI or LibreC
 n8n, or your own agent.
 
 - **Endpoint:** `https://<your-atrium-host>/api/mcp` (Streamable HTTP, stateless)
-- **Auth:** an API key sent as `Authorization: Bearer atr_…`
+- **Auth:** sign in with your Atrium account (OAuth), or send an API key as `Authorization: Bearer atr_…`
 
-## 1. Create an API key
+## Option A: Connect by signing in
+
+Best for claude.ai, ChatGPT, Claude Desktop, Claude Code, and Cursor. Requires your
+Atrium instance to be reachable at a public **HTTPS** address.
+
+1. In your AI client, add a custom MCP connector (or server) and paste your MCP URL:
+   `https://portal.example.com/api/mcp`. Leave any client ID / secret fields empty.
+2. The client opens Atrium. Sign in if asked.
+3. Review the request, pick the workspace if you have more than one, and click **Allow**.
+
+Claude Code: `claude mcp add --transport http atrium https://portal.example.com/api/mcp`,
+then run `/mcp` and choose **Authenticate**.
+
+The assistant acts as you in the workspace you picked. Only owners and admins can
+connect. See and disconnect assistants under **Settings → API & MCP → Connected apps**;
+disconnecting takes effect within 30 seconds. Consent is shown every time you connect, so
+to move an assistant to a different workspace, just reconnect it and pick another
+workspace on the consent screen -- there's no need to disconnect first.
+
+**When to use an API key instead:** headless agents and scripts, the Anthropic or OpenAI
+APIs, n8n, local-model front ends, and any instance on plain HTTP or a private network.
+
+To turn sign-in connections off entirely, set `MCP_OAUTH_ENABLED="false"`.
+
+If you run a split deployment (API and web on different hosts) behind your own reverse
+proxy, route `/.well-known/oauth-*` to the API -- the discovery documents are served at
+the origin root, not under `/api`. The bundled `docker/Caddyfile` already does this for
+the unified image.
+
+## Option B: Use an API key
+
+### 1. Create an API key
 
 Go to **Settings → API & MCP**, name the key, and click **Create key**. Copy it
 immediately; Atrium stores only a hash and cannot show it again.
@@ -18,7 +49,7 @@ create keys. If you are later demoted or removed, your keys stop working within 
 seconds (the resolve cache TTL). Revoke a key from the same page; revocation takes
 effect within the same 30-second window.
 
-## 2. Connect a client
+### 2. Connect a client
 
 **Claude Code**
 
@@ -89,3 +120,9 @@ visible to clients and may trigger email notifications.
 - Keys also authenticate the REST API (`/api/*`) with the same permissions. Keys cannot
   create or revoke keys; both require a dashboard session.
 - Give each assistant its own key so you can revoke one without disturbing the others.
+
+## Troubleshooting
+
+- A harmless Prisma `P2025` ("record to delete does not exist") in the API logs on a
+  successful sign-in token exchange comes from Better Auth's `mcp` plugin, not from
+  Atrium -- it can be ignored.

@@ -22,6 +22,7 @@ All configuration lives in a single `.env` file. See [`.env.example`](../.env.ex
 | `EMAIL_FROM`         | Sender address for outbound email                | `noreply@atrium.local`           |
 | `MAX_FILE_SIZE_MB`   | Maximum upload size in megabytes                 | `50`                             |
 | `BILLING_ENABLED`    | Set to `true` to enable billing/plan gates (hosted only) | --                        |
+| `MCP_OAUTH_ENABLED`  | Allow MCP clients to connect by signing in (OAuth). Requires a public HTTPS URL. API keys work regardless. | `true` |
 | `LOG_LEVEL`          | Pino log level                                   | `info`                           |
 
 `DATABASE_URL` and `BETTER_AUTH_SECRET` are required -- the API will refuse to start without them.

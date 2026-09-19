@@ -56,12 +56,23 @@ function call(path: string, init: RequestInit = {}): Promise<Response> {
   );
 }
 
+/**
+ * The name a client registered through `registerClient` actually carries.
+ * Names are stamped per run so cleanup can delete exactly this run's rows.
+ */
+export function clientName(name: string): string {
+  return `${name} ${stamp}`;
+}
+
+/** Client ids minted by this run, so their verification rows can be cleaned up. */
+const registeredClientIds: string[] = [];
+
 export async function registerClient(name: string): Promise<string> {
   const res = await call("/mcp/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_name: name,
+      client_name: clientName(name),
       redirect_uris: [REDIRECT_URI],
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
@@ -70,7 +81,9 @@ export async function registerClient(name: string): Promise<string> {
   });
   // The plugin answers dynamic registration with 201 Created (RFC 7591).
   expect(res.status).toBe(201);
-  return ((await res.json()) as { client_id: string }).client_id;
+  const clientId = ((await res.json()) as { client_id: string }).client_id;
+  registeredClientIds.push(clientId);
+  return clientId;
 }
 
 /**
@@ -183,8 +196,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Authorization/consent codes live in `verification` rows keyed by the code
+  // itself; the only thing tying one to this run is the clientId inside its
+  // JSON `value`, so match on that rather than on a name prefix.
+  for (const clientId of registeredClientIds) {
+    await prisma.verification.deleteMany({
+      where: { value: { contains: `"clientId":"${clientId}"` } },
+    });
+  }
   await prisma.oauthApplication.deleteMany({
-    where: { name: { startsWith: "IT Client" } },
+    where: { name: { endsWith: stamp } },
   });
   await prisma.organization.deleteMany({ where: { id: orgId } });
   await prisma.user.deleteMany({ where: { id: userId } });
@@ -203,7 +224,9 @@ describe("Better Auth mcp plugin on Atrium's schema", () => {
     expect(String(as.registration_endpoint)).toEndWith(
       "/api/auth/mcp/register",
     );
-    expect(as.code_challenge_methods_supported).toContain("S256");
+    // S256 only — the authorize endpoint is configured to refuse `plain`, so
+    // the metadata must not advertise it either.
+    expect(as.code_challenge_methods_supported).toEqual(["S256"]);
 
     const pr = (await (
       await call("/.well-known/oauth-protected-resource")
@@ -303,5 +326,75 @@ describe("Better Auth mcp plugin on Atrium's schema", () => {
     expect(`${resumed.origin}${resumed.pathname}`).toBe(`${WEB}/oauth/consent`);
     expect(resumed.searchParams.get("client_id")).toBe(clientId);
     expect(resumed.searchParams.get("code")).toBeNull();
+  });
+
+  it("refuses a plain code challenge instead of downgrading PKCE", async () => {
+    const clientId = await registerClient("IT Client E");
+    const res = await call(
+      `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=x&code_challenge=notahash&code_challenge_method=plain`,
+    );
+
+    // authorize.mjs reports an unusable challenge method rather than
+    // downgrading. Its `redirectErrorURL` helper is buggy — it returns only the
+    // query fragment and drops the redirect_uri — so Location is relative.
+    expect(res.status).toBe(302);
+    const location: string = res.headers.get("location")!;
+    expect(location).toStartWith("?error=invalid_request");
+    expect(location).toContain("invalid code_challenge method");
+    // Neither a code nor a consent prompt: the request dies before either.
+    expect(location).not.toContain("consent");
+    expect(location).not.toContain("code=");
+    expect(await prisma.oauthAccessToken.count({ where: { clientId } })).toBe(
+      0,
+    );
+  });
+});
+
+describe("MCP_OAUTH_ENABLED=false", () => {
+  let disabled: AuthService;
+
+  beforeAll(() => {
+    const disabledConfig = {
+      get: (key: string, fallback?: string) => {
+        if (key === "WEB_URL") return WEB;
+        if (key === "API_URL") return API;
+        if (key === "MCP_OAUTH_ENABLED") return "false";
+        return fallback;
+      },
+      getOrThrow: (key: string) => {
+        if (key === "BETTER_AUTH_SECRET") return "x".repeat(32);
+        throw new Error(`Missing ${key}`);
+      },
+    } as unknown as ConfigService;
+    disabled = new AuthService(disabledConfig, prisma, mail, billing);
+  });
+
+  async function hit(path: string, init: RequestInit = {}): Promise<number> {
+    const headers = new Headers(init.headers);
+    headers.set("Origin", API);
+    const res = await disabled.auth.handler(
+      new Request(`${API}/api/auth${path}`, { ...init, headers }),
+    );
+    return res.status;
+  }
+
+  it("serves none of the OAuth endpoints", async () => {
+    expect(await hit("/.well-known/oauth-authorization-server")).toBe(404);
+    expect(
+      await hit(
+        `/mcp/authorize?response_type=code&client_id=x&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`,
+      ),
+    ).toBe(404);
+    expect(
+      await hit("/mcp/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_name: clientName("IT Client Disabled"),
+          redirect_uris: [REDIRECT_URI],
+          token_endpoint_auth_method: "none",
+        }),
+      }),
+    ).toBe(404);
   });
 });

@@ -50,6 +50,25 @@ export class AuthService {
         ? secureCookiesEnv === "true"
         : process.env.NODE_ENV === "production";
 
+    // Force the consent step on every MCP authorization. The plugin only shows
+    // its consent page when the client sends `prompt=consent`, and no real MCP
+    // client (claude.ai, ChatGPT, Claude Code, Cursor) does — so without this a
+    // silently registered client would get an authorization code with no human
+    // in the loop. The consent page is also where the user picks which
+    // workspace the client acts in, so it is never optional.
+    //
+    // `prompt` is overwritten rather than merged, on purpose: authorize.mjs
+    // tests `query.prompt !== "consent"` by strict equality, so a multi-valued
+    // prompt like "login consent" — legal per OIDC — would skip consent.
+    //
+    // Rewriting ctx.query rather than the URL matters for the signed-out path:
+    // the plugin stashes ctx.query in the signed `oidc_login_prompt` cookie and
+    // replays it after login, so the continuation lands on the consent page too.
+    const forceMcpConsent = createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/mcp/authorize") return;
+      return { context: { query: { ...ctx.query, prompt: "consent" } } };
+    });
+
     this.auth = betterAuth({
       database: prismaAdapter(this.prisma, { provider: "postgresql" }),
       secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
@@ -100,31 +119,7 @@ export class AuthService {
         },
       },
       trustedOrigins: [webUrl, apiUrl],
-      ...(mcpOAuthEnabled
-        ? {
-            hooks: {
-              // Force the consent step on every MCP authorization. The plugin
-              // only shows its consent page when the client sends
-              // `prompt=consent`, and no real MCP client (claude.ai, ChatGPT,
-              // Claude Code, Cursor) does — so without this a silently
-              // registered client would get an authorization code with no
-              // human in the loop. The consent page is also where the user
-              // picks which workspace the client acts in, so it is never
-              // optional.
-              //
-              // Rewriting ctx.query rather than the URL matters for the
-              // signed-out path: the plugin stashes ctx.query in the signed
-              // `oidc_login_prompt` cookie and replays it after login, so the
-              // continuation lands on the consent page too.
-              before: createAuthMiddleware(async (ctx) => {
-                if (ctx.path !== "/mcp/authorize") return;
-                return {
-                  context: { query: { ...ctx.query, prompt: "consent" } },
-                };
-              }),
-            },
-          }
-        : {}),
+      hooks: { before: mcpOAuthEnabled ? forceMcpConsent : undefined },
       // Firebase Hosting strips all cookies except "__session".
       // When FIREBASE_HOSTING=true, override the cookie name.
       // On other hosts (Coolify, VPS, etc.) use Better Auth defaults.
@@ -245,6 +240,11 @@ export class AuthService {
                   consentPage: `${webUrl}/oauth/consent`,
                   allowDynamicClientRegistration: true,
                   requirePKCE: true,
+                  // The plugin defaults this to true, which lets a client send
+                  // code_challenge_method=plain — the challenge then equals the
+                  // verifier and sits in the authorization URL, so PKCE stops
+                  // protecting anything. Our metadata advertises S256 only.
+                  allowPlainCodeChallengeMethod: false,
                   scopes: ["openid", "profile", "email", "offline_access"],
                   accessTokenExpiresIn: 3600,
                   refreshTokenExpiresIn: 60 * 60 * 24 * 30,

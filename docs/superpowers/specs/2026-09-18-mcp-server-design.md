@@ -96,7 +96,7 @@ is returned exactly once at creation. Only the SHA-256 hex hash is stored.
 | `resolve(token)` | Hashes the token, looks up an unrevoked key, loads the user and the member row for that org. Returns `null` if the key is missing, revoked, the user is gone, or the member role is not `owner` or `admin`. Otherwise returns `{ user, organization, member }` in the same shapes the session path produces and bumps `lastUsedAt` (fire-and-forget, throttled to once per minute). |
 
 `resolve` is the single place that enforces "acts as that user": a demoted or
-removed user's keys stop working immediately.
+removed user's keys stop working within 30 seconds (the resolve cache TTL).
 
 ### SessionMiddleware bearer branch
 
@@ -130,9 +130,10 @@ All `@UseGuards(AuthGuard, RolesGuard)` and `@Roles("owner", "admin")`.
 | `POST /api/api-keys` | Body `{ name }` (1–64 chars). Returns the full key once. |
 | `DELETE /api/api-keys/:id` | Revoke. |
 
-Creating keys with an API key is refused (`ForbiddenException`) so a leaked
-key cannot mint more keys. The middleware sets `req.apiKeyId` on key-authenticated
-requests and the controller refuses when it is present.
+Creating and revoking keys with an API key are both refused
+(`ForbiddenException`) so a leaked key cannot mint more keys or revoke the
+workspace's other keys. The middleware sets `req.apiKeyId` on key-authenticated
+requests and the controller refuses when it is present. `GET` stays allowed.
 
 ## 2. MCP endpoint
 
@@ -207,7 +208,7 @@ services' pagination.
 
 | Tool | Input | Role | Backed by |
 | --- | --- | --- | --- |
-| `get_workspace` | none | any | org name, slug, acting user name and email, role, MCP version. Lets the agent orient itself in one call. |
+| `get_workspace` | none | any | org name, slug, acting user name and email, role. Lets the agent orient itself in one call. |
 | `list_projects` | `status?`, `search?`, `archived?` (default false), paging | admin | `ProjectsService.findAll` |
 | `get_project` | `projectId` | admin | `ProjectsService.findOne` |
 | `create_project` | `name`, `description?`, `status?`, `startDate?`, `endDate?`, `clientUserIds?` | admin | `ProjectsService.create` |
@@ -237,11 +238,12 @@ DTO field is not in this table, it is omitted from the tool for now.
 
 The controller skips the global IP-based `ThrottlerGuard`. The MCP
 handler applies its own limit of 300 requests per minute per API key using an
-in-memory sliding window, returning 429 with `Retry-After`. Requests that fail
-authentication (missing, invalid, or revoked key) are limited separately to
-30 per minute per client IP, because the controller skips the global throttle
-and each bad key costs a database lookup. Generous enough
-for an agent loop, tight enough to notice a runaway.
+in-memory sliding window, returning 429 with `Retry-After`. Failed bearer keys
+(invalid or revoked) are limited to 30 per minute per client IP in
+`SessionMiddleware`, before the key lookup runs, because the controller skips
+the global throttle and each bad key would otherwise cost a database query.
+Once an IP is limited, MCP answers 429 and REST answers the usual 401.
+Generous enough for an agent loop, tight enough to notice a runaway.
 
 ## 3. Login (OAuth)
 

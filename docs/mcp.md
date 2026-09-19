@@ -14,8 +14,9 @@ Go to **Settings → API & MCP**, name the key, and click **Create key**. Copy i
 immediately; Atrium stores only a hash and cannot show it again.
 
 A key acts as **you** in **that workspace**, with your role. Only owners and admins can
-create keys. If you are later demoted or removed, your keys stop working. Revoke a key
-from the same page; revocation takes effect within 30 seconds.
+create keys. If you are later demoted or removed, your keys stop working within 30
+seconds (the resolve cache TTL). Revoke a key from the same page; revocation takes
+effect within the same 30-second window.
 
 ## 2. Connect a client
 
@@ -78,10 +79,13 @@ visible to clients and may trigger email notifications.
 
 ## Limits and security
 
-- Authenticated requests are limited to 300 per minute per API key. Requests with no
-  key, an invalid key, or a revoked key are limited to 30 per minute per IP address.
-  Both return `429` with `Retry-After: 60`.
+- Authenticated requests are limited to 300 per minute per API key, returning `429` with
+  `Retry-After: 60`. Invalid and revoked keys are limited to 30 per minute per client IP
+  in `SessionMiddleware`, before the key is looked up in the database; once an IP is
+  limited, MCP answers `429` and the REST API answers the usual `401`. Per-IP limits
+  assume your reverse proxy overwrites `X-Forwarded-For` with the real client address;
+  if it appends to or passes through a client-supplied value, the limit can be evaded.
 - Treat keys like passwords. Anyone holding a key can do what you can do in that workspace.
 - Keys also authenticate the REST API (`/api/*`) with the same permissions. Keys cannot
-  create other keys.
+  create or revoke keys; both require a dashboard session.
 - Give each assistant its own key so you can revoke one without disturbing the others.

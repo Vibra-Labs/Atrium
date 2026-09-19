@@ -35,13 +35,15 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
         credentials: "include",
-        // In an OAuth flow Better Auth answers a successful sign-in with a 302
-        // to the consent page or the client's callback. Don't follow it from
-        // fetch; re-enter the flow with a real navigation below.
-        redirect: resumeUrl ? "manual" : "follow",
+        // Better Auth answers a successful sign-in with a 302 whenever a
+        // signed `oidc_login_prompt` cookie is present — which a plain login
+        // can inherit from an OAuth flow the user abandoned earlier. Following
+        // that from fetch surfaced as "Failed to fetch" for someone who was in
+        // fact signed in, so never follow it: the destination is decided below.
+        redirect: "manual",
       });
 
-      const signedIn: boolean = res.ok || (resumeUrl !== null && res.type === "opaqueredirect");
+      const signedIn: boolean = res.ok || res.type === "opaqueredirect";
       if (!signedIn) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { message?: string }).message || "Invalid credentials");

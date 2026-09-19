@@ -39,7 +39,7 @@ export function ConnectedAppsSection(): React.ReactElement {
   const disconnect = async (grant: GrantSummary): Promise<void> => {
     const ok = await confirm({
       title: "Disconnect app",
-      message: `Disconnect "${grant.clientName}"? It will lose access immediately and must sign in again to reconnect.`,
+      message: `Disconnect "${grant.clientName}"? It will lose access within 30 seconds and must sign in again to reconnect.`,
       confirmLabel: "Disconnect",
       variant: "danger",
     });

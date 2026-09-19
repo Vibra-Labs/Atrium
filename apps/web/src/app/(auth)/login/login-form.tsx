@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { setActiveOrgAndRedirect } from "@/lib/api";
 import { track } from "@/lib/track";
+import { oauthResumeUrl } from "@/lib/oauth-resume";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -27,26 +28,31 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
     setError("");
 
     try {
+      const resumeUrl: string | null = oauthResumeUrl(window.location.search, API_URL);
+
       const res = await fetch(`${API_URL}/api/auth/sign-in/email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
         credentials: "include",
+        // In an OAuth flow Better Auth answers a successful sign-in with a 302
+        // to the consent page or the client's callback. Don't follow it from
+        // fetch; re-enter the flow with a real navigation below.
+        redirect: resumeUrl ? "manual" : "follow",
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Invalid credentials");
+      const signedIn: boolean = res.ok || (resumeUrl !== null && res.type === "opaqueredirect");
+      if (!signedIn) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { message?: string }).message || "Invalid credentials");
       }
-
-      await res.json();
 
       // Without a success counterpart, login_failed is uninterpretable: there
       // is no denominator to compute a success rate from.
-      track("login_succeeded", { branded: Boolean(orgName) });
+      track("login_succeeded", { branded: Boolean(orgName), oauth: Boolean(resumeUrl) });
 
       setRedirecting(true);
-      window.location.href = await setActiveOrgAndRedirect("/portal/projects");
+      window.location.href = resumeUrl ?? (await setActiveOrgAndRedirect("/portal/projects"));
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Login failed";
       track("login_failed", { reason, branded: Boolean(orgName) });

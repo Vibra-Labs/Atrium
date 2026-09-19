@@ -19,25 +19,38 @@ const SESSION_COOKIE_NAMES = [
   "__Secure-better-auth.session_token",
 ];
 
+/** The MCP JSON-RPC endpoint (exact match -- `/api/mcp-grants` is not exempt). */
+const MCP_PATH = "/api/mcp";
+
+/** OAuth discovery documents, served at the origin root. */
+const WELL_KNOWN_PREFIX = "/.well-known/";
+
+/** The subset of the Express request this guard reads. */
+interface CsrfRequest {
+  method: string;
+  url?: string;
+  originalUrl?: string;
+  cookies?: Record<string, string>;
+  headers?: Record<string, string | string[] | undefined>;
+}
+
 @Injectable()
 export class CsrfGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
+    const request: CsrfRequest = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
 
-    // Skip CSRF entirely for auth proxy routes -- Better Auth handles its own
-    // CSRF protection. This must happen before the cookie is set below: Better
-    // Auth's own origin-check middleware treats ANY cookie on the request
-    // (not just its session cookie) as reason to require a matching Origin
-    // header. If we set our own csrf-token cookie here and a client's HTTP
-    // library persists cookies (as many do, e.g. requests.Session()), that
-    // stray cookie alone would make legitimate, cookie-less OAuth clients
-    // (which never send an Origin header) get rejected by Better Auth on
-    // their next call, such as the token exchange.
-    const url: string = request.originalUrl || request.url || "";
-    if (url.startsWith("/api/auth/")) {
+    // The csrf-token cookie exists only for the first-party browser app.
+    // Never issue it (nor validate it) for non-browser clients: Better Auth's
+    // own origin-check middleware treats ANY cookie on a request -- not just
+    // its session cookie -- as reason to require a matching Origin header. A
+    // cookie-persisting HTTP client (requests.Session(), an MCP client) that
+    // picked up our stray cookie here would then be rejected by Better Auth
+    // on its next call, e.g. the OAuth token exchange or a refresh, because
+    // real OAuth clients never send an Origin header.
+    if (this.isNonBrowserClient(request)) {
       return true;
     }
 
@@ -93,5 +106,27 @@ export class CsrfGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * Requests that can never be a first-party browser call and so must not be
+   * handed (or asked for) a CSRF cookie: the Better Auth proxy, the MCP
+   * endpoint, the OAuth discovery documents, and bearer-token clients that
+   * carry no Better Auth session cookie (API keys and OAuth access tokens).
+   */
+  private isNonBrowserClient(request: CsrfRequest): boolean {
+    const url: string = request.originalUrl || request.url || "";
+    const queryStart: number = url.indexOf("?");
+    const path: string = queryStart === -1 ? url : url.slice(0, queryStart);
+
+    if (path.startsWith("/api/auth/")) return true;
+    if (path === MCP_PATH) return true;
+    if (path.startsWith(WELL_KNOWN_PREFIX)) return true;
+
+    const authorization: string = String(request.headers?.authorization || "");
+    const hasSession: boolean = SESSION_COOKIE_NAMES.some(
+      (name) => !!request.cookies?.[name],
+    );
+    return authorization.toLowerCase().startsWith("bearer ") && !hasSession;
   }
 }

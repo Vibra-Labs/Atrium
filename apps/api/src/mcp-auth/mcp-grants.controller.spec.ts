@@ -5,7 +5,10 @@ import type { AuthenticatedRequest } from "../common";
 
 function build() {
   const service = {
-    getClient: mock(() => Promise.resolve({ clientId: "c1", name: "Claude", icon: null })),
+    consentRequest: mock(() =>
+      Promise.resolve({ clientId: "c1", redirectURI: "http://localhost:9999/callback" }),
+    ),
+    getClient: mock(() => Promise.resolve({ clientId: "c1", name: "Claude" })),
     adminOrganizations: mock(() => Promise.resolve([{ id: "org1", name: "Acme" }])),
     saveGrant: mock(() => Promise.resolve()),
     listGrants: mock(() => Promise.resolve([])),
@@ -19,24 +22,29 @@ function build() {
 }
 
 describe("MCP grants controllers", () => {
-  it("consent-info returns the client and the workspaces the user may bind", async () => {
+  it("consent-info describes the client, the destination, and the bindable workspaces", async () => {
     const { consent, service } = build();
-    const info = await consent.consentInfo("c1", "u1");
+    const info = await consent.consentInfo("code1", "u1");
     expect(info).toEqual({
-      client: { clientId: "c1", name: "Claude", icon: null },
+      client: { clientId: "c1", name: "Claude" },
       organizations: [{ id: "org1", name: "Acme" }],
+      redirect: { display: "an app on this computer", kind: "local" },
     });
+    expect(service.consentRequest).toHaveBeenCalledWith("code1", "u1");
+    // The client is the one the code was minted for, never one named in the URL.
+    expect(service.getClient).toHaveBeenCalledWith("c1");
     expect(service.adminOrganizations).toHaveBeenCalledWith("u1");
   });
 
-  it("consent-info requires clientId", async () => {
+  it("consent-info requires consentCode", async () => {
     await expect(build().consent.consentInfo("", "u1")).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it("create saves the grant for the signed-in user", async () => {
+  it("create saves the grant for the client the consent code names", async () => {
     const { consent, service } = build();
     const req = {} as AuthenticatedRequest;
-    await consent.create({ clientId: "c1", organizationId: "org1" }, req, "u1");
+    await consent.create({ consentCode: "code1", organizationId: "org1" }, req, "u1");
+    expect(service.consentRequest).toHaveBeenCalledWith("code1", "u1");
     expect(service.saveGrant).toHaveBeenCalledWith("u1", "c1", "org1");
   });
 
@@ -45,11 +53,12 @@ describe("MCP grants controllers", () => {
     const req = { apiKeyId: "k0" } as AuthenticatedRequest;
     let error: Error | null = null;
     try {
-      await consent.create({ clientId: "c1", organizationId: "org1" }, req, "u1");
+      await consent.create({ consentCode: "code1", organizationId: "org1" }, req, "u1");
     } catch (e) {
       error = e as Error;
     }
     expect(error).toBeInstanceOf(ForbiddenException);
+    expect(service.consentRequest).not.toHaveBeenCalled();
     expect(service.saveGrant).not.toHaveBeenCalled();
   });
 

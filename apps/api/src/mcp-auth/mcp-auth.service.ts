@@ -1,10 +1,27 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import type { Actor } from "../common";
 
 const GRANT_ROLES: string[] = ["owner", "admin"];
 
 export type ResolvedOAuthToken = Actor & { oauthClientId: string };
+
+/** The parts of a pending authorization the consent screen is allowed to act on. */
+export interface ConsentRequest {
+  clientId: string;
+  redirectURI: string;
+}
+
+/** What Better Auth's mcp plugin stores in the consent code's verification row. */
+interface AuthorizationCodeValue {
+  clientId?: unknown;
+  redirectURI?: unknown;
+  userId?: unknown;
+  requireConsent?: unknown;
+}
+
+const EXPIRED_CONSENT =
+  "This request has expired. Start the connection again from your AI assistant.";
 
 export interface GrantSummary {
   id: string;
@@ -17,7 +34,44 @@ export interface GrantSummary {
 
 @Injectable()
 export class McpAuthService {
+  private readonly logger = new Logger(McpAuthService.name);
+
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * The pending authorization a consent code stands for.
+   *
+   * The consent screen learns the client id from here, never from its own URL:
+   * the two are otherwise unrelated, so a phishing link could name one client
+   * in the query string while the code it carries authorizes another, and the
+   * grant would be written for the client the URL chose. Reading both the
+   * client and the destination out of the code's own row removes the gap.
+   */
+  async consentRequest(consentCode: string, userId: string): Promise<ConsentRequest> {
+    const row = await this.prisma.verification.findFirst({ where: { identifier: consentCode } });
+    if (!row || row.expiresAt.getTime() <= Date.now()) {
+      throw new NotFoundException(EXPIRED_CONSENT);
+    }
+    let value: AuthorizationCodeValue;
+    try {
+      value = JSON.parse(row.value) as AuthorizationCodeValue;
+    } catch (err) {
+      // Some other feature's verification row happens to share this identifier.
+      this.logger.warn(
+        `Consent code did not hold an authorization request: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new NotFoundException(EXPIRED_CONSENT);
+    }
+    if (
+      value.userId !== userId ||
+      value.requireConsent !== true ||
+      typeof value.clientId !== "string" ||
+      typeof value.redirectURI !== "string"
+    ) {
+      throw new NotFoundException(EXPIRED_CONSENT);
+    }
+    return { clientId: value.clientId, redirectURI: value.redirectURI };
+  }
 
   /** OAuth access token → actor. Same role rule as API keys; expiry is checked here
    * because the OAuth plugin's own token lookup does not check it. */
@@ -40,10 +94,10 @@ export class McpAuthService {
     return { user: grant.user, organization: grant.organization, member, oauthClientId: row.clientId };
   }
 
-  async getClient(clientId: string): Promise<{ clientId: string; name: string; icon: string | null }> {
+  async getClient(clientId: string): Promise<{ clientId: string; name: string }> {
     const app = await this.prisma.oauthApplication.findUnique({
       where: { clientId },
-      select: { clientId: true, name: true, icon: true },
+      select: { clientId: true, name: true },
     });
     if (!app) throw new NotFoundException("Unknown application");
     return app;

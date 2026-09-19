@@ -13,17 +13,22 @@ import type { ConfigService } from "@nestjs/config";
 import type { MailService } from "../../src/mail/mail.service";
 import type { BillingService } from "../../src/billing/billing.service";
 import { McpAuthService } from "../../src/mcp-auth/mcp-auth.service";
+import { McpConsentController } from "../../src/mcp-auth/mcp-grants.controller";
+import type { AuthenticatedRequest } from "../../src/common";
 
 const API = "http://localhost:3001";
 const WEB = "http://localhost:3000";
 const REDIRECT_URI = "http://localhost:9999/callback";
 const stamp = `${Date.now()}`;
 const email = `oauth-${stamp}@test.com`;
+/** A second account, to prove a consent code is bound to the user who started it. */
+const otherEmail = `oauth-other-${stamp}@test.com`;
 
 let prisma: PrismaService;
 let auth: AuthService;
 let sessionCookie: string;
 export let userId: string;
+export let otherUserId: string;
 export let orgId: string;
 
 const config = {
@@ -165,6 +170,15 @@ export async function authorizeAndExchange(clientId: string): Promise<{
   };
 }
 
+/** Runs authorize only, and hands back the consent code it parked on the URL. */
+async function mintConsentCode(clientId: string): Promise<string> {
+  const res = await call(
+    `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=x&code_challenge=abc&code_challenge_method=S256`,
+  );
+  expect(res.status).toBe(302);
+  return new URL(res.headers.get("location")!).searchParams.get("consent_code")!;
+}
+
 beforeAll(async () => {
   assertDisposableDatabase();
   prisma = new PrismaService();
@@ -189,7 +203,21 @@ beforeAll(async () => {
     .map((c) => c.split(";")[0])
     .join("; ");
 
+  const otherSignUp = await auth.auth.handler(
+    new Request(`${API}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: API },
+      body: JSON.stringify({
+        name: "Other Tester",
+        email: otherEmail,
+        password: "correct-horse-battery",
+      }),
+    }),
+  );
+  expect(otherSignUp.status).toBe(200);
+
   userId = (await prisma.user.findUniqueOrThrow({ where: { email } })).id;
+  otherUserId = (await prisma.user.findUniqueOrThrow({ where: { email: otherEmail } })).id;
   orgId = `org-oauth-${stamp}`;
   await prisma.organization.create({
     data: { id: orgId, name: "OAuth Org", slug: `oauth-${stamp}` },
@@ -217,7 +245,7 @@ afterAll(async () => {
     where: { name: { endsWith: stamp } },
   });
   await prisma.organization.deleteMany({ where: { id: orgId } });
-  await prisma.user.deleteMany({ where: { id: userId } });
+  await prisma.user.deleteMany({ where: { id: { in: [userId, otherUserId] } } });
   await prisma.$disconnect();
 });
 
@@ -549,6 +577,48 @@ describe("GET /mcp/get-session", () => {
     const body: string = await res.text();
     expect(body).not.toContain(tokens.refresh_token);
     expect(body).not.toContain("refreshToken");
+  });
+});
+
+describe("consent is bound to the consent code", () => {
+  const anyRequest = {} as AuthenticatedRequest;
+
+  it("lets the user who started the flow read the request the code stands for", async () => {
+    const clientId = await registerClient("IT Client Consent Owner");
+    const code = await mintConsentCode(clientId);
+    const consent = new McpConsentController(new McpAuthService(prisma));
+
+    const info = await consent.consentInfo(code, userId);
+
+    expect(info.client.clientId).toBe(clientId);
+    expect(info.client.name).toBe(clientName("IT Client Consent Owner"));
+    // http://localhost:9999/callback — a program on the user's own machine.
+    expect(info.redirect).toEqual({ display: "an app on this computer", kind: "local" });
+  });
+
+  it("refuses to show or act on another user's consent code", async () => {
+    const clientId = await registerClient("IT Client Consent Thief");
+    const code = await mintConsentCode(clientId);
+    const consent = new McpConsentController(new McpAuthService(prisma));
+
+    await expect(consent.consentInfo(code, otherUserId)).rejects.toThrow(/expired/i);
+    await expect(
+      consent.create({ consentCode: code, organizationId: orgId }, anyRequest, otherUserId),
+    ).rejects.toThrow(/expired/i);
+    expect(await prisma.mcpGrant.count({ where: { clientId } })).toBe(0);
+  });
+
+  it("writes the grant for the client the code names, whatever the caller asks for", async () => {
+    const clientId = await registerClient("IT Client Consent Bound");
+    const decoy = await registerClient("IT Client Consent Decoy");
+    const code = await mintConsentCode(clientId);
+    const consent = new McpConsentController(new McpAuthService(prisma));
+
+    await consent.create({ consentCode: code, organizationId: orgId }, anyRequest, userId);
+
+    expect(await prisma.mcpGrant.count({ where: { clientId, userId } })).toBe(1);
+    expect(await prisma.mcpGrant.count({ where: { clientId: decoy } })).toBe(0);
+    await prisma.mcpGrant.deleteMany({ where: { clientId, userId } });
   });
 });
 

@@ -4,7 +4,7 @@ export class CreateMcpGrantDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  clientId!: string;
+  consentCode!: string;
 
   @IsString()
   @IsNotEmpty()

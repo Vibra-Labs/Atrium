@@ -16,6 +16,7 @@ function build(
     members?: unknown[];
     grants?: unknown[];
     apps?: unknown[];
+    verification?: unknown;
   } = {},
 ) {
   const prisma = {
@@ -34,6 +35,9 @@ function build(
       findMany: mock(() => Promise.resolve(opts.grants ?? [])),
       upsert: mock(() => Promise.resolve({})),
       delete: mock(() => Promise.resolve({})),
+    },
+    verification: {
+      findFirst: mock(() => Promise.resolve(opts.verification ?? null)),
     },
     member: {
       findFirst: mock(() => Promise.resolve(opts.member ?? null)),
@@ -170,5 +174,55 @@ describe("McpAuthService.listGrants", () => {
     const { service } = build({ grants: [grantRow()], apps: [] });
     const result = await service.listGrants("u1", "org1", "owner");
     expect(result[0].clientName).toBe("Unknown app");
+  });
+});
+
+describe("McpAuthService.consentRequest", () => {
+  const value = (overrides: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      clientId: "c1",
+      redirectURI: "https://claude.ai/cb",
+      userId: "u1",
+      requireConsent: true,
+      ...overrides,
+    });
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    identifier: "code1",
+    value: value(),
+    expiresAt: future,
+    ...overrides,
+  });
+
+  it("returns the client and destination recorded when the code was minted", async () => {
+    const { service, prisma } = build({ verification: row() });
+    expect(await service.consentRequest("code1", "u1")).toEqual({
+      clientId: "c1",
+      redirectURI: "https://claude.ai/cb",
+    });
+    expect(prisma.verification.findFirst.mock.calls[0][0].where).toEqual({ identifier: "code1" });
+  });
+
+  it("rejects an unknown code", async () => {
+    await expect(build().service.consentRequest("ghost", "u1")).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("rejects an expired code", async () => {
+    const { service } = build({ verification: row({ expiresAt: past }) });
+    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("rejects a code minted for somebody else", async () => {
+    const { service } = build({ verification: row({ value: value({ userId: "u2" }) }) });
+    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("rejects a code that is not a consent code", async () => {
+    const { service } = build({ verification: row({ value: value({ requireConsent: false }) }) });
+    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("rejects a row whose value is not the JSON the plugin writes", async () => {
+    const { service } = build({ verification: row({ value: "not json" }) });
+    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

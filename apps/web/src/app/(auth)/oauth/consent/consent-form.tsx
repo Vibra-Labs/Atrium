@@ -18,21 +18,35 @@ function truncateClientName(name: string): string {
 interface ConsentInfo {
   client: { clientId: string; name: string };
   organizations: { id: string; name: string }[];
+  redirect: { display: string; kind: "web" | "local" | "app" };
 }
 
 interface ConsentFormProps {
-  clientId: string;
   consentCode: string;
 }
 
-export function ConsentForm({ clientId, consentCode }: ConsentFormProps): React.ReactElement {
+/** What approving will do, phrased for the destination the code actually carries. */
+function destinationLine(redirect: ConsentInfo["redirect"]): string {
+  return redirect.kind === "web"
+    ? `After you approve, you'll be sent to ${redirect.display}.`
+    : `This request comes from ${redirect.display}.`;
+}
+
+export function ConsentForm({ consentCode }: ConsentFormProps): React.ReactElement {
   const [info, setInfo] = useState<ConsentInfo | null>(null);
   const [organizationId, setOrganizationId] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
-    apiFetch<ConsentInfo>(`/mcp-grants/consent-info?clientId=${encodeURIComponent(clientId)}`)
+    // The consent code is exchangeable and the (auth) layout's operator
+    // analytics record full URLs, so take it out of the address bar as soon
+    // as the page has read it.
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
+  useEffect(() => {
+    apiFetch<ConsentInfo>(`/mcp-grants/consent-info?consentCode=${encodeURIComponent(consentCode)}`)
       .then((data) => {
         setInfo(data);
         if (data.organizations.length > 0) setOrganizationId(data.organizations[0].id);
@@ -41,7 +55,7 @@ export function ConsentForm({ clientId, consentCode }: ConsentFormProps): React.
         console.error(err);
         setError(err instanceof Error ? err.message : "Could not load this request");
       });
-  }, [clientId]);
+  }, [consentCode]);
 
   const respond = async (accept: boolean): Promise<void> => {
     if (submitting) return;
@@ -51,7 +65,7 @@ export function ConsentForm({ clientId, consentCode }: ConsentFormProps): React.
       if (accept) {
         await apiFetch("/mcp-grants", {
           method: "POST",
-          body: JSON.stringify({ clientId, organizationId }),
+          body: JSON.stringify({ consentCode, organizationId }),
         });
       }
       const res = await fetch(`${API_URL}/api/auth/oauth2/consent`, {
@@ -84,6 +98,13 @@ export function ConsentForm({ clientId, consentCode }: ConsentFormProps): React.
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-semibold break-words">Connect {clientName} to Atrium</h1>
+
+      <div className="space-y-1 rounded-md border border-[var(--border)] p-3">
+        <p className="text-sm font-medium break-words">{destinationLine(info.redirect)}</p>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Only approve if you started this connection yourself.
+        </p>
+      </div>
 
       {canAllow ? (
         <>

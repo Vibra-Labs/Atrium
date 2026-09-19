@@ -80,6 +80,11 @@ test.describe("MCP OAuth login", () => {
       await page.goto(flow.authorizeUrl);
       await expect(page).toHaveURL(/\/oauth\/consent/);
       await expect(page.getByRole("heading", { name: `Connect ${name} to Atrium` })).toBeVisible();
+      // The name is attacker-chosen; the destination is the part worth checking.
+      await expect(page.getByText("This request comes from an app on this computer.")).toBeVisible();
+      await expect(
+        page.getByText("Only approve if you started this connection yourself."),
+      ).toBeVisible();
 
       const callback = await captureCallback(page, () => page.getByRole("button", { name: "Allow" }).click());
       expect(callback.searchParams.get("state")).toBe("e2e");

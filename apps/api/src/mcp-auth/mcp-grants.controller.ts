@@ -6,11 +6,15 @@ import type { AuthenticatedRequest } from "../common";
 import { UserOnlyAuthGuard } from "../account/user-only-auth.guard";
 import { McpAuthService } from "./mcp-auth.service";
 import type { GrantSummary } from "./mcp-auth.service";
+import { describeRedirect } from "./redirect-display";
+import type { RedirectDisplay } from "./redirect-display";
 import { CreateMcpGrantDto } from "./mcp-grants.dto";
 
 interface ConsentInfo {
-  client: { clientId: string; name: string; icon: string | null };
+  client: { clientId: string; name: string };
   organizations: { id: string; name: string }[];
+  /** Where approving sends the browser, in words the user can sanity-check. */
+  redirect: RedirectDisplay;
 }
 
 /** Used by the OAuth consent screen. The user may not have the target org active. */
@@ -21,19 +25,20 @@ export class McpConsentController {
 
   @Get("consent-info")
   async consentInfo(
-    @Query("clientId") clientId: string,
+    @Query("consentCode") consentCode: string,
     @CurrentUser("id") userId: string,
   ): Promise<ConsentInfo> {
-    if (!clientId) throw new BadRequestException("clientId is required");
+    if (!consentCode) throw new BadRequestException("consentCode is required");
+    const request = await this.mcpAuth.consentRequest(consentCode, userId);
     const [client, organizations] = await Promise.all([
-      this.mcpAuth.getClient(clientId),
+      this.mcpAuth.getClient(request.clientId),
       this.mcpAuth.adminOrganizations(userId),
     ]);
-    return { client, organizations };
+    return { client, organizations, redirect: describeRedirect(request.redirectURI) };
   }
 
   @Post()
-  create(
+  async create(
     @Body() dto: CreateMcpGrantDto,
     @Req() req: AuthenticatedRequest,
     @CurrentUser("id") userId: string,
@@ -43,7 +48,10 @@ export class McpConsentController {
     if (req.apiKeyId) {
       throw new ForbiddenException("API keys cannot create MCP grants. Sign in to the dashboard.");
     }
-    return this.mcpAuth.saveGrant(userId, dto.clientId, dto.organizationId);
+    // The client id comes from the consent code's own row, so the grant can
+    // only ever be written for the client the user is actually being asked about.
+    const { clientId } = await this.mcpAuth.consentRequest(dto.consentCode, userId);
+    await this.mcpAuth.saveGrant(userId, clientId, dto.organizationId);
   }
 }
 

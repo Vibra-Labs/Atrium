@@ -9,19 +9,22 @@ Let agency owners and admins connect AI assistants and agents to their Atrium
 instance so the assistant can view and manage projects, clients, tasks,
 updates, and internal notes on their behalf.
 
-The first release targets any client that can speak MCP over Streamable HTTP
-with a bearer token: the Anthropic Messages API MCP connector, Claude Code,
-Cursor, Claude Desktop, Open WebUI, LibreChat, n8n, OpenAI Responses API, and
-local-model front ends. Self-hosters can point a local model at their own
-instance; nothing leaves their network.
+There are two ways in, sharing one endpoint and one tool set:
+
+- **API key** (bearer token): for headless agents, scripts, the Anthropic
+  Messages API MCP connector, OpenAI Responses API, n8n, local-model front
+  ends, and any install on plain HTTP or a LAN. Self-hosters can point a local
+  model at their own instance; nothing leaves their network.
+- **Login** (OAuth 2.1): the user adds only the MCP URL, the client opens
+  Atrium's login page, the user approves, and the client receives a token.
+  Required by claude.ai and ChatGPT connectors, and the nicer path for Claude
+  Code, Cursor, and Claude Desktop. Needs a public HTTPS URL.
 
 Out of scope for this release:
 
-- OAuth (needed only by claude.ai custom connectors and ChatGPT connectors).
-  The key-based endpoint built here is the prerequisite for it.
 - A published stdio package. `mcp-remote` bridges stdio-only clients meanwhile.
 - Keys for portal clients (role `member`).
-- Read-only key scopes.
+- Read-only scopes, for keys or OAuth grants.
 - Client invitations via MCP. They go through Better Auth's organization
   plugin, which expects a browser session, and need their own design.
 - Invoices, time entries, files, documents, labels, comments, branding, and
@@ -33,7 +36,8 @@ Everything lives inside the existing NestJS API. No new service, container,
 or port.
 
 ```
-Client ── Authorization: Bearer atr_… ──▶ POST /api/mcp
+Client ── Authorization: Bearer atr_… (API key)
+       or Authorization: Bearer <oauth access token> ──▶ POST /api/mcp
                                              │
                         SessionMiddleware (bearer branch)
                                              │  req.user / req.organization / req.member
@@ -45,7 +49,12 @@ Client ── Authorization: Bearer atr_… ──▶ POST /api/mcp
 ```
 
 Packages: `@modelcontextprotocol/server` and `@modelcontextprotocol/node`
-(v2.0.0, MCP spec 2026-07-28). `zod/v4` for tool input schemas.
+(v2.0.0, MCP spec 2026-07-28). `zod/v4` for tool input schemas. OAuth uses the
+`mcp` plugin already shipped in the installed Better Auth (1.4.18).
+
+Build order: API keys and the endpoint first (sections 1–2), then login
+(section 3). Each is shippable on its own; the endpoint and tools do not
+change between them.
 
 ## 1. API keys and auth
 
@@ -231,7 +240,143 @@ handler applies its own limit of 300 requests per minute per API key using an
 in-memory sliding window, returning 429 with `Retry-After`. Generous enough
 for an agent loop, tight enough to notice a runaway.
 
-## 3. Settings UI
+## 3. Login (OAuth)
+
+### Provider
+
+Add Better Auth's `mcp` plugin in `auth.service.ts`:
+
+```ts
+mcp({
+  loginPage: `${webUrl}/login`,
+  resource: `${apiUrl}/api/mcp`,
+  oidcConfig: {
+    consentPage: `${webUrl}/oauth/consent`,
+    allowDynamicClientRegistration: true,
+    requirePKCE: true,
+    scopes: ["openid", "profile", "email", "offline_access"],
+    accessTokenExpiresIn: 3600,
+    refreshTokenExpiresIn: 60 * 60 * 24 * 30,
+  },
+})
+```
+
+It serves, under `/api/auth`: `mcp/authorize`, `mcp/token`, `mcp/register`
+(dynamic client registration, which claude.ai and ChatGPT rely on),
+`oauth2/consent`, and the two discovery documents. It adds three tables to the
+Prisma schema, mapped snake_case like the other Better Auth models:
+`oauthApplication`, `oauthAccessToken`, `oauthConsent`.
+
+### Discovery routes
+
+MCP clients look for metadata at the origin root, not under `/api/auth`.
+`main.ts` mounts four raw Express GET routes that return the plugin's
+documents (via `auth.api.getMcpOAuthConfig` and
+`auth.api.getMCPProtectedResource`):
+
+```
+/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/api/mcp
+/.well-known/oauth-authorization-server
+/.well-known/oauth-authorization-server/api/auth
+```
+
+`docker/Caddyfile` gains `handle /.well-known/oauth-* { reverse_proxy 127.0.0.1:3001 }`
+ahead of the catch-all, since today only `/api/*` reaches the API. The
+Firebase Hosting rewrite list gets the same entry.
+
+The 401 from `/api/mcp` changes from a bare `WWW-Authenticate: Bearer` to
+`Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource"`,
+which is what triggers the login flow in OAuth-capable clients. API key
+clients ignore it.
+
+### Login and consent pages
+
+- **Login:** the plugin redirects unauthenticated users to `/login` with the
+  original OAuth query string and sets a signed `oidc_login_prompt` cookie.
+  After sign-in its after-hook resumes the authorize flow. The login page
+  must follow the redirect URL that the sign-in response returns instead of
+  always pushing to `/dashboard`. This applies to password and magic-link
+  sign-in. It is the one change to the existing login flow and is the first
+  thing the plan verifies with a spike.
+- **Consent:** new page `apps/web/src/app/(auth)/oauth/consent/page.tsx`. It
+  shows the requesting client's name, the statement "This app will be able to
+  view and manage projects, clients, tasks, updates, and notes in
+  **<workspace>** as you", a workspace picker when the user is owner or admin
+  of more than one organization, and Allow / Deny buttons. Users who are not
+  owner or admin of any organization see an explanation and only a Deny
+  button.
+
+### Binding a grant to an organization
+
+OAuth tokens carry a user and a client, not an organization, and there is no
+session row to hold `activeOrganizationId`. A small table records the choice
+made on the consent screen:
+
+```prisma
+model McpGrant {
+  id             String   @id @default(cuid())
+  userId         String
+  clientId       String
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@map("mcp_grant")
+}
+```
+
+On Allow, the consent page first calls `POST /api/mcp-grants`
+(`{ clientId, organizationId }`, cookie session, owner or admin of that org
+required), then posts to the plugin's `oauth2/consent`. Better Auth remembers
+consent per user and client, and the grant row is keyed the same way, so a
+returning client keeps its workspace without re-prompting. To switch
+workspaces the user disconnects the app (below) and connects again.
+
+### Resolving OAuth tokens
+
+The `SessionMiddleware` bearer branch from section 1 handles both token
+kinds:
+
+1. Token starts with `atr_`: `ApiKeysService.resolve`.
+2. Otherwise: `McpAuthService.resolve(token)`, which calls
+   `auth.api.getMcpSession`, rejects the row if `accessTokenExpiresAt` is in
+   the past (the plugin's lookup does not check expiry), loads the `McpGrant`
+   for that user and client, and then applies the same rule as API keys: the
+   user must still be owner or admin of the bound organization. Returns the
+   same `{ user, organization, member }` shape, or `null`.
+
+OAuth tokens are accepted **only** on `/api/mcp`. The middleware ignores them
+on every other path, so a token issued to a third-party app cannot call the
+REST API or mint API keys. API keys keep working on both.
+
+### Connected apps
+
+The settings page (section 4) lists the user's OAuth grants: client name,
+workspace, connected date. **Disconnect** deletes the `McpGrant`, the
+`oauthConsent` row, and all `oauthAccessToken` rows for that user and client
+via `DELETE /api/mcp-grants/:id`. Owners also see, and can disconnect, grants
+made by other admins in their workspace.
+
+### Security notes
+
+- Dynamic client registration is open by design (the spec requires it for
+  claude.ai and ChatGPT). Registration is rate limited to 10 per hour per IP,
+  and unused applications with no tokens are pruned after 7 days by the
+  existing scheduler.
+- PKCE is required. Redirect URIs are exact-match, enforced by the plugin.
+- The plugin stores access and refresh tokens unhashed. They are short-lived
+  (1 hour access, 30 day refresh) and scoped to `/api/mcp` only. Recorded in
+  `docs/security.md`.
+- A new env flag `MCP_OAUTH_ENABLED` (default `true`) lets an operator turn
+  login off. When off, the plugin is not registered, the discovery routes
+  return 404, and the 401 header falls back to a bare `Bearer`. API keys are
+  unaffected.
+
+## 4. Settings UI
 
 New route `apps/web/src/app/(dashboard)/dashboard/settings/api-keys/`
 following the existing settings section pattern (server component page plus a
@@ -252,14 +397,25 @@ Contents, top to bottom:
    - Cursor / generic JSON config with `url` and `headers`.
    - Anthropic Messages API `mcp_servers` entry with `authorization_token`.
 
-API client functions live in `apps/web/src/lib/api.ts` next to the existing
-ones: `listApiKeys`, `createApiKey`, `revokeApiKey`.
+4. **Connected apps** table (section 3): client name, workspace, connected
+   date, Disconnect. Hidden when `MCP_OAUTH_ENABLED=false`.
 
-## 4. Error handling summary
+The connect card leads with the login path when OAuth is enabled ("paste this
+URL into Claude, ChatGPT, or Cursor and sign in") and shows the API key
+snippets underneath for agents and scripts.
+
+API client functions live in `apps/web/src/lib/api.ts` next to the existing
+ones: `listApiKeys`, `createApiKey`, `revokeApiKey`, `listMcpGrants`,
+`createMcpGrant`, `deleteMcpGrant`.
+
+## 5. Error handling summary
 
 | Situation | Behavior |
 | --- | --- |
-| Missing or bad bearer key at `/api/mcp` | 401, `WWW-Authenticate: Bearer`, JSON-RPC error. |
+| Missing or bad bearer token at `/api/mcp` | 401, `WWW-Authenticate: Bearer resource_metadata="…"`, JSON-RPC error. |
+| Expired OAuth access token | 401 as above; the client refreshes through `mcp/token`. |
+| OAuth token with no `McpGrant`, or grant's org no longer admin-accessible | 401 as above. |
+| OAuth token used on a REST route | Ignored, so the usual 401 from `AuthGuard`. |
 | Revoked key, demoted or deleted user | `resolve` returns null, so 401 as above. Cache entry expires within 30 s. |
 | Service throws HttpException inside a tool | `isError` result with the exception message. |
 | Service throws unknown error | logged with pino, `isError` "Internal error". |
@@ -267,7 +423,7 @@ ones: `listApiKeys`, `createApiKey`, `revokeApiKey`.
 | Plan limit exceeded (hosted mode) | `PlanGuard` does not run on tools. `create_project` calls `BillingService` the same way `PlanGuard` does (only when `BILLING_ENABLED=true`) and returns the same message as an `isError` result. |
 | Over rate limit | 429 with `Retry-After: 60`. |
 
-## 5. Testing
+## 6. Testing
 
 Unit (`apps/api/src/**/*.spec.ts`, no I/O):
 
@@ -279,6 +435,11 @@ Unit (`apps/api/src/**/*.spec.ts`, no I/O):
 - Tool adapters: each tool with mocked services, covering happy path,
   NotFound mapped to `isError`, `delete_project` refused for admin.
 - Rate limiter: 301st request in a minute is rejected.
+- `McpAuthService.resolve`: null on unknown token, expired token, missing
+  grant, demoted user; non-null for a valid grant.
+- `SessionMiddleware`: OAuth token populates the request on `/api/mcp` and is
+  ignored on `/api/projects`.
+- Grants controller: refuses an org where the caller is not owner or admin.
 
 Integration (`apps/api/test/integration/mcp.integration.spec.ts`):
 
@@ -286,29 +447,49 @@ Integration (`apps/api/test/integration/mcp.integration.spec.ts`):
   `tools/list`, then `create_project` and `list_projects`; assert the project
   exists in Postgres. Revoke the key; assert 401.
 
-E2E (`e2e/tests/api-keys.e2e.ts`):
+- OAuth round trip (`mcp-oauth.integration.spec.ts`): register a client via
+  `mcp/register`, drive authorize with a signed-in session and PKCE, post the
+  grant and consent, exchange the code at `mcp/token`, call `tools/list` with
+  the access token, refresh it, then disconnect and assert 401. Also asserts
+  all four discovery URLs return valid metadata.
+
+E2E (`e2e/tests/api-keys.e2e.ts`, `e2e/tests/mcp-oauth.e2e.ts`):
 
 - Settings page: create a key, the full key is shown once, the table lists
   the prefix, revoke removes it. Then the raw key makes a `tools/list` request
   through Playwright's request context and gets 200 before revoke and 401
   after.
 
-## 6. Documentation
+- OAuth in the browser: starting from an authorize URL while signed out, the
+  user lands on `/login`, signs in, sees the consent page with the client
+  name and workspace, clicks Allow, and is redirected to the client's
+  redirect URI with a `code`. The app then appears under Connected apps and
+  Disconnect removes it. A second test covers Deny.
+
+## 7. Documentation
 
 - `docs/mcp.md`: what it is, creating a key, connecting each client, the tool
   list, security notes (treat keys as passwords, keys act as you, revoke on
   leak).
 - `README.md` feature list gains an "MCP server for AI assistants" line.
 - `docs/roadmap.md`: add and tick "MCP server".
-- `.env.example`: no new variables. The MCP URL derives from the existing
-  API URL.
+- `docs/mcp.md` also covers connecting by login (claude.ai, ChatGPT, Claude
+  Code), the public HTTPS requirement, and when to prefer a key.
+- `.env.example` and `docs/configuration.md`: `MCP_OAUTH_ENABLED`.
+- `docs/security.md`: token storage and the `/api/mcp`-only rule.
 
 ## Files touched
 
 ```
-packages/database/prisma/schema.prisma            ApiKey model
+packages/database/prisma/schema.prisma            ApiKey, McpGrant, oauthApplication, oauthAccessToken, oauthConsent
 apps/api/src/api-keys/                            module, service, controller, dto, specs
-apps/api/src/auth/session.middleware.ts           bearer branch
+apps/api/src/auth/session.middleware.ts           bearer branch (keys everywhere, OAuth tokens on /api/mcp only)
+apps/api/src/auth/auth.service.ts                 mcp plugin
+apps/api/src/mcp/mcp-auth.service.ts              OAuth token → actor
+apps/api/src/mcp/mcp-grants.controller.ts         create / list / disconnect grants
+apps/web/src/app/(auth)/oauth/consent/            consent page
+apps/web/src/app/(auth)/login/                    follow post-login redirect
+docker/Caddyfile, firebase.json                   route /.well-known/oauth-* to the API
 apps/api/src/mcp/                                 module, service, tools/*.tools.ts, helpers, rate limiter, specs
 apps/api/src/clients/clients.service.ts           extract list query from controller
 apps/api/src/main.ts                              mount /api/mcp
@@ -318,6 +499,6 @@ apps/api/test/integration/mcp.integration.spec.ts
 apps/web/src/app/(dashboard)/dashboard/settings/api-keys/
 apps/web/src/lib/api.ts                           key API calls
 apps/web/src/components/… (settings nav)          sidebar entry
-e2e/tests/api-keys.e2e.ts
+e2e/tests/api-keys.e2e.ts, e2e/tests/mcp-oauth.e2e.ts
 docs/mcp.md, README.md, docs/roadmap.md
 ```

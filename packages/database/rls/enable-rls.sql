@@ -38,6 +38,10 @@ ALTER TABLE "project_status"    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "subscription_plan" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "subscription"      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "api_key"           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "oauth_application"  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "oauth_access_token" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "oauth_consent"      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "mcp_grant"          ENABLE ROW LEVEL SECURITY;
 
 -- ─── Revoke direct access from anon and authenticated roles ─────────────────
 -- REVOKE is idempotent -- revoking a privilege that was never granted is a no-op.
@@ -64,5 +68,9 @@ REVOKE ALL ON "project_status"    FROM anon, authenticated;
 REVOKE ALL ON "subscription_plan" FROM anon, authenticated;
 REVOKE ALL ON "subscription"      FROM anon, authenticated;
 REVOKE ALL ON "api_key"           FROM anon, authenticated;
+REVOKE ALL ON "oauth_application"  FROM anon, authenticated;
+REVOKE ALL ON "oauth_access_token" FROM anon, authenticated;
+REVOKE ALL ON "oauth_consent"      FROM anon, authenticated;
+REVOKE ALL ON "mcp_grant"          FROM anon, authenticated;
 
 COMMIT;

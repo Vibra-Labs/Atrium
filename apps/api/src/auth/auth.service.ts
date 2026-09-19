@@ -4,7 +4,7 @@ import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { organization, magicLink } from "better-auth/plugins";
+import { organization, magicLink, mcp } from "better-auth/plugins";
 import { APIError } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
@@ -32,6 +32,15 @@ export class AuthService {
     private billingService: BillingService,
   ) {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
+    // API_URL is the canonical var; BETTER_AUTH_URL is kept as a fallback for
+    // existing deployments that set it before the rename in v1.4.
+    const apiUrl: string =
+      this.config.get("API_URL") ??
+      this.config.get("BETTER_AUTH_URL") ??
+      "http://localhost:3001";
+    // Lets MCP clients sign in instead of pasting an API key. Opt-out only.
+    const mcpOAuthEnabled: boolean =
+      this.config.get("MCP_OAUTH_ENABLED", "true") !== "false";
 
     // Determine cookie security: explicit SECURE_COOKIES env var takes
     // precedence, otherwise default to secure in production.
@@ -44,16 +53,18 @@ export class AuthService {
     this.auth = betterAuth({
       database: prismaAdapter(this.prisma, { provider: "postgresql" }),
       secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
-      // API_URL is the canonical var; BETTER_AUTH_URL is kept as a fallback for
-      // existing deployments that set it before the rename in v1.4.
-      baseURL:
-        this.config.get("API_URL") ??
-        this.config.get("BETTER_AUTH_URL") ??
-        "http://localhost:3001",
+      baseURL: apiUrl,
       basePath: "/api/auth",
       session: {
         expiresIn: 60 * 60 * 24 * 30,   // 30 days
         updateAge: 60 * 60 * 24,         // refresh if older than 1 day
+      },
+      rateLimit: {
+        // Dynamic client registration is unauthenticated by design, so cap it
+        // well below the global default.
+        customRules: {
+          "/mcp/register": { window: 3600, max: 10 },
+        },
       },
       databaseHooks: {
         user: {
@@ -88,12 +99,7 @@ export class AuthService {
           },
         },
       },
-      trustedOrigins: [
-        webUrl,
-        this.config.get("API_URL") ??
-          this.config.get("BETTER_AUTH_URL") ??
-          "http://localhost:3001",
-      ],
+      trustedOrigins: [webUrl, apiUrl],
       // Firebase Hosting strips all cookies except "__session".
       // When FIREBASE_HOSTING=true, override the cookie name.
       // On other hosts (Coolify, VPS, etc.) use Better Auth defaults.
@@ -204,6 +210,23 @@ export class AuthService {
             );
           },
         }),
+        ...(mcpOAuthEnabled
+          ? [
+              mcp({
+                loginPage: `${webUrl}/login`,
+                resource: `${apiUrl}/api/mcp`,
+                oidcConfig: {
+                  loginPage: `${webUrl}/login`,
+                  consentPage: `${webUrl}/oauth/consent`,
+                  allowDynamicClientRegistration: true,
+                  requirePKCE: true,
+                  scopes: ["openid", "profile", "email", "offline_access"],
+                  accessTokenExpiresIn: 3600,
+                  refreshTokenExpiresIn: 60 * 60 * 24 * 30,
+                },
+              }),
+            ]
+          : []),
       ],
     });
   }

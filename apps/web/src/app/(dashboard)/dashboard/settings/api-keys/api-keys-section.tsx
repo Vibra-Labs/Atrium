@@ -82,7 +82,7 @@ export function ApiKeysSection(): React.ReactElement {
   const handleRevoke = async (key: ApiKeySummary): Promise<void> => {
     const ok = await confirm({
       title: "Revoke API key",
-      message: `Revoke "${key.name}"? Anything using it will stop working immediately.`,
+      message: `Revoke "${key.name}"? Anything using it will stop working within 30 seconds.`,
       confirmLabel: "Revoke",
       variant: "danger",
     });
@@ -149,38 +149,40 @@ export function ApiKeysSection(): React.ReactElement {
       ) : keys.length === 0 ? (
         <p className="text-sm text-[var(--muted-foreground)]">No API keys yet.</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead className="text-left text-[var(--muted-foreground)]">
-            <tr>
-              <th className="py-2 font-medium">Name</th>
-              <th className="py-2 font-medium">Key</th>
-              <th className="py-2 font-medium">Created by</th>
-              <th className="py-2 font-medium">Created</th>
-              <th className="py-2 font-medium">Last used</th>
-              <th className="py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {keys.map((key) => (
-              <tr key={key.id} className="border-t border-[var(--border)]">
-                <td className="py-2">{key.name}</td>
-                <td className="py-2"><code className="text-xs">{key.keyPrefix}…</code></td>
-                <td className="py-2">{key.createdBy}</td>
-                <td className="py-2">{formatDate(key.createdAt)}</td>
-                <td className="py-2">{formatDate(key.lastUsedAt)}</td>
-                <td className="py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => void handleRevoke(key)}
-                    className="inline-flex items-center gap-1 text-red-600 hover:underline"
-                  >
-                    <Trash2 size={14} /> Revoke
-                  </button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-[var(--muted-foreground)]">
+              <tr>
+                <th className="py-2 font-medium">Name</th>
+                <th className="py-2 font-medium">Key</th>
+                <th className="py-2 font-medium">Created by</th>
+                <th className="py-2 font-medium">Created</th>
+                <th className="py-2 font-medium">Last used</th>
+                <th className="py-2" />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {keys.map((key) => (
+                <tr key={key.id} className="border-t border-[var(--border)]">
+                  <td className="py-2">{key.name}</td>
+                  <td className="py-2"><code className="text-xs">{key.keyPrefix}…</code></td>
+                  <td className="py-2">{key.createdBy}</td>
+                  <td className="py-2">{formatDate(key.createdAt)}</td>
+                  <td className="py-2">{formatDate(key.lastUsedAt)}</td>
+                  <td className="py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void handleRevoke(key)}
+                      className="inline-flex items-center gap-1 text-red-600 hover:underline"
+                    >
+                      <Trash2 size={14} /> Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

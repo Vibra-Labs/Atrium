@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useToast } from "@/components/toast";
@@ -45,16 +45,21 @@ const SNIPPETS: Snippet[] = [
   },
 ];
 
-function mcpUrl(): string {
-  const base: string =
-    process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "");
-  return `${base}/api/mcp`;
+/** Server and first client render must agree, so `window` is read only in an effect. */
+function configuredMcpUrl(): string {
+  return `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/mcp`;
 }
 
 export function ConnectCard(): React.ReactElement {
   const [active, setActive] = useState<ClientId>("claude-code");
+  const [url, setUrl] = useState<string>(configuredMcpUrl());
   const { success, error: showError } = useToast();
-  const url: string = mcpUrl();
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_API_URL) return;
+    setUrl(`${window.location.origin}/api/mcp`);
+  }, []);
+
   const snippet: Snippet = SNIPPETS.find((s) => s.id === active) ?? SNIPPETS[0];
 
   const copy = async (text: string): Promise<void> => {

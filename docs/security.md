@@ -50,7 +50,7 @@ The plugin stores access **and refresh** tokens unhashed. A database leak theref
 exposes refresh tokens that stay redeemable for 30 days, and MCP clients are public
 clients that refresh with `client_id` alone -- no secret is involved. The
 single-endpoint rule, not the access token's one-hour lifetime, is what bounds the
-impact. The plugin's own `GET /api/auth/mcp/mcp/get-session` endpoint, which returns the
+impact. The plugin's own `GET /api/auth/mcp/get-session` endpoint, which returns the
 whole token row (refresh token included) for any presented access token, is blocked and
 answers 404. Token rows whose refresh window has closed are deleted nightly.
 

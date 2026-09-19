@@ -386,10 +386,10 @@ REST API or mint API keys. API keys keep working on both.
 
 The settings page (section 4) lists the user's OAuth grants: client name,
 workspace, connected date. **Disconnect** deletes the `McpGrant` and all
-`oauthAccessToken` rows for that user and client. The `oauthConsent` row is
-kept: it grants nothing, but it marks the registration as approved so the
-nightly prune does not delete it and strand a client on `invalid_client`
-via `DELETE /api/mcp-grants/:id`. Owners also see, and can disconnect, grants
+`oauthAccessToken` rows for that user and client via
+`DELETE /api/mcp-grants/:id`. The `oauthConsent` row is kept: it grants
+nothing, but it marks the registration as approved so the nightly prune does
+not delete it and strand a client on `invalid_client`. Owners also see, and can disconnect, grants
 made by other admins in their workspace.
 
 ### Security notes

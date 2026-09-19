@@ -76,10 +76,15 @@ export class McpService {
   }
 
   async handle(req: Request, res: Response): Promise<void> {
-    const { user, organization, member, apiKeyId, authRateLimited } =
+    const { user, organization, member, apiKeyId, bearerKind, authRateLimited } =
       req as Partial<AuthenticatedRequest>;
 
-    if (!user || !organization || !member) {
+    // Bearer only. This route is @Public() and CSRF-exempt, and every tool
+    // changes state, so identity that came from a browser session cookie is
+    // treated as no identity at all — otherwise SameSite=Lax and the
+    // JSON-content-type preflight would be the only thing standing between a
+    // logged-in user and a cross-site tool call.
+    if (!bearerKind || !user || !organization || !member) {
       // SessionMiddleware caps failed key lookups per IP before they reach the database.
       if (authRateLimited) {
         this.tooManyRequests(res);

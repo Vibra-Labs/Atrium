@@ -1,10 +1,13 @@
 import { Injectable, Logger, NestMiddleware } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
 import { McpAuthService } from "../mcp-auth/mcp-auth.service";
 import { RateLimiter } from "../common";
-import type { Actor, AuthenticatedRequest, AuthUser, AuthSession, FullOrganization, OrgMember } from "../common";
+import type {
+  Actor, AuthenticatedRequest, AuthUser, AuthSession, BearerKind, FullOrganization, OrgMember,
+} from "../common";
 
 interface CachedSession {
   user: AuthUser;
@@ -12,6 +15,7 @@ interface CachedSession {
   organization?: FullOrganization;
   member?: OrgMember;
   apiKeyId?: string;
+  bearerKind?: BearerKind;
   expiresAt: number;
 }
 
@@ -27,8 +31,6 @@ const FAILED_KEY_FAIL_CLOSED = false;
 /** OAuth access tokens authenticate on this exact path and nowhere else. */
 const MCP_PATH = "/api/mcp";
 
-type BearerKind = "apiKey" | "oauth";
-
 /** Bucket for the failed-key limiter. `trust proxy` makes this client-supplied. */
 function clientIp(req: Request): string {
   return req.ip ?? req.socket?.remoteAddress ?? "unknown";
@@ -37,7 +39,7 @@ function clientIp(req: Request): string {
 type AuthReq = Partial<
   Pick<
     AuthenticatedRequest,
-    "user" | "session" | "organization" | "member" | "apiKeyId" | "authRateLimited"
+    "user" | "session" | "organization" | "member" | "apiKeyId" | "bearerKind" | "authRateLimited"
   >
 > &
   Request;
@@ -68,6 +70,7 @@ export class SessionMiddleware implements NestMiddleware {
     private authService: AuthService,
     private apiKeys: ApiKeysService,
     private mcpAuth: McpAuthService,
+    private config: ConfigService,
   ) {}
 
   private extractSessionToken(req: Request): string | undefined {
@@ -87,8 +90,14 @@ export class SessionMiddleware implements NestMiddleware {
     return token.startsWith(API_KEY_PREFIX) ? token : undefined;
   }
 
-  /** OAuth access tokens are honoured on the MCP endpoint only, never on the REST API. */
+  /**
+   * OAuth access tokens are honoured on the MCP endpoint only, never on the
+   * REST API — and not at all once the operator has turned OAuth off, since
+   * tokens minted before the switch outlive it by up to an hour and the
+   * Connected apps UI that would disconnect them is hidden.
+   */
   private extractOAuthToken(req: Request): string | undefined {
+    if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") return undefined;
     if (req.originalUrl.split("?")[0] !== MCP_PATH) return undefined;
     const header: string | undefined = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) return undefined;
@@ -133,6 +142,7 @@ export class SessionMiddleware implements NestMiddleware {
         organization: resolved.organization,
         member: resolved.member,
         apiKeyId: resolved.apiKeyId,
+        bearerKind: kind,
         session: {
           id: kind === "apiKey" ? `apikey:${resolved.apiKeyId}` : `${kind}:${resolved.user.id}`,
           token: "",
@@ -155,6 +165,7 @@ export class SessionMiddleware implements NestMiddleware {
     authReq.organization = entry.organization;
     authReq.member = entry.member;
     authReq.apiKeyId = entry.apiKeyId;
+    authReq.bearerKind = entry.bearerKind;
   }
 
   /** Drops expired entries from a cache that has grown past its soft cap. */

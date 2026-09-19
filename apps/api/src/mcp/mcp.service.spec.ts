@@ -40,6 +40,17 @@ function ownerReq(apiKeyId?: string, userId = "u1"): Request {
     organization: { id: "org1" },
     member: { role: "owner" },
     apiKeyId,
+    bearerKind: apiKeyId ? "apiKey" : "oauth",
+  } as unknown as Request;
+}
+
+/** A browser session: identity is present, but it came from a cookie. */
+function cookieOwnerReq(): Request {
+  return {
+    headers: {},
+    user: { id: "u1" },
+    organization: { id: "org1" },
+    member: { role: "owner" },
   } as unknown as Request;
 }
 
@@ -53,6 +64,7 @@ function memberReq(userId = "u2"): Request {
     user: { id: userId },
     organization: { id: "org1" },
     member: { role: "member" },
+    bearerKind: "apiKey",
   } as unknown as Request;
 }
 
@@ -110,9 +122,32 @@ describe("McpService", () => {
 
   it("responds 403 for a signed-in portal client", async () => {
     const res = buildRes();
-    const req = { headers: {}, user: { id: "u2" }, organization: { id: "org1" }, member: { role: "member" } };
-    await buildService().handle(req as unknown as Request, res as unknown as Response);
+    await buildService().handle(memberReq(), res as unknown as Response);
     expect(res.statusCode).toBe(403);
+  });
+
+  it("refuses cookie-session identity: the endpoint is bearer-only", async () => {
+    // /api/mcp is @Public() and CSRF-exempt, and the tools change state, so a
+    // browser session must not be able to drive it cross-site.
+    const res = buildRes();
+    await buildService().handle(cookieOwnerReq(), res as unknown as Response);
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized" }, id: null });
+    expect(res.headers["WWW-Authenticate"]).toBe(
+      'Bearer resource_metadata="https://portal.test/.well-known/oauth-protected-resource"',
+    );
+  });
+
+  it("serves both bearer kinds", async () => {
+    const service = buildTestService();
+    const viaKey = buildRes();
+    await service.handle(ownerReq("k1"), viaKey as unknown as Response);
+    expect(viaKey.statusCode).toBe(200);
+
+    const viaOAuth = buildRes();
+    await service.handle(ownerReq(undefined, "u9"), viaOAuth as unknown as Response);
+    expect(viaOAuth.statusCode).toBe(200);
+    expect(service.served).toBe(2);
   });
 
   it("rate limits an authenticated key once its 300/minute budget is spent", async () => {

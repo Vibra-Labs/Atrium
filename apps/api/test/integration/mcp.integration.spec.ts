@@ -71,9 +71,9 @@ beforeAll(async () => {
   const authStub = { auth: { api: { getSession: async () => null } } } as unknown as AuthService;
   const billingStub = { assertPlanLimit: async () => undefined } as unknown as BillingService;
   const mcpAuthStub = { resolve: async () => null } as never;
-  const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub);
   const unused = {} as never;
   const configStub = { get: (_k: string, fallback?: string) => fallback } as never;
+  const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub, configStub);
   const mcp = new McpService(
     new ProjectsService(prisma), unused, unused, new NotesService(prisma), unused, billingStub, configStub,
   );

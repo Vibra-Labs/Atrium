@@ -25,5 +25,6 @@ export type {
   OrgMember,
   FullOrganization,
   AuthenticatedRequest,
+  BearerKind,
   Actor,
 } from "./types/authenticated-request";

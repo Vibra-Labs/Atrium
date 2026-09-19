@@ -13,12 +13,21 @@ const resolved = {
 
 const oauthActor = { ...resolved, apiKeyId: undefined, oauthClientId: "c1" };
 
-function build(resolveResult: unknown = resolved, oauthResult: unknown = null) {
+function config(oauthEnabled = "true") {
+  return { get: (key: string, fallback?: string) => (key === "MCP_OAUTH_ENABLED" ? oauthEnabled : fallback) };
+}
+
+function build(resolveResult: unknown = resolved, oauthResult: unknown = null, oauthEnabled = "true") {
   const getSession = mock(() => Promise.resolve(null));
   const authService = { auth: { api: { getSession } } };
   const apiKeys = { resolve: mock(() => Promise.resolve(resolveResult)) };
   const mcpAuth = { resolve: mock(() => Promise.resolve(oauthResult)) };
-  const mw = new SessionMiddleware(authService as never, apiKeys as never, mcpAuth as never);
+  const mw = new SessionMiddleware(
+    authService as never,
+    apiKeys as never,
+    mcpAuth as never,
+    config(oauthEnabled) as never,
+  );
   return { mw, getSession, apiKeys, mcpAuth };
 }
 
@@ -110,6 +119,42 @@ describe("SessionMiddleware bearer branch", () => {
     expect(mcpAuth.resolve).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores an OAuth token entirely when MCP_OAUTH_ENABLED is false", async () => {
+    // The switch hides the connect UI and unmounts the plugin, but tokens
+    // already issued live for up to an hour — so the middleware has to refuse
+    // them too, otherwise turning OAuth off disconnects nobody.
+    const { mw, mcpAuth } = build(resolved, oauthActor, "false");
+    const r = req({ authorization: "Bearer oauth-token" }, {}, "10.0.0.1", "/api/mcp") as Request &
+      Record<string, any>;
+    await mw.use(r, {} as Response, mock(() => {}) as unknown as NextFunction);
+    expect(mcpAuth.resolve).not.toHaveBeenCalled();
+    expect(r.user).toBeUndefined();
+  });
+
+  it("marks bearer-derived identity with its kind, from the cache too", async () => {
+    const { mw } = build();
+    const first = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
+    await mw.use(first, {} as Response, noop());
+    expect(first.bearerKind).toBe("apiKey");
+
+    const cached = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
+    await mw.use(cached, {} as Response, noop());
+    expect(cached.bearerKind).toBe("apiKey");
+
+    const { mw: oauthMw } = build(resolved, oauthActor);
+    const oauth = req({ authorization: "Bearer oauth-token" }, {}, "10.0.0.1", "/api/mcp") as Request &
+      Record<string, any>;
+    await oauthMw.use(oauth, {} as Response, noop());
+    expect(oauth.bearerKind).toBe("oauth");
+  });
+
+  it("leaves bearerKind unset for a cookie session", async () => {
+    const { mw } = build();
+    const r = req({}, { "better-auth.session_token": "s1" }) as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+    expect(r.bearerKind).toBeUndefined();
+  });
+
   it("still prefers a session cookie over an OAuth token on /api/mcp", async () => {
     const { mw, mcpAuth, getSession } = build(resolved, oauthActor);
     const r = req(
@@ -161,6 +206,7 @@ describe("SessionMiddleware bearer cache isolation", () => {
       { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
       { resolve: mock(() => Promise.reject(new Error("db down"))) } as never,
       { resolve: mock(() => Promise.resolve(null)) } as never,
+      config() as never,
     );
     const r = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
     const next = mock(() => {}) as unknown as NextFunction;
@@ -289,6 +335,7 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
       { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
       { resolve } as never,
       { resolve: mock(() => Promise.resolve(null)) } as never,
+      config() as never,
     );
     // 30 expected rejections would otherwise fill the test output with warnings.
     (mw as unknown as { logger: { warn: () => void } }).logger = { warn: mock(() => {}) };

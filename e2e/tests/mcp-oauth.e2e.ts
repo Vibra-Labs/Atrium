@@ -74,78 +74,90 @@ test.describe("MCP OAuth login", () => {
     test.setTimeout(75_000);
     const name = `E2E App ${Date.now()}`;
     const bare = await anonymousContext(playwright);
-    const flow = await startFlow(bare, name);
+    try {
+      const flow = await startFlow(bare, name);
 
-    await page.goto(flow.authorizeUrl);
-    await expect(page).toHaveURL(/\/oauth\/consent/);
-    await expect(page.getByRole("heading", { name: `Connect ${name} to Atrium` })).toBeVisible();
+      await page.goto(flow.authorizeUrl);
+      await expect(page).toHaveURL(/\/oauth\/consent/);
+      await expect(page.getByRole("heading", { name: `Connect ${name} to Atrium` })).toBeVisible();
 
-    const callback = await captureCallback(page, () => page.getByRole("button", { name: "Allow" }).click());
-    expect(callback.searchParams.get("state")).toBe("e2e");
-    const token = await exchange(bare, flow, callback.searchParams.get("code")!);
+      const callback = await captureCallback(page, () => page.getByRole("button", { name: "Allow" }).click());
+      expect(callback.searchParams.get("state")).toBe("e2e");
+      const token = await exchange(bare, flow, callback.searchParams.get("code")!);
 
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    };
-    const ok = await bare.post(`${API_URL}/api/mcp`, { headers, data: INITIALIZE });
-    expect(ok.status()).toBe(200);
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      };
+      const ok = await bare.post(`${API_URL}/api/mcp`, { headers, data: INITIALIZE });
+      expect(ok.status()).toBe(200);
 
-    // The OAuth token must not work on the REST API
-    const rest = await bare.get(`${API_URL}/api/projects`, { headers });
-    expect(rest.status()).toBe(401);
+      // The OAuth token must not work on the REST API
+      const rest = await bare.get(`${API_URL}/api/projects`, { headers });
+      expect(rest.status()).toBe(401);
 
-    // Listed under Connected apps; disconnecting kills the token
-    await page.goto("/dashboard/settings/api-keys");
-    const row = page.getByRole("row").filter({ hasText: name });
-    await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.getByRole("button", { name: /disconnect/i }).click();
-    await page.getByRole("button", { name: "Disconnect" }).last().click();
-    await expect(page.getByText(/app disconnected/i)).toBeVisible({ timeout: 5000 });
+      // Listed under Connected apps; disconnecting kills the token
+      await page.goto("/dashboard/settings/api-keys");
+      const row = page.getByRole("row").filter({ hasText: name });
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      await row.getByRole("button", { name: /disconnect/i }).click();
+      await page.getByRole("button", { name: "Disconnect" }).last().click();
+      await expect(page.getByText(/app disconnected/i)).toBeVisible({ timeout: 5000 });
 
-    await expect
-      .poll(async () => (await bare.post(`${API_URL}/api/mcp`, { headers, data: INITIALIZE })).status(),
-        { timeout: 40_000, intervals: [2_000] })
-      .toBe(401);
-    await bare.dispose();
+      await expect
+        .poll(async () => (await bare.post(`${API_URL}/api/mcp`, { headers, data: INITIALIZE })).status(),
+          { timeout: 40_000, intervals: [2_000] })
+        .toBe(401);
+    } finally {
+      await bare.dispose();
+    }
   });
 
   test("Deny returns access_denied to the client", async ({ page, playwright }) => {
     const bare = await anonymousContext(playwright);
-    const flow = await startFlow(bare, `E2E Deny ${Date.now()}`);
-    await page.goto(flow.authorizeUrl);
-    const callback = await captureCallback(page, () => page.getByRole("button", { name: "Deny" }).click());
-    expect(callback.searchParams.get("error")).toBe("access_denied");
-    expect(callback.searchParams.get("code")).toBeNull();
-    await bare.dispose();
+    try {
+      const flow = await startFlow(bare, `E2E Deny ${Date.now()}`);
+      await page.goto(flow.authorizeUrl);
+      const callback = await captureCallback(page, () => page.getByRole("button", { name: "Deny" }).click());
+      expect(callback.searchParams.get("error")).toBe("access_denied");
+      expect(callback.searchParams.get("code")).toBeNull();
+    } finally {
+      await bare.dispose();
+    }
   });
 
   test("a signed-out user is sent to login and lands on consent after signing in", async ({ browser, request, playwright }) => {
     const name = `E2E Login ${Date.now()}`;
     const bare = await anonymousContext(playwright);
-    const flow = await startFlow(bare, name);
-    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-    const page = await context.newPage();
+    try {
+      const flow = await startFlow(bare, name);
+      const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+      try {
+        const page = await context.newPage();
 
-    await page.goto(flow.authorizeUrl);
-    await expect(page).toHaveURL(/\/login\?.*client_id=/);
+        await page.goto(flow.authorizeUrl);
+        await expect(page).toHaveURL(/\/login\?.*client_id=/);
 
-    // A dedicated account, created the way e2e/global-setup.ts creates the main one.
-    const email = `oauth-login-${Date.now()}@test.local`;
-    const password = "OAuthLogin123!";
-    const signup = await request.post(`${API_URL}/api/onboarding/signup`, {
-      data: { name: "OAuth Login", email, password, orgName: "OAuth Login Org" },
-    });
-    expect(signup.ok()).toBeTruthy();
+        // A dedicated account, created the way e2e/global-setup.ts creates the main one.
+        const email = `oauth-login-${Date.now()}@test.local`;
+        const password = "OAuthLogin123!";
+        const signup = await request.post(`${API_URL}/api/onboarding/signup`, {
+          data: { name: "OAuth Login", email, password, orgName: "OAuth Login Org" },
+        });
+        expect(signup.ok()).toBeTruthy();
 
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
-    await page.getByRole("button", { name: /sign in|log in/i }).click();
+        await page.getByLabel(/email/i).fill(email);
+        await page.getByLabel(/password/i).fill(password);
+        await page.getByRole("button", { name: /sign in|log in/i }).click();
 
-    await expect(page).toHaveURL(/\/oauth\/consent/, { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: `Connect ${name} to Atrium` })).toBeVisible();
-    await context.close();
-    await bare.dispose();
+        await expect(page).toHaveURL(/\/oauth\/consent/, { timeout: 15_000 });
+        await expect(page.getByRole("heading", { name: `Connect ${name} to Atrium` })).toBeVisible();
+      } finally {
+        await context.close();
+      }
+    } finally {
+      await bare.dispose();
+    }
   });
 });

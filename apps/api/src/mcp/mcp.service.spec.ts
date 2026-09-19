@@ -3,9 +3,16 @@ import type { Request, Response } from "express";
 import type { Actor } from "../common";
 import { McpService } from "./mcp.service";
 
-function buildService(): McpService {
+function buildConfig(oauthEnabled = "true") {
+  return {
+    get: (key: string, fallback?: string) =>
+      key === "MCP_OAUTH_ENABLED" ? oauthEnabled : key === "API_URL" ? "https://portal.test" : fallback,
+  };
+}
+
+function buildService(oauthEnabled = "true"): McpService {
   const stub = {} as never;
-  return new McpService(stub, stub, stub, stub, stub, stub);
+  return new McpService(stub, stub, stub, stub, stub, stub, buildConfig(oauthEnabled) as never);
 }
 
 /**
@@ -23,7 +30,7 @@ class TestMcpService extends McpService {
 
 function buildTestService(): TestMcpService {
   const stub = {} as never;
-  return new TestMcpService(stub, stub, stub, stub, stub, stub);
+  return new TestMcpService(stub, stub, stub, stub, stub, stub, buildConfig() as never);
 }
 
 function ownerReq(apiKeyId?: string, userId = "u1"): Request {
@@ -79,12 +86,26 @@ describe("McpService", () => {
     }
   });
 
-  it("responds 401 with WWW-Authenticate when the request has no identity", async () => {
+  it("responds 401 with a JSON-RPC error when the request has no identity", async () => {
     const res = buildRes();
     await buildService().handle({ headers: {} } as Request, res as unknown as Response);
     expect(res.statusCode).toBe(401);
-    expect(res.headers["WWW-Authenticate"]).toBe("Bearer");
     expect(res.body).toEqual({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized" }, id: null });
+  });
+
+  it("challenges with resource_metadata when OAuth is enabled", async () => {
+    const res = buildRes();
+    await buildService().handle({ headers: {} } as Request, res as unknown as Response);
+    expect(res.statusCode).toBe(401);
+    expect(res.headers["WWW-Authenticate"]).toBe(
+      'Bearer resource_metadata="https://portal.test/.well-known/oauth-protected-resource"',
+    );
+  });
+
+  it("falls back to a bare Bearer challenge when OAuth is disabled", async () => {
+    const res = buildRes();
+    await buildService("false").handle({ headers: {} } as Request, res as unknown as Response);
+    expect(res.headers["WWW-Authenticate"]).toBe("Bearer");
   });
 
   it("responds 403 for a signed-in portal client", async () => {

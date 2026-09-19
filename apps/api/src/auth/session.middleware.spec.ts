@@ -11,20 +11,24 @@ const resolved = {
   member: { id: "m1", userId: "u1", organizationId: "org1", role: "owner", createdAt: new Date() },
 };
 
-function build(resolveResult: unknown = resolved) {
+const oauthActor = { ...resolved, apiKeyId: undefined, oauthClientId: "c1" };
+
+function build(resolveResult: unknown = resolved, oauthResult: unknown = null) {
   const getSession = mock(() => Promise.resolve(null));
   const authService = { auth: { api: { getSession } } };
   const apiKeys = { resolve: mock(() => Promise.resolve(resolveResult)) };
-  const mw = new SessionMiddleware(authService as never, apiKeys as never);
-  return { mw, getSession, apiKeys };
+  const mcpAuth = { resolve: mock(() => Promise.resolve(oauthResult)) };
+  const mw = new SessionMiddleware(authService as never, apiKeys as never, mcpAuth as never);
+  return { mw, getSession, apiKeys, mcpAuth };
 }
 
 function req(
   headers: Record<string, string>,
   cookies: Record<string, string> = {},
   ip = "10.0.0.1",
+  originalUrl = "/api/projects",
 ): Request {
-  return { headers, cookies, ip, originalUrl: "/api/projects" } as unknown as Request;
+  return { headers, cookies, ip, originalUrl } as unknown as Request;
 }
 
 const noop = (): NextFunction => mock(() => {}) as unknown as NextFunction;
@@ -73,10 +77,50 @@ describe("SessionMiddleware bearer branch", () => {
     expect(getSession).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores bearer tokens that are not Atrium keys", async () => {
-    const { mw, apiKeys } = build();
-    await mw.use(req({ authorization: "Bearer eyJhbGciOi" }), {} as Response, mock(() => {}) as unknown as NextFunction);
+  it("resolves an OAuth token on /api/mcp", async () => {
+    const { mw, mcpAuth, apiKeys } = build(resolved, oauthActor);
+    const r = req({ authorization: "Bearer oauth-token" }, {}, "10.0.0.1", "/api/mcp") as Request &
+      Record<string, any>;
+    await mw.use(r, {} as Response, mock(() => {}) as unknown as NextFunction);
+    expect(mcpAuth.resolve).toHaveBeenCalledWith("oauth-token");
     expect(apiKeys.resolve).not.toHaveBeenCalled();
+    expect(r.user.id).toBe("u1");
+    expect(r.session.activeOrganizationId).toBe("org1");
+    expect(r.apiKeyId).toBeUndefined();
+  });
+
+  it("never resolves an OAuth token on any other route", async () => {
+    const { mw, mcpAuth } = build(resolved, oauthActor);
+    for (const url of ["/api/projects", "/api/api-keys", "/api/mcp-grants", "/api/mcp/extra", "/api/mcpx"]) {
+      const r = req({ authorization: "Bearer oauth-token" }, {}, "10.0.0.1", url) as Request &
+        Record<string, any>;
+      await mw.use(r, {} as Response, mock(() => {}) as unknown as NextFunction);
+      expect(r.user).toBeUndefined();
+    }
+    expect(mcpAuth.resolve).not.toHaveBeenCalled();
+  });
+
+  it("treats /api/mcp with a query string as the MCP route", async () => {
+    const { mw, mcpAuth } = build(resolved, oauthActor);
+    await mw.use(
+      req({ authorization: "Bearer oauth-token" }, {}, "10.0.0.1", "/api/mcp?x=1"),
+      {} as Response,
+      mock(() => {}) as unknown as NextFunction,
+    );
+    expect(mcpAuth.resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("still prefers a session cookie over an OAuth token on /api/mcp", async () => {
+    const { mw, mcpAuth, getSession } = build(resolved, oauthActor);
+    const r = req(
+      { authorization: "Bearer oauth-token" },
+      { "better-auth.session_token": "s1" },
+      "10.0.0.1",
+      "/api/mcp",
+    );
+    await mw.use(r, {} as Response, mock(() => {}) as unknown as NextFunction);
+    expect(mcpAuth.resolve).not.toHaveBeenCalled();
+    expect(getSession).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -116,6 +160,7 @@ describe("SessionMiddleware bearer cache isolation", () => {
     const mw = new SessionMiddleware(
       { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
       { resolve: mock(() => Promise.reject(new Error("db down"))) } as never,
+      { resolve: mock(() => Promise.resolve(null)) } as never,
     );
     const r = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
     const next = mock(() => {}) as unknown as NextFunction;
@@ -131,7 +176,7 @@ describe("SessionMiddleware bearer cache isolation", () => {
     await mw.use(req({ authorization: "Bearer atr_abc" }), {} as Response, noop());
 
     const cache = (mw as unknown as { bearerCache: Map<string, { expiresAt: number }> }).bearerCache;
-    const entry = cache.get(hashApiKey("atr_abc"));
+    const entry = cache.get(`apiKey:${hashApiKey("atr_abc")}`);
     expect(entry).toBeDefined();
     entry!.expiresAt = Date.now() - 1;
 
@@ -186,6 +231,24 @@ describe("SessionMiddleware failed-key limiter", () => {
     expect(r.authRateLimited).toBeUndefined();
   });
 
+  it("stops looking OAuth tokens up after 30 failures from one IP", async () => {
+    const { mw, mcpAuth } = build(resolved, null);
+    for (let i = 0; i < 30; i++) {
+      const r = req({ authorization: "Bearer oauth-bad" }, {}, "1.2.3.4", "/api/mcp") as Request &
+        Record<string, any>;
+      await mw.use(r, {} as Response, noop());
+      expect(r.authRateLimited).toBeUndefined();
+    }
+    expect(mcpAuth.resolve).toHaveBeenCalledTimes(30);
+
+    const blocked = req({ authorization: "Bearer oauth-bad" }, {}, "1.2.3.4", "/api/mcp") as Request &
+      Record<string, any>;
+    await mw.use(blocked, {} as Response, noop());
+    expect(mcpAuth.resolve).toHaveBeenCalledTimes(30);
+    expect(blocked.authRateLimited).toBe(true);
+    expect(blocked.user).toBeUndefined();
+  });
+
   it("does not count successful resolutions against the IP", async () => {
     const { mw, apiKeys } = build();
     for (let i = 0; i < 40; i++) {
@@ -225,6 +288,7 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
     const mw = new SessionMiddleware(
       { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
       { resolve } as never,
+      { resolve: mock(() => Promise.resolve(null)) } as never,
     );
     // 30 expected rejections would otherwise fill the test output with warnings.
     (mw as unknown as { logger: { warn: () => void } }).logger = { warn: mock(() => {}) };

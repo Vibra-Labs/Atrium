@@ -70,10 +70,12 @@ beforeAll(async () => {
 
   const authStub = { auth: { api: { getSession: async () => null } } } as unknown as AuthService;
   const billingStub = { assertPlanLimit: async () => undefined } as unknown as BillingService;
-  const middleware = new SessionMiddleware(authStub, apiKeys);
+  const mcpAuthStub = { resolve: async () => null } as never;
+  const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub);
   const unused = {} as never;
+  const configStub = { get: (_k: string, fallback?: string) => fallback } as never;
   const mcp = new McpService(
-    new ProjectsService(prisma), unused, unused, new NotesService(prisma), unused, billingStub,
+    new ProjectsService(prisma), unused, unused, new NotesService(prisma), unused, billingStub, configStub,
   );
 
   const app = express();
@@ -145,7 +147,7 @@ describe("MCP endpoint", () => {
   it("rejects requests with no key and with a revoked key", async () => {
     const noKey = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     expect(noKey.status).toBe(401);
-    expect(noKey.headers.get("www-authenticate")).toBe("Bearer");
+    expect(noKey.headers.get("www-authenticate")).toStartWith("Bearer");
 
     const fresh = await apiKeys.create("to-revoke", `admin-${stamp}`, orgId);
     await apiKeys.revoke(fresh.id, orgId);

@@ -102,7 +102,7 @@ test.describe("API keys and MCP", () => {
     const bare = await playwright.request.newContext({ storageState: { cookies: [], origins: [] } });
     const res = await bare.post(`${API_URL}/api/mcp`, { data: INITIALIZE });
     expect(res.status()).toBe(401);
-    expect(res.headers()["www-authenticate"]).toBe("Bearer");
+    expect(res.headers()["www-authenticate"]).toMatch(/^Bearer/);
     await bare.dispose();
   });
 });

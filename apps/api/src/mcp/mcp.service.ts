@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { CallToolResult } from "@modelcontextprotocol/server";
@@ -36,7 +37,16 @@ export class McpService {
     private notes: NotesService,
     private clients: ClientsService,
     private billing: BillingService,
+    private config: ConfigService,
   ) {}
+
+  /** RFC 9728 challenge pointing MCP clients at this API's OAuth metadata. */
+  private challenge(): string {
+    if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") return "Bearer";
+    const apiUrl: string =
+      this.config.get("API_URL") ?? this.config.get("BETTER_AUTH_URL") ?? "http://localhost:3001";
+    return `Bearer resource_metadata="${apiUrl}/.well-known/oauth-protected-resource"`;
+  }
 
   tools(): McpTool[] {
     return [
@@ -77,7 +87,7 @@ export class McpService {
       }
       res
         .status(401)
-        .set("WWW-Authenticate", "Bearer")
+        .set("WWW-Authenticate", this.challenge())
         .json({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized" }, id: null });
       return;
     }

@@ -2,8 +2,9 @@ import { Injectable, Logger, NestMiddleware } from "@nestjs/common";
 import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
+import { McpAuthService } from "../mcp-auth/mcp-auth.service";
 import { RateLimiter } from "../common";
-import type { AuthenticatedRequest, AuthUser, AuthSession, FullOrganization, OrgMember } from "../common";
+import type { Actor, AuthenticatedRequest, AuthUser, AuthSession, FullOrganization, OrgMember } from "../common";
 
 interface CachedSession {
   user: AuthUser;
@@ -23,6 +24,10 @@ const FAILED_KEY_MAX_IPS = 10_000;
  * spoofed client IPs must not lock out valid keys whose cache entry expired.
  */
 const FAILED_KEY_FAIL_CLOSED = false;
+/** OAuth access tokens authenticate on this exact path and nowhere else. */
+const MCP_PATH = "/api/mcp";
+
+type BearerKind = "apiKey" | "oauth";
 
 /** Bucket for the failed-key limiter. `trust proxy` makes this client-supplied. */
 function clientIp(req: Request): string {
@@ -62,6 +67,7 @@ export class SessionMiddleware implements NestMiddleware {
   constructor(
     private authService: AuthService,
     private apiKeys: ApiKeysService,
+    private mcpAuth: McpAuthService,
   ) {}
 
   private extractSessionToken(req: Request): string | undefined {
@@ -81,10 +87,19 @@ export class SessionMiddleware implements NestMiddleware {
     return token.startsWith(API_KEY_PREFIX) ? token : undefined;
   }
 
-  /** Resolves an API key into the same request fields a cookie session sets. */
-  private async applyApiKey(authReq: AuthReq, apiKey: string): Promise<void> {
-    // Cache under the hash so raw keys are not held in memory.
-    const cacheKey: string = hashApiKey(apiKey);
+  /** OAuth access tokens are honoured on the MCP endpoint only, never on the REST API. */
+  private extractOAuthToken(req: Request): string | undefined {
+    if (req.originalUrl.split("?")[0] !== MCP_PATH) return undefined;
+    const header: string | undefined = req.headers.authorization;
+    if (!header?.startsWith("Bearer ")) return undefined;
+    const token: string = header.slice(7).trim();
+    return token && !token.startsWith(API_KEY_PREFIX) ? token : undefined;
+  }
+
+  /** Resolves a bearer token into the same request fields a cookie session sets. */
+  private async applyBearer(authReq: AuthReq, token: string, kind: BearerKind): Promise<void> {
+    // Cache under the hash so raw tokens are not held in memory.
+    const cacheKey: string = `${kind}:${hashApiKey(token)}`;
     let entry: CachedSession | undefined = this.bearerCache.get(cacheKey);
     if (entry && entry.expiresAt <= Date.now()) {
       this.bearerCache.delete(cacheKey);
@@ -97,9 +112,11 @@ export class SessionMiddleware implements NestMiddleware {
         authReq.authRateLimited = true;
         return;
       }
-      let resolved: Awaited<ReturnType<ApiKeysService["resolve"]>>;
+      let resolved: (Actor & { apiKeyId?: string }) | null;
       try {
-        resolved = await this.apiKeys.resolve(apiKey);
+        // OAuth lookups cost a database round trip too, so both kinds are limited.
+        resolved =
+          kind === "apiKey" ? await this.apiKeys.resolve(token) : await this.mcpAuth.resolve(token);
       } catch (err) {
         // A lookup that throws still cost us a database round trip, so it
         // counts against the IP. use() logs and continues unauthenticated.
@@ -117,7 +134,7 @@ export class SessionMiddleware implements NestMiddleware {
         member: resolved.member,
         apiKeyId: resolved.apiKeyId,
         session: {
-          id: `apikey:${resolved.apiKeyId}`,
+          id: kind === "apiKey" ? `apikey:${resolved.apiKeyId}` : `${kind}:${resolved.user.id}`,
           token: "",
           userId: resolved.user.id,
           activeOrganizationId: resolved.organization.id,
@@ -161,8 +178,9 @@ export class SessionMiddleware implements NestMiddleware {
       // Auth session state, so those routes need no special casing here.
       if (!token) {
         const apiKey: string | undefined = this.extractApiKey(req);
-        if (apiKey) {
-          await this.applyApiKey(authReq, apiKey);
+        const oauthToken: string | undefined = apiKey ? undefined : this.extractOAuthToken(req);
+        if (apiKey || oauthToken) {
+          await this.applyBearer(authReq, (apiKey ?? oauthToken) as string, apiKey ? "apiKey" : "oauth");
           return next();
         }
       }

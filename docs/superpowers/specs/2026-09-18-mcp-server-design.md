@@ -202,8 +202,8 @@ on the REST path.
 ### Tool list
 
 Descriptions are written for the agent: what the tool does, when to use it,
-and what identifiers it needs. All list tools cap at 50 results and accept
-`limit` and `offset`.
+and what identifiers it needs. All list tools accept `page` and `limit` (max 50), matching the
+services' pagination.
 
 | Tool | Input | Role | Backed by |
 | --- | --- | --- | --- |
@@ -283,8 +283,9 @@ documents (via `auth.api.getMcpOAuthConfig` and
 ```
 
 `docker/Caddyfile` gains `handle /.well-known/oauth-* { reverse_proxy 127.0.0.1:3001 }`
-ahead of the catch-all, since today only `/api/*` reaches the API. The
-Firebase Hosting rewrite list gets the same entry.
+ahead of the catch-all, since today only `/api/*` reaches the API.
+`firebase.json` already rewrites `**` to the unified container, so it needs no
+change.
 
 The 401 from `/api/mcp` changes from a bare `WWW-Authenticate: Bearer` to
 `Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource"`,
@@ -343,9 +344,10 @@ The `SessionMiddleware` bearer branch from section 1 handles both token
 kinds:
 
 1. Token starts with `atr_`: `ApiKeysService.resolve`.
-2. Otherwise: `McpAuthService.resolve(token)`, which calls
-   `auth.api.getMcpSession`, rejects the row if `accessTokenExpiresAt` is in
-   the past (the plugin's lookup does not check expiry), loads the `McpGrant`
+2. Otherwise: `McpAuthService.resolve(token)`, which looks the token up in
+   `oauthAccessToken` (the same lookup the plugin's `getMcpSession` does),
+   rejects the row if `accessTokenExpiresAt` is in the past (the plugin's
+   lookup does not check expiry), loads the `McpGrant`
    for that user and client, and then applies the same rule as API keys: the
    user must still be owner or admin of the bound organization. Returns the
    same `{ user, organization, member }` shape, or `null`.
@@ -421,7 +423,7 @@ ones: `listApiKeys`, `createApiKey`, `revokeApiKey`, `listMcpGrants`,
 | Service throws HttpException inside a tool | `isError` result with the exception message. |
 | Service throws unknown error | logged with pino, `isError` "Internal error". |
 | Tool input fails zod | SDK returns JSON-RPC invalid params automatically. |
-| Plan limit exceeded (hosted mode) | `PlanGuard` does not run on tools. The limit check moves from `PlanGuard` into `BillingService.assertPlanLimit(orgId, resource)`, which both the guard and `create_project` call and returns the same message as an `isError` result. |
+| Plan limit exceeded (hosted mode) | `PlanGuard` does not run on tools. The limit rule moves into a shared `planLimitMessage` helper; `PlanGuard` keeps using it on REST routes and `create_project` calls the new `BillingService.assertPlanLimit(orgId, resource)` and returns the same message as an `isError` result. |
 | Over rate limit | 429 with `Retry-After: 60`. |
 
 ## 6. Testing
@@ -486,11 +488,11 @@ packages/database/prisma/schema.prisma            ApiKey, McpGrant, oauthApplica
 apps/api/src/api-keys/                            module, service, controller, dto, specs
 apps/api/src/auth/session.middleware.ts           bearer branch (keys everywhere, OAuth tokens on /api/mcp only)
 apps/api/src/auth/auth.service.ts                 mcp plugin
-apps/api/src/mcp/mcp-auth.service.ts              OAuth token → actor
-apps/api/src/mcp/mcp-grants.controller.ts         create / list / disconnect grants
+apps/api/src/mcp-auth/                            OAuth token → actor, grants endpoints, client cleanup
+                                                  (separate module: avoids a cycle with AuthModule)
 apps/web/src/app/(auth)/oauth/consent/            consent page
 apps/web/src/app/(auth)/login/                    follow post-login redirect
-docker/Caddyfile, firebase.json                   route /.well-known/oauth-* to the API
+docker/Caddyfile                                  route /.well-known/oauth-* to the API
 apps/api/src/mcp/                                 module, service, tools/*.tools.ts, helpers, rate limiter, specs
 apps/api/src/clients/clients.service.ts           extract list query from controller
 apps/api/src/main.ts                              exclude /.well-known/* from the api prefix

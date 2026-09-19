@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import * as z from "zod/v4";
 import { defineTool, isoDate, paging } from "../tool-kit";
 import type { McpTool } from "../tool-kit";
@@ -5,13 +6,42 @@ import type { ProjectsService } from "../../projects/projects.service";
 import type { BillingService } from "../../billing/billing.service";
 
 const projectFields = {
-  name: z.string().min(1).max(255),
+  name: z.string().trim().min(1).max(255),
   description: z.string().max(2000).optional(),
   status: z.string().max(100).optional().describe("A status slug from list_project_statuses"),
   startDate: isoDate.optional(),
   endDate: isoDate.optional(),
   clientUserIds: z.array(z.string()).optional().describe("User IDs from list_clients to give portal access"),
 };
+
+/**
+ * The tool description tells agents to take a slug from
+ * `list_project_statuses`, but `Project.status` is a plain string column, so
+ * anything at all used to be stored — leaving a project in a status the
+ * workspace's board does not show.
+ */
+async function assertKnownStatus(
+  projects: ProjectsService,
+  organizationId: string,
+  status: string | undefined,
+): Promise<void> {
+  if (status === undefined) return;
+  const statuses = await projects.getStatuses(organizationId);
+  const slugs: string[] = statuses.map((s) => s.slug);
+  if (!slugs.includes(status)) {
+    throw new BadRequestException(
+      `Unknown status "${status}". Valid statuses: ${slugs.join(", ")}`,
+    );
+  }
+}
+
+/** Only meaningful when the same call supplies both ends of the range. */
+function assertDateOrder(startDate: string | undefined, endDate: string | undefined): void {
+  if (startDate === undefined || endDate === undefined) return;
+  if (new Date(endDate).getTime() < new Date(startDate).getTime()) {
+    throw new BadRequestException("endDate must not be before startDate");
+  }
+}
 
 export function projectTools(deps: {
   projects: ProjectsService;
@@ -49,6 +79,8 @@ export function projectTools(deps: {
       description: "Creates a project. Only name is required.",
       inputSchema: z.object(projectFields),
       handler: async (input, actor) => {
+        assertDateOrder(input.startDate, input.endDate);
+        await assertKnownStatus(projects, actor.organization.id, input.status);
         await billing.assertPlanLimit(actor.organization.id, "projects");
         return projects.create(input, actor.organization.id);
       },
@@ -62,6 +94,8 @@ export function projectTools(deps: {
         name: projectFields.name.optional(),
       }),
       handler: async (input, actor) => {
+        assertDateOrder(input.startDate, input.endDate);
+        await assertKnownStatus(projects, actor.organization.id, input.status);
         const { projectId, ...patch } = input;
         return projects.update(projectId, patch, actor.organization.id);
       },

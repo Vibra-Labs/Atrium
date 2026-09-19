@@ -34,3 +34,13 @@ describe("update tools", () => {
     expect(schema.safeParse({ projectId: "p1", content: "x".repeat(5001) }).success).toBe(false);
   });
 });
+
+describe("blank update content is refused, not stored", () => {
+  it("post_update rejects whitespace-only content and trims padded content", () => {
+    const schema = build().get("post_update").inputSchema;
+    expect(schema.safeParse({ projectId: "p1", content: "  \n " }).success).toBe(false);
+    const parsed = schema.safeParse({ projectId: "p1", content: "  Shipped  " });
+    expect(parsed.success).toBe(true);
+    expect((parsed.data as { content: string }).content).toBe("Shipped");
+  });
+});

@@ -22,7 +22,7 @@ export function taskTools(deps: { tasks: TasksService }): McpTool[] {
       description: "Adds a checkbox task to a project. Clients of the project can see it.",
       inputSchema: z.object({
         projectId: z.string(),
-        title: z.string().min(1).max(255),
+        title: z.string().trim().min(1).max(255),
         description: z.string().max(5000).optional(),
         dueDate: isoDate.optional(),
       }),
@@ -37,7 +37,7 @@ export function taskTools(deps: { tasks: TasksService }): McpTool[] {
         "Updates a task. Set status to 'done' to complete it. Pass null for dueDate or assigneeId to clear them.",
       inputSchema: z.object({
         taskId: z.string(),
-        title: z.string().min(1).max(255).optional(),
+        title: z.string().trim().min(1).max(255).optional(),
         description: z.string().max(5000).optional(),
         dueDate: isoDate.nullable().optional(),
         status: z.enum(["open", "in_progress", "done", "cancelled"]).optional(),

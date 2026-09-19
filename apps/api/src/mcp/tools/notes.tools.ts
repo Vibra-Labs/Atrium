@@ -18,7 +18,7 @@ export function noteTools(deps: { notes: NotesService }): McpTool[] {
       description: "Adds an internal note to a project. Clients never see notes.",
       inputSchema: z.object({
         projectId: z.string(),
-        content: z.string().min(1).max(5000),
+        content: z.string().trim().min(1).max(5000),
       }),
       handler: async (input, actor) =>
         notes.create(input.content, input.projectId, actor.organization.id, actor.user.id),

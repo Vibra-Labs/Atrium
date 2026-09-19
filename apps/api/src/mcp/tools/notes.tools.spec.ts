@@ -30,3 +30,13 @@ describe("note tools", () => {
     expect(notes.remove).toHaveBeenCalledWith("n1", "org1");
   });
 });
+
+describe("blank note content is refused, not stored", () => {
+  it("add_note rejects whitespace-only content and trims padded content", () => {
+    const schema = build().get("add_note").inputSchema;
+    expect(schema.safeParse({ projectId: "p1", content: "   " }).success).toBe(false);
+    const parsed = schema.safeParse({ projectId: "p1", content: "  Noted  " });
+    expect(parsed.success).toBe(true);
+    expect((parsed.data as { content: string }).content).toBe("Noted");
+  });
+});

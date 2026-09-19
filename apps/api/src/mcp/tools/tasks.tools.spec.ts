@@ -64,3 +64,18 @@ describe("task tool date validation", () => {
     expect(schema.safeParse({ taskId: "t1", dueDate: "tomorrow" }).success).toBe(false);
   });
 });
+
+describe("blank task titles are refused, not stored", () => {
+  it("create_task rejects a whitespace-only title and trims a padded one", () => {
+    const schema = build().get("create_task").inputSchema;
+    expect(schema.safeParse({ projectId: "p1", title: "   " }).success).toBe(false);
+    const parsed = schema.safeParse({ projectId: "p1", title: "  Ship it  " });
+    expect(parsed.success).toBe(true);
+    expect((parsed.data as { title: string }).title).toBe("Ship it");
+  });
+
+  it("update_task rejects a whitespace-only title", () => {
+    const schema = build().get("update_task").inputSchema;
+    expect(schema.safeParse({ taskId: "t1", title: " " }).success).toBe(false);
+  });
+});

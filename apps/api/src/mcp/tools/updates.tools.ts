@@ -19,7 +19,7 @@ export function updateTools(deps: { updates: UpdatesService }): McpTool[] {
         "Posts a progress update to a project. The project's clients see it in their portal and may be notified by email, so confirm the wording with the user first.",
       inputSchema: z.object({
         projectId: z.string(),
-        content: z.string().min(1).max(5000),
+        content: z.string().trim().min(1).max(5000),
       }),
       handler: async (input, actor) =>
         updates.create(

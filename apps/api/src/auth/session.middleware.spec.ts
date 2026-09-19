@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { NextFunction, Request, Response } from "express";
 import { SessionMiddleware } from "./session.middleware";
+import { hashApiKey } from "../api-keys/api-keys.service";
 
 const resolved = {
   apiKeyId: "k1",
@@ -17,9 +18,15 @@ function build(resolveResult: unknown = resolved) {
   return { mw, getSession, apiKeys };
 }
 
-function req(headers: Record<string, string>, cookies: Record<string, string> = {}): Request {
-  return { headers, cookies, originalUrl: "/api/projects" } as unknown as Request;
+function req(
+  headers: Record<string, string>,
+  cookies: Record<string, string> = {},
+  ip = "10.0.0.1",
+): Request {
+  return { headers, cookies, ip, originalUrl: "/api/projects" } as unknown as Request;
 }
+
+const noop = (): NextFunction => mock(() => {}) as unknown as NextFunction;
 
 describe("SessionMiddleware bearer branch", () => {
   it("populates the request from a valid API key", async () => {
@@ -69,5 +76,68 @@ describe("SessionMiddleware bearer branch", () => {
     const { mw, apiKeys } = build();
     await mw.use(req({ authorization: "Bearer eyJhbGciOi" }), {} as Response, mock(() => {}) as unknown as NextFunction);
     expect(apiKeys.resolve).not.toHaveBeenCalled();
+  });
+});
+
+describe("SessionMiddleware bearer cache isolation", () => {
+  it("does not let a session cookie read a cached API-key entry", async () => {
+    const { mw, getSession } = build();
+    await mw.use(req({ authorization: "Bearer atr_abc" }), {} as Response, noop());
+
+    // An attacker who learns the stored keyHash replays it as a session cookie.
+    const r = req({}, { "better-auth.session_token": hashApiKey("atr_abc") }) as Request &
+      Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+
+    expect(getSession).toHaveBeenCalledTimes(1);
+    expect(r.user).toBeUndefined();
+    expect(r.apiKeyId).toBeUndefined();
+  });
+
+  it("does not let a bearer key read a cached cookie session", async () => {
+    const { mw, apiKeys } = build(null);
+    // A cookie session cached under a token that happens to equal the key hash.
+    const cookieCache = (mw as unknown as { cache: Map<string, unknown> }).cache;
+    cookieCache.set(hashApiKey("atr_abc"), {
+      user: resolved.user,
+      session: { id: "s1" },
+      expiresAt: Date.now() + 30_000,
+    });
+
+    const r = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+
+    expect(apiKeys.resolve).toHaveBeenCalledTimes(1);
+    expect(r.user).toBeUndefined();
+  });
+
+  it("leaves the request unauthenticated and calls next once when resolve rejects", async () => {
+    const mw = new SessionMiddleware(
+      { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
+      { resolve: mock(() => Promise.reject(new Error("db down"))) } as never,
+    );
+    const r = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
+    const next = mock(() => {}) as unknown as NextFunction;
+
+    await mw.use(r, {} as Response, next);
+
+    expect(r.user).toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-resolves a key once its cached entry has expired", async () => {
+    const { mw, apiKeys } = build();
+    await mw.use(req({ authorization: "Bearer atr_abc" }), {} as Response, noop());
+
+    const cache = (mw as unknown as { bearerCache: Map<string, { expiresAt: number }> }).bearerCache;
+    const entry = cache.get(hashApiKey("atr_abc"));
+    expect(entry).toBeDefined();
+    entry!.expiresAt = Date.now() - 1;
+
+    const r = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+
+    expect(apiKeys.resolve).toHaveBeenCalledTimes(2);
+    expect(r.user.id).toBe("u1");
   });
 });

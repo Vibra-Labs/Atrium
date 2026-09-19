@@ -22,7 +22,14 @@ type AuthReq = Partial<
 
 @Injectable()
 export class SessionMiddleware implements NestMiddleware {
+  /** Cookie sessions, keyed by the raw session token. */
   private cache = new Map<string, CachedSession>();
+  /**
+   * API-key sessions, keyed by the key hash. Deliberately a separate map: the
+   * cookie branch trusts an attacker-controlled token, so a shared map would
+   * let anyone who learns a stored keyHash replay it as a session cookie.
+   */
+  private bearerCache = new Map<string, CachedSession>();
   private readonly logger = new Logger(SessionMiddleware.name);
 
   constructor(
@@ -51,9 +58,9 @@ export class SessionMiddleware implements NestMiddleware {
   private async applyApiKey(authReq: AuthReq, apiKey: string): Promise<void> {
     // Cache under the hash so raw keys are not held in memory.
     const cacheKey: string = hashApiKey(apiKey);
-    let entry: CachedSession | undefined = this.cache.get(cacheKey);
+    let entry: CachedSession | undefined = this.bearerCache.get(cacheKey);
     if (entry && entry.expiresAt <= Date.now()) {
-      this.cache.delete(cacheKey);
+      this.bearerCache.delete(cacheKey);
       entry = undefined;
     }
 
@@ -79,7 +86,8 @@ export class SessionMiddleware implements NestMiddleware {
         },
         expiresAt: now.getTime() + SESSION_CACHE_TTL,
       };
-      this.cache.set(cacheKey, entry);
+      this.bearerCache.set(cacheKey, entry);
+      if (this.bearerCache.size > 1000) this.evict(this.bearerCache);
     }
 
     authReq.user = entry.user;
@@ -87,6 +95,14 @@ export class SessionMiddleware implements NestMiddleware {
     authReq.organization = entry.organization;
     authReq.member = entry.member;
     authReq.apiKeyId = entry.apiKeyId;
+  }
+
+  /** Drops expired entries from a cache that has grown past its soft cap. */
+  private evict(cache: Map<string, CachedSession>): void {
+    const now: number = Date.now();
+    for (const [key, val] of cache) {
+      if (val.expiresAt < now) cache.delete(key);
+    }
   }
 
   async use(req: Request, _res: Response, next: NextFunction) {
@@ -97,7 +113,9 @@ export class SessionMiddleware implements NestMiddleware {
       const isAuthRoute = req.originalUrl.startsWith("/api/auth/");
 
       // API keys apply only when there is no browser session, so the
-      // cookie + CSRF model is never mixed with bearer auth.
+      // cookie + CSRF model is never mixed with bearer auth. This runs before
+      // the /api/auth/ handling on purpose: bearer auth never touches Better
+      // Auth session state, so those routes need no special casing here.
       if (!token) {
         const apiKey: string | undefined = this.extractApiKey(req);
         if (apiKey) {
@@ -181,12 +199,7 @@ export class SessionMiddleware implements NestMiddleware {
         });
 
         // Evict old entries periodically
-        if (this.cache.size > 1000) {
-          const now = Date.now();
-          for (const [key, val] of this.cache) {
-            if (val.expiresAt < now) this.cache.delete(key);
-          }
-        }
+        if (this.cache.size > 1000) this.evict(this.cache);
       }
     } catch (err) {
       // Session resolution failed — continue without auth.

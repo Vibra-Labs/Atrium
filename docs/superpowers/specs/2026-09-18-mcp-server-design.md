@@ -272,6 +272,18 @@ It serves, under `/api/auth`: `mcp/authorize`, `mcp/token`, `mcp/register`
 Prisma schema, mapped snake_case like the other Better Auth models:
 `oauthApplication`, `oauthAccessToken`, `oauthConsent`.
 
+### Consent is always required
+
+The plugin shows its consent step only when the client sends `prompt=consent`;
+otherwise it issues a code silently, and client registration is open to
+anyone. Real MCP clients do not send that parameter. A Better Auth
+`hooks.before` middleware therefore forces `prompt=consent` on every
+`mcp/authorize` request (including `prompt=none`), which also covers the
+post-login continuation because the plugin replays the rewritten query.
+Consequences: the consent screen appears on every connection and
+reconnection, and the workspace can be changed simply by reconnecting. As a
+second line of defence, a token with no `McpGrant` row never resolves.
+
 ### Discovery routes
 
 MCP clients look for metadata at the origin root, not under `/api/auth`.
@@ -340,8 +352,8 @@ On Allow, the consent page first calls `POST /api/mcp-grants`
 (`{ clientId, organizationId }`, cookie session, owner or admin of that org
 required), then posts to the plugin's `oauth2/consent`. Better Auth remembers
 consent per user and client, and the grant row is keyed the same way, so a
-returning client keeps its workspace without re-prompting. To switch
-workspaces the user disconnects the app (below) and connects again.
+grant row is upserted on every approval. To switch workspaces the user
+reconnects the app and picks a different one.
 
 ### Resolving OAuth tokens
 

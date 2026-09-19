@@ -1,8 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { MCP_ACTOR_ROLES } from "../common";
 import type { Actor } from "../common";
-
-const GRANT_ROLES: string[] = ["owner", "admin"];
 
 export type ResolvedOAuthToken = Actor & { oauthClientId: string };
 
@@ -95,7 +94,7 @@ export class McpAuthService {
     const member = await this.prisma.member.findFirst({
       where: { userId: row.userId, organizationId: grant.organizationId },
     });
-    if (!member || !GRANT_ROLES.includes(member.role)) return null;
+    if (!member || !MCP_ACTOR_ROLES.includes(member.role)) return null;
 
     return { user: grant.user, organization: grant.organization, member, oauthClientId: row.clientId };
   }
@@ -111,7 +110,7 @@ export class McpAuthService {
 
   async adminOrganizations(userId: string): Promise<{ id: string; name: string }[]> {
     const memberships = await this.prisma.member.findMany({
-      where: { userId, role: { in: GRANT_ROLES } },
+      where: { userId, role: { in: MCP_ACTOR_ROLES } },
       select: { organization: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -136,7 +135,7 @@ export class McpAuthService {
     expiresAt: Date,
   ): Promise<void> {
     const member = await this.prisma.member.findFirst({ where: { userId, organizationId } });
-    if (!member || !GRANT_ROLES.includes(member.role)) {
+    if (!member || !MCP_ACTOR_ROLES.includes(member.role)) {
       throw new ForbiddenException("You must be an owner or admin of that workspace");
     }
     await this.getClient(clientId);

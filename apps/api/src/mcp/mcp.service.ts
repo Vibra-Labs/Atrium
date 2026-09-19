@@ -4,7 +4,7 @@ import type { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { RateLimiter } from "../common";
+import { MCP_ACTOR_ROLES, RateLimiter } from "../common";
 import type { Actor, AuthenticatedRequest } from "../common";
 import { ProjectsService } from "../projects/projects.service";
 import { TasksService } from "../tasks/tasks.service";
@@ -21,7 +21,6 @@ import { taskTools } from "./tools/tasks.tools";
 import { updateTools } from "./tools/updates.tools";
 import { noteTools } from "./tools/notes.tools";
 
-const MCP_ROLES: string[] = ["owner", "admin"];
 const RATE_LIMIT = 300;
 const RATE_WINDOW_MS = 60_000;
 
@@ -120,7 +119,11 @@ export class McpService {
       });
       return;
     }
-    if (!MCP_ROLES.includes(member.role)) {
+    // Defence in depth. Both bearer resolvers already refuse anyone below
+    // owner/admin, and identity here is always bearer-derived, so this should
+    // be unreachable — it stays so that a future resolver cannot quietly widen
+    // who reaches the tools.
+    if (!MCP_ACTOR_ROLES.includes(member.role)) {
       res.status(403).json({
         jsonrpc: "2.0",
         error: { code: -32003, message: "MCP access requires the owner or admin role" },

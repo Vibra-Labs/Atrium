@@ -19,6 +19,7 @@ export { assertProjectAccess } from "./helpers/assert-project-access";
 export { RateLimiter } from "./helpers/rate-limiter";
 export { isPublicOAuthPath } from "./helpers/public-oauth-cors";
 export { isMcpPath } from "./helpers/mcp-path";
+export { MCP_ACTOR_ROLES } from "./helpers/mcp-actor-roles";
 export { BLOCKED_EXTENSIONS } from "./utils/blocked-extensions";
 export type {
   AuthUser,

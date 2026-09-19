@@ -1,12 +1,12 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
+import { MCP_ACTOR_ROLES } from "../common";
 import type { Actor } from "../common";
 
 export const API_KEY_PREFIX = "atr_";
 const KEY_PREFIX_LENGTH = 12;
 const LAST_USED_THROTTLE_MS = 60_000;
-const KEY_ROLES: string[] = ["owner", "admin"];
 
 export interface CreatedApiKey {
   id: string;
@@ -81,7 +81,7 @@ export class ApiKeysService {
     const member = await this.prisma.member.findFirst({
       where: { userId: key.userId, organizationId: key.organizationId },
     });
-    if (!member || !KEY_ROLES.includes(member.role)) return null;
+    if (!member || !MCP_ACTOR_ROLES.includes(member.role)) return null;
 
     this.touch(key.id, key.lastUsedAt);
     return { apiKeyId: key.id, user: key.user, organization: key.organization, member };

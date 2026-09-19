@@ -45,7 +45,11 @@ function build(
     },
     $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
-  return { service: new McpAuthService(prisma as never), prisma };
+  const service = new McpAuthService(prisma as never);
+  // One case feeds consentRequest a row that is not the plugin's JSON, which
+  // logs a warning by design; keep the test output pristine.
+  (service as unknown as { logger: { warn: () => void } }).logger = { warn: mock(() => {}) };
+  return { service, prisma };
 }
 
 const token = { accessToken: "tok", userId: "u1", clientId: "c1", accessTokenExpiresAt: future };
@@ -121,12 +125,15 @@ describe("McpAuthService grants", () => {
     expect(prisma.$transaction.mock.calls[0][0].length).toBe(1);
   });
 
-  it("revokeGrant deletes the grant, consent, and tokens for that user and client", async () => {
+  it("revokeGrant deletes the grant and tokens, but keeps the consent record", async () => {
     const { service, prisma } = build({ grant });
     await service.revokeGrant("g1", "u1", "org1", "admin");
     expect(prisma.oauthAccessToken.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1", clientId: "c1" } });
-    expect(prisma.oauthConsent.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1", clientId: "c1" } });
     expect(prisma.mcpGrant.delete).toHaveBeenCalledWith({ where: { id: "g1" } });
+    // The consent row carries no authority — consent is forced on every
+    // authorize and the grant is the gate — but it is what stops the nightly
+    // prune from deleting the registration out from under the client.
+    expect(prisma.oauthConsent.deleteMany).not.toHaveBeenCalled();
   });
 
   it("revokeGrant lets only the owner disconnect someone else's app", async () => {

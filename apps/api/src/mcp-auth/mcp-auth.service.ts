@@ -170,9 +170,13 @@ export class McpAuthService {
       throw new ForbiddenException("Only the workspace owner can disconnect another person's app");
     }
     const scope = { userId: grant.userId, clientId: grant.clientId };
+    // The oauthConsent row is deliberately left in place. It grants nothing —
+    // consent is forced on every authorize and this grant is the gate — but it
+    // marks the registration as one a person once approved, which keeps the
+    // nightly prune from deleting it and stranding the client on an
+    // invalid_client page it cannot recover from.
     await this.prisma.$transaction([
       this.prisma.oauthAccessToken.deleteMany({ where: scope }),
-      this.prisma.oauthConsent.deleteMany({ where: scope }),
       this.prisma.mcpGrant.delete({ where: { id: grant.id } }),
     ]);
   }

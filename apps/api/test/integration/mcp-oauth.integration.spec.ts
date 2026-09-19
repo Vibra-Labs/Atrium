@@ -14,6 +14,7 @@ import type { MailService } from "../../src/mail/mail.service";
 import type { BillingService } from "../../src/billing/billing.service";
 import { McpAuthService } from "../../src/mcp-auth/mcp-auth.service";
 import { McpConsentController } from "../../src/mcp-auth/mcp-grants.controller";
+import { OAuthCleanupTask } from "../../src/mcp-auth/oauth-cleanup.task";
 import type { AuthenticatedRequest } from "../../src/common";
 
 const API = "http://localhost:3001";
@@ -641,7 +642,9 @@ describe("OAuth token → MCP actor", () => {
 
     expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
     expect(await prisma.oauthAccessToken.count({ where: { clientId, userId } })).toBe(0);
-    expect(await prisma.oauthConsent.count({ where: { clientId, userId } })).toBe(0);
+    // The consent record survives on purpose: it is what keeps the nightly
+    // prune from deleting a registration the client has cached.
+    expect(await prisma.oauthConsent.count({ where: { clientId, userId } })).toBe(1);
   });
 
   it("signs older sessions out when the grant moves to another workspace", async () => {
@@ -696,5 +699,79 @@ describe("OAuth token → MCP actor", () => {
     expect(res.status).toBe(200);
     const refreshed = (await res.json()) as { access_token: string };
     expect(refreshed.access_token).not.toBe(tokens.access_token);
+  });
+});
+
+describe("nightly OAuth cleanup", () => {
+  const OLD = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+
+  /** A registration written straight to the table, so its age can be chosen. */
+  async function registration(suffix: string, createdAt: Date): Promise<string> {
+    const clientId = `cleanup-${suffix}-${stamp}`;
+    await prisma.oauthApplication.create({
+      data: {
+        id: `app-${clientId}`,
+        name: clientName(`IT Cleanup ${suffix}`),
+        clientId,
+        clientSecret: "",
+        redirectUrls: REDIRECT_URI,
+        type: "public",
+        disabled: false,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    });
+    registeredClientIds.push(clientId);
+    return clientId;
+  }
+
+  it("prunes only abandoned registrations, and clears tokens past their refresh window", async () => {
+    const abandoned = await registration("abandoned", OLD);
+    const consented = await registration("consented", OLD);
+    const inUse = await registration("in-use", OLD);
+    const granted = await registration("granted", OLD);
+    const recent = await registration("recent", new Date());
+
+    await prisma.oauthConsent.create({
+      data: {
+        id: `oc-${stamp}`, clientId: consented, userId, scopes: "openid",
+        consentGiven: true, createdAt: OLD, updatedAt: OLD,
+      },
+    });
+    await prisma.mcpGrant.create({
+      data: { id: `mg-${stamp}`, userId, clientId: granted, organizationId: orgId },
+    });
+    await prisma.oauthAccessToken.create({
+      data: {
+        id: `tok-live-${stamp}`, accessToken: `live-${stamp}`, refreshToken: `live-r-${stamp}`,
+        accessTokenExpiresAt: new Date(Date.now() + 3_600_000),
+        refreshTokenExpiresAt: new Date(Date.now() + 86_400_000),
+        clientId: inUse, userId, scopes: "openid", createdAt: OLD, updatedAt: OLD,
+      },
+    });
+    // Refresh never rotates old rows out, so this one is pure dead weight.
+    await prisma.oauthAccessToken.create({
+      data: {
+        id: `tok-dead-${stamp}`, accessToken: `dead-${stamp}`, refreshToken: `dead-r-${stamp}`,
+        accessTokenExpiresAt: new Date(Date.now() - 86_400_000),
+        refreshTokenExpiresAt: new Date(Date.now() - 1_000),
+        clientId: recent, userId, scopes: "openid", createdAt: OLD, updatedAt: OLD,
+      },
+    });
+
+    await new OAuthCleanupTask(prisma).nightlyCleanup();
+
+    const kept = async (clientId: string): Promise<number> =>
+      prisma.oauthApplication.count({ where: { clientId } });
+    expect(await kept(abandoned)).toBe(0);
+    expect(await kept(consented)).toBe(1);
+    expect(await kept(inUse)).toBe(1);
+    expect(await kept(granted)).toBe(1);
+    expect(await kept(recent)).toBe(1);
+
+    expect(await prisma.oauthAccessToken.count({ where: { id: `tok-dead-${stamp}` } })).toBe(0);
+    expect(await prisma.oauthAccessToken.count({ where: { id: `tok-live-${stamp}` } })).toBe(1);
+
+    await prisma.mcpGrant.deleteMany({ where: { id: `mg-${stamp}` } });
   });
 });

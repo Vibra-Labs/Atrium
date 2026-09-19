@@ -43,7 +43,7 @@ Client ── Authorization: Bearer atr_… (API key)
                                              │  req.user / req.organization / req.member
                                              ▼
                         McpService: McpServer + NodeStreamableHTTPServerTransport
-                                             │  authInfo.extra = { user, organization, member }
+                                             │  buildServer(actor) closes over { user, organization, member }
                                              ▼
                         Tool adapters ──▶ existing services (ProjectsService, TasksService, …)
 ```
@@ -131,15 +131,16 @@ All `@UseGuards(AuthGuard, RolesGuard)` and `@Roles("owner", "admin")`.
 | `DELETE /api/api-keys/:id` | Revoke. |
 
 Creating keys with an API key is refused (`ForbiddenException`) so a leaked
-key cannot mint more keys. The controller checks `req.session` came from a
-cookie (the synthetic session carries a flag).
+key cannot mint more keys. The middleware sets `req.apiKeyId` on key-authenticated
+requests and the controller refuses when it is present.
 
 ## 2. MCP endpoint
 
 ### Mounting
 
-`McpModule` (`apps/api/src/mcp/`) exposes `McpService`. In `main.ts`, after
-`SessionMiddleware` is in place, the Express instance gets:
+`McpModule` (`apps/api/src/mcp/`) provides `McpController` and `McpService`.
+The controller is a normal Nest controller so that `SessionMiddleware` (a Nest
+middleware, registered at init) runs before it:
 
 ```
 POST   /api/mcp   → McpService.handle(req, res)
@@ -147,14 +148,14 @@ GET    /api/mcp   → 405 Method Not Allowed
 DELETE /api/mcp   → 405 Method Not Allowed
 ```
 
-Registered as a raw Express route so the global `ValidationPipe` and
-exception filter do not touch JSON-RPC bodies. `express.json()` already runs
-globally; the handler passes `req.body` to the transport.
+The class is `@Public()` and `@SkipThrottle()`: it does its own identity check
+(to control the 401 headers) and its own per-key rate limit. It takes `@Req()`
+and `@Res()` only, never `@Body()`, so the global `ValidationPipe` does not
+touch JSON-RPC bodies. `@Public()` also makes `CsrfGuard` skip the route.
 
-The server is stateless: one `NodeStreamableHTTPServerTransport` with
-`sessionIdGenerator: undefined` per request, and one `McpServer` instance
-per request (tools are registered by a factory so per-request construction is
-cheap and keeps no shared state). GET returning 405 is allowed by the spec for
+The server is stateless: per request, one `McpServer` built for the acting
+identity and one `NodeStreamableHTTPServerTransport` with
+`sessionIdGenerator: undefined`. GET returning 405 is allowed by the spec for
 servers that do not push server-initiated messages.
 
 ### Authentication on the endpoint
@@ -165,39 +166,38 @@ JSON-RPC error body. Cookie sessions also satisfy this, which lets the e2e
 suite and curious users hit the endpoint from the browser, but the documented
 path is the bearer key.
 
-The identity is passed to tool handlers through the transport's `authInfo`
-pass-through: `req.auth = { token, clientId: apiKeyId, scopes: [], extra: { user, organization, member } }`.
-Tool handlers read `ctx.authInfo.extra`.
+Because a server is built per request, the identity (`Actor`:
+`{ user, organization, member }`) is closed over when tools are registered.
+Handlers never read it from transport context.
 
 ### Tool adapter pattern
 
-Each tool is a small function in `apps/api/src/mcp/tools/<resource>.tools.ts`
-exporting a `register(server, deps)` function. `deps` is the set of injected
-services. Pattern:
+Each tool is a plain object in `apps/api/src/mcp/tools/<resource>.tools.ts`,
+so it can be unit tested without the SDK:
 
 ```ts
-server.registerTool("create_project", { description, inputSchema }, async (input, ctx) => {
-  const { organization, member } = actor(ctx);
-  try {
-    const project = await deps.projects.create(input, organization.id);
-    return ok(project);
-  } catch (err) {
-    return fail(err);
-  }
+defineTool({
+  name: "create_project",
+  description: "…",
+  inputSchema: z.object({ name: z.string().max(255), … }),
+  ownerOnly: false,
+  handler: async (input, actor) => deps.projects.create(input, actor.organization.id),
 });
 ```
 
-- `actor(ctx)` extracts the identity and throws if absent.
-- `ok(value)` returns `{ content: [{ type: "text", text: JSON.stringify(value) }] }`.
-- `fail(err)` logs and returns `{ isError: true, content: [{ type: "text", text: message }] }`
-  where `message` is the HttpException response message when available, so
-  NotFound, Forbidden, validation, and plan-limit errors reach the agent
-  verbatim. Unknown errors return "Internal error".
-- `requireOwner(member)` throws a `ForbiddenException` for tools that map to
-  owner-only REST routes.
-- Inputs are validated by zod. Service DTOs are class-validator classes; the
-  adapter maps validated zod output into the DTO shape and calls the service
-  directly, so the same service-level checks apply as on the REST path.
+`McpService.buildServer(actor)` loops over every tool and registers it with
+one shared wrapper that:
+
+- rejects `ownerOnly` tools when `actor.member.role !== "owner"`,
+- returns `{ content: [{ type: "text", text: JSON.stringify(result) }] }` on
+  success,
+- on error logs and returns `{ isError: true, content: [text] }`, where the
+  text is the `HttpException` message when available (NotFound, Forbidden,
+  BadRequest, plan-limit) and "Internal error" otherwise.
+
+Inputs are validated by zod with the same limits as the class-validator DTOs,
+then passed to the existing services, so service-level checks apply exactly as
+on the REST path.
 
 ### Tool list
 
@@ -210,15 +210,15 @@ and what identifiers it needs. All list tools cap at 50 results and accept
 | `get_workspace` | none | any | org name, slug, acting user name and email, role, MCP version. Lets the agent orient itself in one call. |
 | `list_projects` | `status?`, `search?`, `archived?` (default false), paging | admin | `ProjectsService.findAll` |
 | `get_project` | `projectId` | admin | `ProjectsService.findOne` |
-| `create_project` | `name`, `description?`, `status?`, `startDate?`, `endDate?`, `clientIds?` | admin | `ProjectsService.create` |
+| `create_project` | `name`, `description?`, `status?`, `startDate?`, `endDate?`, `clientUserIds?` | admin | `ProjectsService.create` |
 | `update_project` | `projectId` plus any of the create fields | admin | `ProjectsService.update` |
 | `archive_project` | `projectId`, `archived` (bool) | admin | `ProjectsService.archive` / `unarchive` |
 | `list_project_statuses` | none | admin | `ProjectsService.getStatuses` |
 | `list_clients` | `search?`, paging | admin | same query the clients controller `GET /clients` runs, extracted into `ClientsService.list` |
 | `get_client` | `clientId` | admin | `ClientsService.getProfile` plus their projects |
 | `list_tasks` | `projectId`, `status?`, paging | admin | `TasksService.findByProject` |
-| `create_task` | `projectId`, `title`, `description?`, `status?`, `dueDate?`, `assigneeId?` | admin | `TasksService.create` |
-| `update_task` | `taskId` plus any create field | admin | `TasksService.update` |
+| `create_task` | `projectId`, `title`, `description?`, `dueDate?` | admin | `TasksService.create` (checkbox tasks only) |
+| `update_task` | `taskId`, `title?`, `description?`, `dueDate?`, `status?`, `assigneeId?` | admin | `TasksService.update` |
 | `delete_task` | `taskId` | admin | `TasksService.remove` |
 | `list_updates` | `projectId`, paging | admin | `UpdatesService.findByProject` |
 | `post_update` | `projectId`, `content` (markdown) | admin | `UpdatesService.create` with the acting user as author. No attachment support. |
@@ -235,7 +235,7 @@ DTO field is not in this table, it is omitted from the tool for now.
 
 ### Rate limiting
 
-The global `ThrottlerGuard` does not run on the raw Express route. The MCP
+The controller skips the global IP-based `ThrottlerGuard`. The MCP
 handler applies its own limit of 300 requests per minute per API key using an
 in-memory sliding window, returning 429 with `Retry-After`. Generous enough
 for an agent loop, tight enough to notice a runaway.
@@ -270,7 +270,8 @@ Prisma schema, mapped snake_case like the other Better Auth models:
 ### Discovery routes
 
 MCP clients look for metadata at the origin root, not under `/api/auth`.
-`main.ts` mounts four raw Express GET routes that return the plugin's
+A `WellKnownController` (paths excluded from the `api` global prefix in
+`main.ts`) serves four GET routes that return the plugin's
 documents (via `auth.api.getMcpOAuthConfig` and
 `auth.api.getMCPProtectedResource`):
 
@@ -420,7 +421,7 @@ ones: `listApiKeys`, `createApiKey`, `revokeApiKey`, `listMcpGrants`,
 | Service throws HttpException inside a tool | `isError` result with the exception message. |
 | Service throws unknown error | logged with pino, `isError` "Internal error". |
 | Tool input fails zod | SDK returns JSON-RPC invalid params automatically. |
-| Plan limit exceeded (hosted mode) | `PlanGuard` does not run on tools. `create_project` calls `BillingService` the same way `PlanGuard` does (only when `BILLING_ENABLED=true`) and returns the same message as an `isError` result. |
+| Plan limit exceeded (hosted mode) | `PlanGuard` does not run on tools. The limit check moves from `PlanGuard` into `BillingService.assertPlanLimit(orgId, resource)`, which both the guard and `create_project` call and returns the same message as an `isError` result. |
 | Over rate limit | 429 with `Retry-After: 60`. |
 
 ## 6. Testing
@@ -492,7 +493,7 @@ apps/web/src/app/(auth)/login/                    follow post-login redirect
 docker/Caddyfile, firebase.json                   route /.well-known/oauth-* to the API
 apps/api/src/mcp/                                 module, service, tools/*.tools.ts, helpers, rate limiter, specs
 apps/api/src/clients/clients.service.ts           extract list query from controller
-apps/api/src/main.ts                              mount /api/mcp
+apps/api/src/main.ts                              exclude /.well-known/* from the api prefix
 apps/api/src/app.module.ts                        import new modules
 apps/api/package.json                             @modelcontextprotocol/server, @modelcontextprotocol/node, zod
 apps/api/test/integration/mcp.integration.spec.ts

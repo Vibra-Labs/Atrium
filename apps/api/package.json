@@ -18,6 +18,8 @@
     "@atrium/shared": "workspace:*",
     "@aws-sdk/client-s3": "^3.1005.0",
     "@aws-sdk/s3-request-presigner": "^3.1005.0",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
@@ -44,9 +46,11 @@
     "rxjs": "^7.8.1",
     "sanitize-html": "^2.17.3",
     "stripe": "^20.4.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "zod": "^4.2.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
     "@nestjs/cli": "^11.0.16",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.0.0",

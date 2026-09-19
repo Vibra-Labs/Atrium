@@ -5,7 +5,8 @@ assistants and agents can view and manage your workspace. It works with any MCP 
 and any model provider: Claude, OpenAI, local models behind Open WebUI or LibreChat,
 n8n, or your own agent.
 
-- **Endpoint:** `https://<your-atrium-host>/api/mcp` (Streamable HTTP, stateless)
+- **Endpoint:** `https://<your-atrium-host>/api/mcp` (Streamable HTTP, stateless,
+  one JSON-RPC message per request -- batches are refused)
 - **Auth:** sign in with your Atrium account (OAuth), or send an API key as `Authorization: Bearer atr_…`
 
 ## Option A: Connect by signing in
@@ -25,9 +26,11 @@ The assistant acts as you in the workspace you picked. Only owners and admins ca
 connect. See and disconnect assistants under **Settings → API & MCP → Connected apps**;
 disconnecting takes effect within 30 seconds. Consent is shown every time you connect, so
 to move an assistant to a different workspace, just reconnect it and pick another
-workspace on the consent screen -- there's no need to disconnect first. Switching
-workspace signs the assistant's older sessions out, so anything still running under the
-previous workspace stops working and the assistant has to use its new connection.
+workspace on the consent screen -- there's no need to disconnect first. The move happens
+only when you actually press **Allow**: if you close the tab on the consent screen, the
+assistant keeps working in the workspace it already had. Once the move goes through, the
+assistant's older sessions are signed out, so anything still running under the previous
+workspace stops working and the assistant has to use its new connection.
 
 **When to use an API key instead:** headless agents and scripts, the Anthropic or OpenAI
 APIs, n8n, local-model front ends, and any instance on plain HTTP or a private network.

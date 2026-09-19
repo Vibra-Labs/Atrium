@@ -37,14 +37,33 @@ unparseable, contain a comma, or use the `javascript:`, `data:`, `vbscript:`, `b
 `file:`, or `about:` schemes (checked again at authorize time), is rate limited to 10
 per hour per IP, and unused registrations are pruned after 7 days.
 
-OAuth access tokens are honoured **only** on `POST /api/mcp`, and only when they arrive
-as a bearer token: a browser session cookie does not authenticate that endpoint, so a
-logged-in user cannot be made to drive it from another site. Tokens cannot call the REST
-API, and API keys cannot create or remove MCP grants -- both require a dashboard
-session. Each grant is bound to one workspace, chosen on the consent screen, and
-resolves only while the user is an owner or admin there. Re-consenting the same client
-into a different workspace deletes that client's older tokens, so a session authorized
-for the previous workspace is signed out rather than silently moved.
+An authorization code cannot be exchanged before the user has pressed Allow. In this
+Better Auth version the consent code *is* the authorization code, and the token endpoint
+checks only that the code exists and has not expired, so Atrium checks the code's own
+`requireConsent` flag first and answers `400 invalid_grant` until consent has actually
+been given.
+
+OAuth access tokens are honoured **only** on `POST /api/mcp` (with or without a trailing
+slash -- both reach the same route), and only when they arrive as a bearer token: a
+browser session cookie does not authenticate that endpoint, so a logged-in user cannot be
+made to drive it from another site. The `Bearer` scheme is matched case-insensitively,
+per RFC 7235. Tokens cannot call the REST API, and API keys cannot create or remove MCP
+grants -- both require a dashboard session. Each grant is bound to one workspace, chosen
+on the consent screen, and resolves only while the user is an owner or admin there.
+
+The workspace choice takes effect only once consent succeeds. Pressing Allow first parks
+the choice against the consent code (`mcp_pending_grant`); the grant itself is written by
+a server-side hook after the plugin's consent endpoint has returned successfully, in the
+same transaction that clears the parked row. Abandoning the consent page -- or a consent
+that fails -- therefore leaves any existing connection exactly as it was. When a
+completed consent does move a client to a different workspace, that client's older tokens
+are deleted in that transaction, so a session authorized for the previous workspace is
+signed out rather than silently moved. Parked choices whose consent code has expired are
+deleted nightly.
+
+The endpoint refuses JSON-RPC batches (`400`, error `-32600`). The current MCP spec has
+no batching, and the per-key rate limit counts HTTP requests, so one request carrying an
+array of calls would have spent a single token and run all of them.
 
 The plugin stores access **and refresh** tokens unhashed. A database leak therefore
 exposes refresh tokens that stay redeemable for 30 days, and MCP clients are public

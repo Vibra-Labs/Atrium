@@ -149,6 +149,16 @@ GET    /api/mcp   → 405 Method Not Allowed
 DELETE /api/mcp   → 405 Method Not Allowed
 ```
 
+Express routes `/api/mcp/` to the same handler, so the shared `isMcpPath`
+helper (`apps/api/src/common/helpers/mcp-path.ts`) accepts one optional
+trailing slash; `SessionMiddleware` and `CsrfGuard` both use it, so a client
+that appends a slash is not sent into an endless re-authorization loop.
+
+`handle` refuses a JSON-RPC batch (an array body) with `400` and error
+`-32600` before building the server. The current MCP spec has no batching, and
+the per-key limiter counts HTTP requests, so one request carrying an array of
+calls would spend a single token and run every message in it.
+
 The class is `@Public()` and `@SkipThrottle()`: it does its own identity check
 (to control the 401 headers) and its own per-key rate limit. It takes `@Req()`
 and `@Res()` only, never `@Body()`, so the global `ValidationPipe` does not
@@ -357,12 +367,45 @@ taken from the request or from the consent page's own URL: both
 `GET /api/mcp-grants/consent-info?consentCode=…` and the POST read it, with the
 request's redirect URI, out of the `verification` row the consent code
 identifies, after checking that the row is unexpired, belongs to the signed-in
-user, and is a consent request. Better Auth remembers consent per user and
-client, and the grant row is keyed the same way, so a grant row is upserted on
-every approval. To switch workspaces the user reconnects the app and picks a
-different one; the upsert then deletes that client's older access tokens in the
-same transaction, so a session authorized for the previous workspace is signed
-out rather than re-pointed.
+user, and is a consent request.
+
+The two calls cannot simply be swapped — Better Auth consumes the consent-code
+row on accept — so `POST /api/mcp-grants` writes no grant at all. It records the
+choice against the consent code in a second table:
+
+```prisma
+model McpPendingGrant {
+  consentCode    String   @id
+  userId         String
+  clientId       String
+  organizationId String
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("mcp_pending_grant")
+}
+```
+
+A top-level `hooks.after` on `/oauth2/consent` promotes it
+(`promoteGrantOnConsent`, `apps/api/src/mcp-auth/consent-hooks.ts`): only when
+the endpoint returned successfully, only when the parked row's `userId` matches
+the signed-in session, and in one transaction that upserts the `McpGrant`,
+deletes the parked row, and — when an existing grant named a different
+organization — deletes that client's older access tokens, so a session
+authorized for the previous workspace is signed out rather than re-pointed. On
+`accept: false` the parked row is simply deleted. A consent that fails, or a
+tab closed on the consent screen, therefore leaves any existing grant and its
+tokens untouched; the nightly cleanup drops parked rows whose consent code has
+expired. This is the only code path that writes an `McpGrant`.
+
+`hooks.before` guards the other side of the same flow: in this Better Auth
+version the consent code *is* the authorization code (the consent endpoint
+renames the verification row and flips `requireConsent` to false), and
+`mcp/token` never checks that flag, so the hook rejects a code exchange with
+`400 invalid_grant` while the row still says `requireConsent: true`.
 
 ### Resolving OAuth tokens
 
@@ -450,6 +493,8 @@ ones: `listApiKeys`, `createApiKey`, `revokeApiKey`, `listMcpGrants`,
 | Situation | Behavior |
 | --- | --- |
 | Missing or bad bearer token at `/api/mcp` | 401, `WWW-Authenticate: Bearer resource_metadata="…"`, JSON-RPC error. |
+| JSON-RPC batch (array body) at `/api/mcp` | 400, JSON-RPC error `-32600`; nothing in the batch runs. |
+| Authorization code exchanged before Allow | 400 `invalid_grant` from `mcp/token`; no token row is created. |
 | Expired OAuth access token | 401 as above; the client refreshes through `mcp/token`. |
 | OAuth token with no `McpGrant`, or grant's org no longer admin-accessible | 401 as above. |
 | OAuth token used on a REST route | Ignored, so the usual 401 from `AuthGuard`. |

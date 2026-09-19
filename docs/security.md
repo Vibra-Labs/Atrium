@@ -11,3 +11,13 @@ Atrium ships with production-grade security defaults:
 - File upload sanitization with blocked dangerous extensions
 - Non-root Docker containers
 - Required env var validation at startup
+
+## API keys
+
+API keys (`atr_…`) are generated from 32 random bytes and stored only as SHA-256 hashes.
+A key is bound to one user and one organization and resolves only while that user is an
+owner or admin there. Keys are ignored when a session cookie is present, cannot create
+other keys, and are revocable from Settings → API & MCP. The MCP endpoint is rate limited
+to 300 requests per minute per key; unauthenticated requests (missing, invalid, or
+revoked key) are rate limited to 30 requests per minute per IP address. Both return
+`429` with `Retry-After: 60`.

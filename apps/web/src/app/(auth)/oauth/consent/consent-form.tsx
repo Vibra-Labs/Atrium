@@ -2,11 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { isSafeOAuthRedirect } from "@/lib/safe-redirect";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
+const MAX_CLIENT_NAME_LENGTH = 60;
+
+/** Client names come from OPEN dynamic client registration; cap what we render. */
+function truncateClientName(name: string): string {
+  return name.length > MAX_CLIENT_NAME_LENGTH
+    ? `${name.slice(0, MAX_CLIENT_NAME_LENGTH)}…`
+    : name;
+}
+
 interface ConsentInfo {
-  client: { clientId: string; name: string; icon: string | null };
+  client: { clientId: string; name: string };
   organizations: { id: string; name: string }[];
 }
 
@@ -52,6 +62,9 @@ export function ConsentForm({ clientId, consentCode }: ConsentFormProps): React.
       });
       const data = (await res.json().catch(() => ({}))) as { redirectURI?: string; message?: string };
       if (!res.ok || !data.redirectURI) throw new Error(data.message || "Could not complete the request");
+      if (!isSafeOAuthRedirect(data.redirectURI)) {
+        throw new Error("This app registered an unsafe redirect address. The connection was cancelled.");
+      }
       window.location.href = data.redirectURI;
     } catch (err) {
       console.error(err);
@@ -66,15 +79,16 @@ export function ConsentForm({ clientId, consentCode }: ConsentFormProps): React.
   const canAllow: boolean = info.organizations.length > 0;
   const workspaceName: string =
     info.organizations.find((o) => o.id === organizationId)?.name ?? "your workspace";
+  const clientName: string = truncateClientName(info.client.name);
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Connect {info.client.name} to Atrium</h1>
+      <h1 className="text-xl font-semibold break-words">Connect {clientName} to Atrium</h1>
 
       {canAllow ? (
         <>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            <strong>{info.client.name}</strong> will be able to view and manage projects, clients, tasks,
+          <p className="text-sm text-[var(--muted-foreground)] break-words">
+            <strong>{clientName}</strong> will be able to view and manage projects, clients, tasks,
             updates, and notes in <strong>{workspaceName}</strong>, acting as you. You can disconnect it
             at any time in Settings → API &amp; MCP.
           </p>

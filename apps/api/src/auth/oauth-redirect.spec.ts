@@ -32,6 +32,17 @@ describe("isAllowedRedirectUri", () => {
     expect(isAllowedRedirectUri("about:blank")).toBe(false);
   });
 
+  it("refuses a comma, which the plugin would split into two URIs", () => {
+    expect(
+      isAllowedRedirectUri("https://ok.example/cb,javascript:alert(1)"),
+    ).toBe(false);
+    expect(isAllowedRedirectUri("https://ok.example/a,b")).toBe(false);
+    expect(isAllowedRedirectUri("https://ok.example/cb?a=1&b=2")).toBe(true);
+    // A percent-encoded comma survives the plugin's split intact, so it is
+    // harmless and stays allowed.
+    expect(isAllowedRedirectUri("https://ok.example/cb%2Cx")).toBe(true);
+  });
+
   it("refuses anything that isn't an absolute URI", () => {
     expect(isAllowedRedirectUri("")).toBe(false);
     expect(isAllowedRedirectUri("not a url")).toBe(false);

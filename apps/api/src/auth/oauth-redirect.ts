@@ -21,6 +21,17 @@ const DENIED_SCHEMES: ReadonlySet<string> = new Set([
 ]);
 
 export function isAllowedRedirectUri(uri: string): boolean {
+  // A comma is fatal, and not for cosmetic reasons: the plugin stores the
+  // whole list as `redirect_uris.join(",")` in one column and splits it back
+  // on "," at authorize time (plugins/mcp/index.mjs, plugins/mcp/authorize.mjs).
+  // So a single entry "https://ok.example/cb,javascript:alert(1)" — a legal
+  // https URL, since commas are allowed in a path — is stored verbatim and
+  // read back as TWO registered URIs, the second being executable script,
+  // which authorize then exact-matches without re-checking the scheme.
+  // Checked on the raw string, before parsing, because parsing preserves the
+  // comma rather than encoding it. A percent-encoded %2C is fine and stays
+  // allowed: nothing in the plugin decodes before splitting.
+  if (uri.includes(",")) return false;
   // Also rejects relative paths and anything else without a scheme.
   if (!URL.canParse(uri)) return false;
   const scheme: string = new URL(uri).protocol.toLowerCase();

@@ -97,6 +97,23 @@ export class AuthService {
       }
 
       if (ctx.path !== "/mcp/authorize") return;
+
+      // Defence in depth for rows that predate the registration check above,
+      // or were written some other way: a comma-smuggled entry splits back
+      // into a second registered URI that the plugin will exact-match without
+      // re-checking its scheme. Refuse here, before the plugin ever looks the
+      // client up.
+      const redirectUri: unknown = ctx.query?.redirect_uri;
+      if (
+        redirectUri !== undefined &&
+        (typeof redirectUri !== "string" || !isAllowedRedirectUri(redirectUri))
+      ) {
+        throw new APIError("BAD_REQUEST", {
+          error: "invalid_request",
+          error_description: "redirect_uri is not an acceptable absolute URI.",
+        });
+      }
+
       return { context: { query: { ...ctx.query, prompt: "consent" } } };
     });
 

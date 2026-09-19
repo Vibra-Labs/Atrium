@@ -398,6 +398,21 @@ describe("redirect URI validation at client registration", () => {
     expect(await rowCount("IT Client Empty")).toBe(0);
   });
 
+  it("refuses a comma-smuggled second URI hidden in one entry", async () => {
+    // The plugin stores redirect_uris comma-joined and splits on "," at
+    // authorize time, so this single valid-looking https URI would become two
+    // registered URIs, the second being executable script.
+    const res = await postRegistration("IT Client Smuggle", [
+      "https://ok.example/cb,javascript:alert(1)",
+    ]);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error?: string }).toMatchObject({
+      error: "invalid_redirect_uri",
+    });
+    expect(await rowCount("IT Client Smuggle")).toBe(0);
+  });
+
   it("still accepts the custom schemes native MCP clients use", async () => {
     const res = await postRegistration("IT Client Native", [
       "cursor://anysphere.cursor-mcp/callback",
@@ -408,6 +423,62 @@ describe("redirect URI validation at client registration", () => {
       ((await res.json()) as { client_id: string }).client_id,
     );
     expect(await rowCount("IT Client Native")).toBe(1);
+  });
+});
+
+describe("redirect URI validation at authorization", () => {
+  it("refuses a redirect_uri the client never registered", async () => {
+    const clientId = await registerClient("IT Client Exact");
+    const res = await call(
+      `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent("https://elsewhere.example/cb")}&state=x&code_challenge=abc&code_challenge_method=S256`,
+    );
+
+    // The plugin matches registered URIs by exact string equality — which is
+    // precisely why a smuggled entry would be honoured, so pin the behaviour.
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Invalid redirect URI");
+  });
+
+  it("refuses a script redirect_uri even for a legitimately registered client", async () => {
+    const clientId = await registerClient("IT Client Script Redirect");
+    const res = await call(
+      `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent("javascript:alert(1)")}&state=x&code_challenge=abc&code_challenge_method=S256`,
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("refuses a smuggled redirect_uri already stored on an existing client", async () => {
+    // Rows written before the registration check existed (or by any other
+    // route) can still hold a comma-smuggled entry, so authorize must refuse
+    // it on its own.
+    const clientId = `legacy-smuggled-${stamp}`;
+    await prisma.oauthApplication.create({
+      data: {
+        id: `app-legacy-${stamp}`,
+        name: clientName("IT Client Legacy"),
+        clientId,
+        clientSecret: "",
+        redirectUrls: `${REDIRECT_URI},javascript:alert(1)`,
+        type: "public",
+        disabled: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    registeredClientIds.push(clientId);
+
+    const res = await call(
+      `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent("javascript:alert(1)")}&state=x&code_challenge=abc&code_challenge_method=S256`,
+    );
+
+    expect(res.status).toBe(400);
+    // No consent page, no authorization code, nowhere to navigate to.
+    expect(res.headers.get("location")).toBeNull();
+    expect(
+      await prisma.oauthAccessToken.count({ where: { clientId } }),
+    ).toBe(0);
   });
 });
 

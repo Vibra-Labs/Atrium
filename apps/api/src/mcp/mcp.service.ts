@@ -20,14 +20,25 @@ import { taskTools } from "./tools/tasks.tools";
 import { updateTools } from "./tools/updates.tools";
 import { noteTools } from "./tools/notes.tools";
 
+/** Rate-limit bucket for a request that carried no usable identity. */
+function clientIp(req: Request): string {
+  return req.ip ?? req.socket?.remoteAddress ?? "unknown";
+}
+
 const MCP_ROLES: string[] = ["owner", "admin"];
 const RATE_LIMIT = 300;
+const UNAUTH_RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
 
 @Injectable()
 export class McpService {
   private readonly logger = new Logger(McpService.name);
   private readonly limiter = new RateLimiter(RATE_LIMIT, RATE_WINDOW_MS);
+  /**
+   * The controller skips the global IP throttle, so anonymous callers would
+   * otherwise get an unbounded number of API-key lookups in SessionMiddleware.
+   */
+  private readonly unauthLimiter = new RateLimiter(UNAUTH_RATE_LIMIT, RATE_WINDOW_MS);
 
   constructor(
     private projects: ProjectsService,
@@ -69,6 +80,10 @@ export class McpService {
     const { user, organization, member, apiKeyId } = req as Partial<AuthenticatedRequest>;
 
     if (!user || !organization || !member) {
+      if (!this.unauthLimiter.allow(clientIp(req))) {
+        this.tooManyRequests(res);
+        return;
+      }
       res
         .status(401)
         .set("WWW-Authenticate", "Bearer")
@@ -84,15 +99,16 @@ export class McpService {
       return;
     }
     if (!this.limiter.allow(apiKeyId ?? user.id)) {
-      res.status(429).set("Retry-After", "60").json({
-        jsonrpc: "2.0",
-        error: { code: -32029, message: "Rate limit exceeded. Retry in 60 seconds." },
-        id: null,
-      });
+      this.tooManyRequests(res);
       return;
     }
 
-    const server: McpServer = this.buildServer({ user, organization, member });
+    await this.serve({ user, organization, member }, req, res);
+  }
+
+  /** Runs the JSON-RPC exchange for an already authorised actor. */
+  protected async serve(actor: Actor, req: Request, res: Response): Promise<void> {
+    const server: McpServer = this.buildServer(actor);
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -111,5 +127,13 @@ export class McpService {
         res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });
       }
     }
+  }
+
+  private tooManyRequests(res: Response): void {
+    res.status(429).set("Retry-After", "60").json({
+      jsonrpc: "2.0",
+      error: { code: -32029, message: "Rate limit exceeded. Retry in 60 seconds." },
+      id: null,
+    });
   }
 }

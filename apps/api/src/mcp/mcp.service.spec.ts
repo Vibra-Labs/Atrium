@@ -1,10 +1,43 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Request, Response } from "express";
+import type { Actor } from "../common";
 import { McpService } from "./mcp.service";
 
 function buildService(): McpService {
   const stub = {} as never;
   return new McpService(stub, stub, stub, stub, stub, stub);
+}
+
+/**
+ * Stands in for the transport half of `handle()` so the rate-limit branches can
+ * be driven hundreds of times without constructing an MCP server per request.
+ */
+class TestMcpService extends McpService {
+  served = 0;
+
+  protected async serve(_actor: Actor, _req: Request, res: Response): Promise<void> {
+    this.served += 1;
+    res.status(200).json({ ok: true });
+  }
+}
+
+function buildTestService(): TestMcpService {
+  const stub = {} as never;
+  return new TestMcpService(stub, stub, stub, stub, stub, stub);
+}
+
+function ownerReq(apiKeyId?: string, userId = "u1"): Request {
+  return {
+    headers: {},
+    user: { id: userId },
+    organization: { id: "org1" },
+    member: { role: "owner" },
+    apiKeyId,
+  } as unknown as Request;
+}
+
+function anonReq(ip: string): Request {
+  return { headers: {}, ip } as unknown as Request;
 }
 
 function buildRes() {
@@ -50,5 +83,64 @@ describe("McpService", () => {
     const req = { headers: {}, user: { id: "u2" }, organization: { id: "org1" }, member: { role: "member" } };
     await buildService().handle(req as unknown as Request, res as unknown as Response);
     expect(res.statusCode).toBe(403);
+  });
+
+  it("rate limits an authenticated key once its 300/minute budget is spent", async () => {
+    const service = buildTestService();
+    for (let i = 0; i < 300; i++) {
+      const res = buildRes();
+      await service.handle(ownerReq("k1"), res as unknown as Response);
+      expect(res.statusCode).toBe(200);
+    }
+    const res = buildRes();
+    await service.handle(ownerReq("k1"), res as unknown as Response);
+    expect(res.statusCode).toBe(429);
+    expect(res.headers["Retry-After"]).toBe("60");
+    expect(res.body).toEqual({
+      jsonrpc: "2.0",
+      error: { code: -32029, message: "Rate limit exceeded. Retry in 60 seconds." },
+      id: null,
+    });
+  });
+
+  it("gives each API key of the same user its own budget", async () => {
+    const service = buildTestService();
+    for (let i = 0; i < 300; i++) {
+      await service.handle(ownerReq("k1"), buildRes() as unknown as Response);
+    }
+    const exhausted = buildRes();
+    await service.handle(ownerReq("k1"), exhausted as unknown as Response);
+    expect(exhausted.statusCode).toBe(429);
+
+    const other = buildRes();
+    await service.handle(ownerReq("k2"), other as unknown as Response);
+    expect(other.statusCode).toBe(200);
+  });
+
+  it("rate limits unauthenticated requests per IP after 30 in a minute", async () => {
+    const service = buildTestService();
+    for (let i = 0; i < 30; i++) {
+      const res = buildRes();
+      await service.handle(anonReq("1.2.3.4"), res as unknown as Response);
+      expect(res.statusCode).toBe(401);
+    }
+    const blocked = buildRes();
+    await service.handle(anonReq("1.2.3.4"), blocked as unknown as Response);
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers["Retry-After"]).toBe("60");
+
+    const otherIp = buildRes();
+    await service.handle(anonReq("5.6.7.8"), otherIp as unknown as Response);
+    expect(otherIp.statusCode).toBe(401);
+  });
+
+  it("does not let authenticated requests consume the unauthenticated budget", async () => {
+    const service = buildTestService();
+    for (let i = 0; i < 40; i++) {
+      await service.handle(ownerReq("k1"), buildRes() as unknown as Response);
+    }
+    const anon = buildRes();
+    await service.handle(anonReq("1.2.3.4"), anon as unknown as Response);
+    expect(anon.statusCode).toBe(401);
   });
 });

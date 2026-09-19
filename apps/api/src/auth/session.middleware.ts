@@ -1,6 +1,7 @@
-import { Injectable, NestMiddleware } from "@nestjs/common";
+import { Injectable, Logger, NestMiddleware } from "@nestjs/common";
 import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
+import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
 import type { AuthenticatedRequest, AuthUser, AuthSession, FullOrganization, OrgMember } from "../common";
 
 interface CachedSession {
@@ -8,16 +9,26 @@ interface CachedSession {
   session: AuthSession;
   organization?: FullOrganization;
   member?: OrgMember;
+  apiKeyId?: string;
   expiresAt: number;
 }
 
 const SESSION_CACHE_TTL = 30_000; // 30 seconds
 
+type AuthReq = Partial<
+  Pick<AuthenticatedRequest, "user" | "session" | "organization" | "member" | "apiKeyId">
+> &
+  Request;
+
 @Injectable()
 export class SessionMiddleware implements NestMiddleware {
   private cache = new Map<string, CachedSession>();
+  private readonly logger = new Logger(SessionMiddleware.name);
 
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private apiKeys: ApiKeysService,
+  ) {}
 
   private extractSessionToken(req: Request): string | undefined {
     // Check common Better Auth cookie names
@@ -29,15 +40,71 @@ export class SessionMiddleware implements NestMiddleware {
     );
   }
 
+  private extractApiKey(req: Request): string | undefined {
+    const header: string | undefined = req.headers.authorization;
+    if (!header?.startsWith("Bearer ")) return undefined;
+    const token: string = header.slice(7).trim();
+    return token.startsWith(API_KEY_PREFIX) ? token : undefined;
+  }
+
+  /** Resolves an API key into the same request fields a cookie session sets. */
+  private async applyApiKey(authReq: AuthReq, apiKey: string): Promise<void> {
+    // Cache under the hash so raw keys are not held in memory.
+    const cacheKey: string = hashApiKey(apiKey);
+    let entry: CachedSession | undefined = this.cache.get(cacheKey);
+    if (entry && entry.expiresAt <= Date.now()) {
+      this.cache.delete(cacheKey);
+      entry = undefined;
+    }
+
+    if (!entry) {
+      const resolved = await this.apiKeys.resolve(apiKey);
+      if (!resolved) return;
+      const now: Date = new Date();
+      entry = {
+        user: resolved.user,
+        organization: resolved.organization,
+        member: resolved.member,
+        apiKeyId: resolved.apiKeyId,
+        session: {
+          id: `apikey:${resolved.apiKeyId}`,
+          token: "",
+          userId: resolved.user.id,
+          activeOrganizationId: resolved.organization.id,
+          expiresAt: new Date(now.getTime() + SESSION_CACHE_TTL),
+          createdAt: now,
+          updatedAt: now,
+          ipAddress: null,
+          userAgent: null,
+        },
+        expiresAt: now.getTime() + SESSION_CACHE_TTL,
+      };
+      this.cache.set(cacheKey, entry);
+    }
+
+    authReq.user = entry.user;
+    authReq.session = entry.session;
+    authReq.organization = entry.organization;
+    authReq.member = entry.member;
+    authReq.apiKeyId = entry.apiKeyId;
+  }
+
   async use(req: Request, _res: Response, next: NextFunction) {
-    const authReq = req as Partial<
-      Pick<AuthenticatedRequest, "user" | "session" | "organization" | "member">
-    > &
-      Request;
+    const authReq = req as AuthReq;
 
     try {
       const token = this.extractSessionToken(req);
       const isAuthRoute = req.originalUrl.startsWith("/api/auth/");
+
+      // API keys apply only when there is no browser session, so the
+      // cookie + CSRF model is never mixed with bearer auth.
+      if (!token) {
+        const apiKey: string | undefined = this.extractApiKey(req);
+        if (apiKey) {
+          await this.applyApiKey(authReq, apiKey);
+          return next();
+        }
+      }
 
       // Auth routes mutate session state (login, set-active org, etc.)
       // so always bypass cache and invalidate stale entries
@@ -121,9 +188,10 @@ export class SessionMiddleware implements NestMiddleware {
           }
         }
       }
-    } catch {
+    } catch (err) {
       // Session resolution failed — continue without auth.
       // The AuthGuard will reject unauthenticated requests.
+      this.logger.warn(`Session resolution failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     next();

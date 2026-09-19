@@ -5,9 +5,10 @@ import { SessionMiddleware } from "./session.middleware";
 import { PreviewModeMiddleware } from "./preview-mode.middleware";
 import { MailModule } from "../mail/mail.module";
 import { BillingModule } from "../billing/billing.module";
+import { ApiKeysModule } from "../api-keys/api-keys.module";
 
 @Module({
-  imports: [MailModule, BillingModule],
+  imports: [MailModule, BillingModule, ApiKeysModule],
   controllers: [AuthController],
   providers: [AuthService, SessionMiddleware, PreviewModeMiddleware],
   exports: [AuthService, SessionMiddleware, PreviewModeMiddleware],

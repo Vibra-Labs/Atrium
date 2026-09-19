@@ -12,6 +12,7 @@ import { PrismaService } from "../../src/prisma/prisma.service";
 import type { ConfigService } from "@nestjs/config";
 import type { MailService } from "../../src/mail/mail.service";
 import type { BillingService } from "../../src/billing/billing.service";
+import { McpAuthService } from "../../src/mcp-auth/mcp-auth.service";
 
 const API = "http://localhost:3001";
 const WEB = "http://localhost:3000";
@@ -396,5 +397,55 @@ describe("MCP_OAUTH_ENABLED=false", () => {
         }),
       }),
     ).toBe(404);
+  });
+});
+
+describe("OAuth token → MCP actor", () => {
+  it("resolves only after a grant exists, and stops after disconnect", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client F");
+    const tokens = await authorizeAndExchange(clientId);
+
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+
+    await mcpAuth.saveGrant(userId, clientId, orgId);
+    const actor = await mcpAuth.resolve(tokens.access_token);
+    expect(actor?.organization.id).toBe(orgId);
+    expect(actor?.member.role).toBe("owner");
+
+    const [grant] = await mcpAuth.listGrants(userId, orgId, "owner");
+    expect(grant.clientName).toBe(clientName("IT Client F"));
+    await mcpAuth.revokeGrant(grant.id, userId, orgId, "owner");
+
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+    expect(await prisma.oauthAccessToken.count({ where: { clientId, userId } })).toBe(0);
+    expect(await prisma.oauthConsent.count({ where: { clientId, userId } })).toBe(0);
+  });
+
+  it("rejects an expired access token", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client G");
+    const tokens = await authorizeAndExchange(clientId);
+    await mcpAuth.saveGrant(userId, clientId, orgId);
+    await prisma.oauthAccessToken.update({
+      where: { accessToken: tokens.access_token },
+      data: { accessTokenExpiresAt: new Date(Date.now() - 1000) },
+    });
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+  });
+
+  it("issues a fresh access token from a refresh token", async () => {
+    const clientId = await registerClient("IT Client H");
+    const tokens = await authorizeAndExchange(clientId);
+    const res = await call("/mcp/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: clientId,
+      }).toString(),
+    });
+    expect(res.status).toBe(200);
+    const refreshed = (await res.json()) as { access_token: string };
+    expect(refreshed.access_token).not.toBe(tokens.access_token);
   });
 });

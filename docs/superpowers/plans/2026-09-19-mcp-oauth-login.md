@@ -60,6 +60,28 @@ docs/mcp.md, docs/configuration.md, docs/security.md, .env.example
 
 ---
 
+### Task 0: Carry-over hardening from the Plan 1 final review
+
+The Plan 1 fix wave made `RateLimiter` fail closed at its key cap, and `SessionMiddleware` uses it as a gate in front of API-key authentication. A flood of spoofed `X-Forwarded-For` values (each with one bad key) can fill the `failedBearer` map, after which every bearer request from an IP without a bucket is refused, including valid keys whose 30 second cache entry has expired. A throttle may fail closed; a gate in front of authentication must not.
+
+**Files:**
+- Modify: `apps/api/src/common/helpers/rate-limiter.ts`
+- Modify: `apps/api/src/common/helpers/rate-limiter.spec.ts`
+- Modify: `apps/api/src/auth/session.middleware.ts`
+- Modify: `apps/api/src/auth/session.middleware.spec.ts`
+- Modify: `apps/api/src/billing/billing.service.plan-limit.spec.ts` (add the missing trailing newline)
+
+**Interfaces:**
+- Produces: `new RateLimiter(limit, windowMs, maxKeys = 10_000, failClosedAtCapacity = true)`. With `failClosedAtCapacity = false`, an UNKNOWN key arriving while the map is at capacity is treated as not limited and is not recorded (`isLimited` → `false`, `allow` → `true` without inserting). Known keys behave exactly as before. The map still never exceeds `maxKeys`.
+
+- [ ] **Step 1: Failing tests.** In `rate-limiter.spec.ts` add: with `new RateLimiter(1, 60_000, 2, false)` and two known keys filling the map, a third key gets `isLimited === false` and `allow === true` repeatedly, and the map size stays 2 (assert through behaviour: the two known keys are still limited after their first hit, and after the window passes a new key is tracked again). Keep the existing fail-closed tests passing for the default. In `session.middleware.spec.ts` add: (a) when the failed-bearer limiter is at capacity, a VALID key from a never-seen IP still resolves and authenticates (construct the middleware, then replace its private `failedBearer` with `new RateLimiter(30, 60_000, 1, false)` pre-filled by one failure from another IP); (b) when `apiKeys.resolve` REJECTS, a failure is recorded for that IP: after 30 rejections from one IP the 31st request does not call `resolve` and sets `authRateLimited`, and `next` is still called exactly once per request.
+- [ ] **Step 2: Run** `cd apps/api && bun test src/common/helpers/rate-limiter.spec.ts src/auth/session.middleware.spec.ts` → the new cases FAIL.
+- [ ] **Step 3: Implement.** Add the fourth constructor parameter and the unknown-key-at-capacity behaviour in `isLimited` and `allow`; fix the `isLimited` doc comment to say it may sweep but records no hit. In `SessionMiddleware`, construct `failedBearer` with `failClosedAtCapacity = false` (named constants), and wrap the `resolve()` call: `try { resolved = await this.apiKeys.resolve(apiKey); } catch (err) { this.failedBearer.allow(ip); throw err; }` so the existing warn-and-continue catch in `use()` still handles it. Add the trailing newline to the billing spec.
+- [ ] **Step 4: Run** `cd apps/api && bun test src && bunx tsc --noEmit -p tsconfig.json` → all green.
+- [ ] **Step 5: Commit** `fix(api): failed-key limiter must not block valid keys at capacity`.
+
+---
+
 ### Task 1: OAuth tables, the plugin, and a proving integration test
 
 This task is the spike and the foundation at once: it proves the plugin's full authorization-code flow works with Atrium's Prisma schema and organization plugin before anything is built on it.
@@ -749,7 +771,7 @@ git commit -m "feat(api): resolve MCP OAuth tokens to a workspace-bound actor"
 - Modify: `apps/api/test/integration/mcp.integration.spec.ts` (constructor arity only)
 
 **Interfaces:**
-- Consumes: `McpAuthService.resolve` (Task 2); the bearer branch from the API-keys plan (`extractApiKey`, `applyApiKey`, `CachedSession.apiKeyId`).
+- Consumes: `McpAuthService.resolve` (Task 2); the hardened bearer branch (`extractApiKey`, `applyApiKey`, `bearerCache`, `failedBearer`, `authRateLimited`) as it stands after Task 0.
 - Produces:
   - `SessionMiddleware` constructor becomes `(authService, apiKeys, mcpAuth)`.
   - Non-`atr_` bearer tokens are resolved **only** when the request path is exactly `/api/mcp`.
@@ -807,7 +829,7 @@ Replace the test `"ignores bearer tokens that are not Atrium keys"` with these t
   });
 ```
 
-In `apps/api/src/mcp/mcp.service.spec.ts`, change `buildService` and the 401 test:
+`apps/api/src/mcp/mcp.service.spec.ts` grew after this plan was written (a `TestMcpService` subclass that overrides `serve`, plus 429 tests). Keep all of it. Give every place that constructs the service (the `buildService` helper and the test subclass) the seventh `config` argument shown below, and replace only the single 401-header test with the two tests below:
 
 ```ts
 function buildService(oauthEnabled = "true"): McpService {
@@ -837,7 +859,7 @@ function buildService(oauthEnabled = "true"): McpService {
   });
 ```
 
-(Delete the old `"responds 401 with WWW-Authenticate…"` test; these two replace it.)
+(Replace only the old 401-header test with these two. The existing 401 body assertion, 403, 429 and `authRateLimited` tests stay.)
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -873,58 +895,15 @@ Add after `extractApiKey`:
   }
 ```
 
-Replace the whole `applyApiKey` method with `applyBearer`, which both token kinds share:
+`applyApiKey` was hardened after this plan was written (Plan 1 final review + Task 0): it uses a separate `bearerCache`, checks `failedBearer.isLimited(ip)` BEFORE the lookup, records a failure when the lookup returns null or throws, and sets `authReq.authRateLimited`. Keep every one of those behaviours. Generalise it rather than replacing it:
 
-```ts
-  /** Resolves an API key or an MCP OAuth token into the same request fields a cookie session sets. */
-  private async applyBearer(
-    authReq: Partial<AuthenticatedRequest>,
-    token: string,
-    kind: "apiKey" | "oauth",
-  ): Promise<void> {
-    // Cache under the hash so raw tokens are not held in memory.
-    const cacheKey: string = `${kind}:${hashApiKey(token)}`;
-    let entry: CachedSession | undefined = this.cache.get(cacheKey);
-    if (entry && entry.expiresAt <= Date.now()) {
-      this.cache.delete(cacheKey);
-      entry = undefined;
-    }
+- Rename `applyApiKey(authReq, apiKey)` to `applyBearer(authReq, token, kind: "apiKey" | "oauth")`.
+- Cache key becomes `` `${kind}:${hashApiKey(token)}` `` in the SAME `bearerCache` (never the cookie `cache`).
+- The lookup becomes `kind === "apiKey" ? this.apiKeys.resolve(token) : this.mcpAuth.resolve(token)`, typed `(Actor & { apiKeyId?: string }) | null`. The failed-bearer limiter applies to both kinds identically (OAuth token lookups also cost a database query).
+- `entry.apiKeyId` is `resolved.apiKeyId` (undefined for OAuth); the synthetic session id becomes `` `${kind}:${resolved.user.id}` `` for OAuth and stays `` `apikey:${resolved.apiKeyId}` `` for keys.
+- Add `Actor` to the type import from `"../common"`.
 
-    if (!entry) {
-      const resolved: (Actor & { apiKeyId?: string }) | null =
-        kind === "apiKey" ? await this.apiKeys.resolve(token) : await this.mcpAuth.resolve(token);
-      if (!resolved) return;
-      const now: Date = new Date();
-      entry = {
-        user: resolved.user,
-        organization: resolved.organization,
-        member: resolved.member,
-        apiKeyId: resolved.apiKeyId,
-        session: {
-          id: `${kind}:${resolved.user.id}`,
-          token: "",
-          userId: resolved.user.id,
-          activeOrganizationId: resolved.organization.id,
-          expiresAt: new Date(now.getTime() + SESSION_CACHE_TTL),
-          createdAt: now,
-          updatedAt: now,
-          ipAddress: null,
-          userAgent: null,
-        },
-        expiresAt: now.getTime() + SESSION_CACHE_TTL,
-      };
-      this.cache.set(cacheKey, entry);
-    }
-
-    authReq.user = entry.user;
-    authReq.session = entry.session;
-    authReq.organization = entry.organization;
-    authReq.member = entry.member;
-    authReq.apiKeyId = entry.apiKeyId;
-  }
-```
-
-Add `Actor` to the type import from `"../common"`. Then replace the API-key block in `use()` with:
+Then replace the API-key block in `use()` with:
 
 ```ts
       if (!token) {
@@ -936,6 +915,8 @@ Add `Actor` to the type import from `"../common"`. Then replace the API-key bloc
         }
       }
 ```
+
+Every existing test in `session.middleware.spec.ts` (cache isolation, failed-key limiting, expiry, rejection) must keep passing; update only their construction helper for the third constructor argument. Add one test that the failed-bearer limiter also stops OAuth lookups (30 failed OAuth tokens on `/api/mcp` from one IP → the 31st does not call `mcpAuth.resolve`).
 
 In `apps/api/src/auth/auth.module.ts`, add `McpAuthModule` to `imports`:
 

@@ -8,7 +8,9 @@ type MetadataFn = () => Promise<Record<string, unknown> | null>;
 
 /**
  * OAuth discovery documents at the origin root, where MCP clients look for
- * them. The paths are excluded from the global "api" prefix in main.ts.
+ * them. The paths are excluded from the global "api" prefix in main.ts, and
+ * main.ts's CORS delegate serves them with a wildcard Access-Control-Allow-
+ * Origin (and no credentials), so no per-route CORS header is needed here.
  */
 @Controller(".well-known")
 @Public()
@@ -20,14 +22,12 @@ export class WellKnownController {
   ) {}
 
   @Get(["oauth-authorization-server", "oauth-authorization-server/api/auth"])
-  @Header("Access-Control-Allow-Origin", "*")
   @Header("Cache-Control", "public, max-age=300")
   authorizationServer(): Promise<Record<string, unknown>> {
     return this.metadata("getMcpOAuthConfig");
   }
 
   @Get(["oauth-protected-resource", "oauth-protected-resource/api/mcp"])
-  @Header("Access-Control-Allow-Origin", "*")
   @Header("Cache-Control", "public, max-age=300")
   protectedResource(): Promise<Record<string, unknown>> {
     return this.metadata("getMCPProtectedResource");

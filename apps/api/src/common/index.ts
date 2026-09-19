@@ -17,6 +17,7 @@ export { toCsv } from "./utils/csv";
 export type { CsvColumn } from "./utils/csv";
 export { assertProjectAccess } from "./helpers/assert-project-access";
 export { RateLimiter } from "./helpers/rate-limiter";
+export { isPublicOAuthPath } from "./helpers/public-oauth-cors";
 export { BLOCKED_EXTENSIONS } from "./utils/blocked-extensions";
 export type {
   AuthUser,

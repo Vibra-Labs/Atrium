@@ -7,6 +7,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { UpdateClientProfileDto } from "./client-profile.dto";
+import { paginatedResponse } from "../common";
 
 @Injectable()
 export class ClientsService {
@@ -131,6 +132,61 @@ export class ClientsService {
       where: { id: memberId },
       data: { hourlyRateCents: rate },
     });
+  }
+
+  async list(orgId: string, page = 1, limit = 20, search?: string) {
+    const where = {
+      organizationId: orgId,
+      ...(search
+        ? {
+            user: {
+              OR: [
+                { name: { contains: search, mode: "insensitive" as const } },
+                { email: { contains: search, mode: "insensitive" as const } },
+              ],
+            },
+          }
+        : {}),
+    };
+    const [data, total] = await Promise.all([
+      this.prisma.member.findMany({
+        where,
+        select: {
+          id: true,
+          userId: true,
+          role: true,
+          createdAt: true,
+          hourlyRateCents: true,
+          user: { select: { id: true, name: true, email: true } },
+          labels: { select: { label: { select: { id: true, name: true, color: true } } } },
+        },
+        orderBy: { createdAt: "asc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.member.count({ where }),
+    ]);
+
+    const userIds: string[] = data.map((m) => m.userId);
+    const profiles = await this.prisma.clientProfile.findMany({
+      where: { userId: { in: userIds }, organizationId: orgId },
+    });
+    const profileMap = new Map(profiles.map((p) => [p.userId, p]));
+
+    const enriched = data.map((m) => ({ ...m, profile: profileMap.get(m.userId) || null }));
+    return paginatedResponse(enriched, total, page, limit);
+  }
+
+  async findMember(userId: string, orgId: string) {
+    const member = await this.prisma.member.findFirst({
+      where: { userId, organizationId: orgId },
+      select: {
+        id: true, userId: true, role: true, createdAt: true,
+        user: { select: { id: true, name: true, email: true } },
+      },
+    });
+    if (!member) throw new NotFoundException("Client not found");
+    return member;
   }
 
   async getProfile(userId: string, orgId: string) {

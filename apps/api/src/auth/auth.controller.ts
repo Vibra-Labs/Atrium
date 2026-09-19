@@ -4,6 +4,35 @@ import { AuthService } from "./auth.service";
 import { Public } from "../common";
 import type { Request, Response } from "express";
 
+/**
+ * Request headers that must not be forwarded: the proxy re-serializes the
+ * parsed body, so the original framing no longer matches what is sent.
+ */
+const SKIPPED_REQUEST_HEADERS: ReadonlySet<string> = new Set([
+  "content-length",
+  "transfer-encoding",
+]);
+
+/**
+ * Re-encode an urlencoded body that Express already parsed. Nest's parser runs
+ * with `extended: true`, so a value is a string, an array of strings (repeated
+ * keys) or a nested object; only the first two are valid urlencoded output and
+ * anything else is dropped rather than stringified into garbage.
+ */
+function encodeForm(body: Record<string, unknown> | undefined): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(body ?? {})) {
+    if (typeof value === "string") {
+      params.append(key, value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === "string") params.append(key, item);
+      }
+    }
+  }
+  return params.toString();
+}
+
 // Better Auth authenticates its own routes (sign-in lives here), so this proxy
 // is deliberately outside AuthGuard.
 @Controller("auth")
@@ -29,6 +58,10 @@ export class AuthController {
 
     const headers = new Headers();
     for (const [key, value] of Object.entries(req.headers)) {
+      // The body is re-serialized below, so the original framing headers no
+      // longer describe it. `host` stays: Better Auth derives cookie names
+      // and the resolved base URL from it.
+      if (SKIPPED_REQUEST_HEADERS.has(key.toLowerCase())) continue;
       if (value) headers.set(key, Array.isArray(value) ? value[0] : value);
     }
 
@@ -44,7 +77,7 @@ export class AuthController {
     if (req.method !== "GET" && req.method !== "HEAD") {
       const contentType = String(req.headers["content-type"] || "");
       requestBody = contentType.includes("application/x-www-form-urlencoded")
-        ? new URLSearchParams(req.body as Record<string, string>).toString()
+        ? encodeForm(req.body as Record<string, unknown>)
         : JSON.stringify(req.body);
     }
 
@@ -69,16 +102,16 @@ export class AuthController {
       res.setHeader("set-cookie", setCookies);
     }
 
-    // Never forward Better Auth's own CORS headers: Nest's app-level
-    // app.enableCors() already set the correct, credential-safe
-    // Access-Control-* headers (echoing the request's actual Origin) before
-    // this controller ran. Better Auth sets its own (wildcard) CORS headers
-    // on some responses -- e.g. redirects issued mid OAuth-login-resume --
-    // which are fine for a top-level navigation but fail any credentialed
-    // fetch() call outright, since browsers reject `Access-Control-Allow-
-    // Origin: *` together with `credentials: "include"`. Forwarding them
-    // here would silently clobber the correct headers already on the
-    // response.
+    // Never forward Better Auth's own CORS headers: main.ts's CORS delegate
+    // already set the right Access-Control-* headers for this route before
+    // the controller ran -- wildcard and credential-less on the public OAuth
+    // surface, the single web origin with credentials everywhere else.
+    // Better Auth sets its own wildcard CORS headers on some responses --
+    // e.g. redirects issued mid OAuth-login-resume -- which are fine for a
+    // top-level navigation but fail any credentialed fetch() call outright,
+    // since browsers reject `Access-Control-Allow-Origin: *` together with
+    // `credentials: "include"`. Forwarding them here would silently clobber
+    // the correct headers already on the response.
     response.headers.forEach((value: string, key: string) => {
       const lower = key.toLowerCase();
       if (lower === "set-cookie" || lower.startsWith("access-control-")) return;

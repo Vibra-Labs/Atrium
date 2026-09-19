@@ -8,6 +8,7 @@ import { Reflector } from "@nestjs/core";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import { randomBytes } from "crypto";
 import { isMcpPath } from "../helpers/mcp-path";
+import { bearerToken } from "../helpers/bearer-token";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_COOKIE = "csrf-token";
@@ -19,9 +20,6 @@ const SESSION_COOKIE_NAMES = [
   "better-auth.session_token",
   "__Secure-better-auth.session_token",
 ];
-
-/** RFC 7235: the auth-scheme token is case-insensitive. */
-const BEARER_SCHEME = /^bearer\s+.+$/i;
 
 /** OAuth discovery documents, served at the origin root. */
 const WELL_KNOWN_PREFIX = "/.well-known/";
@@ -128,6 +126,6 @@ export class CsrfGuard implements CanActivate {
     const hasSession: boolean = SESSION_COOKIE_NAMES.some(
       (name) => !!request.cookies?.[name],
     );
-    return BEARER_SCHEME.test(authorization) && !hasSession;
+    return bearerToken(authorization) !== undefined && !hasSession;
   }
 }

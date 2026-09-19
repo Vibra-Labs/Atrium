@@ -49,7 +49,12 @@ export class McpAuthService {
    * client and the destination out of the code's own row removes the gap.
    */
   async consentRequest(consentCode: string, userId: string): Promise<ConsentRequest> {
-    const row = await this.prisma.verification.findFirst({ where: { identifier: consentCode } });
+    // Identifiers are not unique, and the plugin's own findVerificationValue
+    // sorts by createdAt desc with limit 1 — read the same row it will.
+    const row = await this.prisma.verification.findFirst({
+      where: { identifier: consentCode },
+      orderBy: { createdAt: "desc" },
+    });
     if (!row || row.expiresAt.getTime() <= Date.now()) {
       throw new NotFoundException(EXPIRED_CONSENT);
     }
@@ -110,7 +115,8 @@ export class McpAuthService {
 
   async adminOrganizations(userId: string): Promise<{ id: string; name: string }[]> {
     const memberships = await this.prisma.member.findMany({
-      where: { userId, role: { in: MCP_ACTOR_ROLES } },
+      // Prisma's `in` takes a mutable array; the shared list is readonly.
+      where: { userId, role: { in: [...MCP_ACTOR_ROLES] } },
       select: { organization: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },
     });

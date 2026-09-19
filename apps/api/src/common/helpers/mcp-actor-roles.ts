@@ -7,4 +7,4 @@
  * they resolve a token, and `McpService` re-checks it as defence in depth.
  * Three separate copies would let the three drift apart.
  */
-export const MCP_ACTOR_ROLES: string[] = ["owner", "admin"];
+export const MCP_ACTOR_ROLES: readonly string[] = ["owner", "admin"];

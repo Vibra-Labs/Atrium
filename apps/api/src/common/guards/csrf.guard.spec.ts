@@ -481,6 +481,22 @@ describe("CsrfGuard", () => {
     expect(cookieNames).toEqual([]);
   });
 
+  it("still sets the csrf cookie when the bearer scheme carries no token", () => {
+    // SessionMiddleware trims this to nothing and authenticates no one, so the
+    // guard must not treat it as a bearer client either.
+    const guard = new CsrfGuard(new Reflector());
+    for (const authorization of ["Bearer   ", "Bearer", "bearer "]) {
+      const { context, cookieNames } = createMockContext(
+        "GET",
+        {},
+        { authorization },
+        "/api/projects",
+      );
+      expect(guard.canActivate(context)).toBe(true);
+      expect(cookieNames).toEqual(["csrf-token"]);
+    }
+  });
+
   it("still sets the csrf cookie for a non-bearer Authorization header", () => {
     const guard = new CsrfGuard(new Reflector());
     const { context, cookieNames } = createMockContext(

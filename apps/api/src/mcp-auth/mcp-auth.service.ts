@@ -118,11 +118,27 @@ export class McpAuthService {
       throw new ForbiddenException("You must be an owner or admin of that workspace");
     }
     await this.getClient(clientId);
-    await this.prisma.mcpGrant.upsert({
+    const existing = await this.prisma.mcpGrant.findUnique({
       where: { userId_clientId: { userId, clientId } },
-      create: { userId, clientId, organizationId },
-      update: { organizationId },
+      select: { organizationId: true },
     });
+    // Access tokens carry no workspace of their own — they resolve through
+    // this grant — so re-consenting into a different workspace would silently
+    // re-point a session the user authorized for the old one. Those tokens are
+    // signed out instead. The token for this consent is issued afterwards, so
+    // it is unaffected.
+    const movedWorkspace: boolean =
+      existing !== null && existing.organizationId !== organizationId;
+    await this.prisma.$transaction([
+      ...(movedWorkspace
+        ? [this.prisma.oauthAccessToken.deleteMany({ where: { userId, clientId } })]
+        : []),
+      this.prisma.mcpGrant.upsert({
+        where: { userId_clientId: { userId, clientId } },
+        create: { userId, clientId, organizationId },
+        update: { organizationId },
+      }),
+    ]);
   }
 
   /** Admins see their own grants in this workspace; the owner sees everyone's. */

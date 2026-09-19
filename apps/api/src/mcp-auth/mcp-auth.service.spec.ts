@@ -98,6 +98,29 @@ describe("McpAuthService grants", () => {
     expect(args.update).toEqual({ organizationId: "org1" });
   });
 
+  it("saveGrant signs older sessions out when the client moves workspace", async () => {
+    // Tokens carry no workspace, so a still-running session authorized for the
+    // old org would silently start acting in the new one.
+    const { service, prisma } = build({
+      app: { clientId: "c1" },
+      member: owner,
+      grant: { ...grant, organizationId: "org-old" },
+    });
+    await service.saveGrant("u1", "c1", "org1");
+    expect(prisma.oauthAccessToken.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "u1", clientId: "c1" },
+    });
+    // Deletion and upsert land together, so consent can never half-apply.
+    expect(prisma.$transaction.mock.calls[0][0].length).toBe(2);
+  });
+
+  it("saveGrant leaves tokens alone when the workspace is unchanged", async () => {
+    const { service, prisma } = build({ app: { clientId: "c1" }, member: owner, grant });
+    await service.saveGrant("u1", "c1", "org1");
+    expect(prisma.oauthAccessToken.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction.mock.calls[0][0].length).toBe(1);
+  });
+
   it("revokeGrant deletes the grant, consent, and tokens for that user and client", async () => {
     const { service, prisma } = build({ grant });
     await service.revokeGrant("g1", "u1", "org1", "admin");

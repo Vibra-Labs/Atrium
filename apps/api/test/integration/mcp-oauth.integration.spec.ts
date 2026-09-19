@@ -644,6 +644,33 @@ describe("OAuth token → MCP actor", () => {
     expect(await prisma.oauthConsent.count({ where: { clientId, userId } })).toBe(0);
   });
 
+  it("signs older sessions out when the grant moves to another workspace", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client Move");
+    const tokens = await authorizeAndExchange(clientId);
+    await mcpAuth.saveGrant(userId, clientId, orgId);
+    expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(orgId);
+
+    const movedOrgId = `org-move-${stamp}`;
+    await prisma.organization.create({
+      data: { id: movedOrgId, name: "Moved Org", slug: `moved-${stamp}` },
+    });
+    await prisma.member.create({
+      data: { id: `m-move-${stamp}`, organizationId: movedOrgId, userId, role: "owner" },
+    });
+
+    await mcpAuth.saveGrant(userId, clientId, movedOrgId);
+
+    // The session authorized for the old workspace is gone, not re-pointed.
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+    expect(await prisma.oauthAccessToken.count({ where: { userId, clientId } })).toBe(0);
+
+    const reconnected = await authorizeAndExchange(clientId);
+    expect((await mcpAuth.resolve(reconnected.access_token))?.organization.id).toBe(movedOrgId);
+
+    await prisma.organization.deleteMany({ where: { id: movedOrgId } });
+  });
+
   it("rejects an expired access token", async () => {
     const mcpAuth = new McpAuthService(prisma);
     const clientId = await registerClient("IT Client G");

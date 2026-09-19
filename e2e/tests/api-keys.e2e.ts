@@ -11,15 +11,24 @@ const INITIALIZE = {
 };
 
 /** Calls the MCP endpoint with only a bearer key: no cookies from the signed-in browser context. */
-async function mcpInitialize(request: APIRequestContext, key: string): Promise<APIResponse> {
+async function mcpRequest(
+  request: APIRequestContext,
+  key: string,
+  body: unknown,
+): Promise<APIResponse> {
   return request.post(`${API_URL}/api/mcp`, {
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
+      "MCP-Protocol-Version": "2025-06-18",
     },
-    data: INITIALIZE,
+    data: body,
   });
+}
+
+async function mcpInitialize(request: APIRequestContext, key: string): Promise<APIResponse> {
+  return mcpRequest(request, key, INITIALIZE);
 }
 
 test.describe("API keys and MCP", () => {
@@ -63,6 +72,18 @@ test.describe("API keys and MCP", () => {
     const before = await mcpInitialize(bare, key);
     expect(before.status()).toBe(200);
     expect((await before.json()).result.serverInfo.name).toBe("atrium");
+
+    // A real tool call: exercises rawBody, compression and the tool registry.
+    const called = await mcpRequest(bare, key, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "get_workspace", arguments: {} },
+    });
+    expect(called.status()).toBe(200);
+    const callBody = await called.json();
+    expect(callBody.error, JSON.stringify(callBody)).toBeUndefined();
+    expect(callBody.result.content[0].text).toContain("E2E Test Org");
 
     // Revoke
     await page.getByRole("row").filter({ hasText: keyName }).getByRole("button", { name: /revoke/i }).click();

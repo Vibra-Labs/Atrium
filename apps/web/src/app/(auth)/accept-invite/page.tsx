@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { setActiveOrgAndRedirect } from "@/lib/api";
 import { track } from "@/lib/track";
+import { postAuth } from "@/lib/auth-fetch";
 
 function AcceptInviteContent() {
   const searchParams = useSearchParams();
@@ -38,44 +39,26 @@ function AcceptInviteContent() {
       process.env.NEXT_PUBLIC_API_URL || "";
 
     try {
-      // Step 1: Sign up or login
+      // Step 1: Sign up or login. Both go through postAuth, which never
+      // follows the 302 Better Auth answers with while a signed
+      // `oidc_login_prompt` cookie from an abandoned MCP connection is around.
       if (mode === "signup") {
-        const res = await fetch(`${apiUrl}/api/auth/sign-up/email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password }),
-          credentials: "include",
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
+        const signUp = await postAuth("/sign-up/email", { name, email, password });
+        if (!signUp.ok) {
           // If user already exists, auto-switch to login and retry
-          if (res.status === 422 || data.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
-            const loginRes = await fetch(`${apiUrl}/api/auth/sign-in/email`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email, password }),
-              credentials: "include",
-            });
-            if (!loginRes.ok) {
-              const loginData = await loginRes.json().catch(() => ({}));
-              throw new Error(loginData.message || "Account exists but login failed. Try signing in instead.");
+          if (signUp.status === 422 || signUp.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
+            const signIn = await postAuth("/sign-in/email", { email, password });
+            if (!signIn.ok) {
+              throw new Error(signIn.message || "Account exists but login failed. Try signing in instead.");
             }
             setMode("login");
           } else {
-            throw new Error(data.message || "Signup failed");
+            throw new Error(signUp.message || "Signup failed");
           }
         }
       } else {
-        const res = await fetch(`${apiUrl}/api/auth/sign-in/email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-          credentials: "include",
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.message || "Login failed");
-        }
+        const signIn = await postAuth("/sign-in/email", { email, password });
+        if (!signIn.ok) throw new Error(signIn.message || "Login failed");
       }
 
       // Step 2: Accept the invitation

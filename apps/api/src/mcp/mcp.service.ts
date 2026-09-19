@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { RateLimiter } from "../common";
 import type { Actor, AuthenticatedRequest } from "../common";
 import { ProjectsService } from "../projects/projects.service";
 import { TasksService } from "../tasks/tasks.service";
@@ -10,7 +11,6 @@ import { UpdatesService } from "../updates/updates.service";
 import { NotesService } from "../notes/notes.service";
 import { ClientsService } from "../clients/clients.service";
 import { BillingService } from "../billing/billing.service";
-import { RateLimiter } from "./rate-limiter";
 import { runTool } from "./tool-kit";
 import type { McpTool, ToolResult } from "./tool-kit";
 import { workspaceTools } from "./tools/workspace.tools";
@@ -20,25 +20,14 @@ import { taskTools } from "./tools/tasks.tools";
 import { updateTools } from "./tools/updates.tools";
 import { noteTools } from "./tools/notes.tools";
 
-/** Rate-limit bucket for a request that carried no usable identity. */
-function clientIp(req: Request): string {
-  return req.ip ?? req.socket?.remoteAddress ?? "unknown";
-}
-
 const MCP_ROLES: string[] = ["owner", "admin"];
 const RATE_LIMIT = 300;
-const UNAUTH_RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
 
 @Injectable()
 export class McpService {
   private readonly logger = new Logger(McpService.name);
   private readonly limiter = new RateLimiter(RATE_LIMIT, RATE_WINDOW_MS);
-  /**
-   * The controller skips the global IP throttle, so anonymous callers would
-   * otherwise get an unbounded number of API-key lookups in SessionMiddleware.
-   */
-  private readonly unauthLimiter = new RateLimiter(UNAUTH_RATE_LIMIT, RATE_WINDOW_MS);
 
   constructor(
     private projects: ProjectsService,
@@ -77,10 +66,12 @@ export class McpService {
   }
 
   async handle(req: Request, res: Response): Promise<void> {
-    const { user, organization, member, apiKeyId } = req as Partial<AuthenticatedRequest>;
+    const { user, organization, member, apiKeyId, authRateLimited } =
+      req as Partial<AuthenticatedRequest>;
 
     if (!user || !organization || !member) {
-      if (!this.unauthLimiter.allow(clientIp(req))) {
+      // SessionMiddleware caps failed key lookups per IP before they reach the database.
+      if (authRateLimited) {
         this.tooManyRequests(res);
         return;
       }
@@ -90,16 +81,17 @@ export class McpService {
         .json({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized" }, id: null });
       return;
     }
+    // Charged before the role check so a signed-in portal client is throttled too.
+    if (!this.limiter.allow(apiKeyId ?? user.id)) {
+      this.tooManyRequests(res);
+      return;
+    }
     if (!MCP_ROLES.includes(member.role)) {
       res.status(403).json({
         jsonrpc: "2.0",
         error: { code: -32003, message: "MCP access requires the owner or admin role" },
         id: null,
       });
-      return;
-    }
-    if (!this.limiter.allow(apiKeyId ?? user.id)) {
-      this.tooManyRequests(res);
       return;
     }
 

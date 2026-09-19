@@ -48,6 +48,8 @@ export interface AuthenticatedRequest extends Request {
   member: OrgMember;
   previewMode?: boolean;
   apiKeyId?: string;
+  /** Set when SessionMiddleware refused to look up a bearer key: too many failures from this IP. */
+  authRateLimited?: boolean;
 }
 
 /** The identity a request or MCP tool call acts as. */

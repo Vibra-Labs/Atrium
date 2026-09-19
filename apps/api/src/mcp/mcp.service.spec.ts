@@ -36,8 +36,17 @@ function ownerReq(apiKeyId?: string, userId = "u1"): Request {
   } as unknown as Request;
 }
 
-function anonReq(ip: string): Request {
-  return { headers: {}, ip } as unknown as Request;
+function anonReq(authRateLimited = false): Request {
+  return { headers: {}, authRateLimited } as unknown as Request;
+}
+
+function memberReq(userId = "u2"): Request {
+  return {
+    headers: {},
+    user: { id: userId },
+    organization: { id: "org1" },
+    member: { role: "member" },
+  } as unknown as Request;
 }
 
 function buildRes() {
@@ -117,30 +126,33 @@ describe("McpService", () => {
     expect(other.statusCode).toBe(200);
   });
 
-  it("rate limits unauthenticated requests per IP after 30 in a minute", async () => {
-    const service = buildTestService();
-    for (let i = 0; i < 30; i++) {
-      const res = buildRes();
-      await service.handle(anonReq("1.2.3.4"), res as unknown as Response);
-      expect(res.statusCode).toBe(401);
-    }
-    const blocked = buildRes();
-    await service.handle(anonReq("1.2.3.4"), blocked as unknown as Response);
-    expect(blocked.statusCode).toBe(429);
-    expect(blocked.headers["Retry-After"]).toBe("60");
-
-    const otherIp = buildRes();
-    await service.handle(anonReq("5.6.7.8"), otherIp as unknown as Response);
-    expect(otherIp.statusCode).toBe(401);
+  it("responds 429 when SessionMiddleware already rate limited the failed key", async () => {
+    const res = buildRes();
+    await buildService().handle(anonReq(true), res as unknown as Response);
+    expect(res.statusCode).toBe(429);
+    expect(res.headers["Retry-After"]).toBe("60");
+    expect(res.body).toEqual({
+      jsonrpc: "2.0",
+      error: { code: -32029, message: "Rate limit exceeded. Retry in 60 seconds." },
+      id: null,
+    });
   });
 
-  it("does not let authenticated requests consume the unauthenticated budget", async () => {
+  it("responds 401 for an unauthenticated request that was not rate limited", async () => {
+    const res = buildRes();
+    await buildService().handle(anonReq(), res as unknown as Response);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("charges the per-user bucket even when the role check refuses", async () => {
     const service = buildTestService();
-    for (let i = 0; i < 40; i++) {
-      await service.handle(ownerReq("k1"), buildRes() as unknown as Response);
+    for (let i = 0; i < 300; i++) {
+      const res = buildRes();
+      await service.handle(memberReq(), res as unknown as Response);
+      expect(res.statusCode).toBe(403);
     }
-    const anon = buildRes();
-    await service.handle(anonReq("1.2.3.4"), anon as unknown as Response);
-    expect(anon.statusCode).toBe(401);
+    const blocked = buildRes();
+    await service.handle(memberReq(), blocked as unknown as Response);
+    expect(blocked.statusCode).toBe(429);
   });
 });

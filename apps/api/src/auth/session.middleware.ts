@@ -2,6 +2,7 @@ import { Injectable, Logger, NestMiddleware } from "@nestjs/common";
 import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
+import { RateLimiter } from "../common";
 import type { AuthenticatedRequest, AuthUser, AuthSession, FullOrganization, OrgMember } from "../common";
 
 interface CachedSession {
@@ -14,9 +15,19 @@ interface CachedSession {
 }
 
 const SESSION_CACHE_TTL = 30_000; // 30 seconds
+const FAILED_KEY_LIMIT = 30;
+const FAILED_KEY_WINDOW_MS = 60_000;
+
+/** Bucket for the failed-key limiter. `trust proxy` makes this client-supplied. */
+function clientIp(req: Request): string {
+  return req.ip ?? req.socket?.remoteAddress ?? "unknown";
+}
 
 type AuthReq = Partial<
-  Pick<AuthenticatedRequest, "user" | "session" | "organization" | "member" | "apiKeyId">
+  Pick<
+    AuthenticatedRequest,
+    "user" | "session" | "organization" | "member" | "apiKeyId" | "authRateLimited"
+  >
 > &
   Request;
 
@@ -30,6 +41,11 @@ export class SessionMiddleware implements NestMiddleware {
    * let anyone who learns a stored keyHash replay it as a session cookie.
    */
   private bearerCache = new Map<string, CachedSession>();
+  /**
+   * Bad API keys cost a database lookup each, and the MCP controller skips the
+   * global throttle, so failures are capped per IP before the lookup runs.
+   */
+  private readonly failedBearer = new RateLimiter(FAILED_KEY_LIMIT, FAILED_KEY_WINDOW_MS);
   private readonly logger = new Logger(SessionMiddleware.name);
 
   constructor(
@@ -65,8 +81,16 @@ export class SessionMiddleware implements NestMiddleware {
     }
 
     if (!entry) {
+      const ip: string = clientIp(authReq);
+      if (this.failedBearer.isLimited(ip)) {
+        authReq.authRateLimited = true;
+        return;
+      }
       const resolved = await this.apiKeys.resolve(apiKey);
-      if (!resolved) return;
+      if (!resolved) {
+        this.failedBearer.allow(ip);
+        return;
+      }
       const now: Date = new Date();
       entry = {
         user: resolved.user,

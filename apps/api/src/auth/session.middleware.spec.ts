@@ -141,3 +141,57 @@ describe("SessionMiddleware bearer cache isolation", () => {
     expect(r.user.id).toBe("u1");
   });
 });
+
+describe("SessionMiddleware failed-key limiter", () => {
+  async function fail(mw: SessionMiddleware, ip: string): Promise<Request & Record<string, any>> {
+    const r = req({ authorization: "Bearer atr_bad" }, {}, ip) as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+    return r;
+  }
+
+  it("stops looking keys up after 30 failures from one IP", async () => {
+    const { mw, apiKeys } = build(null);
+    for (let i = 0; i < 30; i++) {
+      const r = await fail(mw, "1.2.3.4");
+      expect(r.authRateLimited).toBeUndefined();
+    }
+    expect(apiKeys.resolve).toHaveBeenCalledTimes(30);
+
+    const blocked = await fail(mw, "1.2.3.4");
+    expect(apiKeys.resolve).toHaveBeenCalledTimes(30);
+    expect(blocked.authRateLimited).toBe(true);
+    expect(blocked.user).toBeUndefined();
+  });
+
+  it("keeps resolving keys from other IPs", async () => {
+    const { mw, apiKeys } = build(null);
+    for (let i = 0; i < 31; i++) await fail(mw, "1.2.3.4");
+    const other = await fail(mw, "5.6.7.8");
+    expect(other.authRateLimited).toBeUndefined();
+    expect(apiKeys.resolve).toHaveBeenCalledTimes(31);
+  });
+
+  it("still serves a cached valid key from a limited IP", async () => {
+    const { mw, apiKeys } = build();
+    // Warm the cache with a good key, then exhaust the IP with bad ones.
+    await mw.use(req({ authorization: "Bearer atr_abc" }, {}, "1.2.3.4"), {} as Response, noop());
+    (apiKeys.resolve as unknown as { mockImplementation: (f: () => Promise<null>) => void })
+      .mockImplementation(() => Promise.resolve(null));
+    for (let i = 0; i < 31; i++) await fail(mw, "1.2.3.4");
+
+    const r = req({ authorization: "Bearer atr_abc" }, {}, "1.2.3.4") as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+    expect(r.user.id).toBe("u1");
+    expect(r.authRateLimited).toBeUndefined();
+  });
+
+  it("does not count successful resolutions against the IP", async () => {
+    const { mw, apiKeys } = build();
+    for (let i = 0; i < 40; i++) {
+      const r = req({ authorization: `Bearer atr_${i}` }, {}, "1.2.3.4") as Request & Record<string, any>;
+      await mw.use(r, {} as Response, noop());
+      expect(r.user.id).toBe("u1");
+    }
+    expect(apiKeys.resolve).toHaveBeenCalledTimes(40);
+  });
+});

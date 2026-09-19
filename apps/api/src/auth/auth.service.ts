@@ -7,6 +7,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { organization, magicLink, mcp } from "better-auth/plugins";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
+import { isAllowedRedirectUri } from "./oauth-redirect";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
@@ -50,12 +51,15 @@ export class AuthService {
         ? secureCookiesEnv === "true"
         : process.env.NODE_ENV === "production";
 
-    // Force the consent step on every MCP authorization. The plugin only shows
-    // its consent page when the client sends `prompt=consent`, and no real MCP
-    // client (claude.ai, ChatGPT, Claude Code, Cursor) does — so without this a
-    // silently registered client would get an authorization code with no human
-    // in the loop. The consent page is also where the user picks which
-    // workspace the client acts in, so it is never optional.
+    // Hardening applied to the mcp plugin's endpoints before they run.
+    //
+    // /mcp/authorize: force the consent step on every MCP authorization. The
+    // plugin only shows its consent page when the client sends
+    // `prompt=consent`, and no real MCP client (claude.ai, ChatGPT, Claude
+    // Code, Cursor) does — so without this a silently registered client would
+    // get an authorization code with no human in the loop. The consent page is
+    // also where the user picks which workspace the client acts in, so it is
+    // never optional.
     //
     // `prompt` is overwritten rather than merged, on purpose: authorize.mjs
     // tests `query.prompt !== "consent"` by strict equality, so a multi-valued
@@ -64,7 +68,34 @@ export class AuthService {
     // Rewriting ctx.query rather than the URL matters for the signed-out path:
     // the plugin stashes ctx.query in the signed `oidc_login_prompt` cookie and
     // replays it after login, so the continuation lands on the consent page too.
-    const forceMcpConsent = createAuthMiddleware(async (ctx) => {
+    const mcpOAuthBeforeHook = createAuthMiddleware(async (ctx) => {
+      if (ctx.path === "/mcp/register") {
+        // Dynamic registration is anonymous, and the consent page navigates
+        // the browser to whatever redirect URI was registered — a
+        // `javascript:` or `data:` URI would run script in the Atrium web
+        // origin. The plugin only checks that the list is a non-empty array of
+        // strings, so the scheme check has to happen here. The body reaches a
+        // before-hook unvalidated, hence the shape guards.
+        const redirectUris: unknown = (
+          ctx.body as { redirect_uris?: unknown } | undefined
+        )?.redirect_uris;
+        const acceptable: boolean =
+          Array.isArray(redirectUris) &&
+          redirectUris.length > 0 &&
+          redirectUris.every(
+            (uri: unknown) =>
+              typeof uri === "string" && isAllowedRedirectUri(uri),
+          );
+        if (!acceptable) {
+          throw new APIError("BAD_REQUEST", {
+            error: "invalid_redirect_uri",
+            error_description:
+              "redirect_uris must be a non-empty list of absolute URIs, and may not use the javascript, data, vbscript, blob, file or about schemes.",
+          });
+        }
+        return;
+      }
+
       if (ctx.path !== "/mcp/authorize") return;
       return { context: { query: { ...ctx.query, prompt: "consent" } } };
     });
@@ -119,7 +150,7 @@ export class AuthService {
         },
       },
       trustedOrigins: [webUrl, apiUrl],
-      hooks: { before: mcpOAuthEnabled ? forceMcpConsent : undefined },
+      hooks: { before: mcpOAuthEnabled ? mcpOAuthBeforeHook : undefined },
       // Firebase Hosting strips all cookies except "__session".
       // When FIREBASE_HOSTING=true, override the cookie name.
       // On other hosts (Coolify, VPS, etc.) use Better Auth defaults.

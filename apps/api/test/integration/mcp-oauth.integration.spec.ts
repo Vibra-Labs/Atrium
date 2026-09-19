@@ -68,18 +68,26 @@ export function clientName(name: string): string {
 /** Client ids minted by this run, so their verification rows can be cleaned up. */
 const registeredClientIds: string[] = [];
 
-export async function registerClient(name: string): Promise<string> {
-  const res = await call("/mcp/register", {
+/** Posts a raw registration request, without asserting on the outcome. */
+async function postRegistration(
+  name: string,
+  redirectUris: unknown,
+): Promise<Response> {
+  return call("/mcp/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       client_name: clientName(name),
-      redirect_uris: [REDIRECT_URI],
+      redirect_uris: redirectUris,
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
     }),
   });
+}
+
+export async function registerClient(name: string): Promise<string> {
+  const res = await postRegistration(name, [REDIRECT_URI]);
   // The plugin answers dynamic registration with 201 Created (RFC 7591).
   expect(res.status).toBe(201);
   const clientId = ((await res.json()) as { client_id: string }).client_id;
@@ -348,6 +356,58 @@ describe("Better Auth mcp plugin on Atrium's schema", () => {
     expect(await prisma.oauthAccessToken.count({ where: { clientId } })).toBe(
       0,
     );
+  });
+});
+
+describe("redirect URI validation at client registration", () => {
+  /** Registration is anonymous, so a bad URI must never reach the database. */
+  async function rowCount(name: string): Promise<number> {
+    return prisma.oauthApplication.count({
+      where: { name: clientName(name) },
+    });
+  }
+
+  it("refuses a javascript: redirect URI", async () => {
+    const res = await postRegistration("IT Client XSS", [
+      "javascript:alert(1)",
+    ]);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error?: string }).toMatchObject({
+      error: "invalid_redirect_uri",
+    });
+    expect(await rowCount("IT Client XSS")).toBe(0);
+  });
+
+  it("refuses the whole registration when only one URI is script-capable", async () => {
+    const res = await postRegistration("IT Client Mixed", [
+      "https://ok.example/cb",
+      "data:text/html,x",
+    ]);
+
+    expect(res.status).toBe(400);
+    expect(await rowCount("IT Client Mixed")).toBe(0);
+  });
+
+  it("refuses a missing or empty redirect_uris list", async () => {
+    expect((await postRegistration("IT Client None", undefined)).status).toBe(
+      400,
+    );
+    expect((await postRegistration("IT Client Empty", [])).status).toBe(400);
+    expect(await rowCount("IT Client None")).toBe(0);
+    expect(await rowCount("IT Client Empty")).toBe(0);
+  });
+
+  it("still accepts the custom schemes native MCP clients use", async () => {
+    const res = await postRegistration("IT Client Native", [
+      "cursor://anysphere.cursor-mcp/callback",
+    ]);
+
+    expect(res.status).toBe(201);
+    registeredClientIds.push(
+      ((await res.json()) as { client_id: string }).client_id,
+    );
+    expect(await rowCount("IT Client Native")).toBe(1);
   });
 });
 

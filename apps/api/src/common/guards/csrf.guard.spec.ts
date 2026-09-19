@@ -457,6 +457,43 @@ describe("CsrfGuard", () => {
     expect(cookieNames).toEqual([]);
   });
 
+  it("does not set the csrf cookie on the MCP endpoint with a trailing slash", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const slash = createMockContext("POST", {}, {}, "/api/mcp/");
+    expect(guard.canActivate(slash.context)).toBe(true);
+    expect(slash.cookieNames).toEqual([]);
+
+    const slashQuery = createMockContext("POST", {}, {}, "/api/mcp/?x=1");
+    expect(guard.canActivate(slashQuery.context)).toBe(true);
+    expect(slashQuery.cookieNames).toEqual([]);
+  });
+
+  it("does not set the csrf cookie for a lowercase bearer scheme", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "GET",
+      {},
+      { authorization: "bearer abc123" },
+      "/api/projects",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual([]);
+  });
+
+  it("still sets the csrf cookie for a non-bearer Authorization header", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "GET",
+      {},
+      { authorization: "Basic abc123" },
+      "/api/projects",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual(["csrf-token"]);
+  });
+
   it("does not set the csrf cookie on discovery documents", () => {
     const guard = new CsrfGuard(new Reflector());
     const { context, cookieNames } = createMockContext(
@@ -513,6 +550,14 @@ describe("CsrfGuard", () => {
     const mcpx = createMockContext("GET", {}, {}, "/api/mcpx");
     expect(guard.canActivate(mcpx.context)).toBe(true);
     expect(mcpx.cookieNames).toEqual(["csrf-token"]);
+
+    const sub = createMockContext("GET", {}, {}, "/api/mcp/extra");
+    expect(guard.canActivate(sub.context)).toBe(true);
+    expect(sub.cookieNames).toEqual(["csrf-token"]);
+
+    const doubled = createMockContext("GET", {}, {}, "/api/mcp//");
+    expect(guard.canActivate(doubled.context)).toBe(true);
+    expect(doubled.cookieNames).toEqual(["csrf-token"]);
   });
 
   it("skips CSRF for POST when __Secure- session cookie exists but no CSRF token", () => {

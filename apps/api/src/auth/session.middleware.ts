@@ -4,7 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
 import { McpAuthService } from "../mcp-auth/mcp-auth.service";
-import { RateLimiter } from "../common";
+import { isMcpPath, RateLimiter } from "../common";
 import type {
   Actor, AuthenticatedRequest, AuthUser, AuthSession, BearerKind, FullOrganization, OrgMember,
 } from "../common";
@@ -28,8 +28,16 @@ const FAILED_KEY_MAX_IPS = 10_000;
  * spoofed client IPs must not lock out valid keys whose cache entry expired.
  */
 const FAILED_KEY_FAIL_CLOSED = false;
-/** OAuth access tokens authenticate on this exact path and nowhere else. */
-const MCP_PATH = "/api/mcp";
+/** RFC 7235: the auth-scheme token is case-insensitive. */
+const BEARER_SCHEME = /^bearer\s+(.+)$/i;
+
+/** The token from an `Authorization: Bearer <token>` header, in any case. */
+function bearerToken(req: Request): string | undefined {
+  const header: string | undefined = req.headers.authorization;
+  const match: RegExpMatchArray | null = header ? BEARER_SCHEME.exec(header) : null;
+  const token: string = match ? match[1].trim() : "";
+  return token || undefined;
+}
 
 /** Bucket for the failed-key limiter. `trust proxy` makes this client-supplied. */
 function clientIp(req: Request): string {
@@ -84,10 +92,8 @@ export class SessionMiddleware implements NestMiddleware {
   }
 
   private extractApiKey(req: Request): string | undefined {
-    const header: string | undefined = req.headers.authorization;
-    if (!header?.startsWith("Bearer ")) return undefined;
-    const token: string = header.slice(7).trim();
-    return token.startsWith(API_KEY_PREFIX) ? token : undefined;
+    const token: string | undefined = bearerToken(req);
+    return token?.startsWith(API_KEY_PREFIX) ? token : undefined;
   }
 
   /**
@@ -98,10 +104,8 @@ export class SessionMiddleware implements NestMiddleware {
    */
   private extractOAuthToken(req: Request): string | undefined {
     if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") return undefined;
-    if (req.originalUrl.split("?")[0] !== MCP_PATH) return undefined;
-    const header: string | undefined = req.headers.authorization;
-    if (!header?.startsWith("Bearer ")) return undefined;
-    const token: string = header.slice(7).trim();
+    if (!isMcpPath(req.originalUrl)) return undefined;
+    const token: string | undefined = bearerToken(req);
     return token && !token.startsWith(API_KEY_PREFIX) ? token : undefined;
   }
 

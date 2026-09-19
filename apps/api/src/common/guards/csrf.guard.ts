@@ -7,6 +7,7 @@ import {
 import { Reflector } from "@nestjs/core";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import { randomBytes } from "crypto";
+import { isMcpPath } from "../helpers/mcp-path";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_COOKIE = "csrf-token";
@@ -19,8 +20,8 @@ const SESSION_COOKIE_NAMES = [
   "__Secure-better-auth.session_token",
 ];
 
-/** The MCP JSON-RPC endpoint (exact match -- `/api/mcp-grants` is not exempt). */
-const MCP_PATH = "/api/mcp";
+/** RFC 7235: the auth-scheme token is case-insensitive. */
+const BEARER_SCHEME = /^bearer\s+.+$/i;
 
 /** OAuth discovery documents, served at the origin root. */
 const WELL_KNOWN_PREFIX = "/.well-known/";
@@ -120,13 +121,13 @@ export class CsrfGuard implements CanActivate {
     const path: string = queryStart === -1 ? url : url.slice(0, queryStart);
 
     if (path.startsWith("/api/auth/")) return true;
-    if (path === MCP_PATH) return true;
+    if (isMcpPath(path)) return true;
     if (path.startsWith(WELL_KNOWN_PREFIX)) return true;
 
     const authorization: string = String(request.headers?.authorization || "");
     const hasSession: boolean = SESSION_COOKIE_NAMES.some(
       (name) => !!request.cookies?.[name],
     );
-    return authorization.toLowerCase().startsWith("bearer ") && !hasSession;
+    return BEARER_SCHEME.test(authorization) && !hasSession;
   }
 }

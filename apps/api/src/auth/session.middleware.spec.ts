@@ -119,6 +119,51 @@ describe("SessionMiddleware bearer branch", () => {
     expect(mcpAuth.resolve).toHaveBeenCalledTimes(1);
   });
 
+  it("treats /api/mcp with a trailing slash as the MCP route", async () => {
+    // Express routes /api/mcp/ to the same controller, so refusing the OAuth
+    // token here sent the client back to log in again, forever.
+    const { mw, mcpAuth } = build(resolved, oauthActor);
+    const r = req({ authorization: "Bearer oauth-token" }, {}, "10.0.0.1", "/api/mcp/") as Request &
+      Record<string, any>;
+    await mw.use(r, {} as Response, mock(() => {}) as unknown as NextFunction);
+    expect(mcpAuth.resolve).toHaveBeenCalledTimes(1);
+    expect(r.user.id).toBe("u1");
+
+    const withQuery = req({ authorization: "Bearer oauth-token" }, {}, "10.0.0.1", "/api/mcp/?x=1") as Request &
+      Record<string, any>;
+    await mw.use(withQuery, {} as Response, mock(() => {}) as unknown as NextFunction);
+    expect(withQuery.user.id).toBe("u1");
+  });
+
+  it("accepts the bearer scheme in any case, per RFC 7235", async () => {
+    const { mw, apiKeys } = build();
+    const lower = req({ authorization: "bearer atr_abc" }) as Request & Record<string, any>;
+    await mw.use(lower, {} as Response, noop());
+    expect(apiKeys.resolve).toHaveBeenCalledWith("atr_abc");
+    expect(lower.user.id).toBe("u1");
+
+    const mixed = req({ authorization: "BeArEr atr_xyz" }) as Request & Record<string, any>;
+    await mw.use(mixed, {} as Response, noop());
+    expect(mixed.user.id).toBe("u1");
+
+    const { mw: oauthMw, mcpAuth } = build(resolved, oauthActor);
+    const oauth = req({ authorization: "BEARER oauth-token" }, {}, "10.0.0.1", "/api/mcp") as Request &
+      Record<string, any>;
+    await oauthMw.use(oauth, {} as Response, noop());
+    expect(mcpAuth.resolve).toHaveBeenCalledWith("oauth-token");
+    expect(oauth.bearerKind).toBe("oauth");
+  });
+
+  it("ignores an Authorization header that is not a bearer token", async () => {
+    const { mw, apiKeys, mcpAuth } = build(resolved, oauthActor);
+    const r = req({ authorization: "Basic atr_abc" }, {}, "10.0.0.1", "/api/mcp") as Request &
+      Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+    expect(apiKeys.resolve).not.toHaveBeenCalled();
+    expect(mcpAuth.resolve).not.toHaveBeenCalled();
+    expect(r.user).toBeUndefined();
+  });
+
   it("ignores an OAuth token entirely when MCP_OAUTH_ENABLED is false", async () => {
     // The switch hides the connect UI and unmounts the plugin, but tokens
     // already issued live for up to an hour — so the middleware has to refuse

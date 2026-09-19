@@ -47,4 +47,12 @@ export interface AuthenticatedRequest extends Request {
   organization: FullOrganization;
   member: OrgMember;
   previewMode?: boolean;
+  apiKeyId?: string;
+}
+
+/** The identity a request or MCP tool call acts as. */
+export interface Actor {
+  user: AuthUser;
+  organization: FullOrganization;
+  member: OrgMember;
 }

@@ -23,4 +23,5 @@ export type {
   OrgMember,
   FullOrganization,
   AuthenticatedRequest,
+  Actor,
 } from "./types/authenticated-request";

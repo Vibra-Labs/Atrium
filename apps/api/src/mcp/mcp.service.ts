@@ -43,8 +43,13 @@ export class McpService {
   /** RFC 9728 challenge pointing MCP clients at this API's OAuth metadata. */
   private challenge(): string {
     if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") return "Bearer";
-    const apiUrl: string =
-      this.config.get("API_URL") ?? this.config.get("BETTER_AUTH_URL") ?? "http://localhost:3001";
+    // A trailing slash here would produce `//.well-known/...`, which clients
+    // fetch verbatim and discovery does not answer.
+    const apiUrl: string = (
+      this.config.get("API_URL") ??
+      this.config.get("BETTER_AUTH_URL") ??
+      "http://localhost:3001"
+    ).replace(/\/+$/, "");
     return `Bearer resource_metadata="${apiUrl}/.well-known/oauth-protected-resource"`;
   }
 

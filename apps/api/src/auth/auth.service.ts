@@ -35,10 +35,14 @@ export class AuthService {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     // API_URL is the canonical var; BETTER_AUTH_URL is kept as a fallback for
     // existing deployments that set it before the rename in v1.4.
-    const apiUrl: string =
+    // Trailing slashes are stripped: they would otherwise reach the OAuth
+    // metadata as `//.well-known/...` and `//api/mcp`, breaking discovery for
+    // clients that fetch those URLs verbatim.
+    const apiUrl: string = (
       this.config.get("API_URL") ??
       this.config.get("BETTER_AUTH_URL") ??
-      "http://localhost:3001";
+      "http://localhost:3001"
+    ).replace(/\/+$/, "");
     // Lets MCP clients sign in instead of pasting an API key. Opt-out only.
     const mcpOAuthEnabled: boolean =
       this.config.get("MCP_OAUTH_ENABLED", "true") !== "false";
@@ -124,6 +128,10 @@ export class AuthService {
         });
       }
 
+      // Replaying this on the post-login continuation is safe: the plugin
+      // writes the signed `oidc_login_prompt` cookie from ctx.query only after
+      // this hook has run, so the query it stashes already carries the forced
+      // prompt=consent and a redirect_uri that passed the check above.
       return { context: { query: { ...ctx.query, prompt: "consent" } } };
     });
 

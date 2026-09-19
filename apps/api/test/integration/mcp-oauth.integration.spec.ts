@@ -674,6 +674,62 @@ describe("OAuth token → MCP actor", () => {
     await prisma.organization.deleteMany({ where: { id: movedOrgId } });
   });
 
+  it("issues a usable token before any grant exists, which resolves to nobody", async () => {
+    // Better Auth's consent only records that the user pressed Allow; the
+    // workspace binding is Atrium's. A code exchanged without that binding
+    // therefore yields a real token that authenticates nothing.
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client Pre Consent");
+    const tokens = await authorizeAndExchange(clientId);
+
+    expect(await prisma.oauthAccessToken.count({ where: { accessToken: tokens.access_token } })).toBe(1);
+    expect(await prisma.mcpGrant.count({ where: { clientId } })).toBe(0);
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+  });
+
+  it("refuses to refresh after the app has been disconnected", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client Refresh");
+    const tokens = await authorizeAndExchange(clientId);
+    await mcpAuth.saveGrant(userId, clientId, orgId);
+    const grant = (await mcpAuth.listGrants(userId, orgId, "owner")).find(
+      (g) => g.clientName === clientName("IT Client Refresh"),
+    )!;
+    await mcpAuth.revokeGrant(grant.id, userId, orgId, "owner");
+
+    const res = await call("/mcp/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: clientId,
+      }).toString(),
+    });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(await prisma.oauthAccessToken.count({ where: { clientId } })).toBe(0);
+  });
+
+  it("stops resolving once the user is no longer owner or admin", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clientId = await registerClient("IT Client Demoted");
+    const tokens = await authorizeAndExchange(clientId);
+
+    const demoOrgId = `org-demo-${stamp}`;
+    await prisma.organization.create({
+      data: { id: demoOrgId, name: "Demo Org", slug: `demo-${stamp}` },
+    });
+    await prisma.member.create({
+      data: { id: `m-demo-${stamp}`, organizationId: demoOrgId, userId, role: "admin" },
+    });
+    await mcpAuth.saveGrant(userId, clientId, demoOrgId);
+    expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(demoOrgId);
+
+    await prisma.member.update({ where: { id: `m-demo-${stamp}` }, data: { role: "member" } });
+
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+    await prisma.organization.deleteMany({ where: { id: demoOrgId } });
+  });
+
   it("rejects an expired access token", async () => {
     const mcpAuth = new McpAuthService(prisma);
     const clientId = await registerClient("IT Client G");

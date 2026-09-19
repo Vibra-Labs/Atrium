@@ -3,16 +3,16 @@ import type { Request, Response } from "express";
 import type { Actor } from "../common";
 import { McpService } from "./mcp.service";
 
-function buildConfig(oauthEnabled = "true") {
+function buildConfig(oauthEnabled = "true", apiUrl = "https://portal.test") {
   return {
     get: (key: string, fallback?: string) =>
-      key === "MCP_OAUTH_ENABLED" ? oauthEnabled : key === "API_URL" ? "https://portal.test" : fallback,
+      key === "MCP_OAUTH_ENABLED" ? oauthEnabled : key === "API_URL" ? apiUrl : fallback,
   };
 }
 
-function buildService(oauthEnabled = "true"): McpService {
+function buildService(oauthEnabled = "true", apiUrl?: string): McpService {
   const stub = {} as never;
-  return new McpService(stub, stub, stub, stub, stub, stub, buildConfig(oauthEnabled) as never);
+  return new McpService(stub, stub, stub, stub, stub, stub, buildConfig(oauthEnabled, apiUrl) as never);
 }
 
 /**
@@ -109,6 +109,14 @@ describe("McpService", () => {
     const res = buildRes();
     await buildService().handle({ headers: {} } as Request, res as unknown as Response);
     expect(res.statusCode).toBe(401);
+    expect(res.headers["WWW-Authenticate"]).toBe(
+      'Bearer resource_metadata="https://portal.test/.well-known/oauth-protected-resource"',
+    );
+  });
+
+  it("trims a trailing slash from API_URL so the metadata URL is not doubled", async () => {
+    const res = buildRes();
+    await buildService("true", "https://portal.test/").handle({ headers: {} } as Request, res as unknown as Response);
     expect(res.headers["WWW-Authenticate"]).toBe(
       'Bearer resource_metadata="https://portal.test/.well-known/oauth-protected-resource"',
     );

@@ -2,8 +2,11 @@ import { describe, expect, it } from "bun:test";
 import type { Request, Response } from "express";
 import { AuthController } from "./auth.controller";
 
+/** Better Auth is handed a Web API Request, not the Express one. */
+type WebRequest = globalThis.Request;
+
 interface Captured {
-  request: Request | undefined;
+  request: WebRequest | undefined;
   body: string | undefined;
 }
 
@@ -26,11 +29,11 @@ function build(response: Response_ = new Response("{}")): {
 } {
   const captured: Captured = { request: undefined, body: undefined };
   const authService = {
-    handleRequest: async (request: any) => {
+    // Always reads the body, so "no body forwarded" means an empty one rather
+    // than a branch in the stub that can never disagree with the controller.
+    handleRequest: async (request: WebRequest): Promise<Response_> => {
       captured.request = request;
-      captured.body = request.method === "GET" || request.method === "HEAD"
-        ? undefined
-        : await request.text();
+      captured.body = await request.text();
       return response;
     },
   };
@@ -152,7 +155,7 @@ describe("AuthController", () => {
 
     await controller.handleAuth(expressReq("GET", {}), expressRes(sent));
 
-    expect(captured.body).toBeUndefined();
+    expect(captured.body).toBe("");
   });
 
   it("drops content-length and transfer-encoding from the forwarded headers", async () => {
@@ -172,7 +175,7 @@ describe("AuthController", () => {
       expressRes(sent),
     );
 
-    const headers = captured.request!.headers as unknown as Headers;
+    const headers: Headers = captured.request!.headers;
     expect(headers.get("content-length")).toBeNull();
     expect(headers.get("transfer-encoding")).toBeNull();
     expect(headers.get("host")).toBe("portal.test");

@@ -74,6 +74,7 @@ export function ConnectedAppsSection(): React.ReactElement {
             <thead className="text-left text-[var(--muted-foreground)]">
               <tr>
                 <th className="py-2 font-medium">App</th>
+                <th className="py-2 font-medium">Workspace</th>
                 <th className="py-2 font-medium">Connected by</th>
                 <th className="py-2 font-medium">Connected</th>
                 <th className="py-2" />
@@ -83,6 +84,7 @@ export function ConnectedAppsSection(): React.ReactElement {
               {grants.map((grant) => (
                 <tr key={grant.id} className="border-t border-[var(--border)]">
                   <td className="py-2">{grant.clientName}</td>
+                  <td className="py-2">{grant.organizationName}</td>
                   <td className="py-2">{grant.mine ? "You" : grant.userName}</td>
                   <td className="py-2">{new Date(grant.createdAt).toLocaleDateString()}</td>
                   <td className="py-2 text-right">

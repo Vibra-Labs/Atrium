@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Copy, KeyRound, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
+import { formatRelativeTime } from "@/lib/utils";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 
@@ -168,7 +169,7 @@ export function ApiKeysSection(): React.ReactElement {
                   <td className="py-2"><code className="text-xs">{key.keyPrefix}…</code></td>
                   <td className="py-2">{key.createdBy}</td>
                   <td className="py-2">{formatDate(key.createdAt)}</td>
-                  <td className="py-2">{formatDate(key.lastUsedAt)}</td>
+                  <td className="py-2">{key.lastUsedAt ? formatRelativeTime(key.lastUsedAt) : "Never"}</td>
                   <td className="py-2 text-right">
                     <button
                       type="button"

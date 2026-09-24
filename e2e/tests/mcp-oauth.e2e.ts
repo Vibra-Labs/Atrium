@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
-import type { APIRequestContext, Page, PlaywrightWorkerArgs } from "@playwright/test";
+import type { APIRequestContext, Browser, BrowserContext, Page, PlaywrightWorkerArgs } from "@playwright/test";
 import { createHash, randomBytes } from "crypto";
 
 const API_URL = "http://localhost:3001";
+const WEB_URL = "http://localhost:3000";
 const REDIRECT_URI = "http://localhost:9999/callback";
 
 interface Flow { clientId: string; authorizeUrl: string; verifier: string }
@@ -62,6 +63,41 @@ const INITIALIZE = {
   params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1.0.0" } },
 };
 
+function bearer(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    Accept: "application/json, text/event-stream",
+  };
+}
+
+/** Calls get_workspace with an OAuth token and returns the tool's text. */
+async function getWorkspace(request: APIRequestContext, token: string): Promise<string> {
+  const res = await request.post(`${API_URL}/api/mcp`, {
+    headers: bearer(token),
+    data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_workspace", arguments: {} } },
+  });
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(body.error, JSON.stringify(body)).toBeUndefined();
+  return body.result.content[0].text as string;
+}
+
+function uniq(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** A fresh owner with their own workspace, signed in inside a new browser context. */
+async function signUpOwner(browser: Browser, orgName: string): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const page = await context.newPage();
+  const res = await page.request.post(`${API_URL}/api/onboarding/signup`, {
+    data: { name: "OAuth Owner", email: `${uniq("oauth-owner")}@test.local`, password: "OAuthOwner123!", orgName },
+  });
+  expect(res.ok(), await res.text()).toBe(true);
+  return { context, page };
+}
+
 test.describe("MCP OAuth login", () => {
   test("discovery documents are served at the origin root", async ({ request }) => {
     const pr = await request.get(`${API_URL}/.well-known/oauth-protected-resource`);
@@ -90,13 +126,12 @@ test.describe("MCP OAuth login", () => {
       expect(callback.searchParams.get("state")).toBe("e2e");
       const token = await exchange(bare, flow, callback.searchParams.get("code")!);
 
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-      };
+      const headers = bearer(token);
       const ok = await bare.post(`${API_URL}/api/mcp`, { headers, data: INITIALIZE });
       expect(ok.status()).toBe(200);
+
+      // A real tool call, not just the handshake
+      expect(await getWorkspace(bare, token)).toContain("E2E Test Org");
 
       // The OAuth token must not work on the REST API
       const rest = await bare.get(`${API_URL}/api/projects`, { headers });
@@ -163,6 +198,87 @@ test.describe("MCP OAuth login", () => {
       }
     } finally {
       await bare.dispose();
+    }
+  });
+
+  test("the workspace picker binds the connection to the workspace chosen", async ({ browser, playwright }) => {
+    test.setTimeout(60_000);
+    const first = `Picker One ${Date.now().toString(36)}`;
+    const second = `Picker Two ${Date.now().toString(36)}`;
+    const owner = await signUpOwner(browser, first);
+    const bare = await anonymousContext(playwright);
+    try {
+      const created = await owner.page.request.post(`${API_URL}/api/auth/organization/create`, {
+        data: { name: second, slug: uniq("picker-two") },
+        headers: { Origin: WEB_URL },
+      });
+      expect(created.status(), await created.text()).toBe(200);
+
+      const flow = await startFlow(bare, `E2E Picker ${Date.now()}`);
+      await owner.page.goto(flow.authorizeUrl);
+      await expect(owner.page).toHaveURL(/\/oauth\/consent/);
+
+      const picker = owner.page.getByLabel("Workspace");
+      await expect(picker).toBeVisible();
+      await expect(picker.locator("option")).toHaveCount(2);
+      await expect(picker).toContainText(first);
+      await expect(picker).toContainText(second);
+      await picker.selectOption({ label: second });
+      await expect(owner.page.getByText(`in ${second}, acting as you`)).toBeVisible();
+
+      const callback = await captureCallback(owner.page, () =>
+        owner.page.getByRole("button", { name: "Allow" }).click());
+      const token = await exchange(bare, flow, callback.searchParams.get("code")!);
+
+      const workspace = await getWorkspace(bare, token);
+      expect(workspace).toContain(second);
+      expect(workspace).not.toContain(first);
+    } finally {
+      await bare.dispose();
+      await owner.context.close();
+    }
+  });
+
+  test("a portal client can only Deny", async ({ browser, playwright }) => {
+    test.setTimeout(60_000);
+    const owner = await signUpOwner(browser, `Deny Only ${Date.now().toString(36)}`);
+    const clientEmail = `${uniq("oauth-client")}@test.local`;
+    const invite = await owner.page.request.post(`${API_URL}/api/auth/organization/invite-member`, {
+      data: { email: clientEmail, role: "member" },
+      headers: { Origin: WEB_URL },
+    });
+    expect(invite.ok(), await invite.text()).toBe(true);
+    const inviteBody = await invite.json();
+    const invitationId: string = inviteBody?.id || inviteBody?.invitation?.id || inviteBody?.data?.id;
+    expect(invitationId).toBeTruthy();
+    await owner.context.close();
+
+    const client = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const bare = await anonymousContext(playwright);
+    try {
+      const page = await client.newPage();
+      const signup = await page.request.post(`${API_URL}/api/auth/sign-up/email`, {
+        data: { name: "OAuth Client", email: clientEmail, password: "OAuthClient123!" },
+        headers: { Origin: WEB_URL },
+      });
+      expect(signup.ok(), await signup.text()).toBe(true);
+      const accept = await page.request.post(`${API_URL}/api/auth/organization/accept-invitation`, {
+        data: { invitationId },
+        headers: { Origin: WEB_URL },
+      });
+      expect(accept.ok(), await accept.text()).toBe(true);
+
+      const flow = await startFlow(bare, `E2E Client ${Date.now()}`);
+      await page.goto(flow.authorizeUrl);
+      await expect(page).toHaveURL(/\/oauth\/consent/);
+      await expect(page.getByText("Only workspace owners and admins can connect AI assistants.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Allow" })).toHaveCount(0);
+
+      const callback = await captureCallback(page, () => page.getByRole("button", { name: "Deny" }).click());
+      expect(callback.searchParams.get("error")).toBe("access_denied");
+    } finally {
+      await bare.dispose();
+      await client.close();
     }
   });
 });

@@ -85,6 +85,11 @@ test.describe("API keys and MCP", () => {
     expect(callBody.error, JSON.stringify(callBody)).toBeUndefined();
     expect(callBody.result.content[0].text).toContain("E2E Test Org");
 
+    // The same key works on the REST API, as a bearer token with no cookie or CSRF token
+    const rest = await bare.get(`${API_URL}/api/projects`, { headers: { Authorization: `Bearer ${key}` } });
+    expect(rest.status()).toBe(200);
+    expect(Array.isArray((await rest.json()).data)).toBe(true);
+
     // Revoke
     await page.getByRole("row").filter({ hasText: keyName }).getByRole("button", { name: /revoke/i }).click();
     await page.getByRole("button", { name: "Revoke" }).last().click();

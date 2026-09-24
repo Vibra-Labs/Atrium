@@ -66,7 +66,7 @@ Enterprise auth, automation, and analytics.
 - [ ] **Workflow automations** -- Trigger-action engine for automated task assignment, notifications, and status changes
 - [ ] **Reporting & analytics** -- Revenue trends, project metrics, client activity, and invoice aging dashboards
 - [ ] **Webhooks / Zapier integration** -- Notify external systems of portal events
-- [x] **MCP server** -- AI assistants can manage the workspace via API keys ([docs](mcp.md))
+- [x] **MCP server** -- AI assistants can manage the workspace via OAuth sign-in or API keys ([docs](mcp.md))
 - [ ] **Knowledge base / help center** -- Self-service docs, FAQs, and guides for clients
 
 ### v2.0 -- Platform & Extensibility (June 2026)

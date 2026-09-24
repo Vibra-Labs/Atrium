@@ -7,7 +7,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { UpdateClientProfileDto } from "./client-profile.dto";
-import { paginatedResponse } from "../common";
+import { MCP_ACTOR_ROLES, paginatedResponse, revokeMemberCredentials } from "../common";
 
 @Injectable()
 export class ClientsService {
@@ -108,10 +108,20 @@ export class ClientsService {
     if (!validRoles.includes(newRole)) {
       throw new BadRequestException("Invalid role");
     }
-    return this.prisma.member.update({
-      where: { id: memberId },
-      data: { role: newRole },
-    });
+    if (MCP_ACTOR_ROLES.includes(newRole)) {
+      return this.prisma.member.update({
+        where: { id: memberId },
+        data: { role: newRole },
+      });
+    }
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.member.update({
+        where: { id: memberId },
+        data: { role: newRole },
+      }),
+      ...revokeMemberCredentials(this.prisma, memberId),
+    ]);
+    return updated;
   }
 
   async setMemberRate(

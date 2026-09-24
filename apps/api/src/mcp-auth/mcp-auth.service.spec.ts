@@ -56,7 +56,7 @@ function build(
 }
 
 const token = { accessToken: "tok", userId: "u1", clientId: "c1", accessTokenExpiresAt: future };
-const grant = { id: "g1", userId: "u1", clientId: "c1", organizationId: "org1", user, organization };
+const grant = { id: "g1", userId: "u1", clientId: "c1", organizationId: "org1", memberId: "m1", user, organization };
 const owner = { id: "m1", userId: "u1", organizationId: "org1", role: "owner" };
 
 describe("McpAuthService.resolve", () => {
@@ -67,6 +67,14 @@ describe("McpAuthService.resolve", () => {
     expect(actor?.organization.id).toBe("org1");
     expect(actor?.member.role).toBe("owner");
     expect(actor?.oauthClientId).toBe("c1");
+  });
+
+  it("checks the membership row the grant was issued to, not any row for that user", async () => {
+    const { service, prisma } = build({ token, grant, member: owner });
+    await service.resolve("tok");
+    expect(prisma.member.findFirst).toHaveBeenCalledWith({
+      where: { id: "m1", userId: "u1", organizationId: "org1" },
+    });
   });
 
   it("returns null for an unknown token", async () => {

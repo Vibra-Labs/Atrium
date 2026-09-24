@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { APIError } from "better-auth/api";
 import type { PrismaService } from "../prisma/prisma.service";
+import { MCP_ACTOR_ROLES } from "../common";
 
 const logger = new Logger("McpConsentHooks");
 
@@ -106,6 +107,13 @@ export async function promoteGrantOnConsent(
 
   const { userId, clientId, organizationId } = pending;
   await prisma.$transaction(async (tx) => {
+    // The consent screen checked the role, but the user may have been demoted
+    // or removed since. The grant is pinned to this member row.
+    const member = await tx.member.findFirst({ where: { userId, organizationId } });
+    if (!member || !MCP_ACTOR_ROLES.includes(member.role)) {
+      logger.warn(`Refusing to promote an MCP grant for a non-admin member (client ${clientId})`);
+      return;
+    }
     const existing = await tx.mcpGrant.findUnique({
       where: { userId_clientId: { userId, clientId } },
       select: { organizationId: true },
@@ -120,8 +128,8 @@ export async function promoteGrantOnConsent(
     }
     await tx.mcpGrant.upsert({
       where: { userId_clientId: { userId, clientId } },
-      create: { userId, clientId, organizationId },
-      update: { organizationId },
+      create: { userId, clientId, organizationId, memberId: member.id },
+      update: { organizationId, memberId: member.id },
     });
     await tx.mcpPendingGrant.delete({ where: { consentCode } });
   });

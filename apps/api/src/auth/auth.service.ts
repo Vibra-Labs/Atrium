@@ -9,6 +9,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
 import { applyConsentOutcome, guardTokenExchange } from "../mcp-auth/consent-hooks";
+import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
@@ -313,6 +314,16 @@ export class AuthService {
               } catch (err) {
                 Sentry.captureException(err);
                 this.logger.error("Failed to initialize free plan", err);
+              }
+            },
+            // Atrium's own role endpoint revokes in the same transaction
+            // (ClientsService.changeRole); this covers Better Auth's route.
+            afterUpdateMemberRole: async ({ member }) => {
+              try {
+                await revokeCredentialsIfDemoted(this.prisma, member);
+              } catch (err) {
+                Sentry.captureException(err);
+                this.logger.error("Failed to revoke credentials after demotion", err);
               }
             },
           },

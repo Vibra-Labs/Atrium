@@ -52,6 +52,7 @@ describe("assertConsentGranted", () => {
 interface GrantPrismaOpts {
   pending?: { consentCode: string; userId: string; clientId: string; organizationId: string } | null;
   grant?: { organizationId: string } | null;
+  member?: { id: string; role: string } | null;
 }
 
 function grantPrisma(opts: GrantPrismaOpts = {}) {
@@ -66,6 +67,10 @@ function grantPrisma(opts: GrantPrismaOpts = {}) {
       upsert: mock(() => Promise.resolve({})),
     },
     oauthAccessToken: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
+    member: {
+      findFirst: mock(() =>
+        Promise.resolve(opts.member === undefined ? { id: "m1", role: "admin" } : opts.member)),
+    },
     $transaction: mock((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
   return prisma;
@@ -85,8 +90,8 @@ describe("promoteGrantOnConsent", () => {
       update: unknown;
     };
     expect(args.where).toEqual({ userId_clientId: { userId: "u1", clientId: "c1" } });
-    expect(args.create).toEqual({ userId: "u1", clientId: "c1", organizationId: "org1" });
-    expect(args.update).toEqual({ organizationId: "org1" });
+    expect(args.create).toEqual({ userId: "u1", clientId: "c1", organizationId: "org1", memberId: "m1" });
+    expect(args.update).toEqual({ organizationId: "org1", memberId: "m1" });
     expect(prisma.mcpPendingGrant.delete).toHaveBeenCalledWith({ where: { consentCode: "code-1" } });
     expect(prisma.oauthAccessToken.deleteMany).not.toHaveBeenCalled();
     // The grant and the pending row land together, so consent cannot half-apply.
@@ -105,6 +110,18 @@ describe("promoteGrantOnConsent", () => {
     await promoteGrantOnConsent(prisma as never, "code-1", "u2");
     expect(prisma.mcpGrant.upsert).not.toHaveBeenCalled();
     expect(prisma.mcpPendingGrant.delete).not.toHaveBeenCalled();
+  });
+
+  it("refuses to promote when the user is no longer an owner or admin of the workspace", async () => {
+    // Demoted or removed between the consent screen and Allow.
+    for (const member of [null, { id: "m1", role: "member" }]) {
+      const prisma = grantPrisma({ pending, member });
+      await promoteGrantOnConsent(prisma as never, "code-1", "u1");
+      expect(prisma.mcpGrant.upsert).not.toHaveBeenCalled();
+      expect(prisma.member.findFirst).toHaveBeenCalledWith({
+        where: { userId: "u1", organizationId: "org1" },
+      });
+    }
   });
 
   it("signs older sessions out when the workspace actually moves", async () => {

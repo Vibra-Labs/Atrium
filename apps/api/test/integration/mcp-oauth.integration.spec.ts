@@ -16,6 +16,7 @@ import { McpAuthService } from "../../src/mcp-auth/mcp-auth.service";
 import { McpConsentController } from "../../src/mcp-auth/mcp-grants.controller";
 import { OAuthCleanupTask } from "../../src/mcp-auth/oauth-cleanup.task";
 import { promoteGrantOnConsent } from "../../src/mcp-auth/consent-hooks";
+import { ClientsService } from "../../src/clients/clients.service";
 import type { AuthenticatedRequest } from "../../src/common";
 
 const API = "http://localhost:3001";
@@ -1117,6 +1118,42 @@ describe("OAuth token → MCP actor", () => {
     await prisma.organization.deleteMany({ where: { id: demoOrgId } });
   });
 
+  it("stays dead after the user is removed and re-added, and after demote then re-promote", async () => {
+    const mcpAuth = new McpAuthService(prisma);
+    const clients = new ClientsService(prisma, {} as never);
+    const clientId = await registerClient("IT Client Revive");
+    const tokens = await authorizeAndExchange(clientId);
+
+    const reviveOrgId = `org-revive-${stamp}`;
+    await prisma.organization.create({
+      data: { id: reviveOrgId, name: "Revive Org", slug: `revive-${stamp}` },
+    });
+    await prisma.member.create({
+      data: { id: `m-revive-${stamp}`, organizationId: reviveOrgId, userId, role: "admin" },
+    });
+    await grantWorkspace(clientId, reviveOrgId);
+    expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(reviveOrgId);
+
+    // Demoted through Atrium, then promoted again: the grant does not come back.
+    await clients.changeRole(`m-revive-${stamp}`, "member", reviveOrgId, otherUserId);
+    await clients.changeRole(`m-revive-${stamp}`, "admin", reviveOrgId, otherUserId);
+    expect(await prisma.mcpGrant.count({ where: { userId, clientId } })).toBe(0);
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+
+    // Removed by any route (here a raw delete, as Better Auth's /organization/leave
+    // does) and re-added: the new member row has no grant.
+    await grantWorkspace(clientId, reviveOrgId);
+    expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(reviveOrgId);
+    await prisma.member.delete({ where: { id: `m-revive-${stamp}` } });
+    expect(await prisma.mcpGrant.count({ where: { userId, clientId } })).toBe(0);
+    await prisma.member.create({
+      data: { id: `m-revive2-${stamp}`, organizationId: reviveOrgId, userId, role: "admin" },
+    });
+    expect(await mcpAuth.resolve(tokens.access_token)).toBeNull();
+
+    await prisma.organization.deleteMany({ where: { id: reviveOrgId } });
+  });
+
   it("rejects an expired access token", async () => {
     const mcpAuth = new McpAuthService(prisma);
     const clientId = await registerClient("IT Client G");
@@ -1182,7 +1219,7 @@ describe("nightly OAuth cleanup", () => {
       },
     });
     await prisma.mcpGrant.create({
-      data: { id: `mg-${stamp}`, userId, clientId: granted, organizationId: orgId },
+      data: { id: `mg-${stamp}`, userId, clientId: granted, organizationId: orgId, memberId: `m-oauth-${stamp}` },
     });
     await prisma.oauthAccessToken.create({
       data: {

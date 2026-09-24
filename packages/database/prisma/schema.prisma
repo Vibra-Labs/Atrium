@@ -119,6 +119,8 @@ model Member {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   labels       MemberLabel[]
+  apiKeys      ApiKey[]
+  mcpGrants    McpGrant[]
 
   hourlyRateCents Int?
 
@@ -149,14 +151,20 @@ model ApiKey {
   keyPrefix      String
   userId         String
   organizationId String
+  /// The membership the key was issued under. Removing the member (by any
+  /// route, including Better Auth's own endpoints) deletes the key, and a user
+  /// who is later re-added gets a new member row, so old keys never revive.
+  memberId       String
   lastUsedAt     DateTime?
   revokedAt      DateTime?
   createdAt      DateTime  @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
+  @@index([memberId])
   @@map("api_key")
 }
 
@@ -228,13 +236,17 @@ model McpGrant {
   userId         String
   clientId       String
   organizationId String
+  /// Same pinning as ApiKey.memberId.
+  memberId       String
   createdAt      DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@unique([userId, clientId])
   @@index([organizationId])
+  @@index([memberId])
   @@map("mcp_grant")
 }
 

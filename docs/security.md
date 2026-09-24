@@ -15,12 +15,17 @@ Atrium ships with production-grade security defaults:
 ## API keys
 
 API keys (`atr_…`) are generated from 32 random bytes and stored only as SHA-256 hashes.
-A key is bound to one user and one organization and resolves only while that user is an
-owner or admin there. Keys are ignored when a session cookie is present, cannot create
+A key is bound to one membership (user + organization) and resolves only while that user
+is an owner or admin there. Removing the member deletes its keys and MCP grants (both
+cascade from `member`, whichever route removes it, including Better Auth's own
+`/organization/leave`), and a re-added user gets a new member row that none of the old
+credentials point at. Demotion below admin revokes the keys and deletes the grants in the
+same transaction as the role change (or in Better Auth's `afterUpdateMemberRole` hook for
+its own endpoint), so a later re-promotion does not revive them. Keys are ignored when a session cookie is present, cannot create
 or revoke other keys, and are revocable from Settings → API & MCP. Resolved keys are
 cached for 30 seconds, in a map the cookie-session path never reads, so a stored key
 hash cannot be replayed as a session token. The MCP endpoint is rate limited to 300
-requests per minute per key, returning `429` with `Retry-After: 60`. Failed key lookups
+requests per minute per key (per user for OAuth tokens), returning `429` with `Retry-After: 60`. Failed key lookups
 (invalid or revoked) are limited to 30 per minute per client IP in `SessionMiddleware`,
 before the database is touched; once an IP is limited, MCP answers `429` and the REST API
 answers `401`. Per-IP limits assume the reverse proxy overwrites `X-Forwarded-For` with

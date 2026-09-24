@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ApiKeysService, hashApiKey, API_KEY_PREFIX } from "./api-keys.service";
 
 const user = {
@@ -14,7 +14,7 @@ const organization = {
 function keyRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "k1", name: "Agent", keyHash: "h", keyPrefix: "atr_abcdefgh",
-    userId: "u1", organizationId: "org1", lastUsedAt: new Date(),
+    userId: "u1", organizationId: "org1", memberId: "m1", lastUsedAt: new Date(),
     revokedAt: null, createdAt: new Date(), user, organization,
     ...overrides,
   };
@@ -36,7 +36,7 @@ function buildPrisma(opts: { key?: unknown; member?: unknown } = {}) {
 
 describe("ApiKeysService", () => {
   it("create returns a prefixed key once and stores only its hash", async () => {
-    const prisma = buildPrisma();
+    const prisma = buildPrisma({ member: { id: "m1", role: "admin" } });
     const service = new ApiKeysService(prisma as never);
 
     const created = await service.create("Agent", "u1", "org1");
@@ -49,6 +49,27 @@ describe("ApiKeysService", () => {
     expect(JSON.stringify(data)).not.toContain(created.key);
   });
 
+  it("create pins the key to the creator's membership row", async () => {
+    const prisma = buildPrisma({ member: { id: "m1", role: "owner" } });
+    await new ApiKeysService(prisma as never).create("Agent", "u1", "org1");
+
+    expect(prisma.member.findFirst).toHaveBeenCalledWith({
+      where: { userId: "u1", organizationId: "org1" },
+    });
+    expect(prisma.apiKey.create.mock.calls[0][0].data.memberId).toBe("m1");
+  });
+
+  it("create refuses a caller who is not an owner or admin of the workspace", async () => {
+    const client = buildPrisma({ member: { id: "m1", role: "member" } });
+    await expect(new ApiKeysService(client as never).create("Agent", "u1", "org1"))
+      .rejects.toBeInstanceOf(ForbiddenException);
+
+    const stranger = buildPrisma();
+    await expect(new ApiKeysService(stranger as never).create("Agent", "u1", "org1"))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(stranger.apiKey.create).not.toHaveBeenCalled();
+  });
+
   it("resolve returns the actor for an owner", async () => {
     const member = { id: "m1", userId: "u1", organizationId: "org1", role: "owner", createdAt: new Date() };
     const service = new ApiKeysService(buildPrisma({ key: keyRow(), member }) as never);
@@ -59,6 +80,17 @@ describe("ApiKeysService", () => {
     expect(actor?.user.id).toBe("u1");
     expect(actor?.organization.id).toBe("org1");
     expect(actor?.member.role).toBe("owner");
+  });
+
+  it("resolve checks the membership row the key was issued to, not any row for that user", async () => {
+    // A user removed and re-added gets a new member row; the old key must stay dead.
+    const member = { id: "m1", userId: "u1", organizationId: "org1", role: "owner", createdAt: new Date() };
+    const prisma = buildPrisma({ key: keyRow(), member });
+    await new ApiKeysService(prisma as never).resolve("atr_whatever");
+
+    expect(prisma.member.findFirst).toHaveBeenCalledWith({
+      where: { id: "m1", userId: "u1", organizationId: "org1" },
+    });
   });
 
   it("resolve returns null for tokens without the prefix, without a lookup", async () => {

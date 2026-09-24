@@ -97,7 +97,7 @@ export class McpAuthService {
     if (!grant) return null;
 
     const member = await this.prisma.member.findFirst({
-      where: { userId: row.userId, organizationId: grant.organizationId },
+      where: { id: grant.memberId, userId: row.userId, organizationId: grant.organizationId },
     });
     if (!member || !MCP_ACTOR_ROLES.includes(member.role)) return null;
 

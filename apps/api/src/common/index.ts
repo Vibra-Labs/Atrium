@@ -21,6 +21,7 @@ export { isPublicOAuthPath } from "./helpers/public-oauth-cors";
 export { isMcpPath } from "./helpers/mcp-path";
 export { bearerToken } from "./helpers/bearer-token";
 export { MCP_ACTOR_ROLES } from "./helpers/mcp-actor-roles";
+export { revokeCredentialsIfDemoted, revokeMemberCredentials } from "./helpers/member-credentials";
 export { BLOCKED_EXTENSIONS } from "./utils/blocked-extensions";
 export type {
   AuthUser,

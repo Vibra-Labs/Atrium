@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { MCP_ACTOR_ROLES } from "../common";
@@ -38,10 +38,14 @@ export class ApiKeysService {
   constructor(private prisma: PrismaService) {}
 
   async create(name: string, userId: string, organizationId: string): Promise<CreatedApiKey> {
+    const member = await this.prisma.member.findFirst({ where: { userId, organizationId } });
+    if (!member || !MCP_ACTOR_ROLES.includes(member.role)) {
+      throw new ForbiddenException("Only owners and admins can create API keys");
+    }
     const key: string = API_KEY_PREFIX + randomBytes(32).toString("base64url");
     const keyPrefix: string = key.slice(0, KEY_PREFIX_LENGTH);
     const row = await this.prisma.apiKey.create({
-      data: { name, keyHash: hashApiKey(key), keyPrefix, userId, organizationId },
+      data: { name, keyHash: hashApiKey(key), keyPrefix, userId, organizationId, memberId: member.id },
     });
     return { id: row.id, name, keyPrefix, key, createdAt: row.createdAt };
   }
@@ -79,7 +83,7 @@ export class ApiKeysService {
     if (!key || key.revokedAt) return null;
 
     const member = await this.prisma.member.findFirst({
-      where: { userId: key.userId, organizationId: key.organizationId },
+      where: { id: key.memberId, userId: key.userId, organizationId: key.organizationId },
     });
     if (!member || !MCP_ACTOR_ROLES.includes(member.role)) return null;
 

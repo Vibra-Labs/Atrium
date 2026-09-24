@@ -20,6 +20,9 @@ services:
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-atrium}:${POSTGRES_PASSWORD:-atrium}@postgres:5432/${POSTGRES_DB:-atrium}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-change-me-to-a-random-string-at-least-32-chars}"
+      # The public URL users open Atrium at. Required: sign-in breaks without it
+      # behind any domain or reverse proxy (Coolify, Cloudflare, Nginx, ...).
+      WEB_URL: "${WEB_URL:-http://localhost:8080}"
       # SECURE_COOKIES: "false"  # Only if accessing over plain HTTP (no HTTPS).
       #                          # A reverse proxy with HTTPS is strongly recommended.
     volumes:

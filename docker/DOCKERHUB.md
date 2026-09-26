@@ -19,7 +19,7 @@ Atrium replaces shared drives, spreadsheets, and scattered emails with a single 
 
 ## Quick Start
 
-The only required variable is `BETTER_AUTH_SECRET`:
+Two variables are required: `BETTER_AUTH_SECRET`, and `WEB_URL` set to the address people will open Atrium at:
 
 ```bash
 docker run -d \
@@ -28,6 +28,7 @@ docker run -d \
   -v atrium-db:/var/lib/postgresql/data \
   -v atrium-uploads:/app/uploads \
   -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
+  -e WEB_URL=http://localhost:8080 \
   vibralabs/atrium:latest
 ```
 
@@ -43,6 +44,7 @@ services:
       - "8080:8080"
     environment:
       BETTER_AUTH_SECRET: "change-me-to-a-random-string-at-least-32-chars"
+      WEB_URL: "http://localhost:8080"
     volumes:
       - atrium-db:/var/lib/postgresql/data
       - atrium-uploads:/app/uploads
@@ -60,6 +62,7 @@ volumes:
 3. Under **Port Mappings**, map your desired host port (e.g., `4747`) to container port `8080`
 4. Add the following **Environment Variables**:
    - `BETTER_AUTH_SECRET` — a random string of at least 32 characters (generate one with `openssl rand -base64 32` in the terminal)
+   - `WEB_URL` — the address you open Atrium at, e.g. `http://192.168.1.10:4747`
    - `SECURE_COOKIES` — set to `false` (required when accessing over plain HTTP without an HTTPS reverse proxy)
 5. Add the following **Volume Mappings** (set the host paths to your appdata directory):
    - `/mnt/user/appdata/atrium/db` → `/var/lib/postgresql/data`
@@ -80,6 +83,7 @@ environment:
   USE_BUILT_IN_DB: "false"
   DATABASE_URL: "postgresql://user:password@your-db-host:5432/atrium"
   BETTER_AUTH_SECRET: "your-secret-here"
+  WEB_URL: "https://atrium.example.com"
 ```
 
 ## Environment Variables
@@ -87,6 +91,7 @@ environment:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `BETTER_AUTH_SECRET` | **Yes** | — | Random string (min 32 chars) for signing auth tokens |
+| `WEB_URL` | **Yes** | — | The public URL users open Atrium at, e.g. `https://atrium.example.com`. Sign-in fails after the first login when this does not match. |
 | `USE_BUILT_IN_DB` | No | `true` | Set to `false` to use an external database |
 | `DATABASE_URL` | No | auto | PostgreSQL connection string (required when built-in DB is disabled) |
 | `STORAGE_PROVIDER` | No | `local` | File storage: `local`, `s3`, `minio`, or `r2` |

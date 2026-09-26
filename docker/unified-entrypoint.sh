@@ -3,6 +3,17 @@ set -e
 
 echo "=== Atrium Starting ==="
 
+# Caddy rewrites the Origin of every /api request to WEB_URL, and the API only
+# trusts that origin. Left unset, the first sign-in works (no cookie, so the
+# origin is never checked) and every later one fails with "Invalid origin".
+# A warning for now: existing installs without it still mostly work, and
+# refusing to start would take them down on their next update.
+if [ -z "${WEB_URL}" ]; then
+  echo "WARNING: WEB_URL is not set. Sign-in will fail with \"Invalid origin\" after the first login."
+  echo "WARNING: Set it to the public URL users open Atrium at, e.g. WEB_URL=https://atrium.example.com"
+  echo "WARNING: (or http://<host>:<port> when accessing without a domain). See docs/docker.md."
+fi
+
 PG_RUNNING=false
 
 # Start built-in PostgreSQL if no external DATABASE_URL is provided
@@ -23,8 +34,10 @@ if [ "${USE_BUILT_IN_DB}" = "true" ] || [ -z "${DATABASE_URL}" ]; then
 
     # Start temporarily to create database and set password
     "$PG_BIN/pg_ctl" -D "$PGDATA" -w start -o "-k /tmp" >/dev/null 2>&1
-    "$PG_BIN/psql" -U "$DB_USER" -h /tmp -c "ALTER USER $DB_USER PASSWORD '$DB_PASS';" >/dev/null 2>&1
-    "$PG_BIN/psql" -U "$DB_USER" -h /tmp -c "CREATE DATABASE $DB_NAME;" >/dev/null 2>&1 || true
+    # -d postgres: psql otherwise picks a database named after the user, which
+    # does not exist yet, and under `set -e` that failure stops the container.
+    "$PG_BIN/psql" -U "$DB_USER" -h /tmp -d postgres -c "ALTER USER $DB_USER PASSWORD '$DB_PASS';" >/dev/null 2>&1
+    "$PG_BIN/psql" -U "$DB_USER" -h /tmp -d postgres -c "CREATE DATABASE $DB_NAME;" >/dev/null 2>&1 || true
     "$PG_BIN/pg_ctl" -D "$PGDATA" -w stop >/dev/null 2>&1
   fi
 

@@ -4,7 +4,8 @@ Atrium ships as a single Docker image (`vibralabs/atrium`) that bundles the API,
 
 ## Quick Start
 
-The only required variable is `BETTER_AUTH_SECRET`:
+Two variables are required: `BETTER_AUTH_SECRET`, and `WEB_URL` set to the
+address people will open Atrium at:
 
 ```bash
 docker run -d \
@@ -13,6 +14,7 @@ docker run -d \
   -v atrium-db:/var/lib/postgresql/data \
   -v atrium-uploads:/app/uploads \
   -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
+  -e WEB_URL=http://localhost:8080 \
   vibralabs/atrium:latest
 ```
 
@@ -28,6 +30,7 @@ services:
       - "8080:8080"
     environment:
       BETTER_AUTH_SECRET: "change-me-to-a-random-string-at-least-32-chars"
+      WEB_URL: "http://localhost:8080"
     volumes:
       - atrium-db:/var/lib/postgresql/data
       - atrium-uploads:/app/uploads
@@ -50,6 +53,7 @@ docker run -d \
   -e USE_BUILT_IN_DB=false \
   -e DATABASE_URL=postgresql://user:password@your-db-host:5432/atrium \
   -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
+  -e WEB_URL=http://localhost:8080 \
   vibralabs/atrium:latest
 ```
 
@@ -65,6 +69,7 @@ services:
       USE_BUILT_IN_DB: "false"
       DATABASE_URL: "postgresql://user:password@your-db-host:5432/atrium"
       BETTER_AUTH_SECRET: "change-me-to-a-random-string-at-least-32-chars"
+      WEB_URL: "http://localhost:8080"
     volumes:
       - atrium-uploads:/app/uploads
     restart: unless-stopped
@@ -75,11 +80,30 @@ volumes:
 
 The database schema is automatically applied on startup. To skip this (e.g. when using a connection pooler like PgBouncer), set `SKIP_DB_PUSH=true` and provide a `DIRECT_URL` pointing to the non-pooled connection.
 
+## Behind a reverse proxy
+
+Coolify, Cloudflare Tunnel, Nginx Proxy Manager, Traefik and similar all work the
+same way: point them at port 8080 and set `WEB_URL` to the public address, with
+its scheme and without a trailing slash:
+
+```
+WEB_URL=https://atrium.example.com
+```
+
+The container logs a warning at startup when it is missing. It matters because
+Caddy inside the image rewrites the `Origin` of every API request to `WEB_URL`,
+and the API only trusts that origin. A mismatch does not show up on the first sign-in (no cookie, so
+the origin is never checked) but every later one fails with "Invalid origin".
+
+Nothing else is needed: `API_URL` is derived, and Atrium does not read
+`TRUSTED_PROXY_HEADERS`.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `BETTER_AUTH_SECRET` | Yes | -- | Random string (min 32 chars) for signing auth tokens |
+| `WEB_URL` | Yes | -- | The public URL users open Atrium at, e.g. `https://atrium.example.com`. Sign-in fails with "Invalid origin" on the second login when this does not match. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
 | `USE_BUILT_IN_DB` | No | `true` | Set to `false` to use an external database |
 | `DATABASE_URL` | No | auto-generated | PostgreSQL connection string (required when built-in DB is disabled) |
 | `STORAGE_PROVIDER` | No | `local` | File storage backend: `local`, `s3`, `minio`, or `r2` |

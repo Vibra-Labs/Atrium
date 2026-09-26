@@ -1870,4 +1870,74 @@ describe("DocumentsService", () => {
       expect(result[0]!.isActive).toBe(false);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // generateCertificate()
+  // -------------------------------------------------------------------------
+
+  describe("generateCertificate()", () => {
+    it("refuses a client who is not assigned to the document's project", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({ status: "signed" })));
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+
+      await expect(
+        service.generateCertificate(DOC_ID, CLIENT_USER, ORG, "member"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockPrisma.projectClient.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ projectId: PROJECT_ID, userId: CLIENT_USER }) }),
+      );
+    });
+
+    it("checks access before revealing whether the document is signed", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({ status: "draft" })));
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+
+      await expect(
+        service.generateCertificate(DOC_ID, CLIENT_USER, ORG, "member"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("lets an assigned client and an admin through to the signed-status check", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({ status: "draft" })));
+      mockPrisma.projectClient.findFirst.mockReturnValue(
+        Promise.resolve({ projectId: PROJECT_ID, userId: CLIENT_USER }),
+      );
+      await expect(
+        service.generateCertificate(DOC_ID, CLIENT_USER, ORG, "member"),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+      await expect(
+        service.generateCertificate(DOC_ID, ADMIN_USER, ORG, "admin"),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // trackView()
+  // -------------------------------------------------------------------------
+
+  describe("trackView()", () => {
+    it("refuses a client who is not assigned to the document's project and logs nothing", async () => {
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+
+      await expect(
+        service.trackView(DOC_ID, CLIENT_USER, ORG, "member"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+    });
+
+    it("logs the first view for an assigned client", async () => {
+      mockPrisma.projectClient.findFirst.mockReturnValue(
+        Promise.resolve({ projectId: PROJECT_ID, userId: CLIENT_USER }),
+      );
+      mockPrisma.documentAuditEvent.findFirst.mockReturnValue(Promise.resolve(null));
+
+      await service.trackView(DOC_ID, CLIENT_USER, ORG, "member", "1.2.3.4", "ua");
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(DOC_ID, "viewed", {
+        userId: CLIENT_USER, ipAddress: "1.2.3.4", userAgent: "ua",
+      });
+    });
+  });
 });

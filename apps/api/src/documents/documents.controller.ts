@@ -109,12 +109,14 @@ export class DocumentsController {
     @Param("id") id: string,
     @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
+    @CurrentMember("role") role: string,
     @Req() req: Request,
   ) {
     return this.documentsService.trackView(
       id,
       userId,
       orgId,
+      role,
       req.ip,
       req.headers["user-agent"],
     );
@@ -190,10 +192,12 @@ export class DocumentsController {
   @Get(":id/certificate")
   async getCertificate(
     @Param("id") id: string,
+    @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
+    @CurrentMember("role") role: string,
     @Res() res: Response,
   ) {
-    const { buffer, filename } = await this.documentsService.generateCertificate(id, orgId);
+    const { buffer, filename } = await this.documentsService.generateCertificate(id, userId, orgId, role);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", contentDisposition(filename, "attachment"));
     res.end(buffer);
@@ -362,7 +366,7 @@ export class DocumentsController {
   ) {
     const { userId, document } = await this.documentsService.validateAccessToken(token);
     // Track view for token-based access
-    this.documentsService.trackView(document.id, userId, document.organizationId).catch(() => {});
+    this.documentsService.trackView(document.id, userId, document.organizationId, "member").catch(() => {});
     return this.documentsService.getSigningInfo(document.id, userId, document.organizationId, "member");
   }
 

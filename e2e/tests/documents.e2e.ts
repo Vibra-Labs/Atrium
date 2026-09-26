@@ -1,7 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import type { Browser, BrowserContext, Page } from "@playwright/test";
+import { getCsrfToken, getCsrfTokenFromContext } from "./helpers";
 
 const API = "http://localhost:3001/api";
+const API_URL = "http://localhost:3001";
+const WEB_URL = "http://localhost:3000";
 
 /** Build a multipart/form-data body for document creation. */
 function buildDocumentMultipart(
@@ -1146,5 +1149,110 @@ test.describe("Documents", () => {
         }
       }
     });
+  });
+});
+
+test.describe("Document access for portal clients", () => {
+  function uniq(prefix: string): string {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  /** A signed-in context with a CSRF cookie ready for mutating calls. */
+  async function freshContext(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    return { context, page: await context.newPage() };
+  }
+
+  async function csrf(page: Page): Promise<string> {
+    await page.request.get(`${API}/health`);
+    return getCsrfTokenFromContext(page.context());
+  }
+
+  test("a client not assigned to the project cannot fetch its certificate or add to its audit trail", async ({ browser }) => {
+    test.setTimeout(60_000);
+
+    // Owner with a project and a document in their own workspace.
+    const owner = await freshContext(browser);
+    const signup = await owner.page.request.post(`${API}/onboarding/signup`, {
+      data: { name: "Doc Owner", email: `${uniq("doc-owner")}@test.local`, password: "DocOwner123!", orgName: uniq("Doc Access Org") },
+    });
+    expect(signup.ok(), await signup.text()).toBe(true);
+    const ownerCsrf = await csrf(owner.page);
+
+    const projectRes = await owner.page.request.post(`${API}/projects`, {
+      data: { name: "Private Client Project" },
+      headers: { "x-csrf-token": ownerCsrf },
+    });
+    expect(projectRes.ok(), await projectRes.text()).toBe(true);
+    const projectId: string = (await projectRes.json()).id;
+
+    const { body, boundary } = buildDocumentMultipart(projectId, {
+      type: "contract", title: "Another client's contract", filename: "private.pdf",
+    });
+    const docRes = await owner.page.request.post(`${API}/documents`, {
+      data: body,
+      headers: { "Content-Type": `multipart/form-data; boundary=${boundary}`, "x-csrf-token": ownerCsrf },
+    });
+    expect(docRes.ok(), await docRes.text()).toBe(true);
+    const docId: string = (await docRes.json()).id;
+
+    // A portal client in the same workspace, not assigned to that project.
+    const clientEmail = `${uniq("doc-client")}@test.local`;
+    const invite = await owner.page.request.post(`${API_URL}/api/auth/organization/invite-member`, {
+      data: { email: clientEmail, role: "member" },
+      headers: { Origin: WEB_URL },
+    });
+    expect(invite.ok(), await invite.text()).toBe(true);
+    const inviteBody = await invite.json();
+    const invitationId: string = inviteBody?.id || inviteBody?.invitation?.id || inviteBody?.data?.id;
+
+    const client = await freshContext(browser);
+    try {
+      const clientSignup = await client.page.request.post(`${API_URL}/api/auth/sign-up/email`, {
+        data: { name: "Doc Client", email: clientEmail, password: "DocClient123!" },
+        headers: { Origin: WEB_URL },
+      });
+      expect(clientSignup.ok(), await clientSignup.text()).toBe(true);
+      const accept = await client.page.request.post(`${API_URL}/api/auth/organization/accept-invitation`, {
+        data: { invitationId },
+        headers: { Origin: WEB_URL },
+      });
+      expect(accept.ok(), await accept.text()).toBe(true);
+      const accepted: { member?: { userId?: string; organizationId?: string } } = await accept.json();
+      // The accept-invite page makes the joined workspace active; do the same.
+      const setActive = await client.page.request.post(`${API_URL}/api/auth/organization/set-active`, {
+        data: { organizationId: accepted.member?.organizationId },
+        headers: { Origin: WEB_URL },
+      });
+      expect(setActive.ok(), await setActive.text()).toBe(true);
+      const clientCsrf = await csrf(client.page);
+
+      const cert = await client.page.request.get(`${API}/documents/${docId}/certificate`);
+      expect(cert.status()).toBe(403);
+      const view = await client.page.request.post(`${API}/documents/${docId}/track-view`, {
+        headers: { "x-csrf-token": clientCsrf },
+      });
+      expect(view.status()).toBe(403);
+
+      // Once assigned, the same client gets through the access check: the
+      // certificate is refused only because the document is not signed.
+      const clientUserId: string = accepted.member?.userId ?? "";
+      expect(clientUserId).toBeTruthy();
+      const assign = await owner.page.request.put(`${API}/projects/${projectId}`, {
+        data: { clientUserIds: [clientUserId] },
+        headers: { "x-csrf-token": ownerCsrf },
+      });
+      expect(assign.ok(), await assign.text()).toBe(true);
+
+      const certAssigned = await client.page.request.get(`${API}/documents/${docId}/certificate`);
+      expect(certAssigned.status()).toBe(400);
+      const viewAssigned = await client.page.request.post(`${API}/documents/${docId}/track-view`, {
+        headers: { "x-csrf-token": clientCsrf },
+      });
+      expect(viewAssigned.status()).toBe(201);
+    } finally {
+      await client.context.close();
+      await owner.context.close();
+    }
   });
 });

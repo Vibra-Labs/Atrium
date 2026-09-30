@@ -47,13 +47,13 @@ Make the portal the primary channel between agency and client.
 
 Turn the portal into the system of record for client work.
 
-- [ ] **Contracts & proposals** -- Generate, send, and manage agreements
-- [ ] **E-signatures** -- Sign off on contracts and deliverables
-- [ ] **Client approval workflows** -- Clients can approve/reject deliverables and milestones
-- [ ] **Calendar view** -- Visualize project timelines, tasks, and deadlines
-- [ ] **Time tracking** -- Log hours against projects and tasks
-- [x] **Data export** -- CSV/PDF export for projects, invoices, and client data
-- [ ] **Global search** -- Full-text search across projects, files, tasks, clients, and messages
+- [x] **Contracts - [ ] **Contracts & proposals** proposals** -- Generate, send, and manage agreements
+- [x] **E-signatures** -- Sign off on contracts and deliverables
+- [x] **Client approval workflows** -- Clients can approve/reject deliverables and milestones
+- [x] **Calendar view** -- Visualize project timelines, tasks, and deadlines
+- [x] **Time tracking** -- Log hours against projects and tasks
+- [x] **Data export** -- CSV export for projects, invoices, people, and tasks
+- [x] **Global search** -- Full-text search across projects, files, tasks, clients, and messages
 
 ### v1.5 -- Security & Intelligence (May 2026)
 
@@ -62,7 +62,7 @@ Enterprise auth, automation, and analytics.
 - [ ] **SAML/SSO** -- Enterprise single sign-on for teams and clients
 - [ ] **2FA/MFA** -- TOTP and passkey support via Better Auth plugins
 - [ ] **Granular permissions** -- Per-project and per-section access control beyond owner/admin/member roles
-- [ ] **Activity / audit log** -- Track who did what and when across the organization
+- [x] **Activity log** -- Records document responses and decision votes (org-wide audit log still planned)
 - [ ] **Workflow automations** -- Trigger-action engine for automated task assignment, notifications, and status changes
 - [ ] **Reporting & analytics** -- Revenue trends, project metrics, client activity, and invoice aging dashboards
 - [ ] **Webhooks / Zapier integration** -- Notify external systems of portal events
@@ -73,8 +73,8 @@ Enterprise auth, automation, and analytics.
 
 Transform from portal to platform.
 
-- [ ] **Custom domains** -- Serve the client portal on your own domain (reverse proxy supported today)
-- [ ] **Content embedding** -- Embed Figma, Google Docs, Loom, and other external content in project pages
+- [x] **Custom domains** -- Serve the client portal on your own domain (reverse proxy supported today)
+- [x] **Content embedding** -- Embed Figma, Google Docs, Loom, and other external content in project pages
 - [ ] **Dashboard customization** -- Drag-and-drop widgets to personalize admin and client dashboards
 - [ ] **Embeddable widgets** -- JavaScript snippets for forms, status badges, and file uploads on external sites
 - [ ] **PWA / mobile app** -- Installable progressive web app for on-the-go access

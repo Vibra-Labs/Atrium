@@ -8,6 +8,7 @@ import { Reflector } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import { PLAN_LIMIT_KEY, PlanLimitResource } from "../decorators/plan-limit.decorator";
 import { BillingService } from "../../billing/billing.service";
+import { planLimitMessage } from "../helpers/plan-limit";
 
 @Injectable()
 export class PlanGuard implements CanActivate {
@@ -43,42 +44,8 @@ export class PlanGuard implements CanActivate {
     // No subscription record → pass through (shouldn't happen if billing initialized)
     if (!subscription) return true;
 
-    const plan = subscription.plan;
-    let limit: number;
-    let current: number;
-    let label: string;
-
-    switch (resource) {
-      case "projects":
-        limit = plan.maxProjects;
-        current = usage.projects;
-        label = "projects";
-        break;
-      case "storage":
-        limit = plan.maxStorageMb;
-        current = usage.storageMb;
-        label = "storage (MB)";
-        break;
-      case "members":
-        limit = plan.maxMembers;
-        current = usage.members;
-        label = "team members";
-        break;
-      case "clients":
-        limit = plan.maxClients;
-        current = usage.clients;
-        label = "clients";
-        break;
-    }
-
-    // -1 means unlimited
-    if (limit === -1) return true;
-
-    if (current >= limit) {
-      throw new ForbiddenException(
-        `You've reached the ${label} limit (${current}/${limit}) on your ${plan.name} plan. Please upgrade to continue.`,
-      );
-    }
+    const message: string | null = planLimitMessage(subscription.plan, usage, resource);
+    if (message) throw new ForbiddenException(message);
 
     return true;
   }

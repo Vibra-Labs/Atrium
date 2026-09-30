@@ -2,11 +2,14 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { StripeService } from "./stripe.service";
+import { planLimitMessage } from "../common/helpers/plan-limit";
+import type { PlanLimitResource } from "../common/decorators/plan-limit.decorator";
 import type Stripe from "stripe";
 
 @Injectable()
@@ -69,6 +72,20 @@ export class BillingService {
       members: memberCount,
       clients: clientCount,
     };
+  }
+
+  /** Same rule PlanGuard enforces on REST routes, for callers that are not HTTP handlers (MCP tools). */
+  async assertPlanLimit(orgId: string, resource: PlanLimitResource): Promise<void> {
+    if (this.config.get("BILLING_ENABLED", "false") !== "true") return;
+
+    const [subscription, usage] = await Promise.all([
+      this.getSubscription(orgId),
+      this.getUsage(orgId),
+    ]);
+    if (!subscription) return;
+
+    const message: string | null = planLimitMessage(subscription.plan, usage, resource);
+    if (message) throw new ForbiddenException(message);
   }
 
   async initializeFreePlan(orgId: string) {

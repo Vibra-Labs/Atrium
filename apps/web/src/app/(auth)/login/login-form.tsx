@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { setActiveOrgAndRedirect } from "@/lib/api";
 import { track } from "@/lib/track";
+import { oauthResumeUrl } from "@/lib/oauth-resume";
+import { postAuth } from "@/lib/auth-fetch";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -27,26 +29,17 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
     setError("");
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/sign-in/email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "include",
-      });
+      const resumeUrl: string | null = oauthResumeUrl(window.location.search, API_URL);
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "Invalid credentials");
-      }
-
-      await res.json();
+      const result = await postAuth("/sign-in/email", { email, password });
+      if (!result.ok) throw new Error(result.message || "Invalid credentials");
 
       // Without a success counterpart, login_failed is uninterpretable: there
       // is no denominator to compute a success rate from.
-      track("login_succeeded", { branded: Boolean(orgName) });
+      track("login_succeeded", { branded: Boolean(orgName), oauth: Boolean(resumeUrl) });
 
       setRedirecting(true);
-      window.location.href = await setActiveOrgAndRedirect("/portal/projects");
+      window.location.href = resumeUrl ?? (await setActiveOrgAndRedirect("/portal/projects"));
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Login failed";
       track("login_failed", { reason, branded: Boolean(orgName) });

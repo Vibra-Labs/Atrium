@@ -41,10 +41,29 @@ export interface FullOrganization {
   members?: OrgMember[];
 }
 
+/** How a bearer-authenticated request proved its identity. */
+export type BearerKind = "apiKey" | "oauth";
+
 export interface AuthenticatedRequest extends Request {
   user: AuthUser;
   session: AuthSession;
   organization: FullOrganization;
   member: OrgMember;
   previewMode?: boolean;
+  apiKeyId?: string;
+  /**
+   * Set only when SessionMiddleware derived this request's identity from an
+   * `Authorization: Bearer` token. Absent for cookie sessions, which is how
+   * `/api/mcp` — public and CSRF-exempt — tells the two apart.
+   */
+  bearerKind?: BearerKind;
+  /** Set when SessionMiddleware refused to look up a bearer key: too many failures from this IP. */
+  authRateLimited?: boolean;
+}
+
+/** The identity a request or MCP tool call acts as. */
+export interface Actor {
+  user: AuthUser;
+  organization: FullOrganization;
+  member: OrgMember;
 }

@@ -16,6 +16,12 @@ export { sanitizeFilename, contentDisposition } from "./utils/sanitize";
 export { toCsv } from "./utils/csv";
 export type { CsvColumn } from "./utils/csv";
 export { assertProjectAccess } from "./helpers/assert-project-access";
+export { RateLimiter } from "./helpers/rate-limiter";
+export { isPublicOAuthPath } from "./helpers/public-oauth-cors";
+export { isMcpPath } from "./helpers/mcp-path";
+export { bearerToken } from "./helpers/bearer-token";
+export { MCP_ACTOR_ROLES } from "./helpers/mcp-actor-roles";
+export { revokeCredentialsIfDemoted, revokeMemberCredentials } from "./helpers/member-credentials";
 export { BLOCKED_EXTENSIONS } from "./utils/blocked-extensions";
 export type {
   AuthUser,
@@ -23,4 +29,6 @@ export type {
   OrgMember,
   FullOrganization,
   AuthenticatedRequest,
+  BearerKind,
+  Actor,
 } from "./types/authenticated-request";

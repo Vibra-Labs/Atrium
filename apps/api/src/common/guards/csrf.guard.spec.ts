@@ -13,9 +13,16 @@ function createMockContext(
   cookies: Record<string, string> = {},
   headers: Record<string, string> = {},
   url = "/api/projects",
-): { context: ExecutionContext; response: { cookie: () => void } } {
+): {
+  context: ExecutionContext;
+  response: { cookie: (name: string) => void };
+  cookieNames: string[];
+} {
+  const cookieNames: string[] = [];
   const response = {
-    cookie: () => {},
+    cookie: (name: string) => {
+      cookieNames.push(name);
+    },
   };
   const request = {
     method,
@@ -33,7 +40,7 @@ function createMockContext(
     getClass: () => ({}),
   } as unknown as ExecutionContext;
 
-  return { context, response };
+  return { context, response, cookieNames };
 }
 
 describe("CsrfGuard", () => {
@@ -418,6 +425,156 @@ describe("CsrfGuard", () => {
   });
 
   // --- Secure cookie variant ---
+
+  // --- Non-browser clients never receive the CSRF cookie (I1) ---
+
+  it("does not set the csrf cookie on auth proxy routes", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "POST",
+      {},
+      {},
+      "/api/auth/mcp/register",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual([]);
+  });
+
+  it("does not set the csrf cookie on the MCP endpoint", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext("POST", {}, {}, "/api/mcp");
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual([]);
+  });
+
+  it("does not set the csrf cookie on the MCP endpoint with a query string", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext("POST", {}, {}, "/api/mcp?x=1");
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual([]);
+  });
+
+  it("does not set the csrf cookie on the MCP endpoint with a trailing slash", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const slash = createMockContext("POST", {}, {}, "/api/mcp/");
+    expect(guard.canActivate(slash.context)).toBe(true);
+    expect(slash.cookieNames).toEqual([]);
+
+    const slashQuery = createMockContext("POST", {}, {}, "/api/mcp/?x=1");
+    expect(guard.canActivate(slashQuery.context)).toBe(true);
+    expect(slashQuery.cookieNames).toEqual([]);
+  });
+
+  it("does not set the csrf cookie for a lowercase bearer scheme", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "GET",
+      {},
+      { authorization: "bearer abc123" },
+      "/api/projects",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual([]);
+  });
+
+  it("still sets the csrf cookie when the bearer scheme carries no token", () => {
+    // SessionMiddleware trims this to nothing and authenticates no one, so the
+    // guard must not treat it as a bearer client either.
+    const guard = new CsrfGuard(new Reflector());
+    for (const authorization of ["Bearer   ", "Bearer", "bearer "]) {
+      const { context, cookieNames } = createMockContext(
+        "GET",
+        {},
+        { authorization },
+        "/api/projects",
+      );
+      expect(guard.canActivate(context)).toBe(true);
+      expect(cookieNames).toEqual(["csrf-token"]);
+    }
+  });
+
+  it("still sets the csrf cookie for a non-bearer Authorization header", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "GET",
+      {},
+      { authorization: "Basic abc123" },
+      "/api/projects",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual(["csrf-token"]);
+  });
+
+  it("does not set the csrf cookie on discovery documents", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "GET",
+      {},
+      {},
+      "/.well-known/oauth-protected-resource",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual([]);
+  });
+
+  it("does not set the csrf cookie for a bearer-token client with no session", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "GET",
+      {},
+      { authorization: "Bearer abc123" },
+      "/api/projects",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual([]);
+  });
+
+  it("still sets the csrf cookie for a bearer request that also carries a session cookie", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext(
+      "GET",
+      { ...SESSION_COOKIES },
+      { authorization: "Bearer abc123" },
+      "/api/projects",
+    );
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual(["csrf-token"]);
+  });
+
+  it("still sets the csrf cookie for a cookie-less browser GET", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const { context, cookieNames } = createMockContext("GET", {}, {}, "/api/projects");
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(cookieNames).toEqual(["csrf-token"]);
+  });
+
+  it("does not exempt prefix look-alikes of the MCP endpoint", () => {
+    const guard = new CsrfGuard(new Reflector());
+    const grants = createMockContext("GET", {}, {}, "/api/mcp-grants");
+    expect(guard.canActivate(grants.context)).toBe(true);
+    expect(grants.cookieNames).toEqual(["csrf-token"]);
+
+    const mcpx = createMockContext("GET", {}, {}, "/api/mcpx");
+    expect(guard.canActivate(mcpx.context)).toBe(true);
+    expect(mcpx.cookieNames).toEqual(["csrf-token"]);
+
+    const sub = createMockContext("GET", {}, {}, "/api/mcp/extra");
+    expect(guard.canActivate(sub.context)).toBe(true);
+    expect(sub.cookieNames).toEqual(["csrf-token"]);
+
+    const doubled = createMockContext("GET", {}, {}, "/api/mcp//");
+    expect(guard.canActivate(doubled.context)).toBe(true);
+    expect(doubled.cookieNames).toEqual(["csrf-token"]);
+  });
 
   it("skips CSRF for POST when __Secure- session cookie exists but no CSRF token", () => {
     const reflector = new Reflector();

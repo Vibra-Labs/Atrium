@@ -72,6 +72,9 @@ if (isProduction) {
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { ValidationPipe } from "@nestjs/common";
+import type { CorsOptionsDelegate } from "@nestjs/common/interfaces/external/cors-options.interface";
+import type { Request } from "express";
+import { isPublicOAuthPath } from "./common/helpers/public-oauth-cors";
 import { Logger } from "nestjs-pino";
 import cookieParser from "cookie-parser";
 import compression from "compression";
@@ -111,10 +114,22 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors({
-    origin: process.env.WEB_URL || "http://localhost:3000",
-    credentials: true,
-  });
+  // CORS is decided per route. The public OAuth surface (dynamic client
+  // registration, the token endpoint and the discovery documents) must be
+  // reachable by browser-based MCP clients on any origin, so it answers with
+  // a wildcard and no credentials. Everything else stays first-party only:
+  // the single web origin, with credentials. Preflights are answered by this
+  // middleware before routing, which is why the decision lives here and not
+  // in the controllers.
+  const webOrigin: string = process.env.WEB_URL || "http://localhost:3000";
+  const corsDelegate: CorsOptionsDelegate<Request> = (req, callback) => {
+    if (isPublicOAuthPath(req.originalUrl || req.url || "")) {
+      callback(null, { origin: "*", credentials: false });
+      return;
+    }
+    callback(null, { origin: webOrigin, credentials: true });
+  };
+  app.enableCors(corsDelegate);
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -124,7 +139,15 @@ async function bootstrap() {
     }),
   );
 
-  app.setGlobalPrefix("api");
+  // OAuth discovery documents must live at the origin root, not under /api.
+  app.setGlobalPrefix("api", {
+    exclude: [
+      ".well-known/oauth-authorization-server",
+      ".well-known/oauth-authorization-server/api/auth",
+      ".well-known/oauth-protected-resource",
+      ".well-known/oauth-protected-resource/api/mcp",
+    ],
+  });
 
   const port = process.env.PORT || 3001;
   await app.listen(port);

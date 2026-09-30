@@ -29,6 +29,9 @@ import { PaymentsModule } from "./payments/payments.module";
 import { EmbedsModule } from "./embeds/embeds.module";
 import { TimeEntriesModule } from "./time-entries/time-entries.module";
 import { CalendarModule } from "./calendar/calendar.module";
+import { ApiKeysModule } from "./api-keys/api-keys.module";
+import { McpModule } from "./mcp/mcp.module";
+import { McpAuthModule } from "./mcp-auth/mcp-auth.module";
 import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
 import { PreviewModeMiddleware } from "./auth/preview-mode.middleware";
@@ -87,6 +90,9 @@ import { PlanGuard } from "./common/guards/plan.guard";
     EmbedsModule,
     TimeEntriesModule,
     CalendarModule,
+    ApiKeysModule,
+    McpModule,
+    McpAuthModule,
   ],
   controllers: [HealthController],
   providers: [

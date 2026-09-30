@@ -32,7 +32,11 @@ const nextConfig: NextConfig = {
               "https://open.spotify.com " +
               "https://w.soundcloud.com https://soundcloud.com " +
               "https://codepen.io " +
-              "https://player.vimeo.com;",
+              "https://player.vimeo.com; " +
+              // The OAuth consent screen must not be frameable: clickjacking it
+              // would let a page harvest an Allow click. Today only SameSite
+              // stands in the way.
+              "frame-ancestors 'self';",
           },
         ],
       },

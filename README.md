@@ -34,6 +34,7 @@ Most agencies juggle shared drives, spreadsheets, and scattered emails to keep c
 - **Authentication** -- Magic link and email/password auth via Better Auth
 - **Multi-tenant** -- Each agency operates as its own isolated organization
 - **Optional telemetry** -- Self-hosters can opt in to share anonymous crash reports to help improve Atrium (see [Telemetry](docs/telemetry.md))
+- **MCP server** -- connect Claude, ChatGPT-style agents, or local models to manage projects, tasks, and updates; connect by signing in or with an API key ([docs](docs/mcp.md))
 
 ## Tech Stack
 

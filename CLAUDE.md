@@ -48,6 +48,9 @@ The API uses `nest start --watch` for hot reload. The web app uses Next.js dev s
 - **Updates**: `updates/` -- Project progress updates with image attachments
 - **Onboarding**: `onboarding/` -- Signup endpoint
 - **Mail**: `mail/` -- Resend integration with React Email templates
+- **API keys**: `api-keys/` -- `atr_` bearer keys (hashed), resolved in `SessionMiddleware` into the same `req.user/organization/member` as cookie sessions
+- **MCP**: `mcp/` -- stateless MCP server at `POST /api/mcp`; tools in `mcp/tools/*.tools.ts` are thin adapters over existing services. The controller is `@Public()` and checks identity itself
+- **MCP auth**: `mcp-auth/` -- OAuth tokens (Better Auth `mcp` plugin) → workspace-bound actor via `McpGrant`; honoured only on `/api/mcp`. Kept out of `mcp/` to avoid a module cycle with `AuthModule`
 - **Health**: `health.controller.ts` -- DB connectivity check
 
 Global middleware/guards applied in `app.module.ts` and `main.ts`:

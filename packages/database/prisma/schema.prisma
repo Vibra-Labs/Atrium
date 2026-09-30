@@ -28,6 +28,12 @@ model User {
   tasksRequested     Task[]              @relation("TaskRequester")
   tasksAssigned      Task[]              @relation("TaskAssignee")
   timeEntries        TimeEntry[]
+  apiKeys            ApiKey[]
+  oauthApplications  OauthApplication[]
+  oauthAccessTokens  OauthAccessToken[]
+  oauthConsents      OauthConsent[]
+  mcpGrants          McpGrant[]
+  mcpPendingGrants   McpPendingGrant[]
 
   @@map("user")
 }
@@ -90,12 +96,15 @@ model Organization {
   metadata       String?
   setupCompleted Boolean  @default(false)
 
-  members        Member[]
-  invitations    Invitation[]
-  systemSettings SystemSettings?
-  subscription   Subscription?
-  labels         Label[]
-  timeEntries    TimeEntry[]
+  members          Member[]
+  invitations      Invitation[]
+  systemSettings   SystemSettings?
+  subscription     Subscription?
+  labels           Label[]
+  timeEntries      TimeEntry[]
+  apiKeys          ApiKey[]
+  mcpGrants        McpGrant[]
+  mcpPendingGrants McpPendingGrant[]
 
   @@map("organization")
 }
@@ -110,6 +119,8 @@ model Member {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   labels       MemberLabel[]
+  apiKeys      ApiKey[]
+  mcpGrants    McpGrant[]
 
   hourlyRateCents Int?
 
@@ -131,6 +142,132 @@ model Invitation {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("invitation")
+}
+
+model ApiKey {
+  id             String    @id @default(cuid())
+  name           String
+  keyHash        String    @unique
+  keyPrefix      String
+  userId         String
+  organizationId String
+  /// The membership the key was issued under. Removing the member (by any
+  /// route, including Better Auth's own endpoints) deletes the key, and a user
+  /// who is later re-added gets a new member row, so old keys never revive.
+  memberId       String
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([memberId])
+  @@map("api_key")
+}
+
+// ─── OAuth provider (Better Auth mcp plugin) ───
+// Field names are dictated by better-auth/dist/plugins/oidc-provider/schema.mjs.
+
+model OauthApplication {
+  id           String   @id
+  name         String
+  icon         String?
+  metadata     String?
+  clientId     String   @unique
+  clientSecret String?
+  redirectUrls String
+  type         String
+  disabled     Boolean? @default(false)
+  userId       String?
+  createdAt    DateTime
+  updatedAt    DateTime
+
+  user         User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokens OauthAccessToken[]
+  consents     OauthConsent[]
+
+  @@index([userId])
+  @@map("oauth_application")
+}
+
+model OauthAccessToken {
+  id                    String   @id
+  accessToken           String   @unique
+  refreshToken          String   @unique
+  accessTokenExpiresAt  DateTime
+  refreshTokenExpiresAt DateTime
+  clientId              String
+  userId                String?
+  scopes                String
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  application OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user        User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([userId])
+  @@map("oauth_access_token")
+}
+
+model OauthConsent {
+  id           String   @id
+  clientId     String
+  userId       String
+  scopes       String
+  createdAt    DateTime
+  updatedAt    DateTime
+  consentGiven Boolean
+
+  application OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([userId])
+  @@map("oauth_consent")
+}
+
+/// Which workspace an OAuth client acts in for a given user. Chosen on the consent screen.
+model McpGrant {
+  id             String   @id @default(cuid())
+  userId         String
+  clientId       String
+  organizationId String
+  /// Same pinning as ApiKey.memberId.
+  memberId       String
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@index([organizationId])
+  @@index([memberId])
+  @@map("mcp_grant")
+}
+
+/// A workspace choice the consent screen has recorded but Better Auth has not
+/// yet confirmed. Promoted to an McpGrant only when /oauth2/consent succeeds,
+/// so abandoning the consent page leaves an existing connection untouched.
+model McpPendingGrant {
+  consentCode    String   @id
+  userId         String
+  clientId       String
+  organizationId String
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("mcp_pending_grant")
 }
 
 // ─── Application tables ───

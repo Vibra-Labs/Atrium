@@ -31,6 +31,12 @@ const mockPrisma = {
   projectClient: {
     deleteMany: mock(() => Promise.resolve({ count: 0 })),
   },
+  apiKey: {
+    updateMany: mock(() => Promise.resolve({ count: 0 })),
+  },
+  mcpGrant: {
+    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+  },
   $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
@@ -277,6 +283,34 @@ describe("ClientsService", () => {
         expect(e).toBeInstanceOf(BadRequestException);
         expect((e as BadRequestException).message).toBe("Invalid role");
       }
+    });
+
+    it("revokes API keys and MCP grants when demoting to member, in one transaction", async () => {
+      const admin = makeMember({ id: "member-1", userId: "user-target", role: "admin" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(admin));
+      mockPrisma.$transaction.mockClear();
+      mockPrisma.apiKey.updateMany.mockClear();
+      mockPrisma.mcpGrant.deleteMany.mockClear();
+
+      await service.changeRole("member-1", "member", "org-1", "user-requester");
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.apiKey.updateMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.mcpGrant.deleteMany).toHaveBeenCalledWith({
+        where: { memberId: "member-1" },
+      });
+    });
+
+    it("keeps API keys and MCP grants when the new role can still use them", async () => {
+      const member = makeMember({ id: "member-1", userId: "user-target", role: "member" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockPrisma.apiKey.updateMany.mockClear();
+      mockPrisma.mcpGrant.deleteMany.mockClear();
+
+      await service.changeRole("member-1", "admin", "org-1", "user-requester");
+
+      expect(mockPrisma.apiKey.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.mcpGrant.deleteMany).not.toHaveBeenCalled();
     });
 
     it("successfully promotes a member to admin", async () => {

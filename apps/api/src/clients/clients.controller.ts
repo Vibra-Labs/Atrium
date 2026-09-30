@@ -21,7 +21,6 @@ import {
   CurrentUser,
   CurrentMember,
   PaginationQueryDto,
-  paginatedResponse,
   contentDisposition,
   toCsv,
 } from "../common";
@@ -45,39 +44,7 @@ export class ClientsController {
     @CurrentOrg("id") orgId: string,
     @Query() query: PaginationQueryDto,
   ) {
-    const { page = 1, limit = 20 } = query;
-    const where = { organizationId: orgId };
-    const [data, total] = await Promise.all([
-      this.prisma.member.findMany({
-        where,
-        select: {
-          id: true,
-          userId: true,
-          role: true,
-          createdAt: true,
-          hourlyRateCents: true,
-          user: { select: { id: true, name: true, email: true } },
-          labels: { select: { label: { select: { id: true, name: true, color: true } } } },
-        },
-        orderBy: { createdAt: "asc" },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.member.count({ where }),
-    ]);
-
-    const userIds = data.map((m) => m.userId);
-    const profiles = await this.prisma.clientProfile.findMany({
-      where: { userId: { in: userIds }, organizationId: orgId },
-    });
-    const profileMap = new Map(profiles.map((p) => [p.userId, p]));
-
-    const enriched = data.map((m) => ({
-      ...m,
-      profile: profileMap.get(m.userId) || null,
-    }));
-
-    return paginatedResponse(enriched, total, page, limit);
+    return this.clientsService.list(orgId, query.page, query.limit);
   }
 
   @Get("export")

@@ -9,5 +9,6 @@ import { UpdatesService } from "./updates.service";
   imports: [FilesModule, NotificationsModule, ActivityModule],
   controllers: [UpdatesController],
   providers: [UpdatesService],
+  exports: [UpdatesService],
 })
 export class UpdatesModule {}

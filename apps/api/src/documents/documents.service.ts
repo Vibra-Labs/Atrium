@@ -185,6 +185,7 @@ export class DocumentsService {
     id: string,
     userId: string,
     orgId: string,
+    role: string,
     ipAddress?: string,
     userAgent?: string,
   ) {
@@ -192,6 +193,10 @@ export class DocumentsService {
       where: { id, organizationId: orgId },
     });
     if (!doc) throw new NotFoundException("Document not found");
+
+    // The audit trail is printed on the signing certificate as evidence, so
+    // only people who can see the document may add to it.
+    await assertProjectAccess(this.prisma, doc.projectId, userId, role);
 
     // Log view event (idempotent check — only log first view per user)
     const existingView = await this.prisma.documentAuditEvent.findFirst({
@@ -1331,7 +1336,7 @@ export class DocumentsService {
 
   // --- Completion Certificate ---
 
-  async generateCertificate(id: string, orgId: string) {
+  async generateCertificate(id: string, userId: string, orgId: string, role: string) {
     const doc = await this.prisma.document.findFirst({
       where: { id, organizationId: orgId },
       include: {
@@ -1342,6 +1347,9 @@ export class DocumentsService {
       },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    // Checked before the status so a client cannot probe other clients'
+    // documents for whether they are signed.
+    await assertProjectAccess(this.prisma, doc.projectId, userId, role);
     if (doc.status !== "signed") {
       throw new BadRequestException("Certificate is only available for fully signed documents");
     }

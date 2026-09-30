@@ -21,3 +21,6 @@ public_empty/
 *.key
 e2e/e2e/
 .worktrees/
+
+# Local planning docs
+docs/superpowers/

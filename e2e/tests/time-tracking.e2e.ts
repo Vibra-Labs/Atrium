@@ -204,8 +204,19 @@ test.describe("Time tracking", () => {
       timeout: 5000,
     });
 
-    // Submit with default (no date filter, billable only)
-    await page.getByRole("button", { name: /generate draft/i }).click();
+    // Clear the month-to-date default so the entry seeded yesterday is
+    // included even when today is the 1st of the month.
+    const generateButton = page.getByRole("button", { name: /generate draft/i });
+    const dateInputs = page
+      .locator("form")
+      .filter({ has: generateButton })
+      .locator('input[type="date"]');
+    await expect(dateInputs).toHaveCount(2);
+    await dateInputs.nth(0).fill("");
+    await dateInputs.nth(1).fill("");
+
+    // Submit with no date filter, billable only
+    await generateButton.click();
 
     // A new invoice (INV-XXXX) should appear in the project's invoices list.
     await expect(page.getByText(/INV-/).first()).toBeVisible({

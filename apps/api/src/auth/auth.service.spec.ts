@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
-import { InternalServerErrorException } from "@nestjs/common";
+import { ForbiddenException, InternalServerErrorException } from "@nestjs/common";
+import { APIError } from "better-auth/api";
 import { AuthService } from "./auth.service";
 import type { ConfigService } from "@nestjs/config";
 import type { PrismaService } from "../prisma/prisma.service";
@@ -39,7 +40,10 @@ const mockPrisma = {
 };
 
 const mockMail = { send: mock(() => Promise.resolve()) };
-const mockBilling = { initializeFreePlan: mock(() => Promise.resolve()) };
+const mockBilling = {
+  initializeFreePlan: mock(() => Promise.resolve()),
+  assertPlanLimit: mock((): Promise<void> => Promise.resolve()),
+};
 
 function makeService(): AuthService {
   return new AuthService(
@@ -491,6 +495,29 @@ describe("AuthService", () => {
 
       expect(a.url).toBe("https://example.test/reset/a@example.com");
       expect(b.url).toBe("https://example.test/reset/b@example.com");
+    });
+  });
+
+  describe("assertInviteWithinPlan", () => {
+    beforeEach(() => mockBilling.assertPlanLimit.mockReset());
+
+    it("checks the clients limit for client invites and the members limit for staff", async () => {
+      mockBilling.assertPlanLimit.mockResolvedValue(undefined);
+      await service.assertInviteWithinPlan("org-1", "member");
+      expect(mockBilling.assertPlanLimit).toHaveBeenCalledWith("org-1", "clients", 0);
+      await service.assertInviteWithinPlan("org-1", "admin");
+      expect(mockBilling.assertPlanLimit).toHaveBeenCalledWith("org-1", "members", 0);
+      // Accepting: the invite itself is still pending, so one seat is reserved out of the count.
+      await service.assertInviteWithinPlan("org-1", "member", 1);
+      expect(mockBilling.assertPlanLimit).toHaveBeenCalledWith("org-1", "clients", 1);
+    });
+
+    it("turns the plan limit into a Better Auth error so the invite route returns 403", async () => {
+      mockBilling.assertPlanLimit.mockRejectedValue(new ForbiddenException("You've reached the clients limit (5/5) on your Free plan. Please upgrade to continue."));
+      const err = await service.assertInviteWithinPlan("org-1", "member").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(APIError);
+      expect((err as APIError).status).toBe("FORBIDDEN");
+      expect((err as APIError).message).toContain("clients limit (5/5)");
     });
   });
 });

@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { usePlanFeatures, useIsTrialing } from "@/lib/plan-features";
+import { ProBadge, UpgradeLink, TrialTag } from "@/components/pro-badge";
 import { ExternalLink, Unlink, Key, ChevronDown } from "lucide-react";
 
 interface PaymentStatus {
@@ -39,6 +41,8 @@ export function PaymentsSection() {
   const [availableMethods, setAvailableMethods] = useState<{ id: string; active: boolean }[]>([]);
   const [showMethods, setShowMethods] = useState(false);
   const { success, error: showError, info } = useToast();
+  const planFeatures = usePlanFeatures();
+  const isTrialing: boolean = useIsTrialing();
   const connectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -179,14 +183,37 @@ export function PaymentsSection() {
     }
   };
 
-  if (loading) {
+  if (loading || !planFeatures) {
     return <div className="h-24 bg-[var(--muted)] rounded-lg animate-pulse" />;
+  }
+
+  // Free plan with nothing connected: online payments are a Pro feature
+  if (!planFeatures.online_payments && !status?.enabled) {
+    return (
+      <div className="p-4 border border-[var(--border)] rounded-lg space-y-2" data-testid="payments-locked">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Let clients pay invoices online</span>
+          <ProBadge />
+        </div>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Connect Stripe so clients can pay by card or bank transfer from the portal.
+        </p>
+        <UpgradeLink reason="online-payments" />
+      </div>
+    );
   }
 
   // ── Connected state (either mode) ──
   if (status?.enabled) {
     return (
       <div className="space-y-3">
+        {isTrialing && <TrialTag />}
+        {!planFeatures.online_payments && (
+          <p className="text-sm text-amber-600" data-testid="payments-paused">
+            Online payments are paused on the Free plan. Clients won&apos;t see a pay button until you upgrade.{" "}
+            <UpgradeLink reason="online-payments" />
+          </p>
+        )}
         <div className="flex items-center gap-2 p-3 border border-[var(--border)] rounded-lg bg-[var(--muted)]">
           <div className="w-2 h-2 rounded-full bg-green-500" />
           <span className="text-sm font-medium">Connected</span>
@@ -333,6 +360,7 @@ export function PaymentsSection() {
   if (status?.mode === "connect") {
     return (
       <div className="space-y-3">
+        {isTrialing && <TrialTag />}
         <p className="text-sm text-[var(--muted-foreground)]">
           Connect your Stripe account to let clients pay invoices directly from the portal.
         </p>
@@ -352,6 +380,7 @@ export function PaymentsSection() {
   // ── Not connected: Direct keys mode ──
   return (
     <div className="space-y-3">
+      {isTrialing && <TrialTag />}
       <p className="text-sm text-[var(--muted-foreground)]">
         Enter your Stripe secret key to let clients pay invoices directly from the portal.
         Your key is stored encrypted and never displayed again.

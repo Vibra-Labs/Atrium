@@ -124,6 +124,13 @@ model Member {
 
   hourlyRateCents Int?
 
+  // Owner/admin emails, each switchable in Account settings:
+  // Friday "send your clients an update" reminder, and the Monday to-do digest.
+  weeklyUpdateReminders Boolean   @default(true)
+  weeklyReminderSentAt  DateTime?
+  mondayDigest          Boolean   @default(true)
+  mondayDigestSentAt    DateTime?
+
   @@index([organizationId])
   @@index([userId])
   @@map("member")
@@ -583,6 +590,7 @@ model SystemSettings {
 
   // General
   setupCompleted Boolean  @default(false)
+  timezone       String?  // IANA name, e.g. "Australia/Sydney"; scheduled emails use it (UTC when unset)
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -777,6 +785,9 @@ model Subscription {
   currentPeriodStart     DateTime?
   currentPeriodEnd       DateTime?
   cancelAtPeriodEnd      Boolean   @default(false)
+  trialEndedAt           DateTime?
+  trialReminderSentAt    DateTime?
+  trialEndedEmailSentAt  DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 

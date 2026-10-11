@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import { useConfirm } from "@/components/confirm-modal";
@@ -17,6 +18,7 @@ import {
   Vote,
   Lock,
   Pencil,
+  Sparkles,
 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
 import { Embeds, type PreviewPrefs } from "@/lib/embeds";
@@ -24,6 +26,11 @@ import { track } from "@/lib/track";
 import { CommentsSection } from "@/components/comments-section";
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+interface WeeklyDraftResponse {
+  content: string;
+  stats: { completedTasks: number; newFiles: number; hoursLogged: number };
+}
 
 interface TimelineEntry {
   id: string;
@@ -112,6 +119,34 @@ export function UpdatesSection({
   const [editSaving, setEditSaving] = useState(false);
 
   const isPrivileged = currentRole === "owner" || currentRole === "admin";
+  const [drafting, setDrafting] = useState(false);
+  const [draftStats, setDraftStats] = useState<WeeklyDraftResponse["stats"] | null>(null);
+  const searchParams = useSearchParams();
+  const openedFromLink = useRef(false);
+
+  const loadWeeklyDraft = useCallback(async (): Promise<void> => {
+    setDrafting(true);
+    try {
+      const draft = await apiFetch<WeeklyDraftResponse>(`/updates/weekly-draft/${projectId}`);
+      setNewContent(draft.content);
+      setDraftStats(draft.stats);
+      track("weekly_update_drafted", { completedTasks: draft.stats.completedTasks, newFiles: draft.stats.newFiles });
+    } catch (err) {
+      console.error("Failed to draft weekly update", err);
+      showError(err instanceof Error ? err.message : "Failed to draft this week's update");
+    } finally {
+      setDrafting(false);
+    }
+  }, [projectId, showError]);
+
+  // ?compose=weekly (from the dashboard's weekly updates card) opens the composer with a draft.
+  useEffect(() => {
+    if (openedFromLink.current || !isPrivileged || isArchived) return;
+    if (searchParams.get("compose") !== "weekly") return;
+    openedFromLink.current = true;
+    setShowCompose(true);
+    void loadWeeklyDraft();
+  }, [searchParams, isPrivileged, isArchived, loadWeeklyDraft]);
 
   const loadTimeline = useCallback(() => {
     apiFetch<PaginatedResponse<TimelineEntry>>(
@@ -174,6 +209,7 @@ export function UpdatesSection({
       });
       track("update_posted", { has_attachment: !!newAttachment });
       setNewContent("");
+      setDraftStats(null);
       setNewAttachment(null);
       setShowCompose(false);
       loadTimeline();
@@ -263,20 +299,42 @@ export function UpdatesSection({
               setShowCompose(false);
               setNewContent("");
               setNewAttachment(null);
+              setDraftStats(null);
             }
           }}
         >
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4">
-            <h3 className="text-lg font-semibold">Post Update</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold">Post Update</h3>
+              {isPrivileged && !newContent.trim() && (
+                <button
+                  type="button"
+                  onClick={() => void loadWeeklyDraft()}
+                  disabled={drafting}
+                  className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline disabled:opacity-50"
+                >
+                  <Sparkles size={14} />
+                  {drafting ? "Drafting..." : "Draft from this week"}
+                </button>
+              )}
+            </div>
             <textarea
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
               placeholder="Write a status update..."
               maxLength={5000}
-              rows={4}
+              rows={draftStats ? 10 : 4}
               autoFocus
               className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
             />
+            {draftStats && (
+              <p className="text-xs text-[var(--muted-foreground)]" data-testid="weekly-draft-hint">
+                Drafted from {draftStats.completedTasks} finished {draftStats.completedTasks === 1 ? "task" : "tasks"} and{" "}
+                {draftStats.newFiles} new {draftStats.newFiles === 1 ? "file" : "files"}. Edit it before posting: every
+                client on this project gets it by email.
+                {draftStats.hoursLogged > 0 && ` The ${draftStats.hoursLogged}h logged this week is left out.`}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm cursor-pointer hover:bg-[var(--muted)] transition-colors">
                 <Paperclip size={14} />
@@ -306,6 +364,7 @@ export function UpdatesSection({
                   setShowCompose(false);
                   setNewContent("");
                   setNewAttachment(null);
+                  setDraftStats(null);
                 }}
                 className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors"
               >

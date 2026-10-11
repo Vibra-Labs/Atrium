@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import type { Request, Response } from "express";
 import { Public } from "./common";
 import { PrismaService } from "./prisma/prisma.service";
+import { BillingService } from "./billing/billing.service";
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
@@ -13,6 +14,7 @@ export class HealthController {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private billingService: BillingService,
   ) {}
 
   @Public()
@@ -45,7 +47,9 @@ export class HealthController {
     if (!LOOPBACK.has(remoteIp)) { res.status(403).send(); return; }
     if (!domain) { res.status(400).send(); return; }
     const org = await this.prisma.organization.findUnique({ where: { customDomain: domain } });
-    res.status(org ? 200 : 404).send();
+    // A workspace that dropped to Free keeps its saved domain but stops serving it.
+    const entitled: boolean = org ? await this.billingService.hasFeature(org.id, "custom_domain") : false;
+    res.status(entitled ? 200 : 404).send();
   }
 
   @Get()

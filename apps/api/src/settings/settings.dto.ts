@@ -14,6 +14,13 @@ import {
 import { Type, Transform } from "class-transformer";
 
 export class UpdateSettingsDto {
+  // IANA zone the workspace's scheduled emails follow; null clears it (UTC).
+  @IsOptional()
+  @ValidateIf((o: UpdateSettingsDto) => o.timezone !== null)
+  @IsString()
+  @MaxLength(64)
+  timezone?: string | null;
+
   @IsOptional()
   @Transform(({ value }) => (value === "" ? null : value))
   @IsIn(["resend", "smtp", null], {

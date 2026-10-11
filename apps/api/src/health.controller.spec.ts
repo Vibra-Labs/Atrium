@@ -3,6 +3,7 @@ import { HttpException } from "@nestjs/common";
 import { HealthController } from "./health.controller";
 import type { PrismaService } from "./prisma/prisma.service";
 import type { ConfigService } from "@nestjs/config";
+import type { BillingService } from "./billing/billing.service";
 import type { Request, Response } from "express";
 
 const makePrisma = (opts: { dbOk: boolean; org?: object | null }) => ({
@@ -25,12 +26,15 @@ function makeReq(ip: string) {
   return { socket: { remoteAddress: ip } } as unknown as Request;
 }
 
+const makeBilling = (entitled = true) =>
+  ({ hasFeature: mock(() => Promise.resolve(entitled)) }) as unknown as BillingService;
+
 const makeConfig = (vals: Record<string, string> = {}) =>
   ({ get: (key: string) => vals[key] }) as unknown as ConfigService;
 
 describe("HealthController", () => {
   it("returns ok status when DB is connected", async () => {
-    const controller = new HealthController(makePrisma({ dbOk: true }) as unknown as PrismaService, makeConfig());
+    const controller = new HealthController(makePrisma({ dbOk: true }) as unknown as PrismaService, makeConfig(), makeBilling());
     const result = await controller.check();
     expect(result.status).toBe("ok");
     expect(result.database).toBe("connected");
@@ -38,7 +42,7 @@ describe("HealthController", () => {
   });
 
   it("throws 503 when DB fails", async () => {
-    const controller = new HealthController(makePrisma({ dbOk: false }) as unknown as PrismaService, makeConfig());
+    const controller = new HealthController(makePrisma({ dbOk: false }) as unknown as PrismaService, makeConfig(), makeBilling());
     try {
       await controller.check();
       expect(true).toBe(false);
@@ -56,7 +60,7 @@ describe("HealthController", () => {
     it("reports signupEnabled true by default", () => {
       const controller = new HealthController(
         makePrisma({ dbOk: true }) as unknown as PrismaService,
-        makeConfig(),
+        makeConfig(), makeBilling(),
       );
       expect(controller.getConfig().signupEnabled).toBe(true);
     });
@@ -64,7 +68,7 @@ describe("HealthController", () => {
     it("reports signupEnabled false when ALLOW_SIGNUPS is 'false'", () => {
       const controller = new HealthController(
         makePrisma({ dbOk: true }) as unknown as PrismaService,
-        makeConfig({ ALLOW_SIGNUPS: "false" }),
+        makeConfig({ ALLOW_SIGNUPS: "false" }), makeBilling(),
       );
       expect(controller.getConfig().signupEnabled).toBe(false);
     });
@@ -72,30 +76,41 @@ describe("HealthController", () => {
 
   describe("domainCheck", () => {
     it("returns 403 for non-loopback callers", async () => {
-      const controller = new HealthController(makePrisma({ dbOk: true }) as unknown as PrismaService, makeConfig());
+      const controller = new HealthController(makePrisma({ dbOk: true }) as unknown as PrismaService, makeConfig(), makeBilling());
       const res = makeRes();
       await controller.domainCheck("example.com", makeReq("8.8.8.8"), res);
       expect(res.status).toHaveBeenCalledWith(403);
     });
 
     it("returns 400 when domain param is missing", async () => {
-      const controller = new HealthController(makePrisma({ dbOk: true }) as unknown as PrismaService, makeConfig());
+      const controller = new HealthController(makePrisma({ dbOk: true }) as unknown as PrismaService, makeConfig(), makeBilling());
       const res = makeRes();
       await controller.domainCheck("", makeReq("127.0.0.1"), res);
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
     it("returns 200 for a registered domain from loopback", async () => {
-      const controller = new HealthController(makePrisma({ dbOk: true, org: { id: "org-1" } }) as unknown as PrismaService, makeConfig());
+      const controller = new HealthController(makePrisma({ dbOk: true, org: { id: "org-1" } }) as unknown as PrismaService, makeConfig(), makeBilling());
       const res = makeRes();
       await controller.domainCheck("portal.acme.com", makeReq("127.0.0.1"), res);
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
     it("returns 404 for an unregistered domain from loopback", async () => {
-      const controller = new HealthController(makePrisma({ dbOk: true, org: null }) as unknown as PrismaService, makeConfig());
+      const controller = new HealthController(makePrisma({ dbOk: true, org: null }) as unknown as PrismaService, makeConfig(), makeBilling());
       const res = makeRes();
       await controller.domainCheck("unknown.com", makeReq("127.0.0.1"), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it("returns 404 for a domain whose workspace lost custom domains", async () => {
+      const controller = new HealthController(
+        makePrisma({ dbOk: true, org: { id: "org-1" } }) as unknown as PrismaService,
+        makeConfig(),
+        makeBilling(false),
+      );
+      const res = makeRes();
+      await controller.domainCheck("portal.acme.com", makeReq("127.0.0.1"), res);
       expect(res.status).toHaveBeenCalledWith(404);
     });
   });

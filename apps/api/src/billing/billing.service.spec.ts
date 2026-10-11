@@ -91,6 +91,9 @@ const mockPrisma = {
   file: {
     aggregate: mock(() => Promise.resolve({ _sum: { sizeBytes: 5242880 } })),
   },
+  invitation: {
+    count: mock((_args?: unknown) => Promise.resolve(0)),
+  },
   member: {
     count: mock(() => Promise.resolve(1)),
   },
@@ -163,6 +166,15 @@ describe("BillingService", () => {
     expect(sub?.plan).toBeDefined();
   });
 
+  it("getUsage counts only admins as team members", async () => {
+    await service.getUsage("org-1");
+    const calls = mockPrisma.member.count.mock.calls as unknown as [{ where: Record<string, unknown> }][];
+    expect(calls.map((c) => c[0].where)).toEqual([
+      { organizationId: "org-1", role: "admin" },
+      { organizationId: "org-1", role: "member" },
+    ]);
+  });
+
   it("getUsage returns counts for all resources", async () => {
     const usage = await service.getUsage("org-1");
     expect(usage.projects).toBe(1);
@@ -171,7 +183,22 @@ describe("BillingService", () => {
     expect(usage.clients).toBe(1);
   });
 
+  it("getUsage counts pending invitations as taken seats", async () => {
+    // One pending client invite and one pending admin invite.
+    mockPrisma.invitation.count.mockImplementation(({ where }: { where: { role: unknown } }) =>
+      Promise.resolve(where.role === "member" ? 1 : 1),
+    );
+    const usage = await service.getUsage("org-1");
+    expect(usage.clients).toBe(2);
+    expect(usage.members).toBe(2);
+    const call = mockPrisma.invitation.count.mock.calls[0] as unknown as [{ where: Record<string, unknown> }];
+    expect(call[0].where).toMatchObject({ organizationId: "org-1", status: "pending" });
+    expect(call[0].where.expiresAt).toBeDefined();
+    mockPrisma.invitation.count.mockImplementation(() => Promise.resolve(0));
+  });
+
   it("initializeFreePlan creates subscription record", async () => {
+    mockPrisma.subscription.findUnique.mockResolvedValueOnce(null);
     await service.initializeFreePlan("org-1");
     expect(mockPrisma.subscription.create).toHaveBeenCalled();
     expect(mockStripeService.stripe.customers.create).toHaveBeenCalled();
@@ -232,5 +259,11 @@ describe("BillingService", () => {
     mockPrisma.subscription.count.mockImplementation(() => Promise.resolve(10));
     const remaining = await service.getLifetimeSeatsRemaining();
     expect(remaining).toBe(90);
+  });
+
+  it("initializeFreePlan does nothing when another request already created the row", async () => {
+    mockPrisma.subscription.create.mockClear();
+    await service.initializeFreePlan("org-1");
+    expect(mockPrisma.subscription.create).not.toHaveBeenCalled();
   });
 });

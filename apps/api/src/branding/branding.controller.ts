@@ -22,6 +22,7 @@ import { AuthGuard, RolesGuard, Roles, CurrentOrg, Public } from "../common";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import { randomUUID } from "crypto";
+import { BillingService } from "../billing/billing.service";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -38,11 +39,16 @@ export class BrandingController {
   constructor(
     private brandingService: BrandingService,
     @Inject(STORAGE_PROVIDER) private storage: StorageProvider,
+    private billingService: BillingService,
   ) {}
 
   @Get()
-  findByOrg(@CurrentOrg("id") orgId: string) {
-    return this.brandingService.findByOrg(orgId);
+  async findByOrg(@CurrentOrg("id") orgId: string) {
+    const [branding, whiteLabel] = await Promise.all([
+      this.brandingService.findByOrg(orgId),
+      this.billingService.hasFeature(orgId, "white_label"),
+    ]);
+    return { ...branding, poweredBy: !whiteLabel };
   }
 
   @Put()
@@ -125,7 +131,8 @@ export class BrandingController {
   async findByDomain(@Query("host") host: string, @Res() res: Response) {
     if (!host) { res.status(400).send(); return; }
     const data = await this.brandingService.findByDomain(host);
-    if (!data) { res.status(204).send(); return; }
+    const entitled: boolean = data ? await this.billingService.hasFeature(data.orgId, "custom_domain") : false;
+    if (!data || !entitled) { res.status(204).send(); return; }
     res.setHeader("Cache-Control", "public, max-age=60");
     res.json(data);
   }

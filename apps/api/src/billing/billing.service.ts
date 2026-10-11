@@ -9,8 +9,29 @@ import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { StripeService } from "./stripe.service";
 import { planLimitMessage } from "../common/helpers/plan-limit";
+import { planHasFeature } from "../common/helpers/plan-feature";
+import { PLAN_FEATURES, type PlanFeature } from "@atrium/shared";
 import type { PlanLimitResource } from "../common/decorators/plan-limit.decorator";
 import type Stripe from "stripe";
+import type { Subscription, SubscriptionPlan } from "@atrium/database";
+
+type SubscriptionWithPlan = Subscription & { plan: SubscriptionPlan };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TRIAL_PLAN_SLUG = "pro";
+
+/** An app-managed trial (no Stripe subscription) whose end date has passed. */
+export function isTrialExpired(
+  sub: { status: string; currentPeriodEnd: Date | null; stripeSubscriptionId: string | null },
+  now: Date,
+): boolean {
+  return (
+    sub.status === "trialing" &&
+    !sub.stripeSubscriptionId &&
+    sub.currentPeriodEnd !== null &&
+    sub.currentPeriodEnd <= now
+  );
+}
 
 @Injectable()
 export class BillingService {
@@ -34,7 +55,7 @@ export class BillingService {
       where: { organizationId: orgId },
       include: { plan: true },
     });
-    if (sub) return sub;
+    if (sub) return isTrialExpired(sub, new Date()) ? this.expireTrial(sub) : sub;
 
     // Lazily initialize for orgs created before billing was added
     await this.initializeFreePlan(orgId);
@@ -45,7 +66,14 @@ export class BillingService {
   }
 
   async getUsage(orgId: string) {
-    const [projectCount, storageBytes, memberCount, clientCount] =
+    // A pending invite reserves a seat, so inviting five clients then having them
+    // all accept can't slip past the limit.
+    const pendingInvites = (role: string) =>
+      this.prisma.invitation.count({
+        where: { organizationId: orgId, role, status: "pending", expiresAt: { gt: new Date() } },
+      });
+
+    const [projectCount, storageBytes, memberCount, clientCount, pendingTeam, pendingClients] =
       await Promise.all([
         this.prisma.project.count({
           where: { organizationId: orgId, archivedAt: null },
@@ -56,26 +84,32 @@ export class BillingService {
             _sum: { sizeBytes: true },
           })
           .then((r) => r._sum.sizeBytes ?? 0),
-        // Team members: admins + members (exclude the owner)
+        // Team members are admins; clients ("member" role) have their own limit below
         this.prisma.member.count({
-          where: { organizationId: orgId, role: { not: "owner" } },
+          where: { organizationId: orgId, role: "admin" },
         }),
         // Clients: org members with the "member" role (not owner/admin)
         this.prisma.member.count({
           where: { organizationId: orgId, role: "member" },
         }),
+        pendingInvites("admin"),
+        pendingInvites("member"),
       ]);
 
     return {
       projects: projectCount,
       storageMb: Math.round(storageBytes / (1024 * 1024)),
-      members: memberCount,
-      clients: clientCount,
+      members: memberCount + pendingTeam,
+      clients: clientCount + pendingClients,
     };
   }
 
-  /** Same rule PlanGuard enforces on REST routes, for callers that are not HTTP handlers (MCP tools). */
-  async assertPlanLimit(orgId: string, resource: PlanLimitResource): Promise<void> {
+  /**
+   * Same rule PlanGuard enforces on REST routes, for callers that are not HTTP handlers
+   * (MCP tools, auth hooks). `reserved` is subtracted from usage: when an invitation is
+   * being accepted it is still counted as pending, so it must not block itself.
+   */
+  async assertPlanLimit(orgId: string, resource: PlanLimitResource, reserved = 0): Promise<void> {
     if (this.config.get("BILLING_ENABLED", "false") !== "true") return;
 
     const [subscription, usage] = await Promise.all([
@@ -84,11 +118,70 @@ export class BillingService {
     ]);
     if (!subscription) return;
 
+    if (reserved > 0) {
+      const key = resource === "storage" ? "storageMb" : resource;
+      usage[key] = Math.max(0, usage[key] - reserved);
+    }
     const message: string | null = planLimitMessage(subscription.plan, usage, resource);
     if (message) throw new ForbiddenException(message);
   }
 
-  async initializeFreePlan(orgId: string) {
+  /**
+   * Pro features the org can use plus its trial end, from one subscription read.
+   * Everything is on and there is no trial when billing is disabled (self-hosted).
+   */
+  async getPlanState(orgId: string): Promise<{ features: Record<PlanFeature, boolean>; trialEndsAt: Date | null }> {
+    const billingEnabled: boolean = this.config.get("BILLING_ENABLED", "false") === "true";
+    const sub = billingEnabled ? await this.getSubscription(orgId) : null;
+    const entries = PLAN_FEATURES.map((feature): [PlanFeature, boolean] => [
+      feature,
+      !sub || planHasFeature(sub.plan, feature),
+    ]);
+    return {
+      features: Object.fromEntries(entries) as Record<PlanFeature, boolean>,
+      trialEndsAt: sub?.status === "trialing" && !sub.stripeSubscriptionId ? sub.currentPeriodEnd : null,
+    };
+  }
+
+  async getFeatures(orgId: string): Promise<Record<PlanFeature, boolean>> {
+    return (await this.getPlanState(orgId)).features;
+  }
+
+  async hasFeature(orgId: string, feature: PlanFeature): Promise<boolean> {
+    return (await this.getFeatures(orgId))[feature];
+  }
+
+  /** Drop an ended trial back to the Free plan. Gates read the subscription, so they lock at once. */
+  private async expireTrial(sub: SubscriptionWithPlan): Promise<SubscriptionWithPlan> {
+    const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { slug: "free" } });
+    if (!freePlan) {
+      this.logger.warn("Free plan not found; cannot end expired trial.");
+      return sub;
+    }
+    // Conditional so a checkout webhook or a parallel request that already moved
+    // the org off the trial is never overwritten with Free.
+    const { count } = await this.prisma.subscription.updateMany({
+      where: { id: sub.id, status: "trialing", stripeSubscriptionId: null, currentPeriodEnd: { lte: new Date() } },
+      data: {
+        planId: freePlan.id,
+        status: "active",
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        trialEndedAt: new Date(),
+      },
+    });
+    if (count === 1) this.logger.log(`Trial ended for org ${sub.organizationId}; moved to free plan`);
+    const fresh = await this.prisma.subscription.findUnique({ where: { id: sub.id }, include: { plan: true } });
+    return fresh ?? sub;
+  }
+
+  private trialDays(): number {
+    const days: number = parseInt(this.config.get("TRIAL_DAYS", "14"), 10);
+    return Number.isFinite(days) && days > 0 ? days : 0;
+  }
+
+  /** New workspaces pass `trial: true` and start on Pro for TRIAL_DAYS (default 14). */
+  async initializeFreePlan(orgId: string, options: { trial?: boolean } = {}) {
     const billingEnabled = this.config.get("BILLING_ENABLED", "false");
     if (billingEnabled !== "true") return;
 
@@ -121,12 +214,26 @@ export class BillingService {
       }
     }
 
+    const trialDays: number = options.trial ? this.trialDays() : 0;
+    const trialPlan = trialDays > 0
+      ? await this.prisma.subscriptionPlan.findUnique({ where: { slug: TRIAL_PLAN_SLUG } })
+      : null;
+    const now = new Date();
+
+    // Two requests can lazily initialise the same org at once; the second one loses the race.
+    const existing = await this.prisma.subscription.findUnique({ where: { organizationId: orgId } });
+    if (existing) return;
+
     await this.prisma.subscription.create({
       data: {
         organizationId: orgId,
-        planId: plan.id,
+        planId: trialPlan?.id ?? plan.id,
         stripeCustomerId,
-        status: "active",
+        status: trialPlan ? "trialing" : "active",
+        ...(trialPlan && {
+          currentPeriodStart: now,
+          currentPeriodEnd: new Date(now.getTime() + trialDays * DAY_MS),
+        }),
       },
     });
   }
@@ -310,6 +417,9 @@ export class BillingService {
       updateData.stripeSubscriptionId = session.subscription as string;
     } else {
       updateData.stripePaymentIntentId = session.payment_intent as string;
+      // One-time purchase: clear any trial end date (recurring plans get theirs from Stripe).
+      updateData.currentPeriodStart = null;
+      updateData.currentPeriodEnd = null;
     }
 
     await this.prisma.subscription.update({

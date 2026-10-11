@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getPlanFeatures } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -223,9 +223,9 @@ test.describe("Custom Domain API", () => {
       headers: { "x-csrf-token": csrf },
     });
     // ValidationPipe rejects malformed hostnames with 400.
-    // A billing 403 cannot occur before validation, so 400 is the only
-    // expected status here.
-    expect(res.status()).toBe(400);
+    // The plan gate runs before validation, so a Free workspace gets 403.
+    const { custom_domain } = await getPlanFeatures(request);
+    expect(res.status()).toBe(custom_domain ? 400 : 403);
   });
 
   test("PUT with a domain exceeding 253 chars returns 400", async ({
@@ -239,7 +239,9 @@ test.describe("Custom Domain API", () => {
       data: { domain: longDomain },
       headers: { "x-csrf-token": csrf },
     });
-    expect(res.status()).toBe(400);
+    // The plan gate runs before validation, so a Free workspace gets 403.
+    const { custom_domain } = await getPlanFeatures(request);
+    expect(res.status()).toBe(custom_domain ? 400 : 403);
   });
 
   test("PUT with missing domain field returns 400", async ({ request }) => {
@@ -248,7 +250,9 @@ test.describe("Custom Domain API", () => {
       data: {},
       headers: { "x-csrf-token": csrf },
     });
-    expect(res.status()).toBe(400);
+    // The plan gate runs before validation, so a Free workspace gets 403.
+    const { custom_domain } = await getPlanFeatures(request);
+    expect(res.status()).toBe(custom_domain ? 400 : 403);
   });
 
   test("DELETE clears the custom domain and returns 200 or 204", async ({

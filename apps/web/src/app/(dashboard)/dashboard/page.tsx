@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { StatCardSkeleton } from "@/components/skeletons";
 import { FolderKanban, TrendingUp, CheckCircle, Receipt } from "lucide-react";
+import { WeeklyUpdatesCard } from "./weekly-updates-card";
 
 interface Project {
   id: string;
@@ -100,6 +101,8 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+
+      <WeeklyUpdatesCard />
 
       <div>
         <div className="flex items-center justify-between mb-3">

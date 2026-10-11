@@ -11,6 +11,9 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { ActivityService } from "../activity/activity.service";
 import type { DocumentAuditService } from "./document-audit.service";
 import type { PinoLogger } from "nestjs-pino";
+import type { BillingService } from "../billing/billing.service";
+
+const mockBilling = { hasFeature: mock(() => Promise.resolve(true)) };
 
 // ---------------------------------------------------------------------------
 // Minimal shared fixtures
@@ -217,6 +220,7 @@ function makeService() {
     mockNotifications as unknown as NotificationsService,
     mockActivityService as unknown as ActivityService,
     mockAuditService as unknown as DocumentAuditService,
+    mockBilling as unknown as BillingService,
   );
 }
 
@@ -330,6 +334,18 @@ describe("DocumentsService", () => {
   // -------------------------------------------------------------------------
 
   describe("send()", () => {
+    it("refuses to send a signature doc when the plan lacks e-signatures", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ status: "draft", requiresSignature: true, signatureFields: [{ id: "f1" }] })),
+      );
+      mockBilling.hasFeature.mockResolvedValueOnce(false);
+
+      await expect(service.send(DOC_ID, ORG, USER)).rejects.toThrow(
+        "E-signatures are available on paid plans. Please upgrade to continue.",
+      );
+      expect(mockBilling.hasFeature).toHaveBeenCalledWith(ORG, "e_signatures");
+    });
+
     it("throws NotFoundException when document not found", async () => {
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));
 

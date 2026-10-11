@@ -32,4 +32,10 @@ describe("BillingService.assertPlanLimit", () => {
     );
     await expect(build("true", 3, 3).assertPlanLimit("org1", "projects")).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it("leaves out seats reserved by the invite being accepted", async () => {
+    // 3 counted (2 members + the pending invite being accepted) against a limit of 3.
+    await expect(build("true", 3, 3).assertPlanLimit("org1", "projects", 1)).resolves.toBeUndefined();
+    await expect(build("true", 4, 3).assertPlanLimit("org1", "projects", 1)).rejects.toBeInstanceOf(ForbiddenException);
+  });
 });

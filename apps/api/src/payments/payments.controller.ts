@@ -11,12 +11,16 @@ import {
 import type { Response } from "express";
 import { PaymentsService } from "./payments.service";
 import { CreateCheckoutDto, ConnectAuthorizeDto, SaveDirectKeysDto, SavePaymentMethodsDto } from "./payments.dto";
-import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, Public } from "../common";
+import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, Public, RequiresFeature } from "../common";
+import { BillingService } from "../billing/billing.service";
 
 @Controller("payments")
 @UseGuards(AuthGuard, RolesGuard)
 export class PaymentsController {
-  constructor(private paymentsService: PaymentsService) {}
+  constructor(
+    private paymentsService: PaymentsService,
+    private billingService: BillingService,
+  ) {}
 
   // ── Unified status ──
 
@@ -34,14 +38,18 @@ export class PaymentsController {
 
   @Get("enabled")
   async isEnabled(@CurrentOrg("id") orgId: string) {
-    const status = await this.paymentsService.getPaymentStatus(orgId);
-    return { enabled: status.enabled };
+    const [status, entitled] = await Promise.all([
+      this.paymentsService.getPaymentStatus(orgId),
+      this.billingService.hasFeature(orgId, "online_payments"),
+    ]);
+    return { enabled: status.enabled && entitled };
   }
 
   // ── Direct keys mode ──
 
   @Post("direct/save-key")
   @Roles("owner")
+  @RequiresFeature("online_payments")
   saveDirectKey(
     @CurrentOrg("id") orgId: string,
     @Body() dto: SaveDirectKeysDto,
@@ -68,6 +76,7 @@ export class PaymentsController {
 
   @Post("connect/authorize")
   @Roles("owner")
+  @RequiresFeature("online_payments")
   getAuthorizeUrl(
     @CurrentOrg("id") orgId: string,
     @Body() dto: ConnectAuthorizeDto,
@@ -107,6 +116,7 @@ export class PaymentsController {
   // ── Checkout (any authenticated user — access checked at service level) ──
 
   @Post("checkout/:invoiceId")
+  @RequiresFeature("online_payments")
   createCheckout(
     @Param("invoiceId") invoiceId: string,
     @CurrentUser("id") userId: string,

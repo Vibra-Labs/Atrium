@@ -30,7 +30,7 @@ test.describe("System Settings", () => {
   test("email provider selector works", async ({ page }) => {
     await page.goto("/dashboard/settings/workspace");
 
-    const select = page.locator("select");
+    const select = page.locator("select").first();
     await expect(select).toBeVisible();
 
     await expect(select).toHaveValue("");
@@ -73,7 +73,7 @@ test.describe("System Settings", () => {
       page.getByRole("button", { name: /send test email/i }),
     ).not.toBeVisible();
 
-    await page.locator("select").selectOption("resend");
+    await page.locator("select").first().selectOption("resend");
     await expect(
       page.getByRole("button", { name: /send test email/i }),
     ).toBeVisible();

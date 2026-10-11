@@ -20,6 +20,8 @@ import { SearchModule } from "./search/search.module";
 import { SettingsModule } from "./settings/settings.module";
 import { SetupModule } from "./setup/setup.module";
 import { BillingModule } from "./billing/billing.module";
+import { TrialModule } from "./trial/trial.module";
+import { DigestModule } from "./digest/digest.module";
 import { AccountModule } from "./account/account.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { ActivityModule } from "./activity/activity.module";
@@ -81,6 +83,8 @@ import { PlanGuard } from "./common/guards/plan.guard";
     SettingsModule,
     SetupModule,
     BillingModule,
+    TrialModule,
+    DigestModule,
     AccountModule,
     DocumentsModule,
     ActivityModule,

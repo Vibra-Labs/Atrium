@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Mail, HardDrive, Send, Globe, BarChart2 } from "lucide-react";
+import { Mail, HardDrive, Send, Globe, BarChart2, Clock } from "lucide-react";
 import { enableSentry } from "@/lib/sentry";
 import { CustomDomainSection } from "../system/custom-domain-section";
 
@@ -19,6 +19,7 @@ interface SystemSettings {
   maxFileSizeMb: number;
   setupCompleted: boolean;
   telemetryEnabled: boolean | null;
+  timezone: string | null;
 }
 
 const defaultSettings: SystemSettings = {
@@ -33,7 +34,14 @@ const defaultSettings: SystemSettings = {
   maxFileSizeMb: 50,
   setupCompleted: false,
   telemetryEnabled: null,
+  timezone: null,
 };
+
+function timezoneOptions(browserZone: string): string[] {
+  const zones: string[] = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  const withUtc: string[] = zones.includes("UTC") ? zones : ["UTC", ...zones];
+  return !browserZone || withUtc.includes(browserZone) ? withUtc : [browserZone, ...withUtc];
+}
 
 export function GeneralSection(): React.ReactElement {
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
@@ -46,6 +54,9 @@ export function GeneralSection(): React.ReactElement {
   const [editedSmtpPass, setEditedSmtpPass] = useState<boolean>(false);
   const [hasResendApiKey, setHasResendApiKey] = useState<boolean>(false);
   const [hasSmtpPass, setHasSmtpPass] = useState<boolean>(false);
+  // Read on the client only: during server rendering this would be the server's zone.
+  const [browserZone, setBrowserZone] = useState<string>("");
+  useEffect(() => setBrowserZone(Intl.DateTimeFormat().resolvedOptions().timeZone), []);
 
   useEffect(() => {
     apiFetch<SystemSettings>("/settings")
@@ -74,6 +85,7 @@ export function GeneralSection(): React.ReactElement {
         smtpUser: settings.smtpUser || null,
         smtpSecure: settings.smtpSecure,
         maxFileSizeMb: settings.maxFileSizeMb,
+        timezone: settings.timezone,
       };
       if (editedApiKey) payload.resendApiKey = settings.resendApiKey || null;
       if (editedSmtpPass) payload.smtpPass = settings.smtpPass || null;
@@ -274,6 +286,46 @@ export function GeneralSection(): React.ReactElement {
               {testingEmail ? "Sending..." : "Send Test Email"}
             </button>
           )}
+        </section>
+
+        <section className="space-y-4 py-8">
+          <div className="flex items-center gap-2">
+            <Clock size={18} />
+            <h2 className="text-base font-semibold">Timezone</h2>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="workspace-timezone" className="text-sm font-medium">
+              Workspace timezone
+            </label>
+            <select
+              id="workspace-timezone"
+              value={settings.timezone ?? ""}
+              onChange={(e) => setSettings({ ...settings, timezone: e.target.value || null })}
+              className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+            >
+              <option value="">Not set</option>
+              {timezoneOptions(browserZone).map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              The Monday digest and Friday update reminder go out in this timezone. Not set means UTC.
+              {browserZone && settings.timezone !== browserZone && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, timezone: browserZone })}
+                    className="text-[var(--primary)] hover:underline"
+                  >
+                    Use {browserZone.replace(/_/g, " ")}
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
         </section>
 
         <section className="space-y-4 py-8">

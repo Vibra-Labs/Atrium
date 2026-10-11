@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as Sentry from "@sentry/nestjs";
-import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
+import { ForbiddenException, Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -307,10 +307,19 @@ export class AuthService {
             );
           },
           organizationHooks: {
+            // The clients page disables inviting at the limit; this makes the API agree.
+            beforeCreateInvitation: async ({ invitation }) => {
+              await this.assertInviteWithinPlan(invitation.organizationId, invitation.role);
+            },
+            // Invites sent during a trial can be accepted after the drop to Free; re-check then.
+            // The invite being accepted is still pending and counted, so it is reserved out.
+            beforeAcceptInvitation: async ({ invitation }) => {
+              await this.assertInviteWithinPlan(invitation.organizationId, invitation.role ?? "member", 1);
+            },
             afterCreateOrganization: async ({ organization }) => {
               await this.seedOrganizationDefaults(organization.id);
               try {
-                await this.billingService.initializeFreePlan(organization.id);
+                await this.billingService.initializeFreePlan(organization.id, { trial: true });
               } catch (err) {
                 Sentry.captureException(err);
                 this.logger.error("Failed to initialize free plan", err);
@@ -432,6 +441,18 @@ export class AuthService {
     } catch (err) {
       this.logger.warn({ err }, "Invitation lookup failed; refusing signup");
       return false;
+    }
+  }
+
+  /** Plan gate for invites. Clients count against the clients limit, staff against team members. */
+  async assertInviteWithinPlan(organizationId: string, role: string, reserved = 0): Promise<void> {
+    try {
+      await this.billingService.assertPlanLimit(organizationId, role === "member" ? "clients" : "members", reserved);
+    } catch (err) {
+      if (err instanceof ForbiddenException) {
+        throw new APIError("FORBIDDEN", { message: err.message });
+      }
+      throw err;
     }
   }
 

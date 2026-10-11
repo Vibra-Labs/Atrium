@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import { getCsrfToken, getCsrfTokenFromContext } from "./helpers";
+import { getCsrfToken, getCsrfTokenFromContext, getPlanFeatures } from "./helpers";
 
 const API = "http://localhost:3001/api";
 const API_URL = "http://localhost:3001";
@@ -388,6 +388,7 @@ test.describe("Documents", () => {
     });
 
     test("set signature fields with type for a document", async ({ request }) => {
+      test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
@@ -422,6 +423,7 @@ test.describe("Documents", () => {
     });
 
     test("signing-info endpoint returns fields and signed status for admin", async ({ request }) => {
+      test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
@@ -458,6 +460,7 @@ test.describe("Documents", () => {
     });
 
     test("sign endpoint rejects draft documents", async ({ request }) => {
+      test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
@@ -516,6 +519,7 @@ test.describe("Documents", () => {
     });
 
     test("sign endpoint requires project client assignment", async ({ request }) => {
+      test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
@@ -681,6 +685,7 @@ test.describe("Documents", () => {
     });
 
     test("cannot edit signature fields on sent document", async ({ request }) => {
+      test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
       test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {

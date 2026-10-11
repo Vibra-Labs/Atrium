@@ -116,3 +116,19 @@ export async function createTask(
   const body = await res.json();
   return body.id as string;
 }
+
+export type PlanFeatureMap = Record<
+  "custom_domain" | "e_signatures" | "online_payments" | "white_label",
+  boolean
+>;
+
+/**
+ * Which Pro features the test workspace can use. Everything is true when
+ * billing is off (CI, self-hosted); on a hosted Free plan the gates are false.
+ */
+export async function getPlanFeatures(request: APIRequestContext): Promise<PlanFeatureMap> {
+  const res = await request.get(`${API}/billing/features`);
+  expect(res.ok()).toBe(true);
+  const body: { features: PlanFeatureMap } = await res.json();
+  return body.features;
+}

@@ -102,3 +102,20 @@ export interface OwnedOrg {
 export interface DeletionInfo {
   ownedOrganizations: OwnedOrg[];
 }
+
+/** Features reserved for paid plans on hosted Atrium. Self-hosted installs (billing off) get all of them. */
+export const PLAN_FEATURES = [
+  "custom_domain",
+  "e_signatures",
+  "online_payments",
+  "white_label",
+] as const;
+
+export type PlanFeature = (typeof PLAN_FEATURES)[number];
+
+export const PLAN_FEATURE_LABELS: Record<PlanFeature, string> = {
+  custom_domain: "Custom domains",
+  e_signatures: "E-signatures",
+  online_payments: "Online invoice payments",
+  white_label: "White-label portals",
+};

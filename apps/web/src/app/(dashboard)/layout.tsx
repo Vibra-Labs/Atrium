@@ -3,6 +3,8 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
+import { TrialBanner } from "./trial-banner";
+import { TimezoneSync } from "./timezone-sync";
 import { TelemetryConsentBanner } from "@/components/telemetry-consent-banner";
 import { MobileNav } from "./mobile-nav";
 import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
@@ -216,6 +218,8 @@ export default async function DashboardLayout({
           {!session.user?.emailVerified && (
             <EmailVerificationBanner email={session.user?.email} />
           )}
+          {session.role === "owner" && <TrialBanner />}
+          {session.role === "owner" && <TimezoneSync />}
           {session.role === "owner" && telemetryEnabled === null && (
             <TelemetryConsentBanner />
           )}

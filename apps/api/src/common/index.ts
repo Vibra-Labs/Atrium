@@ -5,6 +5,7 @@ export { Roles, ROLES_KEY } from "./decorators/roles.decorator";
 export { Public } from "./decorators/public.decorator";
 export { PlanLimit, PLAN_LIMIT_KEY } from "./decorators/plan-limit.decorator";
 export type { PlanLimitResource } from "./decorators/plan-limit.decorator";
+export { RequiresFeature, PLAN_FEATURE_KEY } from "./decorators/requires-feature.decorator";
 export { AuthGuard } from "./guards/auth.guard";
 export { RolesGuard } from "./guards/roles.guard";
 export { CsrfGuard } from "./guards/csrf.guard";

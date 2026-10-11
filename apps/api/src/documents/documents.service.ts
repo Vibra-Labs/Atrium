@@ -21,6 +21,8 @@ import { CreateDocumentDto } from "./documents.dto";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ActivityService } from "../activity/activity.service";
 import { DocumentAuditService } from "./document-audit.service";
+import { BillingService } from "../billing/billing.service";
+import { planFeatureMessage } from "../common/helpers/plan-feature";
 
 /** Max PDF size allowed for signing (50MB) to prevent OOM. */
 const MAX_SIGNABLE_PDF_BYTES = 50 * 1024 * 1024;
@@ -64,6 +66,7 @@ export class DocumentsService {
     private notifications: NotificationsService,
     private activityService: ActivityService,
     private auditService: DocumentAuditService,
+    private billingService: BillingService,
   ) {}
 
   async create(
@@ -114,6 +117,10 @@ export class DocumentsService {
     if (!doc) throw new NotFoundException("Document not found");
     if (doc.status !== "draft") {
       throw new BadRequestException("Only draft documents can be sent");
+    }
+
+    if (doc.requiresSignature && !(await this.billingService.hasFeature(orgId, "e_signatures"))) {
+      throw new ForbiddenException(planFeatureMessage("e_signatures"));
     }
 
     // Prevent sending signature docs with no fields placed

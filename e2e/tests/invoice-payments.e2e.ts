@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getPlanFeatures } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -14,7 +14,9 @@ test.describe("Invoice Payments", () => {
       ).toBeVisible({ timeout: 5000 });
     });
 
-    test("shows Stripe connection UI (direct key input or OAuth button)", async ({ page }) => {
+    test("shows Stripe connection UI (direct key input or OAuth button)", async ({ page, request }) => {
+      const features = await getPlanFeatures(request);
+      test.skip(!features.online_payments, "Online payments need a paid plan");
       await page.goto("/dashboard/settings/payments");
       // Direct mode shows sk_test_ input; Connect mode shows "Connect with Stripe" button
       const directInput = page.getByPlaceholder(/sk_test_/i);
@@ -22,7 +24,9 @@ test.describe("Invoice Payments", () => {
       await expect(directInput.or(connectBtn)).toBeVisible({ timeout: 5000 });
     });
 
-    test("shows Stripe action button (Save & Connect or Connect with Stripe)", async ({ page }) => {
+    test("shows Stripe action button (Save & Connect or Connect with Stripe)", async ({ page, request }) => {
+      const features = await getPlanFeatures(request);
+      test.skip(!features.online_payments, "Online payments need a paid plan");
       await page.goto("/dashboard/settings/payments");
       // Direct mode shows "Save & Connect"; Connect mode shows "Connect with Stripe"
       const saveConnect = page.getByRole("button", { name: /save.*connect/i });
@@ -75,7 +79,9 @@ test.describe("Invoice Payments", () => {
         data: { stripeSecretKey: "pk_test_invalid_not_a_secret_key" },
         headers: { "x-csrf-token": csrfToken },
       });
-      expect(res.status()).toBe(400);
+      // The plan gate runs before validation, so a Free workspace gets 403.
+      const { online_payments } = await getPlanFeatures(request);
+      expect(res.status()).toBe(online_payments ? 400 : 403);
     });
 
     test("POST /payments/direct/save-key rejects too-short key", async ({
@@ -86,7 +92,9 @@ test.describe("Invoice Payments", () => {
         data: { stripeSecretKey: "sk_test_short" },
         headers: { "x-csrf-token": csrfToken },
       });
-      expect(res.status()).toBe(400);
+      // The plan gate runs before validation, so a Free workspace gets 403.
+      const { online_payments } = await getPlanFeatures(request);
+      expect(res.status()).toBe(online_payments ? 400 : 403);
     });
 
     test("POST /payments/direct/remove-key returns 400 when no key configured", async ({
@@ -130,9 +138,10 @@ test.describe("Invoice Payments", () => {
           headers: { "x-csrf-token": csrfToken },
         },
       );
-      expect(res.status()).toBe(400);
+      const { online_payments } = await getPlanFeatures(request);
+      expect(res.status()).toBe(online_payments ? 400 : 403);
       const body = await res.json();
-      expect(body.message).toContain("not configured");
+      expect(body.message).toContain(online_payments ? "not configured" : "paid plans");
     });
   });
 

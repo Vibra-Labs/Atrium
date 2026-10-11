@@ -12,3 +12,7 @@ export { DocumentRespondedEmail } from "./templates/document-responded";
 export { DocumentReminderEmail } from "./templates/document-reminder";
 export { DocumentSigningTurnEmail } from "./templates/document-signing-turn";
 export { InvoicePaidEmail } from "./templates/invoice-paid";
+export { TrialEndingEmail } from "./templates/trial-ending";
+export { TrialEndedEmail } from "./templates/trial-ended";
+export { WeeklyUpdateReminderEmail } from "./templates/weekly-update-reminder";
+export { MondayDigestEmail } from "./templates/monday-digest";

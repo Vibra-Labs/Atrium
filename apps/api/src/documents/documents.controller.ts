@@ -38,6 +38,7 @@ import {
   CurrentMember,
   PaginationQueryDto,
   PlanLimit,
+  RequiresFeature,
   contentDisposition,
   Public,
 } from "../common";
@@ -214,6 +215,7 @@ export class DocumentsController {
 
   @Put(":id/signature-fields")
   @Roles("owner", "admin")
+  @RequiresFeature("e_signatures")
   setSignatureFields(
     @Param("id") id: string,
     @Body() dto: SetSignatureFieldsDto,

@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
+import { usePlanFeatures, useIsTrialing } from "@/lib/plan-features";
+import { ProBadge, UpgradeLink, TrialTag } from "@/components/pro-badge";
 import dynamic from "next/dynamic";
 
 const SignatureFieldPlacer = dynamic(
@@ -142,6 +144,9 @@ export function FilesSection({
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
+  const planFeatures = usePlanFeatures();
+  const canSign: boolean = planFeatures?.e_signatures ?? true;
+  const isTrialing: boolean = useIsTrialing();
 
   // Document state
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
@@ -970,11 +975,20 @@ export function FilesSection({
                 )}
               </div>
             </div>
-            {isPdf && (
+            {isPdf && canSign && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={requiresSignature} onChange={(e) => { setRequiresSignature(e.target.checked); if (e.target.checked) setRequiresApproval(false); }} className="accent-[var(--primary)]" />
                 <span className="text-sm">Collect signature</span>
+                {isTrialing && <TrialTag />}
               </label>
+            )}
+            {isPdf && !canSign && (
+              <div className="flex items-center gap-2" data-testid="signature-locked">
+                <input type="checkbox" disabled className="cursor-not-allowed" aria-label="Collect signature" />
+                <span className="text-sm text-[var(--muted-foreground)]">Collect signature</span>
+                <ProBadge />
+                <UpgradeLink reason="e-signatures" />
+              </div>
             )}
             <button onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] flex items-center gap-1 transition-colors">
               {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Advanced options

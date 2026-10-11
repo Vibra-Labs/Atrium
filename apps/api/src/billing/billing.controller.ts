@@ -28,6 +28,12 @@ export class BillingController {
     return { subscription, usage };
   }
 
+  // Any member, including clients: the web app uses this to show locks and the portal badge.
+  @Get("features")
+  async getFeatures(@CurrentOrg("id") orgId: string) {
+    return this.billingService.getPlanState(orgId);
+  }
+
   @Post("checkout")
   @Roles("owner", "admin")
   async createCheckout(

@@ -13,6 +13,7 @@ import {
   Folder,
   Users,
   Globe,
+  PenTool,
 } from "lucide-react";
 
 interface Plan {
@@ -100,7 +101,7 @@ const REASON_BANNER: Record<string, { icon: React.ElementType; text: string; sub
   },
   clients: {
     icon: Users,
-    text: "Free plan is limited to 3 clients and 1 team member.",
+    text: "Free plan is limited to 5 clients and 1 team member.",
     sub: "Pro gives you unlimited clients and up to 5 team members.",
   },
   members: {
@@ -112,6 +113,16 @@ const REASON_BANNER: Record<string, { icon: React.ElementType; text: string; sub
     icon: Globe,
     text: "Custom domains are a Pro feature.",
     sub: "Upgrade to host your client portal at your own domain.",
+  },
+  "e-signatures": {
+    icon: PenTool,
+    text: "E-signatures are a Pro feature.",
+    sub: "Upgrade to collect legally binding signatures from clients.",
+  },
+  "online-payments": {
+    icon: CreditCard,
+    text: "Online invoice payments are a Pro feature.",
+    sub: "Upgrade so clients can pay invoices by card or bank transfer.",
   },
 };
 
@@ -329,7 +340,9 @@ export function BillingSection() {
   if (loading) return <div>Loading...</div>;
 
   const currentPlan = subscription?.plan;
-  const isFree = !currentPlan || currentPlan.slug === "free";
+  // A trialing workspace is on Pro but hasn't paid, so it should still see the upgrade paths.
+  const isTrialing = subscription?.status === "trialing" && !subscription.stripeSubscriptionId;
+  const isFree = !currentPlan || currentPlan.slug === "free" || isTrialing;
 
   return (
     <div className="space-y-6">
@@ -353,7 +366,7 @@ export function BillingSection() {
             <PlanCard
               key={plan.id}
               plan={plan}
-              isCurrentPlan={currentPlan?.slug === plan.slug}
+              isCurrentPlan={!isTrialing && currentPlan?.slug === plan.slug}
               isFree={isFree}
               lifetimeSeatsRemaining={lifetimeSeatsRemaining}
               onSelect={handleUpgrade}
@@ -373,13 +386,20 @@ export function BillingSection() {
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                 subscription.status === "active"
                   ? "bg-green-500/15 text-green-600"
+                  : isTrialing
+                    ? "bg-blue-500/15 text-blue-600"
                   : subscription.status === "past_due"
                     ? "bg-amber-500/15 text-amber-600"
                     : "bg-red-500/15 text-red-600"
               }`}>
-                {subscription.status}
+                {isTrialing ? "trial" : subscription.status}
               </span>
-              {subscription.currentPeriodEnd && (
+              {isTrialing && subscription.currentPeriodEnd && (
+                <span className="text-xs text-[var(--muted-foreground)]" data-testid="trial-ends">
+                  · Trial ends {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
+                </span>
+              )}
+              {!isTrialing && subscription.currentPeriodEnd && (
                 <span className="text-xs text-[var(--muted-foreground)]">
                   · {subscription.cancelAtPeriodEnd ? "Cancels" : "Renews"}{" "}
                   {new Date(subscription.currentPeriodEnd).toLocaleDateString()}

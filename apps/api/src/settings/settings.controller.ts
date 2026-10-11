@@ -7,22 +7,15 @@ import {
   Delete,
   Body,
   UseGuards,
-  ForbiddenException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { SettingsService } from "./settings.service";
-import { BillingService } from "../billing/billing.service";
 import { UpdateSettingsDto, SaveCustomDomainDto } from "./settings.dto";
-import { AuthGuard, RolesGuard, Roles, CurrentOrg, CurrentUser } from "../common";
+import { AuthGuard, RolesGuard, Roles, CurrentOrg, CurrentUser, RequiresFeature } from "../common";
 
 @Controller("settings")
 @UseGuards(AuthGuard, RolesGuard)
 export class SettingsController {
-  constructor(
-    private settingsService: SettingsService,
-    private billingService: BillingService,
-    private config: ConfigService,
-  ) {}
+  constructor(private settingsService: SettingsService) {}
 
   @Get()
   @Roles("owner", "admin")
@@ -71,17 +64,11 @@ export class SettingsController {
 
   @Put("custom-domain")
   @Roles("owner")
-  async saveCustomDomain(
+  @RequiresFeature("custom_domain")
+  saveCustomDomain(
     @CurrentOrg("id") orgId: string,
     @Body() dto: SaveCustomDomainDto,
   ) {
-    const billingEnabled = this.config.get("BILLING_ENABLED") === "true";
-    if (billingEnabled) {
-      const sub = await this.billingService.getSubscription(orgId);
-      if (!sub || sub.plan.slug === "free") {
-        throw new ForbiddenException("Custom domains require a paid plan.");
-      }
-    }
     return this.settingsService.saveCustomDomain(orgId, dto.domain);
   }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { PlanGuard } from "./plan.guard";
 import { ForbiddenException } from "@nestjs/common";
+import { PLAN_LIMIT_KEY } from "../decorators/plan-limit.decorator";
+import { PLAN_FEATURE_KEY } from "../decorators/requires-feature.decorator";
 
 const FREE_PLAN = {
   id: "plan-free",
@@ -23,8 +25,17 @@ const PRO_PLAN = {
 };
 
 const mockReflector = {
-  getAllAndOverride: mock(() => undefined),
+  getAllAndOverride: mock((_key: string): string | undefined => undefined),
 };
+
+/** Simulate the decorators on the handler being checked. */
+function decorate(meta: { limit?: string; feature?: string }): void {
+  mockReflector.getAllAndOverride.mockImplementation((key: string) => {
+    if (key === PLAN_LIMIT_KEY) return meta.limit;
+    if (key === PLAN_FEATURE_KEY) return meta.feature;
+    return undefined;
+  });
+}
 
 const mockConfig = {
   get: mock((key: string, defaultValue?: string) => {
@@ -69,13 +80,13 @@ describe("PlanGuard", () => {
   });
 
   it("passes when no @PlanLimit decorator", async () => {
-    mockReflector.getAllAndOverride.mockReturnValue(undefined);
+    decorate({});
     const result = await guard.canActivate(createMockContext("org-1"));
     expect(result).toBe(true);
   });
 
   it("passes when billing is disabled", async () => {
-    mockReflector.getAllAndOverride.mockReturnValue("projects");
+    decorate({ limit: "projects" });
     mockConfig.get.mockImplementation((key: string, defaultValue?: string) => {
       if (key === "BILLING_ENABLED") return "false";
       return defaultValue;
@@ -90,13 +101,13 @@ describe("PlanGuard", () => {
   });
 
   it("passes when no org context", async () => {
-    mockReflector.getAllAndOverride.mockReturnValue("projects");
+    decorate({ limit: "projects" });
     const result = await guard.canActivate(createMockContext(undefined));
     expect(result).toBe(true);
   });
 
   it("passes when under limit", async () => {
-    mockReflector.getAllAndOverride.mockReturnValue("projects");
+    decorate({ limit: "projects" });
     mockBillingService.getSubscription.mockResolvedValue({ plan: FREE_PLAN });
     mockBillingService.getUsage.mockResolvedValue({
       projects: 1,
@@ -109,7 +120,7 @@ describe("PlanGuard", () => {
   });
 
   it("throws when at limit", async () => {
-    mockReflector.getAllAndOverride.mockReturnValue("projects");
+    decorate({ limit: "projects" });
     mockBillingService.getSubscription.mockResolvedValue({ plan: FREE_PLAN });
     mockBillingService.getUsage.mockResolvedValue({
       projects: 2,
@@ -123,7 +134,7 @@ describe("PlanGuard", () => {
   });
 
   it("passes for unlimited plan", async () => {
-    mockReflector.getAllAndOverride.mockReturnValue("projects");
+    decorate({ limit: "projects" });
     mockBillingService.getSubscription.mockResolvedValue({ plan: PRO_PLAN });
     mockBillingService.getUsage.mockResolvedValue({
       projects: 100,
@@ -136,9 +147,41 @@ describe("PlanGuard", () => {
   });
 
   it("passes when no subscription found", async () => {
-    mockReflector.getAllAndOverride.mockReturnValue("projects");
+    decorate({ limit: "projects" });
     mockBillingService.getSubscription.mockResolvedValue(null);
     const result = await guard.canActivate(createMockContext("org-1"));
     expect(result).toBe(true);
+  });
+
+  it("blocks a Pro feature on the free plan", async () => {
+    decorate({ feature: "e_signatures" });
+    mockBillingService.getSubscription.mockResolvedValue({ plan: FREE_PLAN });
+    await expect(guard.canActivate(createMockContext("org-1"))).rejects.toThrow(
+      "E-signatures are available on paid plans. Please upgrade to continue.",
+    );
+  });
+
+  it("allows a Pro feature on a paid plan", async () => {
+    decorate({ feature: "e_signatures" });
+    mockBillingService.getSubscription.mockResolvedValue({ plan: PRO_PLAN });
+    expect(await guard.canActivate(createMockContext("org-1"))).toBe(true);
+  });
+
+  it("allows Pro features when billing is disabled (self-hosted)", async () => {
+    decorate({ feature: "custom_domain" });
+    mockConfig.get.mockImplementation((key: string, defaultValue?: string) =>
+      key === "BILLING_ENABLED" ? "false" : defaultValue,
+    );
+    expect(await guard.canActivate(createMockContext("org-1"))).toBe(true);
+    mockConfig.get.mockImplementation((key: string, defaultValue?: string) =>
+      key === "BILLING_ENABLED" ? "true" : defaultValue,
+    );
+  });
+
+  it("skips the usage query for feature-only routes", async () => {
+    decorate({ feature: "online_payments" });
+    mockBillingService.getSubscription.mockResolvedValue({ plan: PRO_PLAN });
+    await guard.canActivate(createMockContext("org-1"));
+    expect(mockBillingService.getUsage).not.toHaveBeenCalled();
   });
 });

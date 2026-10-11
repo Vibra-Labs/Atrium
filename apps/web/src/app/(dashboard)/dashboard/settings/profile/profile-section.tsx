@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { EmailPreferencesSection } from "./email-preferences-section";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import type { DeletionInfo } from "@atrium/shared";
@@ -138,6 +139,8 @@ export function ProfileSection(): React.ReactElement {
           </button>
         </form>
       </div>
+
+      <EmailPreferencesSection />
 
       <div className="max-w-md">
         <h2 className="text-base font-semibold mb-3">Change Password</h2>

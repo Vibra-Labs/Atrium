@@ -17,6 +17,8 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import type { ProjectUpdate } from "@atrium/database";
 import { UpdatesService } from "./updates.service";
+import { WeeklyUpdatesService } from "./weekly-updates.service";
+import type { WeeklyDraft, WeeklyUpdateDue } from "./weekly-updates.service";
 import { CreateUpdateDto, UpdateContentDto, UpdatePreviewPrefsDto } from "./updates.dto";
 import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto } from "../common";
 import type { UploadedFile as UploadedFileType } from "../files/files.service";
@@ -24,7 +26,26 @@ import type { UploadedFile as UploadedFileType } from "../files/files.service";
 @Controller("updates")
 @UseGuards(AuthGuard, RolesGuard)
 export class UpdatesController {
-  constructor(private updatesService: UpdatesService) {}
+  constructor(
+    private updatesService: UpdatesService,
+    private weeklyUpdates: WeeklyUpdatesService,
+  ) {}
+
+  // Owner/admin only: the draft is reviewed in the composer, never posted automatically.
+  @Get("weekly-due")
+  @Roles("owner", "admin")
+  findWeeklyDue(@CurrentOrg("id") orgId: string): Promise<WeeklyUpdateDue[]> {
+    return this.weeklyUpdates.getDue(orgId);
+  }
+
+  @Get("weekly-draft/:projectId")
+  @Roles("owner", "admin")
+  getWeeklyDraft(
+    @Param("projectId") projectId: string,
+    @CurrentOrg("id") orgId: string,
+  ): Promise<WeeklyDraft> {
+    return this.weeklyUpdates.getDraft(projectId, orgId);
+  }
 
   // No @Roles — any authenticated org member (including clients) can post updates.
   // Access is enforced via assertProjectAccess in the service (clients must be assigned to the project).

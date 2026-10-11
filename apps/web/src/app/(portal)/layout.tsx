@@ -109,6 +109,18 @@ export default async function PortalLayout({
             <SignOutButton />
           </header>
           <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">{children}</main>
+          {branding?.poweredBy && (
+            <footer className="py-6 text-center">
+              <a
+                href="https://atrium.vibralabs.co?ref=portal"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              >
+                Powered by Atrium
+              </a>
+            </footer>
+          )}
         </div>
       </PreviewModeProvider>
     </Suspense>

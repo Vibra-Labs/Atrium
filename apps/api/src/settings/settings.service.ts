@@ -6,6 +6,7 @@ import { UpdateSettingsDto } from "./settings.dto";
 import { setSentryEnabled } from "../instrument";
 import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto";
 import dns from "node:dns/promises";
+import { isValidTimeZone } from "../common/helpers/local-time";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 
@@ -87,6 +88,12 @@ export class SettingsService {
     if (dto.maxFileSizeMb !== undefined) data.maxFileSizeMb = dto.maxFileSizeMb;
     if (dto.paymentInstructions !== undefined) data.paymentInstructions = dto.paymentInstructions;
     if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
+    if (dto.timezone !== undefined) {
+      if (dto.timezone !== null && !isValidTimeZone(dto.timezone)) {
+        throw new BadRequestException("timezone must be an IANA zone such as Europe/Berlin");
+      }
+      data.timezone = dto.timezone;
+    }
     if (dto.telemetryEnabled !== undefined) {
       data.telemetryEnabled = dto.telemetryEnabled;
       // Keep the in-process Sentry client in sync so errors are captured

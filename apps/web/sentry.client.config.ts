@@ -1,7 +1,9 @@
 import * as Sentry from "@sentry/nextjs";
 import type { ErrorEvent } from "@sentry/nextjs";
+import { shouldDropClientEvent } from "./src/lib/sentry-filters";
 
-function scrubEvent(event: ErrorEvent): ErrorEvent {
+function scrubEvent(event: ErrorEvent): ErrorEvent | null {
+  if (shouldDropClientEvent(event)) return null;
   if (event.request) {
     delete event.request.cookies;
     if (event.request.headers) {

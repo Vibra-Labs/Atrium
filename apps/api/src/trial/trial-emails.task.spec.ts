@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import "../common/testing/mock-email";
+import { fakeEmailRenderer } from "../common/testing/fake-email-renderer";
 import { TrialEmailsTask } from "./trial-emails.task";
 
 const NOW = new Date("2026-10-08T12:00:00Z");
@@ -52,7 +52,7 @@ function build(opts: {
   const mail = { send: mock(() => Promise.resolve({ sent: opts.sent ?? true, viaOrgConfig: false })) };
   const values: Record<string, string> = { BILLING_ENABLED: opts.billing ?? "true", WEB_URL: "https://app.atrium.test" };
   const config = { get: (k: string, fallback?: string) => values[k] ?? fallback };
-  const task = new TrialEmailsTask(prisma as never, billing as never, mail as never, config as never);
+  const task = new TrialEmailsTask(prisma as never, billing as never, mail as never, config as never, fakeEmailRenderer());
   return { task, prisma, billing, mail };
 }
 
@@ -85,13 +85,17 @@ describe("TrialEmailsTask", () => {
       expect(mail.send).not.toHaveBeenCalled();
     });
 
-    it("releases the claim so it retries when no email could be sent", async () => {
+    it("keeps the claim when no email could be sent, so it does not retry every hour", async () => {
       const { task, prisma } = build({ reminders: [row()], sent: false });
       await task.sendEndingReminders(NOW);
-      expect(prisma.subscription.update).toHaveBeenCalledWith({
-        where: { id: "sub1" },
-        data: { trialReminderSentAt: null },
-      });
+      expect(prisma.subscription.update).not.toHaveBeenCalled();
+    });
+
+    it("carries on with the next workspace when one fails", async () => {
+      const { task, mail, prisma } = build({ reminders: [row(), row({ id: "sub2", organizationId: "org2" })] });
+      prisma.subscription.updateMany.mockImplementationOnce(() => Promise.reject(new Error("db down")));
+      await task.sendEndingReminders(NOW);
+      expect(mail.send).toHaveBeenCalledTimes(2); // org2's two owners
     });
   });
 
@@ -108,6 +112,13 @@ describe("TrialEmailsTask", () => {
       expect(mail.send).toHaveBeenCalledTimes(2);
       const [, subject] = mail.send.mock.calls[0] as unknown as [string, string];
       expect(subject).toBe("Your Atrium Pro trial has ended");
+    });
+
+    it("carries on with the next workspace when one fails", async () => {
+      const { task, mail, prisma } = build({ ended: [row(), row({ id: "sub2", organizationId: "org2" })] });
+      prisma.subscription.updateMany.mockImplementationOnce(() => Promise.reject(new Error("db down")));
+      await task.sendEndedNotices(NOW);
+      expect(mail.send).toHaveBeenCalledTimes(2);
     });
 
     it("skips the email when the workspace has since upgraded", async () => {

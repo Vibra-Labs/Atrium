@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { buildWeeklyDraft } from "./weekly-draft";
+import { WEEK_MS } from "../common/helpers/local-time";
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const UPCOMING_LIMIT = 5;
 
 export interface WeeklyDraft {
@@ -30,7 +30,7 @@ export class WeeklyUpdatesService {
     });
     if (!project) throw new NotFoundException("Project not found");
 
-    const since = new Date(now.getTime() - WEEK_MS);
+    const since: Date = new Date(now.getTime() - WEEK_MS);
     const [done, upcoming, files, time] = await Promise.all([
       // Tasks have no completion timestamp; a done task touched this week is the closest signal.
       this.prisma.task.findMany({
@@ -76,7 +76,7 @@ export class WeeklyUpdatesService {
 
   /** Active client projects without an update in the last 7 days, longest-waiting first. */
   async getDue(orgId: string, now: Date = new Date()): Promise<WeeklyUpdateDue[]> {
-    const cutoff = new Date(now.getTime() - WEEK_MS);
+    const cutoff: Date = new Date(now.getTime() - WEEK_MS);
     const projects = await this.prisma.project.findMany({
       where: {
         organizationId: orgId,

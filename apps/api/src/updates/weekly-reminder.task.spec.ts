@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import "../common/testing/mock-email";
+import { fakeEmailRenderer } from "../common/testing/fake-email-renderer";
 import { WeeklyReminderTask } from "./weekly-reminder.task";
 
 const NOW = new Date("2026-10-09T13:00:00Z");
@@ -36,7 +36,7 @@ function build(opts: { due?: unknown[]; claimCount?: number; sent?: boolean; mem
   };
   const mail = { send: mock(() => Promise.resolve({ sent: opts.sent ?? true, viaOrgConfig: false })) };
   const config = { get: (k: string, fallback?: string) => (k === "WEB_URL" ? "https://app.atrium.test" : fallback) };
-  const task = new WeeklyReminderTask(prisma as never, weekly as never, mail as never, config as never);
+  const task = new WeeklyReminderTask(prisma as never, weekly as never, mail as never, config as never, fakeEmailRenderer());
   return { task, prisma, weekly, mail };
 }
 

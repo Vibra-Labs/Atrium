@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { WEEK_MS } from "../common/helpers/local-time";
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_TASKS = 10;
 const MAX_ACTIVITY = 8;
 

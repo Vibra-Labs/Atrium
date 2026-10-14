@@ -5,8 +5,9 @@ import { mock } from "bun:test";
  *
  * Bun's `mock.module` is process-wide: once any spec registers one, every spec
  * that loads afterwards sees it, and on Linux the file order is not alphabetical.
- * So every spec whose code renders an email must import this module, and they all
- * register the same mock, so the outcome does not depend on which file ran first.
+ * Scheduled tasks therefore take an injected EmailRenderer (see fake-email-renderer.ts)
+ * instead of relying on this. It remains for NotificationsService, whose spec reads the
+ * props passed to `render`; the full template list keeps any leak harmless.
  *
  * Templates return their props, and `render` serialises them, so assertions can
  * still check that a name, date or URL made it into the email.

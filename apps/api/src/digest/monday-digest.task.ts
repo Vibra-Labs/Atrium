@@ -1,14 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
+import type { Prisma } from "@atrium/database";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { render } from "@react-email/render";
 import { MondayDigestEmail } from "@atrium/email";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
+import { EmailRenderer } from "../mail/email-renderer";
 import { MondayDigestService, type MondayDigest } from "./monday-digest.service";
-import { hasReachedLocalTime } from "../common/helpers/local-time";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { DAY_MS, hasReachedLocalTime } from "../common/helpers/local-time";
 
 /** Mondays at 08:00 in each workspace's own timezone (UTC when none is set). */
 const MONDAY = 1;
@@ -41,6 +40,7 @@ export class MondayDigestTask {
     private digests: MondayDigestService,
     private mail: MailService,
     private config: ConfigService,
+    private renderer: EmailRenderer,
   ) {}
 
   // Hourly, because every workspace reaches Monday 08:00 at a different UTC hour.
@@ -55,7 +55,7 @@ export class MondayDigestTask {
 
   async sendDigests(now: Date): Promise<void> {
     // Not yet sent this week. Six days rather than seven so a slightly early run still sends.
-    const notSentThisWeek = [
+    const notSentThisWeek: Prisma.MemberWhereInput[] = [
       { mondayDigestSentAt: null },
       { mondayDigestSentAt: { lt: new Date(now.getTime() - 6 * DAY_MS) } },
     ];
@@ -70,7 +70,7 @@ export class MondayDigestTask {
       },
     });
 
-    let sent = 0;
+    let sent: number = 0;
     for (const member of members) {
       if (!hasReachedLocalTime(now, member.organization.systemSettings?.timezone, MONDAY, SEND_HOUR)) continue;
       const digest: MondayDigest = await this.digests.collect(
@@ -104,9 +104,9 @@ export class MondayDigestTask {
     digest: MondayDigest,
   ): Promise<boolean> {
     const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
-    const dashboardUrl = `${webUrl}/dashboard`;
+    const dashboardUrl: string = `${webUrl}/dashboard`;
     try {
-      const html: string = await render(
+      const html: string = await this.renderer.render(
         MondayDigestEmail({
           organizationName,
           tasks: digest.tasks.map((t) => ({
@@ -132,7 +132,7 @@ export class MondayDigestTask {
         }),
       );
       // Pass the workspace so self-hosted installs use their own mail settings.
-      const result = await this.mail.send(email, digestSubject(digest), html, organizationId);
+      const result: { sent: boolean } = await this.mail.send(email, digestSubject(digest), html, organizationId);
       return result.sent;
     } catch (err) {
       this.logger.error(`Failed to send Monday digest for org ${organizationId}`, err);

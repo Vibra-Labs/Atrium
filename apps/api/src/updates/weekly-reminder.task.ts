@@ -1,14 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
+import type { Prisma } from "@atrium/database";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { render } from "@react-email/render";
 import { WeeklyUpdateReminderEmail } from "@atrium/email";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailService } from "../mail/mail.service";
+import { EmailRenderer } from "../mail/email-renderer";
 import { WeeklyUpdatesService, type WeeklyUpdateDue } from "./weekly-updates.service";
-import { hasReachedLocalTime } from "../common/helpers/local-time";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { DAY_MS, hasReachedLocalTime } from "../common/helpers/local-time";
 
 /** Fridays at 13:00 in each workspace's own timezone (UTC when none is set). */
 const FRIDAY = 5;
@@ -24,6 +23,7 @@ export class WeeklyReminderTask {
     private weeklyUpdates: WeeklyUpdatesService,
     private mail: MailService,
     private config: ConfigService,
+    private renderer: EmailRenderer,
   ) {}
 
   // Hourly, because every workspace reaches Friday 13:00 at a different UTC hour.
@@ -38,7 +38,7 @@ export class WeeklyReminderTask {
 
   async sendReminders(now: Date): Promise<void> {
     // Not yet emailed this week. Six days rather than seven so a slightly early run still sends.
-    const notSentThisWeek = [
+    const notSentThisWeek: Prisma.MemberWhereInput[] = [
       { weeklyReminderSentAt: null },
       { weeklyReminderSentAt: { lt: new Date(now.getTime() - 6 * DAY_MS) } },
     ];
@@ -53,7 +53,7 @@ export class WeeklyReminderTask {
     });
 
     const dueByOrg = new Map<string, WeeklyUpdateDue[]>();
-    let sent = 0;
+    let sent: number = 0;
 
     for (const member of members) {
       if (!hasReachedLocalTime(now, member.organization.systemSettings?.timezone, FRIDAY, SEND_HOUR)) continue;
@@ -91,7 +91,7 @@ export class WeeklyReminderTask {
   ): Promise<boolean> {
     const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
     try {
-      const html: string = await render(
+      const html: string = await this.renderer.render(
         WeeklyUpdateReminderEmail({
           organizationName,
           settingsUrl: `${webUrl}/dashboard/settings/account#notifications`,
@@ -109,7 +109,7 @@ export class WeeklyReminderTask {
           ? "1 client project needs an update this week"
           : `${due.length} client projects need an update this week`;
       // Pass the workspace so self-hosted installs use their own mail settings.
-      const result = await this.mail.send(email, subject, html, organizationId);
+      const result: { sent: boolean } = await this.mail.send(email, subject, html, organizationId);
       return result.sent;
     } catch (err) {
       this.logger.error(`Failed to send weekly update reminder for org ${organizationId}`, err);

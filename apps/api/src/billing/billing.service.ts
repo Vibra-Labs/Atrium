@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import { DAY_MS } from "../common/helpers/local-time";
 import { StripeService } from "./stripe.service";
 import { planLimitMessage } from "../common/helpers/plan-limit";
 import { planHasFeature } from "../common/helpers/plan-feature";
@@ -17,7 +18,6 @@ import type { Subscription, SubscriptionPlan } from "@atrium/database";
 
 type SubscriptionWithPlan = Subscription & { plan: SubscriptionPlan };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const TRIAL_PLAN_SLUG = "pro";
 
 /** An app-managed trial (no Stripe subscription) whose end date has passed. */
@@ -185,10 +185,10 @@ export class BillingService {
 
   /** New workspaces pass `trial: true` and start on Pro for TRIAL_DAYS (default 14). */
   async initializeFreePlan(orgId: string, options: { trial?: boolean } = {}) {
-    const billingEnabled = this.config.get("BILLING_ENABLED", "false");
+    const billingEnabled: string = this.config.get("BILLING_ENABLED", "false");
     if (billingEnabled !== "true") return;
 
-    const defaultSlug = this.config.get("DEFAULT_PLAN_SLUG", "free");
+    const defaultSlug: string = this.config.get("DEFAULT_PLAN_SLUG", "free");
     const plan = await this.prisma.subscriptionPlan.findUnique({
       where: { slug: defaultSlug },
     });
@@ -199,9 +199,14 @@ export class BillingService {
       return;
     }
 
+    // Checked before talking to Stripe: two requests can lazily initialise the same org
+    // at once, and the loser must not leave an orphaned Stripe customer behind.
+    const existing = await this.prisma.subscription.findUnique({ where: { organizationId: orgId } });
+    if (existing) return;
+
     // Create Stripe customer
     let stripeCustomerId: string | null = null;
-    const stripeKey = this.stripeService.resolveKey("SECRET_KEY");
+    const stripeKey: string | null = this.stripeService.resolveKey("SECRET_KEY");
     if (stripeKey) {
       try {
         const org = await this.prisma.organization.findUnique({
@@ -221,24 +226,26 @@ export class BillingService {
     const trialPlan = trialDays > 0
       ? await this.prisma.subscriptionPlan.findUnique({ where: { slug: TRIAL_PLAN_SLUG } })
       : null;
-    const now = new Date();
+    const now: Date = new Date();
 
-    // Two requests can lazily initialise the same org at once; the second one loses the race.
-    const existing = await this.prisma.subscription.findUnique({ where: { organizationId: orgId } });
-    if (existing) return;
-
-    await this.prisma.subscription.create({
-      data: {
-        organizationId: orgId,
-        planId: trialPlan?.id ?? plan.id,
-        stripeCustomerId,
-        status: trialPlan ? "trialing" : "active",
-        ...(trialPlan && {
-          currentPeriodStart: now,
-          currentPeriodEnd: new Date(now.getTime() + trialDays * DAY_MS),
-        }),
-      },
-    });
+    try {
+      await this.prisma.subscription.create({
+        data: {
+          organizationId: orgId,
+          planId: trialPlan?.id ?? plan.id,
+          stripeCustomerId,
+          status: trialPlan ? "trialing" : "active",
+          ...(trialPlan && {
+            currentPeriodStart: now,
+            currentPeriodEnd: new Date(now.getTime() + trialDays * DAY_MS),
+          }),
+        },
+      });
+    } catch (err) {
+      // Unique constraint: the other request won the race after our check. Its row stands.
+      if ((err as { code?: string }).code === "P2002") return;
+      throw err;
+    }
   }
 
   async createCheckoutSession(

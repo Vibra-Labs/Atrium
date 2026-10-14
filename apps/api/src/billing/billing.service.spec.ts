@@ -279,7 +279,18 @@ describe("BillingService", () => {
 
   it("initializeFreePlan does nothing when another request already created the row", async () => {
     mockPrisma.subscription.create.mockClear();
+    mockStripeService.stripe.customers.create.mockClear();
     await service.initializeFreePlan("org-1");
     expect(mockPrisma.subscription.create).not.toHaveBeenCalled();
+    // Checked before talking to Stripe, so the loser does not leave an orphaned customer behind.
+    expect(mockStripeService.stripe.customers.create).not.toHaveBeenCalled();
+  });
+
+  it("initializeFreePlan tolerates losing the create race to a concurrent request", async () => {
+    mockPrisma.subscription.findUnique.mockResolvedValueOnce(null);
+    mockPrisma.subscription.create.mockRejectedValueOnce(
+      Object.assign(new Error("Unique constraint failed on the fields: (`organizationId`)"), { code: "P2002" }),
+    );
+    await expect(service.initializeFreePlan("org-1")).resolves.toBeUndefined();
   });
 });

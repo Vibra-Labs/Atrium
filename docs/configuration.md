@@ -8,8 +8,8 @@ All configuration lives in a single `.env` file. See [`.env.example`](../.env.ex
 |----------------------|--------------------------------------------------|----------------------------------|
 | `DATABASE_URL`       | PostgreSQL connection string                     | `postgresql://atrium:atrium@localhost:5432/atrium` |
 | `BETTER_AUTH_SECRET` | Secret key for auth token signing (min 32 chars) | `change-me-in-production`        |
-| `API_URL`            | API URL (internal, server-to-server)             | `http://localhost:3001`          |
-| `WEB_URL`            | Web app URL (used for CORS)                      | `http://localhost:3000`          |
+| `API_URL`            | Public API URL: Better Auth base URL, OAuth metadata, logo links in email. The unified image defaults it to `WEB_URL` | `http://localhost:3001`          |
+| `WEB_URL`            | Public web app URL: CORS origin, CSP, every link in outbound email, Stripe return URLs. See [docker.md](docker.md#public-url) | `http://localhost:3000`          |
 | `NEXT_PUBLIC_API_URL`| Browser-facing API URL (Next.js client-side)     | `http://localhost:3001`          |
 | `STORAGE_PROVIDER`   | File storage backend: `local`, `s3`, `minio`, `r2` | `local`                       |
 | `UPLOAD_DIR`         | Local upload directory (when using local storage) | `./uploads`                     |

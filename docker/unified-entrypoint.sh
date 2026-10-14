@@ -14,6 +14,13 @@ if [ -z "${WEB_URL}" ]; then
   echo "WARNING: (or http://<host>:<port> when accessing without a domain). See docs/docker.md."
 fi
 
+# The image serves the web app and the API from one origin, so the API's public
+# URL (Better Auth base URL, OAuth metadata, logo links in email) is WEB_URL
+# unless the operator says otherwise.
+if [ -z "${API_URL}" ] && [ -n "${WEB_URL}" ]; then
+  export API_URL="${WEB_URL}"
+fi
+
 PG_RUNNING=false
 
 # Start built-in PostgreSQL if no external DATABASE_URL is provided

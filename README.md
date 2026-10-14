@@ -122,6 +122,7 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 ## Documentation
 
 - [Docker Deployment](docs/docker.md)
+- [Portainer](docs/portainer.md)
 - [Unraid](docs/unraid.md)
 - [MCP Server](docs/mcp.md)
 - [Configuration & Environment Variables](docs/configuration.md)

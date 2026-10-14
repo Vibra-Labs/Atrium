@@ -80,30 +80,47 @@ volumes:
 
 The database schema is automatically applied on startup. To skip this (e.g. when using a connection pooler like PgBouncer), set `SKIP_DB_PUSH=true` and provide a `DIRECT_URL` pointing to the non-pooled connection.
 
-## Behind a reverse proxy
+## Public URL
 
-Coolify, Cloudflare Tunnel, Nginx Proxy Manager, Traefik and similar all work the
-same way: point them at port 8080 and set `WEB_URL` to the public address, with
-its scheme and without a trailing slash:
+Set `WEB_URL` to the address people actually open in a browser, with its scheme
+and without a trailing slash:
 
 ```
 WEB_URL=https://atrium.example.com
 ```
 
-The container logs a warning at startup when it is missing. It matters because
-Caddy inside the image rewrites the `Origin` of every API request to `WEB_URL`,
-and the API only trusts that origin. A mismatch does not show up on the first sign-in (no cookie, so
-the origin is never checked) but every later one fails with "Invalid origin".
+Nothing in the image infers it, and the container logs a warning at startup when
+it is missing. Leaving it unset or wrong breaks more than one thing:
 
-Nothing else is needed: `API_URL` is derived, and Atrium does not read
+- Caddy inside the image rewrites the `Origin` of every API request to `WEB_URL`,
+  and the API only trusts that origin. A mismatch does not show up on the first
+  sign-in (no cookie, so the origin is never checked) but every later one fails
+  with "Invalid origin".
+- invitation, password-reset and notification emails link to `localhost` and are
+  unusable for your clients
+- the API's CORS origin and CSP `connect-src` point at the wrong host
+- Stripe return URLs and custom-domain detection resolve against the wrong host
+
+Coolify, Cloudflare Tunnel, Nginx Proxy Manager, Traefik and similar all work the
+same way: point them at port 8080 and set `WEB_URL` to the public address. Caddy
+inside the container speaks plain HTTP on 8080, on the assumption that TLS is
+terminated upstream.
+
+Nothing else is needed. The image serves the web app and the API from one origin,
+so `API_URL` defaults to `WEB_URL`, and Atrium does not read
 `TRUSTED_PROXY_HEADERS`.
+
+### Custom client domains
+
+The container also listens on 443 with on-demand TLS, used when a client's own domain points straight at Atrium rather than through your proxy. Publish `-p 443:443` as well if you offer that; otherwise 8080 is all you need.
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `BETTER_AUTH_SECRET` | Yes | -- | Random string (min 32 chars) for signing auth tokens |
-| `WEB_URL` | Yes | -- | The public URL users open Atrium at, e.g. `https://atrium.example.com`. Sign-in fails with "Invalid origin" on the second login when this does not match. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
+| `WEB_URL` | Yes | -- | The public URL users open Atrium at, e.g. `https://atrium.example.com`. See [Public URL](#public-url) — sign-in fails with "Invalid origin" on the second login and email links point at `localhost` when this is unset or wrong. |
+| `API_URL` | No | same as `WEB_URL` | Public URL of the API. The unified image serves the app and API from one origin, so only set this when the API is reachable at a different address. |
 | `USE_BUILT_IN_DB` | No | `true` | Set to `false` to use an external database |
 | `DATABASE_URL` | No | auto-generated | PostgreSQL connection string (required when built-in DB is disabled) |
 | `STORAGE_PROVIDER` | No | `local` | File storage backend: `local`, `s3`, `minio`, or `r2` |
@@ -113,9 +130,9 @@ Nothing else is needed: `API_URL` is derived, and Atrium does not read
 | `S3_ACCESS_KEY` | No | -- | S3 access key |
 | `S3_SECRET_KEY` | No | -- | S3 secret key |
 | `RESEND_API_KEY` | No | -- | Resend API key for email notifications |
-| `EMAIL_FROM` | No | `noreply@yourdomain.com` | Sender address for outbound email |
+| `EMAIL_FROM` | No | `noreply@atrium.local` | Sender address for outbound email |
 | `MAX_FILE_SIZE_MB` | No | `50` | Maximum upload size in megabytes |
-| `SECURE_COOKIES` | No | `true` | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. See [Unraid / Plain HTTP Setup](#unraid--plain-http-setup). |
+| `SECURE_COOKIES` | No | `true` in the image | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. Falls back to `NODE_ENV=production`, which the published image sets. See [Unraid](unraid.md). |
 | `SKIP_DB_PUSH` | No | `false` | Skip automatic schema sync on startup |
 | `DIRECT_URL` | No | -- | Direct (non-pooled) database URL for schema sync |
 | `STRIPE_CONNECT_CLIENT_ID` | No | -- | Stripe Connect platform client ID (`ca_...`). Enables the OAuth "Connect with Stripe" flow for client invoice payments. See [Stripe setup](stripe.md). |
@@ -131,6 +148,7 @@ Nothing else is needed: `API_URL` is derived, and Atrium does not read
 
 ## Platform Guides
 
+- [Portainer](portainer.md) — app template and stack deployment
 - [Unraid](unraid.md) — step-by-step setup for Unraid with plain HTTP
 
 ## Building from Source
@@ -143,4 +161,4 @@ docker build -f docker/unified.Dockerfile -t atrium .
 
 ## Platform Support
 
-The image runs on any platform that supports Docker: Docker Compose, Portainer, Coolify, Unraid, Synology, etc. For Unraid, an official Community Applications template is available.
+The image runs on any platform that supports Docker: Docker Compose, Portainer, Coolify, Unraid, Synology, etc. Ready-made templates live in [`templates/portainer`](../templates/portainer) and [`unraid/`](../unraid) — see the [Platform Guides](#platform-guides) above. On Coolify, paste the compose file from this page into New > Docker Compose.

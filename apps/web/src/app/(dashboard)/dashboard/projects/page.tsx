@@ -210,7 +210,7 @@ export default function ProjectsPage() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Link
-              href="/dashboard/settings/account?reason=projects#billing"
+              href="/dashboard/settings/billing?reason=projects"
               className="flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
             >
               Upgrade to Pro
@@ -237,7 +237,7 @@ export default function ProjectsPage() {
                 <span className="font-medium text-[var(--foreground)]">Last free project.</span> Upgrade to Pro for unlimited.
               </p>
               <Link
-                href="/dashboard/settings/account?reason=projects#billing"
+                href="/dashboard/settings/billing?reason=projects"
                 className="text-xs font-medium text-[var(--primary)] hover:opacity-80 whitespace-nowrap ml-3"
               >
                 Upgrade →

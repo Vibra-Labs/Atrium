@@ -529,7 +529,7 @@ export default function PeoplePage() {
                     </p>
                   </div>
                   <Link
-                    href="/dashboard/settings/account?reason=members#billing"
+                    href="/dashboard/settings/billing?reason=members"
                     className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
                   >
                     Upgrade
@@ -764,7 +764,7 @@ export default function PeoplePage() {
                   </p>
                 </div>
                 <Link
-                  href="/dashboard/settings/account?reason=clients#billing"
+                  href="/dashboard/settings/billing?reason=clients"
                   className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
                 >
                   Upgrade

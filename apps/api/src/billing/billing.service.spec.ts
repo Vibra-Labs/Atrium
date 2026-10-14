@@ -166,20 +166,36 @@ describe("BillingService", () => {
     expect(sub?.plan).toBeDefined();
   });
 
-  it("getUsage counts only admins as team members", async () => {
+  it("getUsage counts every staff role as a team member, not just admins", async () => {
     await service.getUsage("org-1");
     const calls = mockPrisma.member.count.mock.calls as unknown as [{ where: Record<string, unknown> }][];
     expect(calls.map((c) => c[0].where)).toEqual([
-      { organizationId: "org-1", role: "admin" },
+      { organizationId: "org-1", role: { not: "member" } },
       { organizationId: "org-1", role: "member" },
     ]);
+    const invites = mockPrisma.invitation.count.mock.calls as unknown as [{ where: Record<string, unknown> }][];
+    expect(invites.map((c) => c[0].where.role)).toEqual([{ not: "member" }, "member"]);
+  });
+
+  it("getUsage does not charge a seat for the workspace creator", async () => {
+    // Only the owner who created the workspace: no team members used.
+    mockPrisma.member.count.mockImplementation(({ where }: { where: { role: unknown } }) =>
+      Promise.resolve(where.role === "member" ? 0 : 1),
+    );
+    expect((await service.getUsage("org-1")).members).toBe(0);
+    // The creator plus one invited owner and one admin: two seats used.
+    mockPrisma.member.count.mockImplementation(({ where }: { where: { role: unknown } }) =>
+      Promise.resolve(where.role === "member" ? 0 : 3),
+    );
+    expect((await service.getUsage("org-1")).members).toBe(2);
+    mockPrisma.member.count.mockImplementation(() => Promise.resolve(1));
   });
 
   it("getUsage returns counts for all resources", async () => {
     const usage = await service.getUsage("org-1");
     expect(usage.projects).toBe(1);
     expect(usage.storageMb).toBe(5); // 5242880 / 1048576 rounded
-    expect(usage.members).toBe(1);
+    expect(usage.members).toBe(0); // the creator's own owner row is free
     expect(usage.clients).toBe(1);
   });
 
@@ -190,7 +206,7 @@ describe("BillingService", () => {
     );
     const usage = await service.getUsage("org-1");
     expect(usage.clients).toBe(2);
-    expect(usage.members).toBe(2);
+    expect(usage.members).toBe(1);
     const call = mockPrisma.invitation.count.mock.calls[0] as unknown as [{ where: Record<string, unknown> }];
     expect(call[0].where).toMatchObject({ organizationId: "org-1", status: "pending" });
     expect(call[0].where.expiresAt).toBeDefined();

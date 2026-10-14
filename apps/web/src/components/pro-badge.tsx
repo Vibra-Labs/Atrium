@@ -15,7 +15,7 @@ export function ProBadge({ title }: { title?: string }): React.ReactElement {
 export function UpgradeLink({ reason }: { reason: string }): React.ReactElement {
   return (
     <a
-      href={`/dashboard/settings/account?reason=${encodeURIComponent(reason)}#billing`}
+      href={`/dashboard/settings/billing?reason=${encodeURIComponent(reason)}`}
       className="text-sm font-medium text-[var(--primary)] hover:underline"
     >
       Upgrade to Pro

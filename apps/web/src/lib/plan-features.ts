@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { PLAN_FEATURES, type PlanFeature } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
 
@@ -19,36 +19,59 @@ const FALLBACK: PlanState = {
 
 let cache: PlanState | null = null;
 let pending: Promise<PlanState> | null = null;
+// Bumped on reset so a response for the previous workspace is ignored.
+let generation = 0;
+const listeners = new Set<() => void>();
 
-function fetchPlanState(): Promise<PlanState> {
+function notify(): void {
+  listeners.forEach((listener) => listener());
+}
+
+/** The cached plan, or null until it has been loaded. */
+export function getPlanSnapshot(): PlanState | null {
+  return cache;
+}
+
+export function subscribePlanState(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Load the plan once; concurrent callers share the request. */
+export function loadPlanState(): Promise<PlanState> {
+  if (cache) return Promise.resolve(cache);
   if (!pending) {
+    const requested: number = generation;
     pending = apiFetch<PlanState>("/billing/features")
-      .then((data) => {
-        cache = data;
-        return data;
-      })
       .catch((err: unknown) => {
         console.error("Failed to load plan features", err);
-        pending = null;
         return FALLBACK;
+      })
+      .then((data) => {
+        if (requested !== generation) return data; // workspace changed meanwhile
+        cache = data;
+        pending = null;
+        notify();
+        return data;
       });
   }
   return pending;
 }
 
-/** Forget the cached plan so the next render reads the newly active workspace. */
+/** Forget the cached plan so every subscriber re-reads the newly active workspace. */
 export function resetPlanState(): void {
   cache = null;
   pending = null;
+  generation++;
+  notify();
 }
 
 function usePlanState(): PlanState | null {
-  const [state, setState] = useState<PlanState | null>(cache);
+  const state: PlanState | null = useSyncExternalStore(subscribePlanState, getPlanSnapshot, () => null);
 
   useEffect(() => {
-    if (cache) return;
-    fetchPlanState().then(setState);
-  }, []);
+    if (!state) void loadPlanState();
+  }, [state]);
 
   return state;
 }

@@ -68,7 +68,7 @@ export class BillingService {
   async getUsage(orgId: string) {
     // A pending invite reserves a seat, so inviting five clients then having them
     // all accept can't slip past the limit.
-    const pendingInvites = (role: string) =>
+    const pendingInvites = (role: string | { not: string }): Promise<number> =>
       this.prisma.invitation.count({
         where: { organizationId: orgId, role, status: "pending", expiresAt: { gt: new Date() } },
       });
@@ -84,22 +84,25 @@ export class BillingService {
             _sum: { sizeBytes: true },
           })
           .then((r) => r._sum.sizeBytes ?? 0),
-        // Team members are admins; clients ("member" role) have their own limit below
+        // Team members: every staff role (owner, admin, or Better Auth's comma-joined
+        // combinations). Clients ("member" role) have their own limit below.
         this.prisma.member.count({
-          where: { organizationId: orgId, role: "admin" },
+          where: { organizationId: orgId, role: { not: "member" } },
         }),
-        // Clients: org members with the "member" role (not owner/admin)
         this.prisma.member.count({
           where: { organizationId: orgId, role: "member" },
         }),
-        pendingInvites("admin"),
+        pendingInvites({ not: "member" }),
         pendingInvites("member"),
       ]);
+
+    // The owner who created the workspace always holds a staff row and does not use a seat.
+    const teamMembers: number = Math.max(0, memberCount - 1);
 
     return {
       projects: projectCount,
       storageMb: Math.round(storageBytes / (1024 * 1024)),
-      members: memberCount + pendingTeam,
+      members: teamMembers + pendingTeam,
       clients: clientCount + pendingClients,
     };
   }

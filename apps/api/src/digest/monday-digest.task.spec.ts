@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import "../common/testing/mock-email";
 import { MondayDigestTask, digestSubject } from "./monday-digest.task";
 import type { MondayDigest } from "./monday-digest.service";
 
@@ -72,12 +73,19 @@ describe("MondayDigestTask", () => {
     expect(to).toBe("jenn@studio.test");
     expect(subject).toBe("Your week: 2 tasks due, 1 update, 1 overdue invoice");
     expect(orgId).toBe("org1");
-    expect(html).toContain("Send proofs");
-    expect(html).toContain("overdue since Oct 9");
-    expect(html).toContain("due Oct 14");
-    expect(html).toContain("https://app.atrium.test/dashboard/projects/p1");
-    expect(html).toContain("https://app.atrium.test/dashboard/projects/p1?tab=invoices");
-    expect(html).toContain("https://app.atrium.test/dashboard/settings/account#notifications");
+    // The renderer is mocked to serialise the template props (see common/testing/mock-email).
+    const email = JSON.parse(html) as Record<string, unknown>;
+    expect(email.tasks).toEqual([
+      { title: "Send proofs", projectName: "Living Unlimited", due: "Oct 9", overdue: true },
+      { title: "Kickoff call", projectName: "New Site", due: "Oct 14", overdue: false },
+    ]);
+    expect(email.activity).toEqual([
+      { title: "New comment on Homepage", message: "Looks great!", url: "https://app.atrium.test/dashboard/projects/p1" },
+    ]);
+    expect(email.overdueInvoices).toEqual([
+      { invoiceNumber: "INV-0004", due: "Oct 1", url: "https://app.atrium.test/dashboard/projects/p1?tab=invoices" },
+    ]);
+    expect(email.settingsUrl).toBe("https://app.atrium.test/dashboard/settings/account#notifications");
   });
 
   it("sends nothing when there is nothing to do", async () => {

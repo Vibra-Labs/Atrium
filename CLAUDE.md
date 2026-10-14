@@ -94,6 +94,9 @@ See `.env.example` for all variables.
 
 - **Unit tests**: `apps/api/src/**/*.spec.ts` using Bun's test runner. No I/O --
   these must pass with no database running.
+  Bun's `mock.module` is process-wide and file order differs between macOS and
+  Linux, so any spec whose code renders an email must `import "../common/testing/mock-email"`
+  instead of registering its own `@atrium/email` / `@react-email/render` mock.
 - **Integration tests**: `apps/api/test/integration/*.integration.spec.ts`. These
   use a real `PrismaService` and truncate whole tables between cases, so they run
   only against a disposable database. `bun run test:integration` provisions one

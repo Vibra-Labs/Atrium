@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import "../common/testing/mock-email";
 import { TrialEmailsTask } from "./trial-emails.task";
 
 const NOW = new Date("2026-10-08T12:00:00Z");

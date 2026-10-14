@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
+import "../common/testing/mock-email";
 import { render } from "@react-email/render";
 import { NotificationsService } from "./notifications.service";
 import type { MailService } from "../mail/mail.service";
@@ -7,25 +8,6 @@ import type { ConfigService } from "@nestjs/config";
 import type { PinoLogger } from "nestjs-pino";
 import type { InAppNotificationsService } from "./in-app-notifications.service";
 import type { PushService } from "./push.service";
-
-// --- Module mocks ---
-
-// Mock @atrium/email render functions so tests never call React Email
-mock.module("@atrium/email", () => ({
-  ProjectUpdateEmail: (props: Record<string, unknown>) => props,
-  TaskAssignedEmail: (props: Record<string, unknown>) => props,
-  InvoiceSentEmail: (props: Record<string, unknown>) => props,
-  InvoicePaidEmail: (props: Record<string, unknown>) => props,
-  DecisionClosedEmail: (props: Record<string, unknown>) => props,
-  DocumentUploadedEmail: (props: Record<string, unknown>) => props,
-  DocumentRespondedEmail: (props: Record<string, unknown>) => props,
-  DocumentReminderEmail: (props: Record<string, unknown>) => props,
-  DocumentSigningTurnEmail: (props: Record<string, unknown>) => props,
-}));
-
-mock.module("@react-email/render", () => ({
-  render: mock(async () => "<html>email</html>"),
-}));
 
 // --- Helpers ---
 

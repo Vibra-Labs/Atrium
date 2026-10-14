@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import "../common/testing/mock-email";
 import { WeeklyReminderTask } from "./weekly-reminder.task";
 
 const NOW = new Date("2026-10-09T13:00:00Z");
@@ -69,7 +70,7 @@ describe("WeeklyReminderTask", () => {
     expect(html).toContain("Living Unlimited");
     expect(html).toContain("Last update 14 days ago");
     expect(html).toContain("No updates yet");
-    expect(html).toContain("https://app.atrium.test/dashboard/projects/p1?tab=updates&amp;compose=weekly");
+    expect(html).toContain("https://app.atrium.test/dashboard/projects/p1?tab=updates&compose=weekly");
     expect(html).toContain("https://app.atrium.test/dashboard/settings/account#notifications");
   });
 

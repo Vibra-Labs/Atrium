@@ -23,18 +23,40 @@ Most agencies juggle shared drives, spreadsheets, and scattered emails to keep c
 
 ## Features
 
-- **Project management** -- Customizable status pipeline per organization
-- **File sharing** -- Upload and deliver files via S3, MinIO, Cloudflare R2, or local storage
-- **Invoicing** -- Create and send invoices to clients with draft/send workflow
-- **Client payments** -- Clients pay invoices directly via Stripe Checkout (Direct Keys or Connect)
-- **Global search** -- Full-text search across projects, files, clients, and updates
-- **White-label branding** -- Custom colors, logo, and branded login page for your client portal
-- **Custom domains** -- Point your own domain (e.g. `portal.yourcompany.com`) to the client portal with automatic SSL
-- **Role-based access** -- Owner/admin roles for your team, member role for clients
-- **Authentication** -- Magic link and email/password auth via Better Auth
-- **Multi-tenant** -- Each agency operates as its own isolated organization
-- **Optional telemetry** -- Self-hosters can opt in to share anonymous crash reports to help improve Atrium (see [Telemetry](docs/telemetry.md))
-- **MCP server** -- connect Claude, ChatGPT-style agents, or local models to manage projects, tasks, and updates; connect by signing in or with an API key ([docs](docs/mcp.md))
+### Client portal
+- **Branded portal** -- Clients log in to a portal with your logo, colors, branded login page, and optionally your own domain with automatic SSL
+- **Projects & updates** -- Post progress updates with images and embedded content (YouTube, Loom, Figma, Google Docs, Canva, and more); clients see a clear current status
+- **Files & links** -- Upload deliverables or link external content (Nextcloud, Drive, Notion); stored on local disk, S3, MinIO, or Cloudflare R2
+- **Tasks & client requests** -- Task board with statuses, assignees, labels, and drag-and-drop ordering; clients can submit requests from the portal
+- **Comments & notifications** -- Threaded discussion on updates and tasks, with in-app, email, and web push notifications
+- **View as customer** -- Preview the portal exactly as a client sees it, with mutations blocked
+
+### Get paid
+- **Invoicing** -- Draft, send, and track invoices with PDF generation and in-app preview
+- **Online payments** -- Clients pay invoices via Stripe Checkout (Direct Keys or Connect)
+- **Time tracking** -- Timers and manual entries per project and task, hourly rates, and one-click invoices from un-invoiced time
+- **Reports** -- Time reports by project, user, and task, with CSV export
+
+### Contracts & approvals
+- **Documents** -- Send quotes, contracts, and NDAs for client acknowledgement or approval
+- **E-signatures** -- Signature fields, signing order, reminders, expiry, and a signed certificate with full audit trail
+- **Decisions** -- Ask clients to vote on options directly in the portal
+
+### Run the agency
+- **Calendar** -- Tasks, project dates, and invoice due dates on a month grid or agenda
+- **Team & roles** -- Invite owners and admins to your team; clients join as members with access to their projects only
+- **Multiple organizations** -- Run several companies from one install and switch between them; close public signups with `ALLOW_SIGNUPS=false`
+- **Global search** -- Full-text search across projects, files, tasks, clients, and updates
+- **Tags & labels** -- Cross-entity labels for projects, tasks, files, and people
+- **Internal notes** -- Admin-only notes on each project
+- **Data export** -- CSV export for projects, invoices, people, tasks, and time entries
+
+### Platform
+- **MCP server** -- Connect Claude, ChatGPT-style agents, or local models to manage your workspace via OAuth sign-in or API keys ([docs](docs/mcp.md))
+- **Authentication** -- Email/password and magic link via Better Auth; admins can issue password reset links
+- **Dark mode** -- Per-user toggle, follows the system by default
+- **Email** -- Resend or any SMTP server, configurable per organization
+- **Self-hosted** -- Single Docker image with bundled Postgres option, Unraid template, ARM support; optional anonymous crash reporting ([Telemetry](docs/telemetry.md))
 
 ## Tech Stack
 
@@ -100,6 +122,8 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 ## Documentation
 
 - [Docker Deployment](docs/docker.md)
+- [Unraid](docs/unraid.md)
+- [MCP Server](docs/mcp.md)
 - [Configuration & Environment Variables](docs/configuration.md)
 - [Stripe Payments Setup](docs/stripe.md)
 - [Development Guide & Scripts](docs/development.md)
@@ -107,7 +131,7 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 
 ## Roadmap
 
-SAML/SSO, contracts & e-signatures, client approval workflows, calendar view, and more. See the full [Roadmap](docs/roadmap.md).
+Recurring invoices, SAML/SSO and 2FA, webhooks, workflow automations, and more. See the full [Roadmap](docs/roadmap.md).
 
 ## Contributing
 

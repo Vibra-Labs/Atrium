@@ -2,6 +2,100 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.9.1] — 2026-10-14
+
+### Fixed
+
+- **Sentry noise from browser extensions and Google Translate** — Errors thrown by injected extension scripts, and React `removeChild`/`insertBefore` failures on pages Google Translate has rewritten, are no longer reported. Real React regressions still are.
+
+### Security
+
+- Upgraded `nodemailer` to 10.0.13 and `@modelcontextprotocol/client` to 2.3.1.
+
+## [1.9.0] — 2026-09-30
+
+### Added
+
+- **MCP server** — Connect Claude, ChatGPT-style agents, or local models to your workspace at `POST /api/mcp` (Streamable HTTP, stateless). Tools cover projects, tasks, clients, notes, updates, and workspace info, scoped to the caller's role. Connect with an API key (Settings → API & MCP) or by signing in with OAuth through a consent page; connected apps are listed and revocable. Keys and grants are pinned to a workspace membership. Set `MCP_OAUTH_ENABLED=false` to turn off sign-in connections. See [docs/mcp.md](docs/mcp.md).
+
+### Security
+
+- OAuth hardening for MCP: PKCE required, redirect URI validation, no CSRF cookie for bearer clients, JSON-RPC batches refused. Row-level security enabled on the new OAuth and API key tables.
+
+## [1.8.7] — 2026-09-26
+
+### Fixed
+
+- **"Invalid origin" on the second sign-in behind a domain or reverse proxy** — The shipped compose file never passed `WEB_URL`, which the bundled Caddy uses as the Origin for API requests. `docker-compose.yml` now passes it through, the entrypoint warns at startup when it is missing, and the docs mark it as required with a new reverse-proxy section. Reported in #70.
+- **Built-in database failed to start on a fresh volume** — `psql` was invoked without `-d`.
+- **Copy buttons did nothing on plain-HTTP installs** — `navigator.clipboard` only exists in a secure context, so instances served at `http://192.168.x.x` silently failed every copy. All copy buttons (invite links, signature requests, branded login URL, DNS values, task permalinks) now fall back to `execCommand` and show an error toast if that fails too.
+
+### Security
+
+- **Document certificate and view tracking leaked across clients** — `GET /documents/:id/certificate` and `POST /documents/:id/track-view` only checked workspace membership, so a portal client could download another client's signing certificate or add "viewed" events to its audit trail. Both now require access to the document's project.
+
+## [1.8.6] — 2026-09-06
+
+### Fixed
+
+- **`ALLOW_SIGNUPS=false` could be bypassed** — Posting directly to the Better Auth sign-up route still created users. Signup is now enforced in a `user.create` database hook that covers every path that mints a user, so the only way in on a closed instance is a pending, unexpired invitation. The check fails closed. Reported in #68.
+- **Analytics undercounting on hosted Atrium** — Statically prerendered auth pages (`/signup`, `/accept-invite`, `/forgot-password`) were built with an empty tracker list. They now render per request and read the tracker at runtime. Identifiers (project ids, org slugs, signing tokens, query strings, page titles) are stripped from every analytics payload. The published image ships with no tracker, so self-hosted installs never report anywhere.
+
+## [1.8.5] — 2026-08-29
+
+### Added
+
+- **Dark mode** — User-controlled toggle (system default) in the dashboard header, mobile nav, and portal header.
+- **Per-task breakdown in the Time report** — New "By task" table alongside the project and user views.
+- **Log time when marking a task done** — Completing a task from the dashboard prompts to log time against it, skipped if a timer is already running on that task.
+- **Simpler portal project status** — The client project page shows a single current-status pill and a Back button instead of the four-pill stepper.
+
+### Fixed
+
+- Time report project dropdown was empty because the page requested more than the API's 100-item cap.
+- Time report now honors the `invoiced` filter.
+- Task detail modal no longer unmounts when a status change filters the task out of the list.
+
+Several of these were adapted from the Bizman365/PexloPortal fork.
+
+## [1.8.4] — 2026-08-28
+
+### Security
+
+- Upgraded `nodemailer` to 9.x (GHSA-p6gq-j5cr-w38f).
+
+## [1.8.3] — 2026-08-28
+
+### Fixed
+
+- **Sign out pushed below the fold** — The dashboard sidebar stretched to full page height on long pages. It is now pinned to the viewport.
+
+## [1.8.2] — 2026-08-28
+
+### Added
+
+- **Organization switcher** — Users who belong to more than one organization can switch from the dashboard sidebar and mobile drawer, and create an organization from Settings → Organizations. Owners and admins may create one; portal clients may not. Global search and the notification bell moved to a top header bar. Closes #48.
+
+### Changed
+
+- **Accent color setting removed** — It saved to the database but nothing read it. `accentColor` is still accepted and ignored on `PUT /branding` for one release so open tabs don't fail across the upgrade. Closes #43.
+- New sessions get a deterministic active organization (most recent owner/admin membership, else most recent membership) instead of an arbitrary pick.
+
+### Fixed
+
+- Notification endpoints no longer 500 on login when the session had no active organization yet.
+- Database integration tests split out of the unit suite; unit tests pass with no database running.
+
+## [1.8.1] — 2026-08-13
+
+### Added
+
+- **Disable public signups** — Set `ALLOW_SIGNUPS="false"` to close self-serve signup on a single-company install. Login and invited-client `/accept-invite` keep working. The signup page shows a disabled state, and `GET /health/config` exposes `signupEnabled`. Closes #54.
+
+### Fixed
+
+- **Invoice email linked to a 404** — Notification emails pointed at `/portal/invoices`, which is not a route. Invoice, file, and task notifications now deep-link to the right tab on the portal project page. Reported in #56.
+
 ## [1.8.0] — 2026-05-19
 
 ### Added

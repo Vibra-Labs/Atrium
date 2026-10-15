@@ -4,7 +4,7 @@ import { assertHostnameIsPublic } from "../embeds/safe-fetch";
 export interface UrlPolicy {
   /** Self-hosters may point webhooks at their LAN (`INTEGRATIONS_ALLOW_PRIVATE_URLS=true`). */
   allowPrivate: boolean;
-  /** Plain http is only allowed outside production. */
+  /** Plain http is allowed outside production, or when private URLs are allowed. */
   allowHttp: boolean;
 }
 

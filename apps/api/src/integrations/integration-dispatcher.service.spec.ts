@@ -222,3 +222,19 @@ describe("IntegrationDispatcher.processDue", () => {
     expect(attempt.mock.calls.map((c) => (c as unknown as string[])[0])).toEqual(["a", "b"]);
   });
 });
+
+describe("IntegrationDispatcher.urlPolicy", () => {
+  function policyFor(env: Record<string, string>) {
+    const config = { get: (key: string, fallback?: string) => env[key] ?? fallback };
+    return new IntegrationDispatcher({} as never, config as never, {} as never, {} as never).urlPolicy;
+  }
+
+  it("refuses http and private addresses in production by default", () => {
+    expect(policyFor({ NODE_ENV: "production" })).toEqual({ allowPrivate: false, allowHttp: false });
+  });
+
+  it("allows http in production once private URLs are allowed, for LAN services like n8n", () => {
+    expect(policyFor({ NODE_ENV: "production", INTEGRATIONS_ALLOW_PRIVATE_URLS: "true" }))
+      .toEqual({ allowPrivate: true, allowHttp: true });
+  });
+});

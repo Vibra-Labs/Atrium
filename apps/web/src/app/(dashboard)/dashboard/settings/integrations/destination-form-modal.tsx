@@ -7,6 +7,7 @@ import type { IntegrationEvent, IntegrationType } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { TYPE_LABELS, URL_HELP } from "./types";
+import { IntegrationIcon } from "./integration-icon";
 import type { CreatedIntegration, IntegrationSummary, ProjectOption } from "./types";
 
 /** Copy of `set` with `id` added or removed. */
@@ -110,12 +111,13 @@ export function DestinationFormModal({
                 role="radio"
                 aria-checked={type === t}
                 onClick={() => setType(t)}
-                className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${
                   type === t
                     ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
                     : "border-[var(--border)]"
                 }`}
               >
+                <IntegrationIcon type={t} />
                 {TYPE_LABELS[t]}
               </button>
             ))}

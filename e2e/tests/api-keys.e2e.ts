@@ -34,11 +34,17 @@ async function mcpInitialize(request: APIRequestContext, key: string): Promise<A
 test.describe("API keys and MCP", () => {
   test("settings tab is reachable", async ({ page }) => {
     await page.goto("/dashboard/settings/account");
-    await page.getByRole("link", { name: "API & MCP" }).click();
-    await expect(page).toHaveURL(/\/dashboard\/settings\/api-keys/);
+    await page.getByRole("link", { name: "Integrations" }).click();
+    await expect(page).toHaveURL(/\/dashboard\/settings\/integrations/);
     await expect(page.getByRole("heading", { name: "API keys" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Connect an AI assistant" })).toBeVisible();
     await expect(page.getByTestId("mcp-url")).toContainText("/api/mcp");
+  });
+
+  test("old API & MCP link redirects to Integrations", async ({ page }) => {
+    await page.goto("/dashboard/settings/api-keys");
+    await expect(page).toHaveURL(/\/dashboard\/settings\/integrations/);
+    await expect(page.getByRole("heading", { name: "API keys" })).toBeVisible();
   });
 
   test("create a key, use it over MCP, revoke it, and it stops working", async ({ page, playwright }) => {
@@ -46,7 +52,7 @@ test.describe("API keys and MCP", () => {
     // per-test timeout isn't enough to also cover the steps before it.
     test.setTimeout(75_000);
     const keyName = `E2E key ${Date.now()}`;
-    await page.goto("/dashboard/settings/api-keys");
+    await page.goto("/dashboard/settings/integrations");
     await expect(page.getByText("Loading...").first()).not.toBeVisible({ timeout: 5000 });
 
     await page.getByPlaceholder("Key name (e.g. Claude agent)").fill(keyName);

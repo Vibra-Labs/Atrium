@@ -67,10 +67,13 @@ test.describe("Integrations", () => {
     await page.getByRole("link", { name: "Integrations" }).click();
     await expect(page).toHaveURL(/\/dashboard\/settings\/integrations/);
     if (features.integrations) {
-      await expect(page.getByRole("heading", { name: "Integrations" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Slack, Discord & webhooks" })).toBeVisible();
     } else {
       await expect(page.getByTestId("integrations-locked")).toBeVisible();
     }
+    // API keys and MCP live on the same tab and are not plan-gated
+    await expect(page.getByRole("heading", { name: "Connect an AI assistant" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "API keys" })).toBeVisible();
   });
 
   test("rejects a Slack URL that isn't a Slack webhook", async ({ request }) => {
@@ -98,6 +101,8 @@ test.describe("Integrations", () => {
     await page.goto("/dashboard/settings/integrations");
     await page.getByRole("button", { name: "Add integration" }).click();
     const form = page.getByTestId("integration-form");
+    await expect(form.getByRole("radio", { name: "Slack" }).getByTestId("icon-slack")).toBeVisible();
+    await expect(form.getByRole("radio", { name: "Discord" }).getByTestId("icon-discord")).toBeVisible();
     await form.getByRole("radio", { name: "Webhook" }).click();
     await form.getByLabel("Name").fill(name);
     await form.getByLabel("Webhook URL").fill(capture.url);
@@ -111,6 +116,7 @@ test.describe("Integrations", () => {
     await page.getByRole("button", { name: "I have saved it" }).click();
 
     const row = page.getByTestId("integration-row").filter({ hasText: name });
+    await expect(row.getByTestId("icon-webhook")).toBeVisible();
     await expect(row).toContainText("2 events");
     await expect(row).toContainText("All projects");
     await expect(row).not.toContainText("/hook");

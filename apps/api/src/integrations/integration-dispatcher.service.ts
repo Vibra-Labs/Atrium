@@ -49,9 +49,11 @@ export class IntegrationDispatcher {
     private billing: BillingService,
   ) {
     this.webUrl = this.config.get("WEB_URL", "http://localhost:3000").replace(/\/+$/, "");
+    const allowPrivate: boolean = this.config.get("INTEGRATIONS_ALLOW_PRIVATE_URLS", "false") === "true";
+    // LAN services (n8n on a home server) rarely have TLS, so opting into private URLs allows http too.
     this.urlPolicy = {
-      allowPrivate: this.config.get("INTEGRATIONS_ALLOW_PRIVATE_URLS", "false") === "true",
-      allowHttp: this.config.get("NODE_ENV", "development") !== "production",
+      allowPrivate,
+      allowHttp: allowPrivate || this.config.get("NODE_ENV", "development") !== "production",
     };
   }
 

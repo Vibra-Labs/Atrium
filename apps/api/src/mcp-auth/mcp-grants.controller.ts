@@ -61,7 +61,7 @@ export class McpConsentController {
   }
 }
 
-/** Used by Settings → API & MCP → Connected apps. */
+/** Used by Settings → Integrations → Connected apps. */
 @Controller("mcp-grants")
 @UseGuards(AuthGuard, RolesGuard)
 @Roles("owner", "admin")

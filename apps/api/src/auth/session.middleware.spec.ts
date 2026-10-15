@@ -22,13 +22,15 @@ function build(resolveResult: unknown = resolved, oauthResult: unknown = null, o
   const authService = { auth: { api: { getSession } } };
   const apiKeys = { resolve: mock(() => Promise.resolve(resolveResult)) };
   const mcpAuth = { resolve: mock(() => Promise.resolve(oauthResult)) };
+  const tracker = lastSeen();
   const mw = new SessionMiddleware(
     authService as never,
     apiKeys as never,
     mcpAuth as never,
     config(oauthEnabled) as never,
+    tracker as never,
   );
-  return { mw, getSession, apiKeys, mcpAuth };
+  return { mw, getSession, apiKeys, mcpAuth, tracker };
 }
 
 function req(
@@ -38,6 +40,10 @@ function req(
   originalUrl = "/api/projects",
 ): Request {
   return { headers, cookies, ip, originalUrl } as unknown as Request;
+}
+
+function lastSeen() {
+  return { touch: mock(() => Promise.resolve()) };
 }
 
 const noop = (): NextFunction => mock(() => {}) as unknown as NextFunction;
@@ -252,6 +258,7 @@ describe("SessionMiddleware bearer cache isolation", () => {
       { resolve: mock(() => Promise.reject(new Error("db down"))) } as never,
       { resolve: mock(() => Promise.resolve(null)) } as never,
       config() as never,
+      lastSeen() as never,
     );
     const r = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
     const next = mock(() => {}) as unknown as NextFunction;
@@ -381,6 +388,7 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
       { resolve } as never,
       { resolve: mock(() => Promise.resolve(null)) } as never,
       config() as never,
+      lastSeen() as never,
     );
     // 30 expected rejections would otherwise fill the test output with warnings.
     (mw as unknown as { logger: { warn: () => void } }).logger = { warn: mock(() => {}) };
@@ -404,5 +412,38 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
     expect(blocked.authRateLimited).toBe(true);
     expect(blocked.user).toBeUndefined();
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SessionMiddleware last seen", () => {
+  function cookieBuild() {
+    const member = { id: "m1", userId: "u1", organizationId: "org1", role: "member", createdAt: new Date() };
+    const getSession = mock(() =>
+      Promise.resolve({ user: resolved.user, session: { id: "s1", userId: "u1", activeOrganizationId: "org1" } }),
+    );
+    const getFullOrganization = mock(() => Promise.resolve({ ...resolved.organization, members: [member] }));
+    const tracker = lastSeen();
+    const mw = new SessionMiddleware(
+      { auth: { api: { getSession, getFullOrganization } } } as never,
+      { resolve: mock(() => Promise.resolve(null)) } as never,
+      { resolve: mock(() => Promise.resolve(null)) } as never,
+      config() as never,
+      tracker as never,
+    );
+    return { mw, tracker };
+  }
+
+  it("records a visit for a cookie session, including one served from the cache", async () => {
+    const { mw, tracker } = cookieBuild();
+    await mw.use(req({}, { "better-auth.session_token": "s1" }), {} as Response, noop());
+    await mw.use(req({}, { "better-auth.session_token": "s1" }), {} as Response, noop());
+    expect(tracker.touch).toHaveBeenCalledTimes(2);
+    expect(tracker.touch).toHaveBeenCalledWith("m1");
+  });
+
+  it("does not count an API key request as a visit", async () => {
+    const { mw, tracker } = build();
+    await mw.use(req({ authorization: "Bearer atr_abc" }), {} as Response, noop());
+    expect(tracker.touch).not.toHaveBeenCalled();
   });
 });

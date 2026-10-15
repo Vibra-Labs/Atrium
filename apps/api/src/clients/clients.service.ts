@@ -167,6 +167,7 @@ export class ClientsService {
           role: true,
           createdAt: true,
           hourlyRateCents: true,
+          lastSeenAt: true,
           user: { select: { id: true, name: true, email: true } },
           labels: { select: { label: { select: { id: true, name: true, color: true } } } },
         },

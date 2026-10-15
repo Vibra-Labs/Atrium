@@ -14,21 +14,30 @@ interface InvitationEmailProps {
   inviteUrl: string;
   organizationName: string;
   inviterName?: string;
+  /** Shown as "This invitation expires on ...". */
+  expiresOn?: string;
+  /** The follow-up sent a few days later to an invite nobody has accepted. */
+  reminder?: boolean;
 }
 
 export function InvitationEmail({
   inviteUrl,
   organizationName,
   inviterName,
+  expiresOn,
+  reminder = false,
 }: InvitationEmailProps) {
+  const heading: string = reminder
+    ? `Your invitation to ${organizationName} is waiting`
+    : `You're invited to ${organizationName}`;
   return (
     <Html>
       <Head />
-      <Preview>You&apos;ve been invited to {organizationName}</Preview>
+      <Preview>{heading}</Preview>
       <Body style={{ fontFamily: "sans-serif", padding: "40px 0" }}>
         <Container style={{ maxWidth: "480px", margin: "0 auto" }}>
           <Heading style={{ fontSize: "24px", marginBottom: "24px" }}>
-            You&apos;re invited to {organizationName}
+            {heading}
           </Heading>
           <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
             {inviterName
@@ -52,6 +61,11 @@ export function InvitationEmail({
           >
             Accept Invitation
           </Link>
+          {expiresOn && (
+            <Text style={{ fontSize: "14px", color: "#6b7280", marginTop: "24px" }}>
+              This invitation expires on {expiresOn}.
+            </Text>
+          )}
           <Text
             style={{ fontSize: "14px", color: "#6b7280", marginTop: "24px" }}
           >

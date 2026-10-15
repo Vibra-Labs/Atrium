@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";
 import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
 import { McpAuthService } from "../mcp-auth/mcp-auth.service";
+import { LastSeenTracker } from "./last-seen.tracker";
 import { bearerToken, isMcpPath, RateLimiter } from "../common";
 import type {
   Actor, AuthenticatedRequest, AuthUser, AuthSession, BearerKind, FullOrganization, OrgMember,
@@ -68,6 +69,7 @@ export class SessionMiddleware implements NestMiddleware {
     private apiKeys: ApiKeysService,
     private mcpAuth: McpAuthService,
     private config: ConfigService,
+    private lastSeen: LastSeenTracker,
   ) {}
 
   private extractSessionToken(req: Request): string | undefined {
@@ -202,7 +204,10 @@ export class SessionMiddleware implements NestMiddleware {
           authReq.user = cached.user;
           authReq.session = cached.session;
           if (cached.organization) authReq.organization = cached.organization;
-          if (cached.member) authReq.member = cached.member;
+          if (cached.member) {
+            authReq.member = cached.member;
+            void this.lastSeen.touch(cached.member.id);
+          }
           return next();
         }
         // Expired — remove stale entry
@@ -248,6 +253,8 @@ export class SessionMiddleware implements NestMiddleware {
             );
             if (member) {
               authReq.member = member;
+              // Cookie sessions only: an API key or MCP client is not a person visiting.
+              void this.lastSeen.touch(member.id);
             }
           }
         }

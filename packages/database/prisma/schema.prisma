@@ -131,6 +131,10 @@ model Member {
   mondayDigest          Boolean   @default(true)
   mondayDigestSentAt    DateTime?
 
+  // Last authenticated request in this workspace, written at most hourly. Lets
+  // owners see which clients are actually using the portal.
+  lastSeenAt DateTime?
+
   @@index([organizationId])
   @@index([userId])
   @@map("member")
@@ -145,6 +149,8 @@ model Invitation {
   expiresAt        DateTime
   inviterId        String
   createdAt        DateTime  @default(now())
+  // Set when the "you're still invited" nudge goes out, so it is sent once.
+  reminderSentAt   DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 

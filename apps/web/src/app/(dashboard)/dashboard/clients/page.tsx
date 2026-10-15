@@ -13,15 +13,8 @@ import { downloadCsv } from "@/lib/download";
 import { copyToClipboard } from "@/lib/clipboard";
 import Link from "next/link";
 import { useAppConfig } from "@/lib/app-config";
-
-interface Invitation {
-  id: string;
-  email: string;
-  role: string;
-  status: string;
-  expiresAt: string;
-  inviteLink: string;
-}
+import { formatLastSeen } from "@/lib/last-seen";
+import { PendingInvitationRow, type Invitation } from "./pending-invitation-row";
 
 interface LabelRecord {
   id: string;
@@ -34,6 +27,7 @@ interface MemberRecord {
   userId: string;
   role: string;
   hourlyRateCents?: number | null;
+  lastSeenAt?: string | null;
   user: { id: string; name: string; email: string };
   labels?: { label: LabelRecord }[];
 }
@@ -170,6 +164,37 @@ export default function PeoplePage() {
     }
     setCopied(link);
     setTimeout(() => setCopied(""), 2000);
+  };
+
+  const [resendingId, setResendingId] = useState<string>("");
+
+  const handleResendInvitation = async (inv: Invitation) => {
+    setResendingId(inv.id);
+    try {
+      // Better Auth extends and re-sends a live invite. An expired one is invisible
+      // to it, so the same call creates a fresh invite and the API hides the old row.
+      await apiFetch("/auth/organization/invite-member", {
+        method: "POST",
+        body: JSON.stringify({ email: inv.email, role: inv.role, resend: true }),
+      });
+      track("invitation_resent", { role: inv.role, expired: inv.expired });
+      if (inv.expired) {
+        // Expired invites free their seat, so a fresh one takes it back.
+        setPlanLimits((prev) =>
+          prev
+            ? inv.role === "member"
+              ? { ...prev, clientsUsed: prev.clientsUsed + 1 }
+              : { ...prev, membersUsed: prev.membersUsed + 1 }
+            : prev,
+        );
+      }
+      setInvitations(await apiFetch<Invitation[]>("/clients/invitations"));
+      success(`Invitation resent to ${inv.email}`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to resend invitation");
+    } finally {
+      setResendingId("");
+    }
   };
 
   const handleRemoveMember = async (memberId: string, memberName: string, isTeam: boolean) => {
@@ -600,24 +625,19 @@ export default function PeoplePage() {
               <h2 className="text-sm font-medium mb-3">Pending Invitations</h2>
               <div className="space-y-2">
                 {teamInvitations.map((inv) => (
-                  <div
+                  <PendingInvitationRow
                     key={inv.id}
-                    className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg"
-                  >
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{inv.email}</p>
+                    invitation={inv}
+                    roleBadge={
                       <span className={`text-xs px-2 py-0.5 rounded-full ${roleColor(inv.role)}`}>
                         {inv.role}
                       </span>
-                    </div>
-                    <button
-                      onClick={() => copyLink(inv.inviteLink)}
-                      className="flex items-center gap-1 text-sm text-[var(--primary)] hover:underline"
-                    >
-                      {copied === inv.inviteLink ? <Check size={14} /> : <Copy size={14} />}
-                      {copied === inv.inviteLink ? "Copied!" : "Copy Link"}
-                    </button>
-                  </div>
+                    }
+                    copied={copied === inv.inviteLink}
+                    resending={resendingId === inv.id}
+                    onCopy={() => copyLink(inv.inviteLink)}
+                    onResend={() => handleResendInvitation(inv)}
+                  />
                 ))}
               </div>
             </div>
@@ -826,24 +846,14 @@ export default function PeoplePage() {
               <h2 className="text-sm font-medium mb-3">Pending Invitations</h2>
               <div className="space-y-2">
                 {clientInvitations.map((inv) => (
-                  <div
+                  <PendingInvitationRow
                     key={inv.id}
-                    className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{inv.email}</p>
-                      <p className="text-xs text-[var(--muted-foreground)]">
-                        Expires {new Date(inv.expiresAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => copyLink(inv.inviteLink)}
-                      className="flex items-center gap-1 text-sm text-[var(--primary)] hover:underline"
-                    >
-                      {copied === inv.inviteLink ? <Check size={14} /> : <Copy size={14} />}
-                      {copied === inv.inviteLink ? "Copied!" : "Copy Link"}
-                    </button>
-                  </div>
+                    invitation={inv}
+                    copied={copied === inv.inviteLink}
+                    resending={resendingId === inv.id}
+                    onCopy={() => copyLink(inv.inviteLink)}
+                    onResend={() => handleResendInvitation(inv)}
+                  />
                 ))}
               </div>
             </div>
@@ -891,6 +901,12 @@ export default function PeoplePage() {
                               {savedProfile?.company && (
                                 <span> &middot; {savedProfile.company}</span>
                               )}
+                            </p>
+                            <p
+                              data-testid="client-last-seen"
+                              className="text-xs text-[var(--muted-foreground)]"
+                            >
+                              {formatLastSeen(member.lastSeenAt)}
                             </p>
                           </div>
                         </div>

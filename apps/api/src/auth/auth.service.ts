@@ -15,6 +15,7 @@ import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
+import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
 
 interface AdminResetContext {
   capturedUrl: string | null;
@@ -290,6 +291,9 @@ export class AuthService {
         organization({
           allowUserToCreateOrganization: (user: { id: string }) =>
             this.mayCreateOrganization(user.id),
+          // Better Auth's default is 48 hours, which a client who reads email
+          // on Monday misses for an invite sent on Friday.
+          invitationExpiresIn: INVITATION_EXPIRES_IN_SECONDS,
           sendInvitationEmail: async ({ invitation, inviter, organization }) => {
             const inviteUrl = `${webUrl}/accept-invite?id=${invitation.id}`;
             const html = await render(
@@ -297,6 +301,7 @@ export class AuthService {
                 inviteUrl,
                 organizationName: organization.name,
                 inviterName: inviter.user.name,
+                expiresOn: formatInvitationExpiry(new Date(invitation.expiresAt)),
               }),
             );
             await this.mail.send(

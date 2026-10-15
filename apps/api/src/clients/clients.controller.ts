@@ -26,6 +26,7 @@ import {
 } from "../common";
 import type { CsvColumn } from "../common";
 import { ClientsService } from "./clients.service";
+import { presentInvitations } from "./invitations";
 import { ChangeRoleDto, SetRateDto } from "./clients.dto";
 import { UpdateClientProfileDto } from "./client-profile.dto";
 
@@ -100,10 +101,7 @@ export class ClientsController {
       where: { organizationId: orgId, status: "pending" },
       orderBy: { createdAt: "desc" },
     });
-    return invitations.map((inv) => ({
-      ...inv,
-      inviteLink: `${webUrl}/accept-invite?id=${inv.id}`,
-    }));
+    return presentInvitations(invitations, webUrl, new Date());
   }
 
   @Get("me/profile")

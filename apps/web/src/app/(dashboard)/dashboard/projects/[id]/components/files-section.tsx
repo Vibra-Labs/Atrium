@@ -30,14 +30,13 @@ import {
   LinkIcon,
   Plus,
   Pencil,
-  CheckCircle2,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
 import { usePlanFeatures, useIsTrialing } from "@/lib/plan-features";
 import { ProBadge, UpgradeLink, TrialTag } from "@/components/pro-badge";
-import { deliverableStatus } from "@/lib/deliverable";
-import { DeliverableModal } from "./deliverable-modal";
+import { deliverableStatus, sendDeliverable } from "@/lib/deliverable";
+import { AskApprovalCheckbox, DeliverableFields } from "./deliverable-fields";
 import { DeliverableVersionModal } from "./deliverable-version-modal";
 import dynamic from "next/dynamic";
 
@@ -163,7 +162,6 @@ export function FilesSection({
   const [docsTotalPages, setDocsTotalPages] = useState(1);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [showDocUpload, setShowDocUpload] = useState(false);
-  const [showDeliverable, setShowDeliverable] = useState(false);
   const [versionDoc, setVersionDoc] = useState<DocumentRecord | null>(null);
   const [docUploading, setDocUploading] = useState(false);
   const [voidModalDocId, setVoidModalDocId] = useState<string | null>(null);
@@ -192,6 +190,16 @@ export function FilesSection({
   const [linkTitle, setLinkTitle] = useState("");
   const [linkDescription, setLinkDescription] = useState("");
   const [linkSaving, setLinkSaving] = useState(false);
+
+  // "Ask client to approve" state, shared by the upload and link modals
+  const [askApproval, setAskApproval] = useState(false);
+  const [approvalNote, setApprovalNote] = useState("");
+  const [approvalReminders, setApprovalReminders] = useState(true);
+  const resetApproval = (): void => {
+    setAskApproval(false);
+    setApprovalNote("");
+    setApprovalReminders(true);
+  };
 
   // Edit file modal state
   const [editFile, setEditFile] = useState<FileRecord | null>(null);
@@ -269,6 +277,7 @@ export function FilesSection({
     setExpiresInDays("");
     setReminderEnabled(false);
     setReminderIntervalDays(3);
+    resetApproval();
   };
 
   const handleFileDownload = async (fileId: string, filename: string) => {
@@ -313,6 +322,7 @@ export function FilesSection({
     setLinkUrl("");
     setLinkTitle("");
     setLinkDescription("");
+    resetApproval();
   };
 
   const openEditFile = (file: FileRecord): void => {
@@ -375,6 +385,14 @@ export function FilesSection({
     if (!url || !title) return;
     setLinkSaving(true);
     try {
+      if (askApproval) {
+        await sendDeliverable({ projectId, title, url, note: approvalNote, reminderEnabled: approvalReminders });
+        setShowAddLink(false);
+        resetLinkForm();
+        loadDocuments();
+        success("Sent to the client for approval");
+        return;
+      }
       await apiFetch("/files/link", {
         method: "POST",
         body: JSON.stringify({
@@ -389,7 +407,8 @@ export function FilesSection({
       onFileChange();
       success("Link added");
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to add link");
+      console.error(err);
+      showError(err instanceof Error ? err.message : askApproval ? "Failed to send for approval" : "Failed to add link");
     } finally {
       setLinkSaving(false);
     }
@@ -400,6 +419,14 @@ export function FilesSection({
     if (!docFile || !docTitle.trim()) return;
     setDocUploading(true);
     try {
+      if (askApproval) {
+        await sendDeliverable({ projectId, title: docTitle, note: approvalNote, reminderEnabled: approvalReminders, file: docFile });
+        setShowDocUpload(false);
+        resetDocForm();
+        loadDocuments();
+        success("Sent to the client for approval");
+        return;
+      }
       const formData = new FormData();
       formData.append("file", docFile);
       formData.append("projectId", projectId);
@@ -435,7 +462,8 @@ export function FilesSection({
       success(andSend ? "Document uploaded and sent" : "Document saved as draft");
       if (requiresSignature && isPdf) setPlacerDocId(doc.id);
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to upload document");
+      console.error(err);
+      showError(err instanceof Error ? err.message : askApproval ? "Failed to send for approval" : "Failed to upload document");
     } finally {
       setDocUploading(false);
     }
@@ -584,16 +612,6 @@ export function FilesSection({
                     <p className="text-xs text-[var(--muted-foreground)]">Link to an external resource (Nextcloud, Canva, etc.)</p>
                   </div>
                 </button>
-                <button
-                  onClick={() => { setShowAddMenu(false); setShowDeliverable(true); }}
-                  className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[var(--muted)] text-left"
-                >
-                  <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
-                  <div>
-                    <p className="text-sm font-medium">Request approval</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Send a design, draft or link for the client to approve</p>
-                  </div>
-                </button>
               </div>
             )}
           </div>
@@ -620,9 +638,9 @@ export function FilesSection({
                   onClick={() => setExpandedDocId(isExpanded ? null : doc.id)}
                   className="flex items-center justify-between w-full p-3 text-left hover:bg-[var(--muted)] transition-colors rounded-lg"
                 >
-                  <div className="flex items-center gap-3">
-                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    <div>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {isExpanded ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
+                    <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium">{doc.title}</p>
                         {(doc.currentVersion ?? 1) > 1 && (
@@ -642,11 +660,13 @@ export function FilesSection({
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: "#f3f4f6", color: "#374151" }}>
-                      {typeLabels[doc.type] || doc.type}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: colors.bg, color: colors.text }}>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                    {!isDeliverable && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0" style={{ backgroundColor: "#f3f4f6", color: "#374151" }}>
+                        {typeLabels[doc.type] || doc.type}
+                      </span>
+                    )}
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0" style={{ backgroundColor: colors.bg, color: colors.text }}>
                       {isDeliverable ? deliverable.label : doc.status}
                     </span>
                   </div>
@@ -986,13 +1006,6 @@ export function FilesSection({
         )}
       </div>
 
-      {showDeliverable && (
-        <DeliverableModal
-          projectId={projectId}
-          onClose={() => setShowDeliverable(false)}
-          onCreated={() => { setShowDeliverable(false); loadDocuments(); }}
-        />
-      )}
       {versionDoc && (
         <DeliverableVersionModal
           doc={versionDoc}
@@ -1006,12 +1019,13 @@ export function FilesSection({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={(e) => { if (e.target === e.currentTarget) { setShowDocUpload(false); resetDocForm(); } }}>
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-[480px] mx-4 p-6 space-y-4">
             <h3 className="text-lg font-semibold">Upload File</h3>
+            <AskApprovalCheckbox checked={askApproval} onChange={setAskApproval} />
             <div>
               <label className="text-sm text-[var(--muted-foreground)]">Title</label>
               <input type="text" value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="e.g., Project Contract v2" className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm" />
             </div>
-            <div className="grid grid-cols-[140px_1fr] gap-3">
-              <div>
+            <div className={askApproval ? "" : "grid grid-cols-[140px_1fr] gap-3"}>
+              {!askApproval && <div>
                 <label className="text-sm text-[var(--muted-foreground)]">Type</label>
                 <select value={docType} onChange={(e) => setDocType(e.target.value)} className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm">
                   <option value="contract">Contract</option>
@@ -1020,7 +1034,7 @@ export function FilesSection({
                   <option value="nda">NDA</option>
                   <option value="other">Other</option>
                 </select>
-              </div>
+              </div>}
               <div>
                 <label className="text-sm text-[var(--muted-foreground)]">File</label>
                 {docFile ? (
@@ -1038,14 +1052,14 @@ export function FilesSection({
                 )}
               </div>
             </div>
-            {isPdf && canSign && (
+            {!askApproval && isPdf && canSign && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={requiresSignature} onChange={(e) => { setRequiresSignature(e.target.checked); if (e.target.checked) setRequiresApproval(false); }} className="accent-[var(--primary)]" />
                 <span className="text-sm">Collect signature</span>
                 {isTrialing && <TrialTag />}
               </label>
             )}
-            {isPdf && !canSign && (
+            {!askApproval && isPdf && !canSign && (
               <div className="flex items-center gap-2" data-testid="signature-locked">
                 <input type="checkbox" disabled className="cursor-not-allowed" aria-label="Collect signature" />
                 <span className="text-sm text-[var(--muted-foreground)]">Collect signature</span>
@@ -1053,10 +1067,13 @@ export function FilesSection({
                 <UpgradeLink reason="e-signatures" />
               </div>
             )}
-            <button onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] flex items-center gap-1 transition-colors">
+            {askApproval && (
+              <DeliverableFields idPrefix="upload" note={approvalNote} onNoteChange={setApprovalNote} reminders={approvalReminders} onRemindersChange={setApprovalReminders} />
+            )}
+            {!askApproval && <button onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] flex items-center gap-1 transition-colors">
               {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Advanced options
-            </button>
-            {showAdvanced && (
+            </button>}
+            {!askApproval && showAdvanced && (
               <div className="space-y-2.5 pl-5 border-l-2 border-[var(--border)]">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={requiresApproval} onChange={(e) => { setRequiresApproval(e.target.checked); if (e.target.checked) setRequiresSignature(false); }} className="accent-[var(--primary)]" />
@@ -1136,8 +1153,14 @@ export function FilesSection({
             )}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
               <button onClick={() => { setShowDocUpload(false); resetDocForm(); }} className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]">Cancel</button>
-              <button onClick={() => handleDocUpload(false)} disabled={docUploading || !docTitle.trim() || !docFile} className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] disabled:opacity-40">Save Draft</button>
-              <button onClick={() => handleDocUpload(true)} disabled={docUploading || !docTitle.trim() || !docFile} className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50">{docUploading ? "Uploading..." : "Upload & Send"}</button>
+              {askApproval ? (
+                <button onClick={() => handleDocUpload(true)} disabled={docUploading || !docTitle.trim() || !docFile} className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50">{docUploading ? "Sending..." : "Send for approval"}</button>
+              ) : (
+                <>
+                  <button onClick={() => handleDocUpload(false)} disabled={docUploading || !docTitle.trim() || !docFile} className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] disabled:opacity-40">Save Draft</button>
+                  <button onClick={() => handleDocUpload(true)} disabled={docUploading || !docTitle.trim() || !docFile} className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50">{docUploading ? "Uploading..." : "Upload & Send"}</button>
+                </>
+              )}
             </div>
             <p className="text-[11px] text-[var(--muted-foreground)] text-right -mt-2">Sending notifies the client immediately.</p>
           </div>
@@ -1149,6 +1172,7 @@ export function FilesSection({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={(e) => { if (e.target === e.currentTarget) { setShowAddLink(false); resetLinkForm(); } }}>
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-[480px] mx-4 p-6 space-y-4">
             <h3 className="text-lg font-semibold">Add Link</h3>
+            <AskApprovalCheckbox checked={askApproval} onChange={setAskApproval} />
             <p className="text-sm text-[var(--muted-foreground)]">Link to an external resource like a Nextcloud document, Canva design, or any other URL.</p>
             <div>
               <label className="text-sm text-[var(--muted-foreground)]">URL</label>
@@ -1171,16 +1195,20 @@ export function FilesSection({
                 className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
               />
             </div>
-            <div>
-              <label className="text-sm text-[var(--muted-foreground)]">Description (optional)</label>
-              <textarea
-                value={linkDescription}
-                onChange={(e) => setLinkDescription(e.target.value)}
-                placeholder="What is this link for?"
-                rows={2}
-                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none"
-              />
-            </div>
+            {askApproval ? (
+              <DeliverableFields idPrefix="link" note={approvalNote} onNoteChange={setApprovalNote} reminders={approvalReminders} onRemindersChange={setApprovalReminders} />
+            ) : (
+              <div>
+                <label className="text-sm text-[var(--muted-foreground)]">Description (optional)</label>
+                <textarea
+                  value={linkDescription}
+                  onChange={(e) => setLinkDescription(e.target.value)}
+                  placeholder="What is this link for?"
+                  rows={2}
+                  className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none"
+                />
+              </div>
+            )}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
               <button onClick={() => { setShowAddLink(false); resetLinkForm(); }} className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)]">Cancel</button>
               <button
@@ -1188,7 +1216,7 @@ export function FilesSection({
                 disabled={linkSaving || !linkUrl.trim() || !linkTitle.trim()}
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
               >
-                {linkSaving ? "Adding..." : "Add link"}
+                {linkSaving ? (askApproval ? "Sending..." : "Adding...") : askApproval ? "Send for approval" : "Add link"}
               </button>
             </div>
           </div>

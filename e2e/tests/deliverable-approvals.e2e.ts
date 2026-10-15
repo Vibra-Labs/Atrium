@@ -41,7 +41,11 @@ test.describe("Deliverable approvals", () => {
     // 1. Agency sends an image for approval through the UI.
     await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
     await owner.getByRole("button", { name: /add/i }).first().click();
-    await owner.getByText("Request approval").click();
+    await owner.getByText("Upload file").click();
+    await owner.getByLabel("Ask client to approve").check();
+    // Contract-only controls are hidden in approval mode.
+    await expect(owner.getByText("Advanced options")).toHaveCount(0);
+    await expect(owner.getByRole("button", { name: /save draft/i })).toHaveCount(0);
     await owner.locator('input[type="file"]').last().setInputFiles({ name: "homepage.png", mimeType: "image/png", buffer: PNG });
     await owner.getByLabel(/note to client/i).fill("First pass at the homepage");
     await owner.getByRole("button", { name: /send for approval/i }).click();
@@ -79,6 +83,17 @@ test.describe("Deliverable approvals", () => {
     await expect(owner.getByText("Awaiting review").first()).toBeVisible();
     const row = owner.getByRole("button").filter({ has: owner.getByText("homepage", { exact: true }) });
     await expect(row.getByText("v2", { exact: true })).toBeVisible();
+
+    // The deliverable's files are not repeated as plain files, for agency and client.
+    await owner.reload();
+    await expect(owner.getByText(/homepage(-v2)?\.png/)).toHaveCount(1);
+    await client.goto(`${WEB_URL}/portal/projects/${project.id}?tab=files`);
+    await expect(client.getByText("Awaiting review").first()).toBeVisible();
+    // Portal document rows show the title, so a plain file row would be the only place a filename appears.
+    await expect(client.getByText("homepage", { exact: true })).toHaveCount(1);
+    await expect(client.getByText(/homepage(-v2)?\.png/)).toHaveCount(0);
+    const clientProject = await (await client.request.get(`${API_URL}/api/projects/mine/${project.id}`)).json();
+    expect(clientProject.files).toEqual([]);
 
     // 4. Client approves v2 through the deep link.
     const docs = await (await client.request.get(`${API_URL}/api/documents/mine/${project.id}`)).json();
@@ -143,6 +158,28 @@ test.describe("Deliverable approvals", () => {
     await expect(client.getByText(/approved by/i)).toBeVisible();
 
     await clientCtx.close();
+    await ownerCtx.close();
+  });
+
+  test("Add link with 'Ask client to approve' sends a link deliverable", async ({ browser }) => {
+    const { context: ownerCtx, page: owner } = await createOwner(browser, "deliv-uilink-owner");
+    const project = await (await owner.request.post(`${API_URL}/api/projects`, {
+      data: { name: "UI Link Deliverable E2E" },
+      headers: { "x-csrf-token": await csrf(ownerCtx) },
+    })).json();
+
+    await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
+    await owner.getByRole("button", { name: /add/i }).first().click();
+    await owner.getByText("Add link", { exact: true }).click();
+    await owner.getByPlaceholder("https://...").fill("https://example.com/figma");
+    await owner.getByPlaceholder(/design mockup/i).fill("Figma board");
+    await owner.getByLabel("Ask client to approve").check();
+    await owner.getByLabel(/note to client/i).fill("Please review");
+    await owner.getByRole("button", { name: "Send for approval" }).click();
+    await expect(owner.getByText("Awaiting review").first()).toBeVisible();
+    // Only the type-less status pill is shown for deliverables.
+    await expect(owner.getByText("For approval", { exact: true })).toHaveCount(0);
+
     await ownerCtx.close();
   });
 

@@ -17,6 +17,14 @@ interface ProjectUpdateInput {
   endDate?: Date | null;
 }
 
+// Files that belong to a document (or one of its versions) are listed under
+// Documents, not as plain project files.
+const STANDALONE_FILES = {
+  documents: { none: {} },
+  signedDocuments: { none: {} },
+  documentVersions: { none: {} },
+};
+
 @Injectable()
 export class ProjectsService {
   constructor(private prisma: PrismaService) {}
@@ -72,7 +80,7 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({
       where: { id, organizationId },
       include: {
-        files: true,
+        files: { where: STANDALONE_FILES },
         clients: { select: { userId: true } },
         labels: { include: { label: true } },
       },
@@ -94,7 +102,7 @@ export class ProjectsService {
         archivedAt: null,
         clients: { some: { userId: clientUserId } },
       },
-      include: { files: true },
+      include: { files: { where: STANDALONE_FILES } },
     });
     if (!project) throw new NotFoundException("Project not found");
     return project;

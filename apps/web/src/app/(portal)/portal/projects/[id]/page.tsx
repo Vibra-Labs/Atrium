@@ -1374,9 +1374,11 @@ export default function PortalProjectDetailPage() {
                               <div className="min-w-0">
                                 <p className="text-sm font-medium truncate text-[var(--primary)] hover:underline">{doc.title}</p>
                                 <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)]">
-                                    {docTypeLabels[doc.type] || doc.type}
-                                  </span>
+                                  {doc.type !== "deliverable" && (
+                                    <span className="text-xs px-2 py-0.5 bg-[var(--muted)] rounded-full text-[var(--muted-foreground)] whitespace-nowrap shrink-0">
+                                      {docTypeLabels[doc.type] || doc.type}
+                                    </span>
+                                  )}
                                   <span className="text-xs text-[var(--muted-foreground)]">
                                     {formatBytes(doc.file.sizeBytes)}
                                   </span>
@@ -1436,7 +1438,7 @@ export default function PortalProjectDetailPage() {
                               )}
                               {doc.type === "deliverable" && !isReadOnly && (
                                 <>
-                                  <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ backgroundColor: deliverableStatus(doc.status).bg, color: deliverableStatus(doc.status).text }}>
+                                  <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap shrink-0" style={{ backgroundColor: deliverableStatus(doc.status).bg, color: deliverableStatus(doc.status).text }}>
                                     {deliverableStatus(doc.status).label}
                                   </span>
                                   <button onClick={() => setReviewDocId(doc.id)} className="px-3 py-1 text-xs font-medium rounded-lg text-white bg-[var(--primary)] hover:opacity-90">Review</button>

@@ -102,6 +102,18 @@ describe("ProjectsService", () => {
     expect(res.data[0]).not.toHaveProperty("_count");
   });
 
+  it("findOne excludes files that belong to a document", async () => {
+    mockPrisma.project.findFirst.mockReturnValue(Promise.resolve({ id: "p1", files: [] }));
+    await service.findOne("p1", "org-1");
+    expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          files: { where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } } },
+        }),
+      }),
+    );
+  });
+
   it("findOne throws NotFoundException when not found", async () => {
     mockPrisma.project.findFirst.mockReturnValue(Promise.resolve(null));
 
@@ -187,6 +199,7 @@ describe("ProjectsService", () => {
     expect(result).toEqual(project);
     expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
+        include: { files: { where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } } } },
         where: expect.objectContaining({
           id: "proj-active",
           organizationId: "org-1",

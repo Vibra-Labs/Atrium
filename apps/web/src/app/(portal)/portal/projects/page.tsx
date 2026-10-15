@@ -13,6 +13,7 @@ interface Project {
   name: string;
   status: string;
   description?: string;
+  pendingApprovals?: number;
 }
 
 interface PaginatedResponse<T> {
@@ -103,6 +104,11 @@ export default function PortalProjectsPage() {
                 <span className="inline-block mt-2 text-xs px-2 py-1 bg-[var(--muted)] rounded-full">
                   {project.status.replace(/_/g, " ")}
                 </span>
+                {(project.pendingApprovals ?? 0) > 0 && (
+                  <span className="inline-block mt-2 ml-2 text-xs px-2 py-1 rounded-full font-medium bg-amber-100 text-amber-800" data-testid="to-review-chip">
+                    {project.pendingApprovals} to review
+                  </span>
+                )}
               </Link>
             ))}
             {projects.length === 0 && (

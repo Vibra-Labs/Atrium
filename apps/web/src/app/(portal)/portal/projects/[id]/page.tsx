@@ -30,6 +30,8 @@ import {
   Pencil,
   ArrowLeft,
 } from "lucide-react";
+import { PortalDeliverableReview, type PortalDeliverable } from "./components/portal-deliverable-review";
+import { deliverableStatus } from "@/lib/deliverable";
 import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
 import { Embeds, type PreviewPrefs } from "@/lib/embeds";
@@ -143,7 +145,10 @@ interface DocumentRecord {
   signedFileId?: string;
   signedFile?: { id: string; filename: string; sizeBytes: number };
   signatureFields?: { id: string }[];
-  file: { id: string; filename: string; mimeType: string; sizeBytes: number };
+  file: { id: string; filename: string; mimeType: string; sizeBytes: number; type?: "UPLOAD" | "LINK"; url?: string | null };
+  currentVersion?: number;
+  requestNote?: string | null;
+  decision?: PortalDeliverable["decision"];
   responses: { id: string; action: string; createdAt: string; fieldId?: string; reason?: string }[];
   createdAt: string;
   expiresAt?: string;
@@ -162,6 +167,7 @@ const docTypeLabels: Record<string, string> = {
   proposal: "Proposal",
   nda: "NDA",
   other: "Other",
+  deliverable: "For approval",
 };
 
 const docActions: Record<string, string[]> = {
@@ -170,6 +176,7 @@ const docActions: Record<string, string[]> = {
   proposal: ["accepted", "declined"],
   nda: ["accepted", "declined"],
   other: ["accepted", "declined"],
+  deliverable: ["accepted", "declined"],
 };
 
 const tabs = [
@@ -226,6 +233,7 @@ export default function PortalProjectDetailPage() {
   }, [searchParams]);
   const [uploading, setUploading] = useState(false);
   const [signingDocId, setSigningDocId] = useState<string | null>(null);
+  const [reviewDocId, setReviewDocId] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<DocumentRecord | null>(null);
   const [pendingDocAction, setPendingDocAction] = useState<PendingDocAction | null>(null);
   const [declineReason, setDeclineReason] = useState("");
@@ -262,6 +270,26 @@ export default function PortalProjectDetailPage() {
       router.replace(qs ? `?${qs}` : "?", { scroll: false });
     },
     [router, searchParams],
+  );
+
+  useEffect(() => {
+    const d = searchParams.get("doc");
+    if (d) {
+      setActiveTab("files");
+      setReviewDocId(d);
+    }
+  }, [searchParams]);
+
+  const closeReview = (): void => {
+    setReviewDocId(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("doc");
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
+
+  const needsReview = documents.filter(
+    (d) => d.status === "pending" && (d.type === "deliverable" ? !d.decision : d.responses.length === 0),
   );
 
   const openTaskModal = (taskId: string) => {
@@ -609,9 +637,7 @@ export default function PortalProjectDetailPage() {
       <div className="flex-1 min-w-0">
         {/* Pending actions banner */}
         {(() => {
-          const pendingDocs = documents.filter(
-            (d) => d.status === "pending" && d.responses.length === 0
-          );
+          const pendingDocs = needsReview;
           if (pendingDocs.length === 0) return null;
           return (
             <button
@@ -623,11 +649,9 @@ export default function PortalProjectDetailPage() {
               </span>
               <div>
                 <p className="text-sm font-medium text-amber-900">
-                  {pendingDocs.length === 1 ? "1 document needs" : `${pendingDocs.length} documents need`} your attention
+                  {pendingDocs.length === 1 ? "1 item to review" : `${pendingDocs.length} items to review`}
                 </p>
-                <p className="text-xs text-amber-700">
-                  {pendingDocs.length} document{pendingDocs.length > 1 ? "s" : ""} to review
-                </p>
+                <p className="text-xs text-amber-700">Approve or request changes</p>
               </div>
             </button>
           );
@@ -637,7 +661,7 @@ export default function PortalProjectDetailPage() {
           <div className="flex overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {tabs.map((tab) => {
               const pendingCount = tab.id === "files"
-                ? documents.filter((d) => d.status === "pending" && d.responses.length === 0).length
+                ? needsReview.length
                 : 0;
               return (
                 <button
@@ -1176,6 +1200,39 @@ export default function PortalProjectDetailPage() {
 
           return (
             <div>
+              {needsReview.some((d) => d.type === "deliverable") && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium mb-2">Needs your review</h3>
+                  <div className="space-y-2">
+                    {needsReview.filter((d) => d.type === "deliverable").map((d) => (
+                      <div
+                        key={d.id}
+                        data-testid={`needs-review-${d.id}`}
+                        className="p-3 border border-amber-200 bg-amber-50 rounded-lg flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {d.title}
+                            {(d.currentVersion ?? 1) > 1 && (
+                              <span className="ml-2 text-xs text-[var(--muted-foreground)]">v{d.currentVersion}</span>
+                            )}
+                          </p>
+                          {d.requestNote && (
+                            <p className="text-xs text-[var(--muted-foreground)] line-clamp-2">{d.requestNote}</p>
+                          )}
+                          <p className="text-xs text-[var(--muted-foreground)]">sent {formatRelativeTime(d.createdAt)}</p>
+                        </div>
+                        <button
+                          onClick={() => setReviewDocId(d.id)}
+                          className="px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-[var(--primary)] hover:opacity-90 shrink-0"
+                        >
+                          Review
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end mb-4">
                 <label className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm cursor-pointer hover:opacity-90">
                   <Upload size={14} />
@@ -1332,12 +1389,14 @@ export default function PortalProjectDetailPage() {
                               </div>
                             </button>
                             <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                onClick={() => handleDownload(doc.file.id, doc.file.filename)}
-                                className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
-                              >
-                                <Download size={14} />
-                              </button>
+                              {!(doc.type === "deliverable" && doc.file.type === "LINK") && (
+                                <button
+                                  onClick={() => handleDownload(doc.file.id, doc.file.filename)}
+                                  className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline"
+                                >
+                                  <Download size={14} />
+                                </button>
+                              )}
                               {doc.status === "signed" && (
                                 <button
                                   onClick={async () => {
@@ -1374,7 +1433,15 @@ export default function PortalProjectDetailPage() {
                                   <Clock size={10} /> Expired
                                 </span>
                               )}
-                              {!isReadOnly && !hasOptions && (
+                              {doc.type === "deliverable" && !isReadOnly && (
+                                <>
+                                  <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ backgroundColor: deliverableStatus(doc.status).bg, color: deliverableStatus(doc.status).text }}>
+                                    {deliverableStatus(doc.status).label}
+                                  </span>
+                                  <button onClick={() => setReviewDocId(doc.id)} className="px-3 py-1 text-xs font-medium rounded-lg text-white bg-[var(--primary)] hover:opacity-90">Review</button>
+                                </>
+                              )}
+                              {doc.type !== "deliverable" && !isReadOnly && !hasOptions && (
                                 <>
                                   {doc.requiresApproval && hasResponded && lastResponse ? (
                                     <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ backgroundColor: lastResponse.action === "declined" ? "#fee2e2" : "#dcfce7", color: lastResponse.action === "declined" ? "#b91c1c" : "#15803d" }}>
@@ -1525,6 +1592,22 @@ export default function PortalProjectDetailPage() {
           }}
         />
       )}
+
+      {(() => {
+        const reviewDoc = documents.find((d) => d.id === reviewDocId && d.type === "deliverable");
+        if (!reviewDoc) return null;
+        return (
+          <PortalDeliverableReview
+            doc={{ ...reviewDoc, decision: reviewDoc.decision ?? null }}
+            onClose={closeReview}
+            onDecided={() => {
+              loadDocuments();
+              loadProject();
+              closeReview();
+            }}
+          />
+        );
+      })()}
 
       {/* Document Viewer Modal */}
       {viewingDoc && (

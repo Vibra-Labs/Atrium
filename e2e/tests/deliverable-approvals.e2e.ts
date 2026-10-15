@@ -47,6 +47,10 @@ test.describe("Deliverable approvals", () => {
     await owner.getByRole("button", { name: /send for approval/i }).click();
     await expect(owner.getByText("Awaiting review").first()).toBeVisible();
 
+    // The dashboard lists the pending approval (so its later absence is meaningful).
+    await owner.goto(`${WEB_URL}/dashboard`);
+    await expect(owner.getByTestId("pending-approvals-card")).toBeVisible();
+
     // 2. Client sees the banner, opens the review, can't send changes without a note.
     const { ctx: clientCtx, page: client } = await loginClient(browser, clientEmail, password);
     await client.goto(`${WEB_URL}/portal/projects/${project.id}`);
@@ -65,7 +69,7 @@ test.describe("Deliverable approvals", () => {
     await client.keyboard.press("Escape");
 
     // 3. Agency sees the note, uploads v2.
-    await owner.reload();
+    await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
     await expect(owner.getByText("Changes requested").first()).toBeVisible();
     await expect(owner.getByText(/Make the logo bigger/)).toBeVisible();
     await owner.getByText("homepage").first().click(); // expand the row
@@ -73,7 +77,8 @@ test.describe("Deliverable approvals", () => {
     await owner.locator('input[type="file"]').last().setInputFiles({ name: "homepage-v2.png", mimeType: "image/png", buffer: PNG });
     await owner.getByRole("button", { name: /send v2|upload v2/i }).click();
     await expect(owner.getByText("Awaiting review").first()).toBeVisible();
-    await expect(owner.getByText("v2").first()).toBeVisible();
+    const row = owner.getByRole("button").filter({ has: owner.getByText("homepage", { exact: true }) });
+    await expect(row.getByText("v2", { exact: true })).toBeVisible();
 
     // 4. Client approves v2 through the deep link.
     const docs = await (await client.request.get(`${API_URL}/api/documents/mine/${project.id}`)).json();
@@ -86,9 +91,13 @@ test.describe("Deliverable approvals", () => {
     await expect(client.getByText(/approved by/i)).toBeVisible();
 
     // Agency: approved, and the dashboard card is gone.
-    await owner.reload();
-    await expect(owner.getByText("Approved").first()).toBeVisible();
+    await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
+    await expect(
+      owner.getByRole("button").filter({ has: owner.getByText("homepage", { exact: true }) }).getByText("Approved", { exact: true }),
+    ).toBeVisible();
+    const pendingLoaded = owner.waitForResponse((r) => r.url().includes("/api/documents/approvals/pending") && r.ok());
     await owner.goto(`${WEB_URL}/dashboard`);
+    await pendingLoaded;
     await expect(owner.getByTestId("pending-approvals-card")).toHaveCount(0);
 
     // 5. A stale decision on v1 is refused.

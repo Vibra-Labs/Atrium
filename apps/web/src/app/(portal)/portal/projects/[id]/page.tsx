@@ -293,6 +293,22 @@ export default function PortalProjectDetailPage() {
     (d) => d.status === "pending" && (d.type === "deliverable" ? !d.decision : d.responses.length === 0),
   );
 
+  // Items that need an action from this client (FYI documents don't count)
+  const pendingDocActions = documents.filter((d) => {
+    if (d.status !== "pending") return false;
+    if (d.type === "deliverable") return !d.decision;
+    if (d.requiresApproval) return d.responses.filter((r) => r.action !== "signed").length === 0;
+    if (d.requiresSignature && d.signatureFields && d.signatureFields.length > 0) {
+      const signedIds = d.responses.filter((r) => r.action === "signed" && r.fieldId).map((r) => r.fieldId);
+      return !d.signatureFields.every((f) => signedIds.includes(f.id));
+    }
+    return false;
+  });
+  const toSignCount = pendingDocActions.filter((d) => d.type !== "deliverable" && !d.requiresApproval).length;
+  const toApproveCount = pendingDocActions.length - toSignCount;
+  const openVoteCount = tasks.filter((t) => t.type === "decision" && !t.closedAt && !t.votes?.[0]).length;
+  const actionTotal = toApproveCount + toSignCount + openVoteCount;
+
   const openTaskModal = (taskId: string) => {
     setOpenTaskId(taskId);
     updateTaskInUrl(taskId);
@@ -638,21 +654,24 @@ export default function PortalProjectDetailPage() {
       <div className="flex-1 min-w-0">
         {/* Pending actions banner */}
         {(() => {
-          const pendingDocs = needsReview;
-          if (pendingDocs.length === 0) return null;
+          if (actionTotal === 0) return null;
+          const parts: string[] = [];
+          if (toApproveCount > 0) parts.push(`${toApproveCount} to approve`);
+          if (toSignCount > 0) parts.push(`${toSignCount} to sign`);
+          if (openVoteCount > 0) parts.push(`${openVoteCount} ${openVoteCount === 1 ? "vote" : "votes"}`);
           return (
             <button
-              onClick={() => setActiveTab("files")}
+              onClick={() => setActiveTab(toApproveCount + toSignCount === 0 ? "tasks" : "files")}
               className="w-full mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"
             >
               <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-bold shrink-0">
-                {pendingDocs.length}
+                {actionTotal}
               </span>
               <div>
                 <p className="text-sm font-medium text-amber-900">
-                  {pendingDocs.length === 1 ? "1 item to review" : `${pendingDocs.length} items to review`}
+                  {actionTotal === 1 ? "1 item to review" : `${actionTotal} items to review`}
                 </p>
-                <p className="text-xs text-amber-700">Approve or request changes</p>
+                <p className="text-xs text-amber-700">{parts.join(" · ")}</p>
               </div>
             </button>
           );
@@ -662,8 +681,10 @@ export default function PortalProjectDetailPage() {
           <div className="flex overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {tabs.map((tab) => {
               const pendingCount = tab.id === "files"
-                ? needsReview.length
-                : 0;
+                ? toApproveCount + toSignCount
+                : tab.id === "tasks"
+                  ? openVoteCount
+                  : 0;
               return (
                 <button
                   key={tab.id}

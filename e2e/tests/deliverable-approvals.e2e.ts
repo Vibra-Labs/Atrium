@@ -41,8 +41,10 @@ test.describe("Deliverable approvals", () => {
     // 1. Agency sends an image for approval through the UI.
     await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
     await owner.getByRole("button", { name: /add/i }).first().click();
-    await owner.getByText("Upload file").click();
-    await owner.getByLabel("Ask client to approve").check();
+    await expect(owner.getByText("Send a design, draft or link for sign-off")).toBeVisible();
+    await owner.getByText("Request approval", { exact: true }).click();
+    // The approval checkbox is pre-checked by the menu item.
+    await expect(owner.getByLabel("Ask client to approve")).toBeChecked();
     // Contract-only controls are hidden in approval mode.
     await expect(owner.getByText("Advanced options")).toHaveCount(0);
     await expect(owner.getByRole("button", { name: /save draft/i })).toHaveCount(0);
@@ -59,6 +61,7 @@ test.describe("Deliverable approvals", () => {
     const { ctx: clientCtx, page: client } = await loginClient(browser, clientEmail, password);
     await client.goto(`${WEB_URL}/portal/projects/${project.id}`);
     await expect(client.getByText("1 item to review")).toBeVisible();
+    await expect(client.getByText("1 to approve")).toBeVisible();
     await client.getByText("1 item to review").click();
     await client.getByRole("button", { name: /^review$/i }).first().click();
     await expect(client.getByTestId("deliverable-review").getByText("First pass at the homepage")).toBeVisible();
@@ -76,10 +79,11 @@ test.describe("Deliverable approvals", () => {
     await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
     await expect(owner.getByText("Changes requested").first()).toBeVisible();
     await expect(owner.getByText(/Make the logo bigger/)).toBeVisible();
-    await owner.getByText("homepage").first().click(); // expand the row
-    await owner.getByTitle("Upload new version").click();
+    // The collapsed row offers the next step directly; clicking it must not expand the row.
+    await owner.getByRole("button", { name: "Send v2", exact: true }).click();
+    await expect(owner.getByTitle("Upload new version")).toHaveCount(0);
     await owner.locator('input[type="file"]').last().setInputFiles({ name: "homepage-v2.png", mimeType: "image/png", buffer: PNG });
-    await owner.getByRole("button", { name: /send v2|upload v2/i }).click();
+    await owner.locator("button").filter({ hasText: /^Send v2$/ }).click();
     await expect(owner.getByText("Awaiting review").first()).toBeVisible();
     const row = owner.getByRole("button").filter({ has: owner.getByText("homepage", { exact: true }) });
     await expect(row.getByText("v2", { exact: true })).toBeVisible();
@@ -158,6 +162,36 @@ test.describe("Deliverable approvals", () => {
     await expect(client.getByText(/approved by/i)).toBeVisible();
 
     await clientCtx.close();
+    await ownerCtx.close();
+  });
+
+  test("approval can be requested from Upload file and the two modals switch", async ({ browser }) => {
+    const { context: ownerCtx, page: owner } = await createOwner(browser, "deliv-switch-owner");
+    const project = await (await owner.request.post(`${API_URL}/api/projects`, {
+      data: { name: "Approval Switch E2E" },
+      headers: { "x-csrf-token": await csrf(ownerCtx) },
+    })).json();
+
+    await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
+    // Empty state links into the same flow.
+    await owner.getByRole("button", { name: "request approval" }).click();
+    await expect(owner.getByLabel("Ask client to approve")).toBeChecked();
+    await owner.getByRole("button", { name: "Use a link instead" }).click();
+    await expect(owner.getByRole("heading", { name: "Add Link" })).toBeVisible();
+    await expect(owner.getByLabel("Ask client to approve")).toBeChecked();
+    await owner.getByRole("button", { name: "Upload a file instead" }).click();
+    await expect(owner.getByRole("heading", { name: "Upload File" })).toBeVisible();
+    await owner.getByRole("button", { name: "Cancel" }).click();
+
+    // Plain Upload file: checkbox unchecked, neutral defaults.
+    await owner.getByRole("button", { name: /add/i }).first().click();
+    await owner.getByText("Share a file with the client").click();
+    await expect(owner.getByLabel("Ask client to approve")).not.toBeChecked();
+    await expect(owner.getByPlaceholder("e.g., Homepage concept")).toBeVisible();
+    await expect(owner.locator("select").first()).toHaveValue("other");
+    await owner.getByLabel("Ask client to approve").check();
+    await expect(owner.getByRole("button", { name: /send for approval/i })).toBeVisible();
+
     await ownerCtx.close();
   });
 

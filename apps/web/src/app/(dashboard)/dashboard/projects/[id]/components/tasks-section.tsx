@@ -69,9 +69,11 @@ interface PaginatedResponse<T> {
 export function TasksSection({
   projectId,
   isArchived,
+  onGoToFiles,
 }: {
   projectId: string;
   isArchived: boolean;
+  onGoToFiles?: () => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -354,6 +356,12 @@ export function TasksSection({
 
           {creating && taskType === "decision" && (
             <div className="space-y-2 p-3 border border-[var(--border)] rounded-lg">
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Client votes between options. For sign-off on a file or design, use{" "}
+                {onGoToFiles ? (
+                  <button type="button" onClick={onGoToFiles} className="underline hover:text-[var(--foreground)]">Files → Request approval</button>
+                ) : "Files → Request approval"}.
+              </p>
               <input
                 type="text"
                 value={newQuestion}

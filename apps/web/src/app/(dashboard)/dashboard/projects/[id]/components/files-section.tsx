@@ -30,6 +30,7 @@ import {
   LinkIcon,
   Plus,
   Pencil,
+  CheckCircle,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
@@ -226,7 +227,7 @@ export function FilesSection({
 
   // Doc upload form
   const [docTitle, setDocTitle] = useState("");
-  const [docType, setDocType] = useState("contract");
+  const [docType, setDocType] = useState("other");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [requiresSignature, setRequiresSignature] = useState(false);
   const [requiresApproval, setRequiresApproval] = useState(false);
@@ -265,9 +266,14 @@ export function FilesSection({
     }
   };
 
+  const openRequestApproval = (): void => {
+    setAskApproval(true);
+    setShowDocUpload(true);
+  };
+
   const resetDocForm = () => {
     setDocTitle("");
-    setDocType("contract");
+    setDocType("other");
     setDocFile(null);
     setRequiresSignature(false);
     setRequiresApproval(false);
@@ -593,13 +599,23 @@ export function FilesSection({
             {showAddMenu && (
               <div className="absolute right-0 mt-1 w-64 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-10 py-1">
                 <button
+                  onClick={() => { setShowAddMenu(false); openRequestApproval(); }}
+                  className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[var(--muted)] text-left"
+                >
+                  <CheckCircle size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                  <div>
+                    <p className="text-sm font-medium">Request approval</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Send a design, draft or link for sign-off</p>
+                  </div>
+                </button>
+                <button
                   onClick={() => { setShowAddMenu(false); setShowDocUpload(true); }}
                   className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[var(--muted)] text-left"
                 >
                   <Upload size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
                   <div>
                     <p className="text-sm font-medium">Upload file</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Upload a document from your device</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Share a file with the client</p>
                   </div>
                 </button>
                 <button
@@ -666,8 +682,20 @@ export function FilesSection({
                         {typeLabels[doc.type] || doc.type}
                       </span>
                     )}
+                    {isDeliverable && doc.status === "declined" && !isArchived && !isExpanded && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        data-testid={`send-next-version-${doc.id}`}
+                        onClick={(e) => { e.stopPropagation(); setVersionDoc(doc); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setVersionDoc(doc); } }}
+                        className="text-xs px-2.5 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0 bg-[var(--primary)] text-white hover:opacity-90 cursor-pointer"
+                      >
+                        Send v{(doc.currentVersion ?? 1) + 1}
+                      </span>
+                    )}
                     <span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0" style={{ backgroundColor: colors.bg, color: colors.text }}>
-                      {isDeliverable ? deliverable.label : doc.status}
+                      {isDeliverable ? deliverable.label : doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}
                     </span>
                   </div>
                 </button>
@@ -1001,7 +1029,13 @@ export function FilesSection({
         {files.length === 0 && documents.length === 0 && (
           <div className="text-center py-8">
             <FileX size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
-            <p className="text-sm text-[var(--muted-foreground)]">No files or documents yet.</p>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              No files yet. Upload a file, or{" "}
+              {isArchived ? "request approval" : (
+                <button onClick={openRequestApproval} className="underline hover:text-[var(--foreground)]">request approval</button>
+              )}{" "}
+              on a design or draft.
+            </p>
           </div>
         )}
       </div>
@@ -1020,9 +1054,14 @@ export function FilesSection({
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-[480px] mx-4 p-6 space-y-4">
             <h3 className="text-lg font-semibold">Upload File</h3>
             <AskApprovalCheckbox checked={askApproval} onChange={setAskApproval} />
+            {askApproval && (
+              <button type="button" onClick={() => { setShowDocUpload(false); setShowAddLink(true); }} className="text-xs underline text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+                Use a link instead
+              </button>
+            )}
             <div>
               <label className="text-sm text-[var(--muted-foreground)]">Title</label>
-              <input type="text" value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="e.g., Project Contract v2" className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm" />
+              <input type="text" value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="e.g., Homepage concept" className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm" />
             </div>
             <div className={askApproval ? "" : "grid grid-cols-[140px_1fr] gap-3"}>
               {!askApproval && <div>
@@ -1173,6 +1212,11 @@ export function FilesSection({
           <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-[480px] mx-4 p-6 space-y-4">
             <h3 className="text-lg font-semibold">Add Link</h3>
             <AskApprovalCheckbox checked={askApproval} onChange={setAskApproval} />
+            {askApproval && (
+              <button type="button" onClick={() => { setShowAddLink(false); setShowDocUpload(true); }} className="text-xs underline text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+                Upload a file instead
+              </button>
+            )}
             <p className="text-sm text-[var(--muted-foreground)]">Link to an external resource like a Nextcloud document, Canva design, or any other URL.</p>
             <div>
               <label className="text-sm text-[var(--muted-foreground)]">URL</label>

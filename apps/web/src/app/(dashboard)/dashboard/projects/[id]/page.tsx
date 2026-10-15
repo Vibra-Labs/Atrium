@@ -549,7 +549,7 @@ export default function ProjectDetailPage() {
   const tabContent = (
     <>
       {activeTab === "tasks" && (
-        <TasksSection projectId={id} isArchived={isArchived} />
+        <TasksSection projectId={id} isArchived={isArchived} onGoToFiles={() => setActiveTab("files")} />
       )}
       {activeTab === "updates" && (
         <UpdatesSection

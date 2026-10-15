@@ -22,7 +22,7 @@ cascade from `member`, whichever route removes it, including Better Auth's own
 credentials point at. Demotion below admin revokes the keys and deletes the grants in the
 same transaction as the role change (or in Better Auth's `afterUpdateMemberRole` hook for
 its own endpoint), so a later re-promotion does not revive them. Keys are ignored when a session cookie is present, cannot create
-or revoke other keys, and are revocable from Settings → API & MCP. Resolved keys are
+or revoke other keys, and are revocable from Settings → Integrations. Resolved keys are
 cached for 30 seconds, in a map the cookie-session path never reads, so a stored key
 hash cannot be replayed as a session token. The MCP endpoint is rate limited to 300
 requests per minute per key (per user for OAuth tokens), returning `429` with `Retry-After: 60`. Failed key lookups
@@ -101,4 +101,4 @@ every environment.
 Because registration is anonymous, the consent screen shows a client-chosen name --
 so it also shows where approving will send you, read from the pending request itself.
 Only approve a connection you started yourself. Review and disconnect apps anytime
-under Settings → API & MCP → Connected apps.
+under Settings → Integrations → Connected apps.

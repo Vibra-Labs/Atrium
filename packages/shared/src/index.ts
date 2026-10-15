@@ -107,6 +107,7 @@ export interface DeletionInfo {
 export const PLAN_FEATURES = [
   "custom_domain",
   "e_signatures",
+  "integrations",
   "online_payments",
   "white_label",
 ] as const;
@@ -116,6 +117,60 @@ export type PlanFeature = (typeof PLAN_FEATURES)[number];
 export const PLAN_FEATURE_LABELS: Record<PlanFeature, string> = {
   custom_domain: "Custom domains",
   e_signatures: "E-signatures",
+  integrations: "Integrations",
   online_payments: "Online invoice payments",
   white_label: "White-label portals",
 };
+
+// ─── Integrations ───
+
+export const INTEGRATION_TYPES = ["slack", "discord", "webhook"] as const;
+export type IntegrationType = (typeof INTEGRATION_TYPES)[number];
+
+/** Events a destination can subscribe to, grouped for the settings picker. */
+export const INTEGRATION_EVENT_GROUPS = [
+  {
+    label: "Projects",
+    events: [
+      { id: "project.update_posted", label: "Update posted" },
+      { id: "comment.created", label: "Comment added" },
+    ],
+  },
+  {
+    label: "Tasks",
+    events: [
+      { id: "task.created", label: "Task created" },
+      { id: "task.status_changed", label: "Task status changed" },
+      { id: "task.assigned", label: "Task assigned" },
+      { id: "client_request.created", label: "Client request submitted" },
+      { id: "decision.closed", label: "Decision closed" },
+    ],
+  },
+  {
+    label: "Documents",
+    events: [
+      { id: "document.uploaded", label: "Document shared" },
+      { id: "document.responded", label: "Client responded (approved, rejected, signed)" },
+      { id: "document.signing_turn", label: "Next signer's turn" },
+      { id: "document.reminder_sent", label: "Reminder sent" },
+    ],
+  },
+  {
+    label: "Invoices",
+    events: [
+      { id: "invoice.sent", label: "Invoice sent" },
+      { id: "invoice.paid", label: "Invoice paid" },
+    ],
+  },
+  {
+    label: "Workspace",
+    events: [{ id: "payments.stripe_disconnected", label: "Stripe disconnected" }],
+  },
+] as const;
+
+export type IntegrationEvent =
+  (typeof INTEGRATION_EVENT_GROUPS)[number]["events"][number]["id"];
+
+export const INTEGRATION_EVENTS: readonly IntegrationEvent[] = INTEGRATION_EVENT_GROUPS.flatMap(
+  (g) => g.events.map((e) => e.id),
+);

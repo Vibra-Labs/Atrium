@@ -19,6 +19,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { InAppNotificationsService } from "./in-app-notifications.service";
 import { PushService } from "./push.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
+import { IntegrationDispatcher } from "../integrations/integration-dispatcher.service";
 
 /**
  * Tab ids on the two project pages in apps/web. These mirror the `tabs` arrays
@@ -28,6 +29,13 @@ import { calculateInvoiceTotal } from "../payments/invoice-total";
  */
 type PortalTab = "updates" | "tasks" | "files" | "invoices";
 type DashboardTab = PortalTab | "time" | "notes";
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  open: "Open",
+  in_progress: "In Progress",
+  done: "Done",
+  cancelled: "Cancelled",
+};
 
 @Injectable()
 export class NotificationsService {
@@ -41,6 +49,7 @@ export class NotificationsService {
     private push: PushService,
     @InjectPinoLogger(NotificationsService.name)
     private readonly logger: PinoLogger,
+    private integrations: IntegrationDispatcher,
   ) {
     // Every link here is built as `${webUrl}${path}`, so a configured trailing
     // slash would produce a double slash in every notification URL.
@@ -114,6 +123,16 @@ export class NotificationsService {
     taskTitle: string,
     clientName: string,
   ): void {
+    this.integrations.dispatch({
+      event: "client_request.created",
+      organizationId: orgId,
+      projectId,
+      actorName: clientName,
+      title: `New request from ${clientName}`,
+      detail: taskTitle,
+      data: { taskTitle },
+      path: this.dashboardProjectPath(projectId, "tasks"),
+    });
     this.sendClientRequestCreatedNotifications(projectId, orgId, taskTitle, clientName).catch(
       (err) => {
         this.logger.error({ err, projectId }, "Failed to send client request notifications");
@@ -134,6 +153,14 @@ export class NotificationsService {
     requestedById: string | null,
     assigneeId: string | null,
   ): void {
+    this.integrations.dispatch({
+      event: "task.status_changed",
+      organizationId: orgId,
+      projectId,
+      title: `"${taskTitle}" is now ${TASK_STATUS_LABELS[newStatus] ?? newStatus}`,
+      data: { taskId, taskTitle, status: newStatus },
+      path: this.dashboardProjectPath(projectId, "tasks"),
+    });
     this.sendTaskStatusChangedNotifications(
       taskId,
       taskTitle,
@@ -202,6 +229,16 @@ export class NotificationsService {
     const amount = `$${(totalCents / 100).toFixed(2)}`;
     const projectName = invoice.project?.name ?? "Unknown project";
 
+    this.integrations.dispatch({
+      event: "invoice.paid",
+      organizationId: invoice.organizationId,
+      projectId: invoice.project?.id ?? null,
+      title: `Invoice ${invoice.invoiceNumber} paid`,
+      detail: `${amount} received`,
+      data: { invoiceId, invoiceNumber: invoice.invoiceNumber, amountCents: totalCents },
+      path: invoice.project ? this.dashboardProjectPath(invoice.project.id, "invoices") : "/dashboard",
+    });
+
     const admins = await this.getOrgAdmins(invoice.organizationId, true);
     if (admins.length === 0) return;
 
@@ -254,6 +291,14 @@ export class NotificationsService {
    * Fire-and-forget.
    */
   notifyStripeDisconnected(organizationId: string): void {
+    this.integrations.dispatch({
+      event: "payments.stripe_disconnected",
+      organizationId,
+      projectId: null,
+      title: "Stripe account disconnected",
+      detail: "Clients can no longer pay invoices online until Stripe is reconnected.",
+      path: "/dashboard/settings/payments",
+    });
     this.sendStripeDisconnectedNotifications(organizationId).catch((err) => {
       this.logger.error(
         { err, organizationId },
@@ -287,6 +332,15 @@ export class NotificationsService {
       select: { name: true, organizationId: true },
     });
     if (!project) return;
+
+    this.integrations.dispatch({
+      event: "project.update_posted",
+      organizationId: project.organizationId,
+      projectId,
+      title: `New update on ${project.name}`,
+      detail: updateContent,
+      path: this.dashboardProjectPath(projectId),
+    });
 
     const clients = await this.getProjectClients(projectId);
     if (clients.length === 0) return;
@@ -342,6 +396,16 @@ export class NotificationsService {
       select: { name: true, organizationId: true },
     });
     if (!project) return;
+
+    this.integrations.dispatch({
+      event: "task.created",
+      organizationId: project.organizationId,
+      projectId,
+      title: `New task on ${project.name}`,
+      detail: taskTitle,
+      data: { taskTitle, dueDate: dueDate?.toISOString() ?? null },
+      path: this.dashboardProjectPath(projectId, "tasks"),
+    });
 
     const clients = await this.getProjectClients(projectId);
     if (clients.length === 0) return;
@@ -425,9 +489,6 @@ export class NotificationsService {
     });
     if (!task || !task.question) return;
 
-    const clients = await this.getProjectClients(task.projectId);
-    if (clients.length === 0) return;
-
     const optionsWithCounts = task.options.map((opt) => ({
       label: opt.label,
       voteCount: opt.votes.length,
@@ -442,6 +503,20 @@ export class NotificationsService {
         if (opt.voteCount === maxVotes) opt.isWinner = true;
       }
     }
+
+    const winners: string[] = optionsWithCounts.filter((o) => o.isWinner).map((o) => o.label);
+    this.integrations.dispatch({
+      event: "decision.closed",
+      organizationId: task.project.organizationId,
+      projectId: task.projectId,
+      title: `Decision closed on ${task.project.name}`,
+      detail: winners.length > 0 ? `${task.question}\nResult: ${winners.join(", ")}` : task.question,
+      data: { taskId, question: task.question, options: optionsWithCounts },
+      path: this.dashboardProjectPath(task.projectId, "tasks"),
+    });
+
+    const clients = await this.getProjectClients(task.projectId);
+    if (clients.length === 0) return;
 
     const link = this.portalProjectPath(task.projectId, "tasks");
     const portalUrl = `${this.webUrl}${link}`;
@@ -492,13 +567,30 @@ export class NotificationsService {
         lineItems: { select: { quantity: true, unitPrice: true } },
       },
     });
-    if (!invoice || !invoice.projectId) return;
-
-    const clients = await this.getProjectClients(invoice.projectId);
-    if (clients.length === 0) return;
+    if (!invoice) return;
 
     const totalCents = calculateInvoiceTotal(invoice);
     const amount = `$${(totalCents / 100).toFixed(2)}`;
+
+    this.integrations.dispatch({
+      event: "invoice.sent",
+      organizationId: invoice.organizationId,
+      projectId: invoice.projectId,
+      title: `Invoice ${invoice.invoiceNumber} sent`,
+      detail: amount,
+      data: {
+        invoiceId,
+        invoiceNumber: invoice.invoiceNumber,
+        amountCents: totalCents,
+        dueDate: invoice.dueDate?.toISOString() ?? null,
+      },
+      path: invoice.projectId ? this.dashboardProjectPath(invoice.projectId, "invoices") : "/dashboard",
+    });
+
+    if (!invoice.projectId) return;
+    const clients = await this.getProjectClients(invoice.projectId);
+    if (clients.length === 0) return;
+
     const dueDate = invoice.dueDate
       ? invoice.dueDate.toLocaleDateString("en-US", {
           year: "numeric",
@@ -600,6 +692,16 @@ export class NotificationsService {
       select: { name: true },
     });
     if (!project) return;
+
+    this.integrations.dispatch({
+      event: "document.uploaded",
+      organizationId: doc.organizationId,
+      projectId: doc.projectId,
+      title: `New ${doc.type} on ${project.name}`,
+      detail: doc.title,
+      data: { documentId, title: doc.title, type: doc.type },
+      path: this.dashboardProjectPath(doc.projectId, "files"),
+    });
 
     const clients = await this.getProjectClients(doc.projectId);
     if (clients.length === 0) return;
@@ -704,6 +806,18 @@ export class NotificationsService {
       ? `${clientName} ${verb} ${doc.title}`
       : `${clientName} ${action} ${doc.type}: ${doc.title}`;
 
+    this.integrations.dispatch({
+      event: "document.responded",
+      organizationId: doc.organizationId,
+      projectId: doc.projectId,
+      actorId: userId,
+      actorName: clientName,
+      title: `${clientName} ${action} ${doc.type}`,
+      detail: doc.title,
+      data: { documentId, title: doc.title, type: doc.type, action },
+      path: this.dashboardProjectPath(doc.projectId, "files"),
+    });
+
     const admins = await this.getOrgAdmins(doc.organizationId, true);
     if (admins.length === 0) return;
 
@@ -794,6 +908,21 @@ export class NotificationsService {
       (c) => !respondedUserIds.has(c.id),
     );
     if (unrespondedClients.length === 0) return;
+
+    this.integrations.dispatch({
+      event: "document.reminder_sent",
+      organizationId: doc.organizationId,
+      projectId: doc.projectId,
+      title: `Reminder sent: ${doc.type} awaiting response`,
+      detail: `${doc.title}\nWaiting on ${unrespondedClients.map((c) => c.name).join(", ")}`,
+      data: {
+        documentId,
+        title: doc.title,
+        type: doc.type,
+        pending: unrespondedClients.map((c) => ({ id: c.id, name: c.name })),
+      },
+      path: this.dashboardProjectPath(doc.projectId, "files"),
+    });
 
     const isDeliverable: boolean = doc.type === "deliverable";
     const link: string = this.portalProjectPath(
@@ -893,6 +1022,16 @@ export class NotificationsService {
     ]);
     if (!project || !user) return;
 
+    this.integrations.dispatch({
+      event: "document.signing_turn",
+      organizationId: doc.organizationId,
+      projectId: doc.projectId,
+      title: `${user.name}'s turn to sign`,
+      detail: doc.title,
+      data: { documentId, title: doc.title, type: doc.type, signer: { id: userId, name: user.name } },
+      path: this.dashboardProjectPath(doc.projectId, "files"),
+    });
+
     const link = this.portalProjectPath(doc.projectId, "files");
     const portalUrl = `${this.webUrl}${link}`;
 
@@ -984,6 +1123,17 @@ export class NotificationsService {
 
     const truncatedContent =
       content.length > 100 ? content.slice(0, 100) + "…" : content;
+
+    this.integrations.dispatch({
+      event: "comment.created",
+      organizationId,
+      projectId,
+      actorId: authorId,
+      title: `New comment on ${project.name}`,
+      detail: content,
+      data: { targetType, fromClient: authorRole === "member" },
+      path: this.dashboardProjectPath(projectId, targetType === "task" ? "tasks" : undefined),
+    });
 
     const isClientComment = authorRole === "member";
     const isTask = targetType === "task";
@@ -1167,13 +1317,6 @@ export class NotificationsService {
     )];
     if (userIds.length === 0) return;
 
-    const statusLabel: Record<string, string> = {
-      open: "Open",
-      in_progress: "In Progress",
-      done: "Done",
-      cancelled: "Cancelled",
-    };
-
     // Single DB query instead of one per user
     const members = await this.prisma.member.findMany({
       where: { userId: { in: userIds }, organizationId: orgId },
@@ -1190,7 +1333,7 @@ export class NotificationsService {
         [userId],
         orgId,
         "task_status_changed",
-        `"${taskTitle}" is now ${statusLabel[newStatus] ?? newStatus}`,
+        `"${taskTitle}" is now ${TASK_STATUS_LABELS[newStatus] ?? newStatus}`,
         taskTitle,
         link,
       );
@@ -1204,6 +1347,18 @@ export class NotificationsService {
     assigneeId: string,
   ): Promise<void> {
     const link = this.dashboardProjectPath(projectId, "tasks");
+    const assignee = await this.prisma.user.findUnique({
+      where: { id: assigneeId },
+      select: { name: true },
+    });
+    this.integrations.dispatch({
+      event: "task.assigned",
+      organizationId: orgId,
+      projectId,
+      title: `${assignee?.name ?? "Someone"} was assigned: ${taskTitle}`,
+      data: { taskTitle, assignee: { id: assigneeId, name: assignee?.name ?? null } },
+      path: link,
+    });
     this.createInAppAndPush(
       [assigneeId],
       orgId,

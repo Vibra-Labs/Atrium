@@ -111,7 +111,7 @@ export function ConsentForm({ consentCode }: ConsentFormProps): React.ReactEleme
           <p className="text-sm text-[var(--muted-foreground)] break-words">
             <strong>{clientName}</strong> will be able to view and manage projects, clients, tasks,
             updates, and notes in <strong>{workspaceName}</strong>, acting as you. You can disconnect it
-            at any time in Settings → API &amp; MCP.
+            at any time in Settings → Integrations.
           </p>
 
           {info.organizations.length > 1 && (

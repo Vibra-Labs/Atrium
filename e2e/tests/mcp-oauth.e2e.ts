@@ -138,7 +138,7 @@ test.describe("MCP OAuth login", () => {
       expect(rest.status()).toBe(401);
 
       // Listed under Connected apps; disconnecting kills the token
-      await page.goto("/dashboard/settings/api-keys");
+      await page.goto("/dashboard/settings/integrations");
       const row = page.getByRole("row").filter({ hasText: name });
       await expect(row).toBeVisible({ timeout: 10_000 });
       await row.getByRole("button", { name: /disconnect/i }).click();

@@ -23,7 +23,7 @@ Claude Code: `claude mcp add --transport http atrium https://portal.example.com/
 then run `/mcp` and choose **Authenticate**.
 
 The assistant acts as you in the workspace you picked. Only owners and admins can
-connect. See and disconnect assistants under **Settings → API & MCP → Connected apps**;
+connect. See and disconnect assistants under **Settings → Integrations → Connected apps**;
 disconnecting takes effect within 30 seconds. Consent is shown every time you connect, so
 to move an assistant to a different workspace, just reconnect it and pick another
 workspace on the consent screen -- there's no need to disconnect first. The move happens
@@ -48,7 +48,7 @@ the unified image.
 
 ### 1. Create an API key
 
-Go to **Settings → API & MCP**, name the key, and click **Create key**. Copy it
+Go to **Settings → Integrations**, name the key, and click **Create key**. Copy it
 immediately; Atrium stores only a hash and cannot show it again.
 
 A key acts as **you** in **that workspace**, with your role. Only owners and admins can

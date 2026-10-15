@@ -59,6 +59,8 @@ export default defineConfig({
       url: "http://localhost:3001/api/health",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
+      // integrations.e2e.ts points a webhook at a capture server on 127.0.0.1.
+      env: { INTEGRATIONS_ALLOW_PRIVATE_URLS: "true" },
     },
     {
       command: process.env.CI

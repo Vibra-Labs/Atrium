@@ -8,6 +8,7 @@ import type { ConfigService } from "@nestjs/config";
 import type { PinoLogger } from "nestjs-pino";
 import type { InAppNotificationsService } from "./in-app-notifications.service";
 import type { PushService } from "./push.service";
+import type { IntegrationDispatcher } from "../integrations/integration-dispatcher.service";
 
 // --- Helpers ---
 
@@ -66,8 +67,20 @@ function makePushService() {
   };
 }
 
+function makeDispatcher() {
+  return { dispatch: mock((_input: Record<string, unknown>) => {}) };
+}
+
+/** Inputs passed to IntegrationDispatcher.dispatch, keyed by event. */
+function dispatched(dispatcher: ReturnType<typeof makeDispatcher>, event: string): Record<string, unknown> | undefined {
+  return dispatcher.dispatch.mock.calls.map((c) => c[0]).find((i) => i.event === event);
+}
+
 function makePrisma(overrides: Record<string, unknown> = {}) {
   return {
+    user: {
+      findUnique: mock(() => Promise.resolve({ name: "Mia" })),
+    },
     project: {
       findUnique: mock(() =>
         Promise.resolve({ name: "Test Project", organizationId: "org-1" }),
@@ -107,6 +120,7 @@ describe("NotificationsService", () => {
   let prisma: ReturnType<typeof makePrisma>;
   let inApp: ReturnType<typeof makeInAppService>;
   let push: ReturnType<typeof makePushService>;
+  let dispatcher: ReturnType<typeof makeDispatcher>;
 
   beforeEach(() => {
     // render is mocked at module scope, so its call log outlives each test
@@ -115,6 +129,7 @@ describe("NotificationsService", () => {
     prisma = makePrisma();
     inApp = makeInAppService();
     push = makePushService();
+    dispatcher = makeDispatcher();
     service = new NotificationsService(
       mail as unknown as MailService,
       prisma as unknown as PrismaService,
@@ -122,6 +137,7 @@ describe("NotificationsService", () => {
       inApp as unknown as InAppNotificationsService,
       push as unknown as PushService,
       mockLogger as unknown as PinoLogger,
+      dispatcher as unknown as IntegrationDispatcher,
     );
   });
 
@@ -356,6 +372,7 @@ describe("NotificationsService", () => {
       inApp as unknown as InAppNotificationsService,
       push as unknown as PushService,
       mockLogger as unknown as PinoLogger,
+      dispatcher as unknown as IntegrationDispatcher,
     );
     const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
 
@@ -714,6 +731,93 @@ describe("NotificationsService", () => {
 
     expect(mail.send).toHaveBeenCalledTimes(2);
   });
+  // --- integrations ---
+
+  test("notifyProjectUpdate dispatches project.update_posted even without clients", async () => {
+    prisma.projectClient.findMany.mockImplementation(() => Promise.resolve([]));
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyProjectUpdate("proj-1", "Homepage shipped");
+
+    await done;
+
+    expect(dispatched(dispatcher, "project.update_posted")).toMatchObject({
+      organizationId: "org-1",
+      projectId: "proj-1",
+      title: "New update on Test Project",
+      detail: "Homepage shipped",
+      path: "/dashboard/projects/proj-1",
+    });
+  });
+
+  test("notifyInvoiceSent dispatches invoices that have no project", async () => {
+    prisma.invoice.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        id: "inv-2", invoiceNumber: "INV-0002", projectId: null, organizationId: "org-1",
+        type: "itemized", dueDate: null, lineItems: [{ quantity: 1, unitPrice: 2500 }],
+      }),
+    );
+    const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    service.notifyInvoiceSent("inv-2");
+
+    await done;
+
+    expect(dispatched(dispatcher, "invoice.sent")).toMatchObject({
+      projectId: null,
+      title: "Invoice INV-0002 sent",
+      detail: "$25.00",
+      data: { invoiceNumber: "INV-0002", amountCents: 2500 },
+      path: "/dashboard",
+    });
+  });
+
+  test("notifyClientRequestCreated dispatches with the client as actor", () => {
+    (prisma as any).member = { findMany: mock(() => Promise.resolve([])) };
+
+    service.notifyClientRequestCreated("proj-1", "org-1", "Add a pricing page", "Alice");
+
+    expect(dispatched(dispatcher, "client_request.created")).toMatchObject({
+      organizationId: "org-1",
+      projectId: "proj-1",
+      actorName: "Alice",
+      detail: "Add a pricing page",
+      path: "/dashboard/projects/proj-1?tab=tasks",
+    });
+  });
+
+  test("notifyTaskStatusChanged dispatches the readable status", () => {
+    service.notifyTaskStatusChanged("t1", "Logo", "proj-1", "org-1", "in_progress", null, null);
+
+    expect(dispatched(dispatcher, "task.status_changed")).toMatchObject({
+      title: '"Logo" is now In Progress',
+      data: { taskId: "t1", status: "in_progress" },
+    });
+  });
+
+  test("notifyStripeDisconnected dispatches a workspace-level event", () => {
+    (prisma as any).member = { findMany: mock(() => Promise.resolve([])) };
+
+    service.notifyStripeDisconnected("org-1");
+
+    expect(dispatched(dispatcher, "payments.stripe_disconnected")).toMatchObject({
+      organizationId: "org-1",
+      projectId: null,
+    });
+  });
+
+  test("notifyComment dispatches the full comment with the author as actor", async () => {
+    (prisma as any).member = { findMany: mock(() => Promise.resolve([{ userId: "admin-1" }])) };
+    const long = "x".repeat(300);
+
+    await service.notifyComment("proj-1", "org-1", "client-1", "member", long, "update");
+
+    expect(dispatched(dispatcher, "comment.created")).toMatchObject({
+      actorId: "client-1",
+      detail: long,
+      data: { targetType: "update", fromClient: true },
+    });
+  });
 });
 
 describe("deliverable notifications", () => {
@@ -727,6 +831,7 @@ describe("deliverable notifications", () => {
       makeInAppService() as unknown as InAppNotificationsService,
       makePushService() as unknown as PushService,
       mockLogger as unknown as PinoLogger,
+      makeDispatcher() as unknown as IntegrationDispatcher,
     );
     return { mail, service };
   }

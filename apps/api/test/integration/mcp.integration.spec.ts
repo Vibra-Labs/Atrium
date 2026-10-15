@@ -19,6 +19,7 @@ import { NotesService } from "../../src/notes/notes.service";
 import { TasksService } from "../../src/tasks/tasks.service";
 import { UpdatesService } from "../../src/updates/updates.service";
 import { ClientsService } from "../../src/clients/clients.service";
+import { DocumentsService } from "../../src/documents/documents.service";
 import type { AuthService } from "../../src/auth/auth.service";
 import type { BillingService } from "../../src/billing/billing.service";
 
@@ -88,6 +89,7 @@ beforeAll(async () => {
     new NotesService(prisma),
     clients,
     billingStub,
+    new DocumentsService(prisma, noop, noop, noop, noop, noop, billingStub),
     configStub,
   );
 
@@ -113,7 +115,8 @@ describe("MCP endpoint", () => {
     const client = await connect(adminKey);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toContain("create_project");
-    expect(tools.length).toBe(19);
+    expect(tools.map((t) => t.name)).toContain("list_pending_approvals");
+    expect(tools.length).toBe(20);
     await client.close();
   });
 

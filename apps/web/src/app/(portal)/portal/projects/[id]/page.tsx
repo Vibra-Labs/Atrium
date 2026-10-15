@@ -151,6 +151,7 @@ interface DocumentRecord {
   decision?: PortalDeliverable["decision"];
   responses: { id: string; action: string; createdAt: string; fieldId?: string; reason?: string }[];
   createdAt: string;
+  sentAt?: string | null;
   expiresAt?: string;
   voidReason?: string;
   options?: string;
@@ -1220,7 +1221,7 @@ export default function PortalProjectDetailPage() {
                           {d.requestNote && (
                             <p className="text-xs text-[var(--muted-foreground)] line-clamp-2">{d.requestNote}</p>
                           )}
-                          <p className="text-xs text-[var(--muted-foreground)]">sent {formatRelativeTime(d.createdAt)}</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">sent {formatRelativeTime(d.sentAt ?? d.createdAt)}</p>
                         </div>
                         <button
                           onClick={() => setReviewDocId(d.id)}
@@ -1366,7 +1367,7 @@ export default function PortalProjectDetailPage() {
                           {/* Header row */}
                           <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
                             <button
-                              onClick={() => setViewingDoc(doc)}
+                              onClick={() => (doc.type === "deliverable" ? setReviewDocId(doc.id) : setViewingDoc(doc))}
                               className="flex items-center gap-3 min-w-0 text-left cursor-pointer flex-1"
                               data-testid={`view-document-${doc.id}`}
                             >

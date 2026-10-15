@@ -185,6 +185,8 @@ export class DocumentsService {
     if (!doc) throw new NotFoundException("Document not found");
 
     const voidableStatuses = new Set(["draft", "pending"]);
+    // A declined deliverable is not final: the agency can void it to clear it.
+    if (doc.type === "deliverable") voidableStatuses.add("declined");
     if (!voidableStatuses.has(doc.status)) {
       throw new BadRequestException(
         `Cannot void a document with status "${doc.status}"`,
@@ -323,8 +325,11 @@ export class DocumentsService {
       where: {
         organizationId: orgId,
         requiresApproval: true,
-        status: { in: ["pending", "declined"] },
         project: { archivedAt: null },
+        OR: [
+          { type: "deliverable", status: { in: ["pending", "declined"] } },
+          { type: { not: "deliverable" }, status: "pending" },
+        ],
         ...(projectId ? { projectId } : {}),
       },
       select: {
@@ -337,13 +342,12 @@ export class DocumentsService {
           select: { reason: true, user: { select: { name: true } } },
         },
       },
-      orderBy: { sentAt: "asc" },
+      // "declined" sorts before "pending", so changes-requested items come first.
+      orderBy: [{ status: "asc" }, { sentAt: "asc" }],
       take: 50,
     });
 
-    const rank = (status: string): number => (status === "declined" ? 0 : 1);
     return docs
-      .sort((a, b) => rank(a.status) - rank(b.status))
       .map((d) => ({
         id: d.id,
         title: d.title,
@@ -428,9 +432,19 @@ export class DocumentsService {
       throw new BadRequestException("Tell the agency what to change");
     }
 
-    const response = isDeliverable
-      ? await this.decideDeliverable(id, userId, action, trimmedReason, version, ipAddress, userAgent)
-      : await this.upsertResponse(id, userId, action, trimmedReason, ipAddress, userAgent);
+    if (isDeliverable && version === undefined) {
+      throw new BadRequestException("version is required");
+    }
+
+    let response: DocumentResponse;
+    let decidedVersion: number = doc.currentVersion;
+    if (isDeliverable) {
+      const decision = await this.decideDeliverable(id, userId, action, trimmedReason, version as number, ipAddress, userAgent);
+      response = decision.response;
+      decidedVersion = decision.currentVersion;
+    } else {
+      response = await this.upsertResponse(id, userId, action, trimmedReason, ipAddress, userAgent);
+    }
 
     // Update document status based on all responses
     if (!isDeliverable) await this.updateDocumentStatus(id);
@@ -439,7 +453,7 @@ export class DocumentsService {
       userId,
       ipAddress,
       userAgent,
-      metadata: { reason: trimmedReason, version: version ?? doc.currentVersion },
+      metadata: { reason: trimmedReason, version: decidedVersion },
     });
     this.notifications.notifyDocumentResponded(id, userId, action);
 
@@ -499,10 +513,10 @@ export class DocumentsService {
     userId: string,
     action: string,
     reason: string | null,
-    version: number | undefined,
+    version: number,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<DocumentResponse> {
+  ): Promise<{ response: DocumentResponse; currentVersion: number }> {
     return this.prisma.$transaction(async (tx) => {
       // Same lock uploadVersion takes, so a decision and a new version can't interleave.
       await tx.$queryRawUnsafe(`SELECT id FROM "document" WHERE id = $1 FOR UPDATE`, id);
@@ -511,7 +525,7 @@ export class DocumentsService {
       if (DELIVERABLE_RESPOND_BLOCKED_STATUSES.has(current.status)) {
         throw new BadRequestException(`Cannot respond to a document with status "${current.status}"`);
       }
-      if (version !== undefined && version !== current.currentVersion) {
+      if (version !== current.currentVersion) {
         throw new ConflictException("A newer version was uploaded. Please review it first.");
       }
       await tx.documentResponse.deleteMany({ where: { documentId: id, fieldId: null } });
@@ -519,7 +533,7 @@ export class DocumentsService {
         data: { documentId: id, userId, action, reason, ipAddress, userAgent },
       });
       await tx.document.update({ where: { id }, data: { status: action } });
-      return created;
+      return { response: created, currentVersion: current.currentVersion };
     });
   }
 

@@ -230,7 +230,7 @@ export function PortalDeliverableReview({ doc, onClose, onDecided }: PortalDeliv
                   <p className="text-sm text-[var(--muted-foreground)] whitespace-pre-wrap">{doc.decision.reason}</p>
                 )}
                 <button
-                  onClick={() => setChanging(true)}
+                  onClick={() => { setNote(""); setMode("idle"); setChanging(true); }}
                   disabled={preview}
                   className="px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg disabled:opacity-50"
                 >
@@ -241,7 +241,7 @@ export function PortalDeliverableReview({ doc, onClose, onDecided }: PortalDeliv
               <>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => setMode("approving")}
+                    onClick={() => { setNote(""); setMode("approving"); }}
                     disabled={disabled}
                     className="px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50"
                     style={{ backgroundColor: "#15803d" }}
@@ -249,7 +249,7 @@ export function PortalDeliverableReview({ doc, onClose, onDecided }: PortalDeliv
                     Approve
                   </button>
                   <button
-                    onClick={() => setMode("requesting")}
+                    onClick={() => { setNote(""); setMode("requesting"); }}
                     disabled={disabled}
                     className="px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50"
                     style={{ backgroundColor: "#b91c1c" }}
@@ -268,7 +268,7 @@ export function PortalDeliverableReview({ doc, onClose, onDecided }: PortalDeliv
                       onChange={(e) => setNote(e.target.value)}
                       placeholder="Add a note (optional)"
                       rows={2}
-                      maxLength={2000}
+                      maxLength={500}
                       className="w-full p-2 text-sm border border-[var(--border)] rounded-lg bg-[var(--background)]"
                     />
                     <button
@@ -289,7 +289,7 @@ export function PortalDeliverableReview({ doc, onClose, onDecided }: PortalDeliv
                       onChange={(e) => setNote(e.target.value)}
                       placeholder="What should change?"
                       rows={3}
-                      maxLength={2000}
+                      maxLength={500}
                       className="w-full p-2 text-sm border border-[var(--border)] rounded-lg bg-[var(--background)]"
                     />
                     <button

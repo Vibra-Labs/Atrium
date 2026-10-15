@@ -541,6 +541,23 @@ describe("DocumentsService", () => {
       }
     });
 
+    it("voids a declined deliverable", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ type: "deliverable", status: "declined" })),
+      );
+      await service.voidDocument(DOC_ID, ORG, USER);
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "voided" }) }),
+      );
+    });
+
+    it("still refuses to void a declined contract", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({ type: "contract", status: "declined" })),
+      );
+      await expect(service.voidDocument(DOC_ID, ORG, USER)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it("voids a draft document successfully", async () => {
       mockPrisma.document.findFirst.mockReturnValue(
         Promise.resolve(makeDoc({ status: "draft" })),
@@ -772,9 +789,15 @@ describe("DocumentsService", () => {
       mockPrisma.documentResponse.create.mockReturnValue(Promise.resolve({ id: "resp-1", action: "accepted" }));
     }
 
+    it("requires a version for deliverable decisions", async () => {
+      setupDeliverable();
+      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "accepted")).rejects.toThrow("version is required");
+      expect(mockPrisma.documentResponse.create).not.toHaveBeenCalled();
+    });
+
     it("requires a note when requesting changes", async () => {
       setupDeliverable();
-      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "declined", undefined, undefined, "   ")).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "declined", undefined, undefined, "   ", 2)).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it("one client's decision sets the status and replaces earlier decisions", async () => {
@@ -811,6 +834,15 @@ describe("DocumentsService", () => {
       mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1" }));
       await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "accepted", undefined, undefined, undefined, 2)).rejects.toBeInstanceOf(ConflictException);
       expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("FOR UPDATE"), DOC_ID);
+    });
+
+    it("logs the in-lock version in the audit trail", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({ type: "deliverable", status: "pending", requiresApproval: true, currentVersion: 2 })));
+      mockPrisma.document.findUnique.mockReturnValue(Promise.resolve(makeDoc({ type: "deliverable", status: "pending", currentVersion: 2 })));
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1" }));
+      mockPrisma.documentResponse.create.mockReturnValue(Promise.resolve({ id: "resp-1", action: "accepted" }));
+      await service.respond(DOC_ID, CLIENT_USER, ORG, "accepted", undefined, undefined, undefined, 2);
+      expect(mockAuditService.log).toHaveBeenCalledWith(DOC_ID, "accepted", expect.objectContaining({ metadata: { reason: null, version: 2 } }));
     });
 
     it("keeps the change note in the audit trail", async () => {
@@ -2156,8 +2188,8 @@ describe("DocumentsService", () => {
   describe("findPendingApprovals()", () => {
     it("is org-scoped, excludes archived projects, and lists changes requested first", async () => {
       mockPrisma.document.findMany.mockReturnValue(Promise.resolve([
-        { id: "d1", title: "A", type: "deliverable", status: "pending", currentVersion: 1, sentAt: new Date("2026-10-01"), projectId: PROJECT_ID, project: { name: "Site" }, responses: [] },
         { id: "d2", title: "B", type: "deliverable", status: "declined", currentVersion: 2, sentAt: new Date("2026-10-05"), projectId: PROJECT_ID, project: { name: "Site" }, responses: [{ reason: "Bigger", user: { name: "Elena" } }] },
+        { id: "d1", title: "A", type: "deliverable", status: "pending", currentVersion: 1, sentAt: new Date("2026-10-01"), projectId: PROJECT_ID, project: { name: "Site" }, responses: [] },
       ]));
 
       const result = await service.findPendingApprovals(ORG, PROJECT_ID);
@@ -2165,8 +2197,13 @@ describe("DocumentsService", () => {
       expect(mockPrisma.document.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: expect.objectContaining({
           organizationId: ORG, projectId: PROJECT_ID, requiresApproval: true,
-          status: { in: ["pending", "declined"] }, project: { archivedAt: null },
+          project: { archivedAt: null },
+          OR: [
+            { type: "deliverable", status: { in: ["pending", "declined"] } },
+            { type: { not: "deliverable" }, status: "pending" },
+          ],
         }),
+        orderBy: [{ status: "asc" }, { sentAt: "asc" }],
       }));
       expect(result.map((r) => r.id)).toEqual(["d2", "d1"]);
       expect(result[0]).toEqual(expect.objectContaining({ version: 2, projectName: "Site", latestReason: "Bigger", decidedBy: "Elena" }));

@@ -609,7 +609,7 @@ export function FilesSection({
             const colors = isDeliverable ? deliverable : statusColors[doc.status] || statusColors.pending;
             const isExpanded = expandedDocId === doc.id;
             const isDraft = doc.status === "draft";
-            const isVoidable = doc.status === "draft" || doc.status === "pending";
+            const isVoidable = doc.status === "draft" || doc.status === "pending" || (doc.type === "deliverable" && doc.status === "declined");
             const needsSigning = doc.requiresSignature && doc.signatureFields && doc.signatureFields.length > 0;
             const signedFieldIds = doc.responses.filter((r) => r.action === "signed" && r.fieldId).map((r) => r.fieldId);
             const hasUnsignedFields = needsSigning && !doc.signatureFields!.every((f) => signedFieldIds.includes(f.id));

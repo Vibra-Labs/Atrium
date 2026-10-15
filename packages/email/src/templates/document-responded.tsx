@@ -17,6 +17,7 @@ interface DocumentRespondedEmailProps {
   documentTitle: string;
   documentType: string;
   action: string;
+  reason?: string | null;
   dashboardUrl: string;
 }
 
@@ -27,6 +28,7 @@ export function DocumentRespondedEmail({
   documentTitle,
   documentType,
   action,
+  reason,
   dashboardUrl,
 }: DocumentRespondedEmailProps) {
   return (
@@ -42,6 +44,18 @@ export function DocumentRespondedEmail({
             {recipientName}, <strong>{clientName}</strong> has {action} the{" "}
             {documentType} <strong>{documentTitle}</strong> on {projectName}.
           </Text>
+          {reason && (
+            <Text
+              style={{
+                fontSize: "14px",
+                color: "#374151",
+                borderLeft: "3px solid #e5e7eb",
+                paddingLeft: "12px",
+              }}
+            >
+              {reason}
+            </Text>
+          )}
           <Link
             href={dashboardUrl}
             style={{

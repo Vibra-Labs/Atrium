@@ -16,6 +16,8 @@ interface DocumentUploadedEmailProps {
   documentTitle: string;
   documentType: string;
   portalUrl: string;
+  variant?: "document" | "approval";
+  note?: string | null;
 }
 
 export function DocumentUploadedEmail({
@@ -24,23 +26,51 @@ export function DocumentUploadedEmail({
   documentTitle,
   documentType,
   portalUrl,
+  variant = "document",
+  note,
 }: DocumentUploadedEmailProps) {
+  const isApproval: boolean = variant === "approval";
   return (
     <Html>
       <Head />
-      <Preview>New {documentType} on {projectName}: {documentTitle}</Preview>
+      <Preview>
+        {isApproval
+          ? `${documentTitle} needs your approval`
+          : `New ${documentType} on ${projectName}: ${documentTitle}`}
+      </Preview>
       <Body style={{ fontFamily: "sans-serif", padding: "40px 0" }}>
         <Container style={{ maxWidth: "480px", margin: "0 auto" }}>
           <Heading style={{ fontSize: "24px", marginBottom: "24px" }}>
-            New Document Available
+            {isApproval ? "Ready for your review" : "New Document Available"}
           </Heading>
-          <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
-            {clientName}, a new {documentType} has been added to{" "}
-            {projectName}: <strong>{documentTitle}</strong>
-          </Text>
-          <Text style={{ fontSize: "14px", color: "#374151" }}>
-            Please review the document and provide your response.
-          </Text>
+          {isApproval ? (
+            <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
+              {clientName}, <strong>{documentTitle}</strong> on {projectName} is
+              ready for you to approve or request changes.
+            </Text>
+          ) : (
+            <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
+              {clientName}, a new {documentType} has been added to{" "}
+              {projectName}: <strong>{documentTitle}</strong>
+            </Text>
+          )}
+          {isApproval && note && (
+            <Text
+              style={{
+                fontSize: "14px",
+                color: "#374151",
+                borderLeft: "3px solid #e5e7eb",
+                paddingLeft: "12px",
+              }}
+            >
+              {note}
+            </Text>
+          )}
+          {!isApproval && (
+            <Text style={{ fontSize: "14px", color: "#374151" }}>
+              Please review the document and provide your response.
+            </Text>
+          )}
           <Link
             href={portalUrl}
             style={{
@@ -54,7 +84,7 @@ export function DocumentUploadedEmail({
               marginTop: "16px",
             }}
           >
-            View Document
+            {isApproval ? "Review" : "View Document"}
           </Link>
           <Text
             style={{ fontSize: "14px", color: "#6b7280", marginTop: "24px" }}

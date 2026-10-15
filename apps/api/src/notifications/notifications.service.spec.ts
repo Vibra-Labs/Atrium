@@ -715,3 +715,103 @@ describe("NotificationsService", () => {
     expect(mail.send).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("deliverable notifications", () => {
+  function build(overrides: Record<string, unknown>) {
+    (render as unknown as { mockClear: () => void }).mockClear();
+    const mail = makeMailService();
+    const service = new NotificationsService(
+      mail as unknown as MailService,
+      makePrisma(overrides) as unknown as PrismaService,
+      makeConfig() as unknown as ConfigService,
+      makeInAppService() as unknown as InAppNotificationsService,
+      makePushService() as unknown as PushService,
+      mockLogger as unknown as PinoLogger,
+    );
+    return { mail, service };
+  }
+
+  test("approval request uses approval wording, the agency note and a doc deep link", async () => {
+    const { mail, service } = build({
+      document: {
+        findUnique: mock(() =>
+          Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1", requestNote: "First pass" }),
+        ),
+      },
+    });
+
+    service.notifyDocumentUploaded("doc-1");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mail.send).toHaveBeenCalledWith("alice@example.com", "Homepage needs your approval — Test Project", expect.any(String), "org-1");
+    expect(emailProps<Record<string, unknown>>()).toEqual(
+      expect.objectContaining({
+        variant: "approval",
+        note: "First pass",
+        portalUrl: "http://localhost:3000/portal/projects/proj-1?tab=files&doc=doc-1",
+      }),
+    );
+  });
+
+  test("changes requested is worded for the agency and carries the client's note", async () => {
+    const { mail, service } = build({
+      document: {
+        findUnique: mock(() =>
+          Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1" }),
+        ),
+      },
+      user: { findUnique: mock(() => Promise.resolve({ name: "Elena" })) },
+      documentResponse: { findFirst: mock(() => Promise.resolve({ reason: "Bigger logo" })) },
+      member: {
+        findMany: mock(() =>
+          Promise.resolve([{ userId: "admin-1", user: { name: "Ed", email: "ed@agency.com" } }]),
+        ),
+      },
+    });
+
+    service.notifyDocumentResponded("doc-1", "client-1", "declined");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mail.send).toHaveBeenCalledWith("ed@agency.com", "Elena requested changes on Homepage", expect.any(String), "org-1");
+    expect(emailProps<Record<string, unknown>>()).toEqual(
+      expect.objectContaining({ action: "requested changes on", reason: "Bigger logo" }),
+    );
+  });
+
+  test("reminder uses approval wording and a doc deep link", async () => {
+    const { mail, service } = build({
+      document: {
+        findUnique: mock(() =>
+          Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1", expiresAt: null, responses: [] }),
+        ),
+      },
+    });
+
+    service.notifyDocumentReminder("doc-1");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mail.send).toHaveBeenCalledWith("alice@example.com", "Reminder: Homepage is waiting for your approval", expect.any(String), "org-1");
+    expect(emailProps<Record<string, unknown>>()).toEqual(
+      expect.objectContaining({
+        variant: "approval",
+        portalUrl: "http://localhost:3000/portal/projects/proj-1?tab=files&doc=doc-1",
+      }),
+    );
+  });
+
+  test("contracts keep the existing wording", async () => {
+    const { mail, service } = build({
+      document: {
+        findUnique: mock(() =>
+          Promise.resolve({ title: "MSA", type: "contract", projectId: "proj-1", organizationId: "org-1", requestNote: null }),
+        ),
+      },
+    });
+
+    service.notifyDocumentUploaded("doc-1");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mail.send).toHaveBeenCalledWith("alice@example.com", "New contract on Test Project: MSA", expect.any(String), "org-1");
+    expect(emailProps<{ portalUrl: string }>().portalUrl).toBe("http://localhost:3000/portal/projects/proj-1?tab=files");
+  });
+});

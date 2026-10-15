@@ -17,6 +17,7 @@ interface DocumentReminderEmailProps {
   documentType: string;
   portalUrl: string;
   expiresAt?: string;
+  variant?: "document" | "approval";
 }
 
 export function DocumentReminderEmail({
@@ -26,7 +27,9 @@ export function DocumentReminderEmail({
   documentType,
   portalUrl,
   expiresAt,
+  variant = "document",
 }: DocumentReminderEmailProps) {
+  const isApproval: boolean = variant === "approval";
   return (
     <Html>
       <Head />
@@ -34,7 +37,7 @@ export function DocumentReminderEmail({
       <Body style={{ fontFamily: "sans-serif", padding: "40px 0" }}>
         <Container style={{ maxWidth: "480px", margin: "0 auto" }}>
           <Heading style={{ fontSize: "24px", marginBottom: "24px" }}>
-            Document Reminder
+            {isApproval ? "Waiting for your approval" : "Document Reminder"}
           </Heading>
           <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
             {clientName}, the {documentType}{" "}
@@ -62,7 +65,7 @@ export function DocumentReminderEmail({
               marginTop: "16px",
             }}
           >
-            View Document
+            {isApproval ? "Review" : "View Document"}
           </Link>
           <Text
             style={{ fontSize: "14px", color: "#6b7280", marginTop: "24px" }}

@@ -56,9 +56,16 @@ export class NotificationsService {
    * tabs, so a notification about one of those has to say which tab it means
    * or the recipient lands on Updates and has to go hunting.
    */
-  private portalProjectPath(projectId: string, tab?: PortalTab): string {
-    const path = `/portal/projects/${projectId}`;
-    return tab ? `${path}?tab=${tab}` : path;
+  private portalProjectPath(
+    projectId: string,
+    tab?: PortalTab,
+    docId?: string,
+  ): string {
+    const params = new URLSearchParams();
+    if (tab) params.set("tab", tab);
+    if (docId) params.set("doc", docId);
+    const qs: string = params.toString();
+    return `/portal/projects/${projectId}${qs ? `?${qs}` : ""}`;
   }
 
   /** Dashboard equivalent of {@link portalProjectPath}, for agency recipients. */
@@ -583,6 +590,7 @@ export class NotificationsService {
         type: true,
         projectId: true,
         organizationId: true,
+        requestNote: true,
       },
     });
     if (!doc) return;
@@ -596,7 +604,12 @@ export class NotificationsService {
     const clients = await this.getProjectClients(doc.projectId);
     if (clients.length === 0) return;
 
-    const link = this.portalProjectPath(doc.projectId, "files");
+    const isDeliverable: boolean = doc.type === "deliverable";
+    const link: string = this.portalProjectPath(
+      doc.projectId,
+      "files",
+      isDeliverable ? documentId : undefined,
+    );
     const portalUrl = `${this.webUrl}${link}`;
 
     // In-app + push
@@ -604,8 +617,10 @@ export class NotificationsService {
       clients.map((c) => c.id),
       doc.organizationId,
       "document_uploaded",
-      `New ${doc.type} on ${project.name}`,
-      doc.title,
+      isDeliverable
+        ? `${doc.title} needs your approval`
+        : `New ${doc.type} on ${project.name}`,
+      isDeliverable ? project.name : doc.title,
       link,
     );
 
@@ -619,11 +634,15 @@ export class NotificationsService {
               documentTitle: doc.title,
               documentType: doc.type,
               portalUrl,
+              variant: isDeliverable ? "approval" : "document",
+              note: doc.requestNote,
             }),
           );
           await this.mail.send(
             client.email,
-            `New ${doc.type} on ${project.name}: ${doc.title}`,
+            isDeliverable
+              ? `${doc.title} needs your approval — ${project.name}`
+              : `New ${doc.type} on ${project.name}: ${doc.title}`,
             html,
             doc.organizationId,
           );
@@ -667,6 +686,23 @@ export class NotificationsService {
     if (!project) return;
 
     const clientName = respondent?.name || "A client";
+    const isDeliverable: boolean = doc.type === "deliverable";
+    const reason: string | null = isDeliverable
+      ? ((
+          await this.prisma.documentResponse.findFirst({
+            where: { documentId, userId, fieldId: null },
+            select: { reason: true },
+          })
+        )?.reason ?? null)
+      : null;
+    const verb: string = isDeliverable
+      ? action === "accepted"
+        ? "approved"
+        : "requested changes on"
+      : action;
+    const subject: string = isDeliverable
+      ? `${clientName} ${verb} ${doc.title}`
+      : `${clientName} ${action} ${doc.type}: ${doc.title}`;
 
     const admins = await this.getOrgAdmins(doc.organizationId, true);
     if (admins.length === 0) return;
@@ -679,8 +715,8 @@ export class NotificationsService {
       admins.map((a) => a.userId),
       doc.organizationId,
       "document_responded",
-      `${clientName} ${action} ${doc.type}`,
-      doc.title,
+      isDeliverable ? subject : `${clientName} ${action} ${doc.type}`,
+      isDeliverable ? project.name : doc.title,
       link,
     );
 
@@ -694,13 +730,14 @@ export class NotificationsService {
               projectName: project.name,
               documentTitle: doc.title,
               documentType: doc.type,
-              action,
+              action: verb,
+              reason,
               dashboardUrl,
             }),
           );
           await this.mail.send(
             admin.user.email,
-            `${clientName} ${action} ${doc.type}: ${doc.title}`,
+            subject,
             html,
             doc.organizationId,
           );
@@ -758,7 +795,12 @@ export class NotificationsService {
     );
     if (unrespondedClients.length === 0) return;
 
-    const link = this.portalProjectPath(doc.projectId, "files");
+    const isDeliverable: boolean = doc.type === "deliverable";
+    const link: string = this.portalProjectPath(
+      doc.projectId,
+      "files",
+      isDeliverable ? documentId : undefined,
+    );
     const portalUrl = `${this.webUrl}${link}`;
     const expiresAt = doc.expiresAt
       ? doc.expiresAt.toLocaleDateString("en-US", {
@@ -789,11 +831,14 @@ export class NotificationsService {
               documentType: doc.type,
               portalUrl,
               expiresAt,
+              variant: isDeliverable ? "approval" : "document",
             }),
           );
           await this.mail.send(
             client.email,
-            `Reminder: ${doc.type} awaiting your response — ${doc.title}`,
+            isDeliverable
+              ? `Reminder: ${doc.title} is waiting for your approval`
+              : `Reminder: ${doc.type} awaiting your response — ${doc.title}`,
             html,
             doc.organizationId,
           );

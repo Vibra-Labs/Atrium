@@ -2,6 +2,28 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.10.0] — 2026-10-15
+
+### Added
+
+- **Slack, Discord and webhook integrations** — Send portal activity to a Slack or Discord channel, or to any URL (Zapier, Make, n8n). Pick from 14 events across projects, tasks, documents, invoices and payments, optionally limited to certain projects. Failed deliveries are retried for about 15 hours, each destination has a delivery log with resend, and one that keeps failing turns itself off and alerts owners and admins. Webhooks are signed (`X-Atrium-Signature`). Private network URLs are refused unless `INTEGRATIONS_ALLOW_PRIVATE_URLS=true`, which also allows plain http for services on your LAN. Pro feature.
+- **Deliverable approvals** — Send a design, draft or link for client sign-off from Files. The client approves or requests changes with a note, and you send new versions until it's approved. Clients get a review screen, a "to review" banner and deep links from email; the dashboard shows what's awaiting review. New read-only MCP tool `list_pending_approvals`.
+- **14-day Pro trial and Pro features** (hosted) — New workspaces start on a no-card Pro trial that drops to Free automatically. Custom domains, e-signatures, online payments, white-label and integrations are Pro. Self-hosted installs (billing off) keep everything.
+- **Weekly client updates and digests** — A drafted weekly update built from the week's work, a Friday reminder to send it and a Monday to-do digest, each sent at the workspace's local time and switchable in Account settings.
+- **Invite follow-through** — Invites can be resent, expired ones are marked, and one reminder goes out 3 days after an invite is sent. Client rows show when each client last visited.
+- **Portainer template** — One-container install with the built-in database. See [docs/portainer.md](docs/portainer.md).
+
+### Changed
+
+- **API & MCP moved into Settings → Integrations.** The old link redirects.
+- Invitation links last 14 days instead of 48 hours, and the email says when they expire.
+- Free plan raised to 3 projects, 5 clients and 500 MB.
+
+### Fixed
+
+- **Email logos and OAuth metadata pointed at localhost** on installs that set only `WEB_URL`. `API_URL` now defaults to `WEB_URL`.
+- Files that belong to a document no longer appear twice in the Files list.
+
 ## [1.9.1] — 2026-10-14
 
 ### Fixed

@@ -14,6 +14,7 @@ const SECTIONS: Section[] = [
   { href: "/dashboard/settings/organizations", label: "Organizations" },
   { href: "/dashboard/settings/billing", label: "Billing" },
   { href: "/dashboard/settings/payments", label: "Payments" },
+  { href: "/dashboard/settings/integrations", label: "Integrations" },
   { href: "/dashboard/settings/api-keys", label: "API & MCP" },
 ];
 

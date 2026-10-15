@@ -32,6 +32,7 @@ import { EmbedsModule } from "./embeds/embeds.module";
 import { TimeEntriesModule } from "./time-entries/time-entries.module";
 import { CalendarModule } from "./calendar/calendar.module";
 import { ApiKeysModule } from "./api-keys/api-keys.module";
+import { IntegrationsModule } from "./integrations/integrations.module";
 import { McpModule } from "./mcp/mcp.module";
 import { McpAuthModule } from "./mcp-auth/mcp-auth.module";
 import { HealthController } from "./health.controller";
@@ -95,6 +96,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     TimeEntriesModule,
     CalendarModule,
     ApiKeysModule,
+    IntegrationsModule,
     McpModule,
     McpAuthModule,
   ],

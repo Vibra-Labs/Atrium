@@ -94,7 +94,7 @@ export class SsrfError extends Error {
  * Check that `hostname` resolves to a public IP. Throws `SsrfError` otherwise.
  * If the hostname IS an IP literal, validates that directly.
  */
-async function assertHostnameIsPublic(hostname: string): Promise<void> {
+export async function assertHostnameIsPublic(hostname: string): Promise<void> {
   if (isIP(hostname)) {
     if (isPrivateAddress(hostname)) {
       throw new SsrfError(`Refusing to fetch private address: ${hostname}`);

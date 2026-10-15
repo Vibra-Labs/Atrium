@@ -118,7 +118,7 @@ export async function createTask(
 }
 
 export type PlanFeatureMap = Record<
-  "custom_domain" | "e_signatures" | "online_payments" | "white_label",
+  "custom_domain" | "e_signatures" | "integrations" | "online_payments" | "white_label",
   boolean
 >;
 

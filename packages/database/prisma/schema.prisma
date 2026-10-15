@@ -105,6 +105,7 @@ model Organization {
   apiKeys          ApiKey[]
   mcpGrants        McpGrant[]
   mcpPendingGrants McpPendingGrant[]
+  integrations     IntegrationDestination[]
 
   @@map("organization")
 }
@@ -961,4 +962,49 @@ model TimeEntry {
   // ("organizationId", "userId") WHERE "endedAt" IS NULL is applied
   // out-of-band by packages/database/scripts/migrate-time-entry-running-unique.ts
   // (Prisma 6 does not yet support `where:` on `@@unique`).
+}
+
+// ─── Integrations (Slack, Discord, outbound webhooks) ───
+
+model IntegrationDestination {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  type                String // "slack" | "discord" | "webhook"
+  name                String
+  url                 String // encrypted
+  secret              String? // webhook only, encrypted HMAC signing secret
+  events              String[]
+  projectIds          String[] @default([]) // empty = every project
+  enabled             Boolean  @default(true)
+  disabledReason      String?
+  consecutiveFailures Int      @default(0)
+  createdById         String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   IntegrationDelivery[]
+
+  @@index([organizationId])
+  @@map("integration_destination")
+}
+
+model IntegrationDelivery {
+  id             String    @id @default(cuid())
+  destinationId  String
+  event          String
+  payload        Json
+  status         String    @default("pending") // "pending" | "success" | "failed"
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime?
+  lastStatusCode Int?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  deliveredAt    DateTime?
+
+  destination IntegrationDestination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([destinationId, createdAt])
+  @@map("integration_delivery")
 }

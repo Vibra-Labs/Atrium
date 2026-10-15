@@ -16,6 +16,7 @@ describe("BillingService.getFeatures", () => {
     expect(await service.getFeatures("org1")).toEqual({
       custom_domain: true,
       e_signatures: true,
+      integrations: true,
       online_payments: true,
       white_label: true,
     });

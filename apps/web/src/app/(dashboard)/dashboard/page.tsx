@@ -7,6 +7,7 @@ import { formatCurrency } from "@/lib/format";
 import { StatCardSkeleton } from "@/components/skeletons";
 import { FolderKanban, TrendingUp, CheckCircle, Receipt } from "lucide-react";
 import { WeeklyUpdatesCard } from "./weekly-updates-card";
+import { PendingApprovalsCard } from "./pending-approvals-card";
 
 interface Project {
   id: string;
@@ -103,6 +104,7 @@ export default function DashboardPage() {
       </div>
 
       <WeeklyUpdatesCard />
+      <PendingApprovalsCard />
 
       <div>
         <div className="flex items-center justify-between mb-3">

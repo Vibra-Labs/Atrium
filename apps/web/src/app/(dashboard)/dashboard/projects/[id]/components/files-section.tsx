@@ -30,11 +30,15 @@ import {
   LinkIcon,
   Plus,
   Pencil,
+  CheckCircle2,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { downloadFile } from "@/lib/download";
 import { usePlanFeatures, useIsTrialing } from "@/lib/plan-features";
 import { ProBadge, UpgradeLink, TrialTag } from "@/components/pro-badge";
+import { deliverableStatus } from "@/lib/deliverable";
+import { DeliverableModal } from "./deliverable-modal";
+import { DeliverableVersionModal } from "./deliverable-version-modal";
 import dynamic from "next/dynamic";
 
 const SignatureFieldPlacer = dynamic(
@@ -66,6 +70,7 @@ interface DocumentResponse {
   signedAt?: string;
   signatureMethod?: string;
   fieldId?: string;
+  reason?: string | null;
   user: { id: string; name: string };
 }
 
@@ -74,6 +79,8 @@ interface DocumentFile {
   filename: string;
   mimeType: string;
   sizeBytes: number;
+  type?: "UPLOAD" | "LINK";
+  url?: string | null;
 }
 
 interface DocumentVersion {
@@ -102,6 +109,7 @@ interface DocumentRecord {
   expiresAt?: string;
   voidReason?: string;
   options?: string;
+  requestNote?: string | null;
 }
 
 interface AuditEvent {
@@ -123,6 +131,7 @@ const typeLabels: Record<string, string> = {
   proposal: "Proposal",
   nda: "NDA",
   other: "Other",
+  deliverable: "For approval",
 };
 
 import { documentStatusColors as statusColors } from "@/lib/status-colors";
@@ -154,6 +163,8 @@ export function FilesSection({
   const [docsTotalPages, setDocsTotalPages] = useState(1);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [showDocUpload, setShowDocUpload] = useState(false);
+  const [showDeliverable, setShowDeliverable] = useState(false);
+  const [versionDoc, setVersionDoc] = useState<DocumentRecord | null>(null);
   const [docUploading, setDocUploading] = useState(false);
   const [voidModalDocId, setVoidModalDocId] = useState<string | null>(null);
   const [voidReason, setVoidReason] = useState("");
@@ -573,6 +584,16 @@ export function FilesSection({
                     <p className="text-xs text-[var(--muted-foreground)]">Link to an external resource (Nextcloud, Canva, etc.)</p>
                   </div>
                 </button>
+                <button
+                  onClick={() => { setShowAddMenu(false); setShowDeliverable(true); }}
+                  className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[var(--muted)] text-left"
+                >
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[var(--muted-foreground)]" />
+                  <div>
+                    <p className="text-sm font-medium">Request approval</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Send a design, draft or link for the client to approve</p>
+                  </div>
+                </button>
               </div>
             )}
           </div>
@@ -583,7 +604,9 @@ export function FilesSection({
       {documents.length > 0 && (
         <div className="space-y-2 mb-4">
           {documents.map((doc) => {
-            const colors = statusColors[doc.status] || statusColors.pending;
+            const isDeliverable = doc.type === "deliverable";
+            const deliverable = deliverableStatus(doc.status);
+            const colors = isDeliverable ? deliverable : statusColors[doc.status] || statusColors.pending;
             const isExpanded = expandedDocId === doc.id;
             const isDraft = doc.status === "draft";
             const isVoidable = doc.status === "draft" || doc.status === "pending";
@@ -612,6 +635,11 @@ export function FilesSection({
                         {doc.file.filename} &middot; {formatBytes(doc.file.sizeBytes)}
                         {doc.expiresAt && <span> &middot; Expires {new Date(doc.expiresAt).toLocaleDateString()}</span>}
                       </p>
+                      {doc.type === "deliverable" && doc.status === "declined" && doc.responses[0]?.reason && (
+                        <p className="text-xs text-red-700 mt-1" data-testid={`change-note-${doc.id}`}>
+                          {doc.responses[0].user.name}: “{doc.responses[0].reason}”
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -619,7 +647,7 @@ export function FilesSection({
                       {typeLabels[doc.type] || doc.type}
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: colors.bg, color: colors.text }}>
-                      {doc.status}
+                      {isDeliverable ? deliverable.label : doc.status}
                     </span>
                   </div>
                 </button>
@@ -649,13 +677,23 @@ export function FilesSection({
 
                       {/* Secondary actions — icon group */}
                       <div className="flex items-center gap-0.5 border border-[var(--border)] rounded-md p-0.5">
-                        <button
-                          onClick={() => { const f = doc.signedFileId && doc.signedFile ? doc.signedFile : doc.file; handleDocDownload(f.id, f.filename); }}
-                          title="Download"
-                          className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
-                        >
-                          <Download size={14} />
-                        </button>
+                        {doc.file.type === "LINK" && doc.file.url ? (
+                          <button
+                            onClick={() => window.open(doc.file.url ?? "", "_blank", "noopener,noreferrer")}
+                            title="Open link"
+                            className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                          >
+                            <ExternalLink size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { const f = doc.signedFileId && doc.signedFile ? doc.signedFile : doc.file; handleDocDownload(f.id, f.filename); }}
+                            title="Download"
+                            className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                          >
+                            <Download size={14} />
+                          </button>
+                        )}
                         {doc.status === "signed" && (
                           <button
                             onClick={() => handleDownloadCertificate(doc.id)}
@@ -691,34 +729,44 @@ export function FilesSection({
                           </button>
                         )}
                         {!isArchived && doc.status !== "voided" && doc.status !== "expired" && (
-                          <label
-                            title="Upload new version"
-                            className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
-                          >
-                            <FilePlus size={14} />
-                            <input
-                              type="file"
-                              className="hidden"
-                              accept=".pdf,.doc,.docx,.odt,.jpg,.jpeg,.png,.webp"
-                              onChange={async (e) => {
-                                const f = e.target.files?.[0];
-                                if (!f) return;
-                                try {
-                                  const formData = new FormData();
-                                  formData.append("file", f);
-                                  await apiFetch(`/documents/${doc.id}/upload-version`, {
-                                    method: "POST",
-                                    body: formData,
-                                  });
-                                  loadDocuments();
-                                  success(`Version ${(doc.currentVersion ?? 1) + 1} uploaded`);
-                                } catch (err) {
-                                  showError(err instanceof Error ? err.message : "Failed to upload version");
-                                }
-                                e.target.value = "";
-                              }}
-                            />
-                          </label>
+                          isDeliverable ? (
+                            <button
+                              onClick={() => setVersionDoc(doc)}
+                              title="Upload new version"
+                              className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                            >
+                              <FilePlus size={14} />
+                            </button>
+                          ) : (
+                            <label
+                              title="Upload new version"
+                              className="p-1.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                            >
+                              <FilePlus size={14} />
+                              <input
+                                type="file"
+                                className="hidden"
+                                accept=".pdf,.doc,.docx,.odt,.jpg,.jpeg,.png,.webp"
+                                onChange={async (e) => {
+                                  const f = e.target.files?.[0];
+                                  if (!f) return;
+                                  try {
+                                    const formData = new FormData();
+                                    formData.append("file", f);
+                                    await apiFetch(`/documents/${doc.id}/upload-version`, {
+                                      method: "POST",
+                                      body: formData,
+                                    });
+                                    loadDocuments();
+                                    success(`Version ${(doc.currentVersion ?? 1) + 1} uploaded`);
+                                  } catch (err) {
+                                    showError(err instanceof Error ? err.message : "Failed to upload version");
+                                  }
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                          )
                         )}
                       </div>
 
@@ -937,6 +985,21 @@ export function FilesSection({
           </div>
         )}
       </div>
+
+      {showDeliverable && (
+        <DeliverableModal
+          projectId={projectId}
+          onClose={() => setShowDeliverable(false)}
+          onCreated={() => { setShowDeliverable(false); loadDocuments(); }}
+        />
+      )}
+      {versionDoc && (
+        <DeliverableVersionModal
+          doc={versionDoc}
+          onClose={() => setVersionDoc(null)}
+          onUploaded={() => { setVersionDoc(null); loadDocuments(); }}
+        />
+      )}
 
       {/* Document Upload Modal */}
       {showDocUpload && (

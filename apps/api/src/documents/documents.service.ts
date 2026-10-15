@@ -80,6 +80,8 @@ export class DocumentsService {
     });
     if (!project) throw new NotFoundException("Project not found");
 
+    const isDeliverable: boolean = dto.type === "deliverable";
+
     const document = await this.prisma.document.create({
       data: {
         type: dto.type,
@@ -89,12 +91,13 @@ export class DocumentsService {
         organizationId: orgId,
         uploadedById,
         status: "draft",
-        requiresSignature: dto.requiresSignature ?? false,
-        requiresApproval: dto.requiresApproval ?? false,
+        requiresSignature: isDeliverable ? false : (dto.requiresSignature ?? false),
+        requiresApproval: isDeliverable ? true : (dto.requiresApproval ?? false),
         options: dto.options || null,
         signingOrderEnabled: dto.signingOrderEnabled ?? false,
-        reminderEnabled: dto.reminderEnabled ?? false,
+        reminderEnabled: dto.reminderEnabled ?? isDeliverable,
         reminderIntervalDays: dto.reminderIntervalDays ?? 3,
+        requestNote: dto.note?.trim() || null,
       },
       include: DOCUMENT_FULL_INCLUDE,
     });

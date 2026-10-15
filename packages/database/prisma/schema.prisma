@@ -623,7 +623,7 @@ model ProjectStatus {
 
 model Document {
   id                   String    @id @default(cuid())
-  type                 String    // "quote", "contract", "nda", "other"
+  type                 String    // "quote", "contract", "proposal", "nda", "other", "deliverable"
   title                String
   fileId               String
   projectId            String
@@ -643,6 +643,7 @@ model Document {
   lastReminderAt       DateTime?
   signingOrderEnabled  Boolean   @default(false)
   options              String?   // comma-separated choices for client selection
+  requestNote          String?   // agency's message to the client for the current version (deliverables)
   currentVersion       Int       @default(1)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt

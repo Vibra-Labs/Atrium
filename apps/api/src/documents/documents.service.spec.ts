@@ -272,6 +272,43 @@ describe("DocumentsService", () => {
       reminderIntervalDays: 3,
     };
 
+    it("forces approval on and signature off for deliverables, with reminders on by default", async () => {
+      await service.create(
+        { projectId: PROJECT_ID, type: "deliverable", title: "Homepage v1", requiresSignature: true, requiresApproval: false, note: "  First pass  " },
+        FILE_ID, ORG, USER,
+      );
+      expect(mockPrisma.document.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: "deliverable",
+            requiresApproval: true,
+            requiresSignature: false,
+            reminderEnabled: true,
+            requestNote: "First pass",
+          }),
+        }),
+      );
+    });
+
+    it("lets the agency turn deliverable reminders off", async () => {
+      await service.create(
+        { projectId: PROJECT_ID, type: "deliverable", title: "Logo", reminderEnabled: false },
+        FILE_ID, ORG, USER,
+      );
+      expect(mockPrisma.document.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ reminderEnabled: false }) }),
+      );
+    });
+
+    it("leaves non-deliverable defaults unchanged", async () => {
+      await service.create({ projectId: PROJECT_ID, type: "contract", title: "MSA" }, FILE_ID, ORG, USER);
+      expect(mockPrisma.document.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ requiresApproval: false, requiresSignature: false, reminderEnabled: false, requestNote: null }),
+        }),
+      );
+    });
+
     it("throws NotFoundException when project does not belong to org", async () => {
       mockPrisma.project.findFirst.mockReturnValue(Promise.resolve(null));
 

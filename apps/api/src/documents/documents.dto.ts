@@ -20,7 +20,7 @@ export class CreateDocumentDto {
   projectId!: string;
 
   @IsString()
-  @IsIn(["quote", "contract", "proposal", "nda", "other"])
+  @IsIn(["quote", "contract", "proposal", "nda", "other", "deliverable"])
   type!: string;
 
   @IsString()
@@ -66,6 +66,16 @@ export class CreateDocumentDto {
   @Max(30)
   @Transform(({ value }) => value != null ? parseInt(value, 10) : undefined)
   reminderIntervalDays?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true" || value === true)
+  sendNow?: boolean;
 }
 
 export class RespondDocumentDto {

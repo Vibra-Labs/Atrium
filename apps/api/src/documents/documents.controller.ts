@@ -80,7 +80,9 @@ export class DocumentsController {
       userId,
     );
 
-    return this.documentsService.create(dto, fileRecord.id, orgId, userId);
+    const created = await this.documentsService.create(dto, fileRecord.id, orgId, userId);
+    if (dto.sendNow) return this.documentsService.send(created.id, orgId, userId);
+    return created;
   }
 
   @Post(":id/send")

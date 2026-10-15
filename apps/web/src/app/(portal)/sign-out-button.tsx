@@ -16,10 +16,11 @@ export function SignOutButton() {
   return (
     <button
       onClick={handleSignOut}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-[var(--muted)] text-sm text-[var(--muted-foreground)]"
+      aria-label="Sign out"
+      className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg hover:bg-[var(--muted)] text-sm text-[var(--muted-foreground)] shrink-0"
     >
       <LogOut size={16} />
-      Sign Out
+      <span className="hidden sm:inline">Sign Out</span>
     </button>
   );
 }

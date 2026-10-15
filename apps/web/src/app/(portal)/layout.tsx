@@ -86,12 +86,12 @@ export default async function PortalLayout({
         >
           <DynamicFavicon href={logoSrc || "/icon.png"} />
           <PreviewBanner />
-          <header className="border-b border-[var(--border)] px-6 py-4 flex items-center gap-3">
+          <header className="border-b border-[var(--border)] px-4 sm:px-6 py-4 flex items-center gap-2 sm:gap-3">
             {!branding?.hideLogo && (
               /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={logoSrc || "/icon.png"} alt="Logo" className="h-8 w-8 object-contain" />
+              <img src={logoSrc || "/icon.png"} alt="Logo" className="h-8 w-8 object-contain shrink-0" />
             )}
-            <span className="font-semibold flex-1">{orgName || "Atrium"}</span>
+            <span className="font-semibold flex-1 min-w-0 truncate">{orgName || "Atrium"}</span>
             <Link
               href="/portal"
               className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"

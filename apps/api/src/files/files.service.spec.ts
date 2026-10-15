@@ -64,6 +64,9 @@ const mockPrisma = {
   document: {
     count: mock(() => Promise.resolve(0)),
   },
+  documentVersion: {
+    count: mock(() => Promise.resolve(0)),
+  },
   $transaction: mock((fn: (prisma: typeof mockPrisma) => unknown) => fn(mockPrisma)),
 };
 
@@ -625,6 +628,17 @@ describe("FilesService", () => {
   // --- update ---
 
   describe("update", () => {
+    it("refuses to change the URL of a link kept only as a document version", async () => {
+      mockPrisma.file.findFirst.mockReturnValue(
+        Promise.resolve({ id: "f1", type: "LINK", projectId: "p1", organizationId: "org-1" }),
+      );
+      mockPrisma.document.count.mockReturnValueOnce(Promise.resolve(0));
+      mockPrisma.documentVersion.count.mockReturnValueOnce(Promise.resolve(1));
+      await expect(
+        service.update("f1", { url: "https://evil.example" }, "org-1", "u1", "owner"),
+      ).rejects.toThrow("Upload a new version instead");
+    });
+
     it("refuses to change the URL of a link that belongs to a document", async () => {
       mockPrisma.file.findFirst.mockReturnValue(
         Promise.resolve({ id: "f1", type: "LINK", projectId: "p1", organizationId: "org-1" }),

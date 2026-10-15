@@ -28,6 +28,7 @@ import {
   SignDocumentDto,
   VoidDocumentDto,
   UploadVersionDto,
+  LinkVersionDto,
 } from "./documents.dto";
 import { Throttle } from "@nestjs/throttler";
 import {
@@ -245,6 +246,17 @@ export class DocumentsController {
     @CurrentOrg("id") orgId: string,
   ) {
     return this.documentsService.setSignatureFields(id, orgId, dto.fields);
+  }
+
+  @Post(":id/link-version")
+  @Roles("owner", "admin")
+  linkVersion(
+    @Param("id") id: string,
+    @Body() dto: LinkVersionDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.documentsService.linkVersion(id, orgId, userId, dto.url, dto.note);
   }
 
   @Post(":id/upload-version")

@@ -1750,6 +1750,76 @@ describe("DocumentsService", () => {
         }),
       );
     });
+
+    it("puts a sent deliverable back in review with the new note, restarts reminders and notifies clients", async () => {
+      setupUploadVersion({ type: "deliverable", status: "declined", currentVersion: 1 });
+      mockPrisma.document.update.mockReturnValue(
+        Promise.resolve(makeDoc({ type: "deliverable", status: "pending", currentVersion: 2, file: {} })),
+      );
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile, "Logo is bigger now");
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "pending", requestNote: "Logo is bigger now", lastReminderAt: null, sentAt: expect.any(Date) }),
+        }),
+      );
+      expect(mockNotifications.notifyDocumentUploaded).toHaveBeenCalledWith(DOC_ID);
+      expect(mockActivityService.create).toHaveBeenCalledWith(expect.objectContaining({ action: "version_uploaded" }));
+    });
+
+    it("does not notify or touch requestNote for contracts", async () => {
+      setupUploadVersion({ type: "contract", status: "pending" });
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+      const data = (mockPrisma.document.update.mock.calls.at(-1)![0] as { data: Record<string, unknown> }).data;
+      expect(data.requestNote).toBeUndefined();
+      expect(mockNotifications.notifyDocumentUploaded).not.toHaveBeenCalled();
+      expect(mockActivityService.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("linkVersion()", () => {
+    function setupLinkDoc(overrides: Record<string, unknown> = {}) {
+      mockPrisma.$transaction.mockImplementation(
+        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({
+        type: "deliverable", status: "declined", currentVersion: 1,
+        file: { id: FILE_ID, type: "LINK", url: "https://staging.example.com", storageKey: null, filename: "Staging" },
+        ...overrides,
+      })));
+      mockPrisma.documentVersion.create.mockReturnValue(Promise.resolve({ id: "ver-1" }));
+      mockPrisma.file.create.mockReturnValue(Promise.resolve({ id: "file-2" }));
+      mockPrisma.document.update.mockReturnValue(
+        Promise.resolve(makeDoc({ type: "deliverable", status: "pending", currentVersion: 2, file: {} })),
+      );
+    }
+
+    it("snapshots the current link, creates a new LINK file and resets to pending", async () => {
+      setupLinkDoc();
+      await service.linkVersion(DOC_ID, ORG, USER, "https://staging.example.com/v2", "Fixed nav");
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+      expect(mockPrisma.documentVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ documentId: DOC_ID, fileId: FILE_ID, version: 1 }) }),
+      );
+      expect(mockPrisma.file.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ type: "LINK", url: "https://staging.example.com/v2", filename: "Staging" }) }),
+      );
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ fileId: "file-2", currentVersion: 2, status: "pending", requestNote: "Fixed nav" }) }),
+      );
+      expect(mockNotifications.notifyDocumentUploaded).toHaveBeenCalledWith(DOC_ID);
+      expect(mockActivityService.create).toHaveBeenCalledWith(expect.objectContaining({ action: "version_uploaded" }));
+    });
+
+    it("refuses non-deliverables", async () => {
+      setupLinkDoc({ type: "contract" });
+      await expect(service.linkVersion(DOC_ID, ORG, USER, "https://x.com")).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it.each(["voided", "expired"])("refuses %s deliverables", async (status) => {
+      setupLinkDoc({ status });
+      await expect(service.linkVersion(DOC_ID, ORG, USER, "https://x.com")).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   // -------------------------------------------------------------------------

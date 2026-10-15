@@ -1146,6 +1146,9 @@ export class DocumentsService {
           currentVersion: newVersion,
           signedFileId: null,
           ...(wasSent ? { status: "pending" } : {}),
+          ...(doc.type === "deliverable"
+            ? { requestNote: note?.trim() || null, ...(wasSent ? { sentAt: new Date(), lastReminderAt: null } : {}) }
+            : {}),
         },
         include: DOCUMENT_FULL_INCLUDE,
       });
@@ -1167,6 +1170,89 @@ export class DocumentsService {
       metadata: { version: result.currentVersion, filename: file.originalname, note },
     });
 
+    if (result.type === "deliverable" && result.status === "pending") {
+      this.notifications.notifyDocumentUploaded(id);
+      this.logVersionActivity(result, userId, orgId);
+    }
+
+    return result;
+  }
+
+  private logVersionActivity(
+    doc: { id: string; title: string; projectId: string; currentVersion: number },
+    userId: string,
+    orgId: string,
+  ): void {
+    this.activityService
+      .create({
+        type: "document_response",
+        action: "version_uploaded",
+        actorId: userId,
+        targetId: doc.id,
+        targetTitle: `${doc.title} (v${doc.currentVersion})`,
+        projectId: doc.projectId,
+        organizationId: orgId,
+      })
+      .catch((err) => this.logger.warn({ err }, "Failed to log deliverable version activity"));
+  }
+
+  async linkVersion(id: string, orgId: string, userId: string, url: string, note?: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch (err) {
+      this.logger.warn({ err }, "Invalid link version URL");
+      throw new BadRequestException("Invalid URL");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new BadRequestException("Only http(s) URLs are allowed");
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(`SELECT id FROM "document" WHERE id = $1 FOR UPDATE`, id);
+      const doc = await tx.document.findFirst({ where: { id, organizationId: orgId }, include: { file: true } });
+      if (!doc) throw new NotFoundException("Document not found");
+      if (doc.type !== "deliverable") throw new BadRequestException("Only deliverables can be links");
+      if (doc.status === "voided" || doc.status === "expired") {
+        throw new BadRequestException(`Cannot upload new versions to ${doc.status} documents`);
+      }
+
+      await tx.documentVersion.create({
+        data: { documentId: id, fileId: doc.fileId, version: doc.currentVersion, uploadedById: doc.uploadedById, note },
+      });
+      const newFile = await tx.file.create({
+        data: {
+          filename: doc.file.filename,
+          type: "LINK",
+          url: parsed.toString(),
+          projectId: doc.projectId,
+          organizationId: orgId,
+          uploadedById: userId,
+        },
+      });
+      const wasSent: boolean = doc.status !== "draft";
+      if (wasSent) await tx.documentResponse.deleteMany({ where: { documentId: id } });
+
+      return tx.document.update({
+        where: { id },
+        data: {
+          fileId: newFile.id,
+          currentVersion: doc.currentVersion + 1,
+          requestNote: note?.trim() || null,
+          ...(wasSent ? { status: "pending", sentAt: new Date(), lastReminderAt: null } : {}),
+        },
+        include: DOCUMENT_FULL_INCLUDE,
+      });
+    });
+
+    this.auditService.log(id, "version_uploaded", {
+      userId,
+      metadata: { version: result.currentVersion, url: parsed.toString(), note },
+    });
+    if (result.status === "pending") {
+      this.notifications.notifyDocumentUploaded(id);
+      this.logVersionActivity(result, userId, orgId);
+    }
     return result;
   }
 

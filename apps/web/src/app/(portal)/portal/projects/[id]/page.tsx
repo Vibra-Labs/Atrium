@@ -754,6 +754,7 @@ export default function PortalProjectDetailPage() {
                     signed: "signed",
                     voted: "voted on",
                     closed: "closed voting on",
+                    version_uploaded: "uploaded a new version of",
                   };
                   const actionBg: Record<string, string> = {
                     accepted: "#dcfce7",

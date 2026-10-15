@@ -110,6 +110,17 @@ export class UploadVersionDto {
   note?: string;
 }
 
+export class LinkVersionDto {
+  @IsUrl({ protocols: ["http", "https"], require_protocol: true })
+  @MaxLength(2048)
+  url!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
 export class VoidDocumentDto {
   @IsOptional()
   @IsString()

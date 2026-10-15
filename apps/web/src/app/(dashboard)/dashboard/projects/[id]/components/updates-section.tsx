@@ -68,6 +68,7 @@ const actionLabels: Record<string, string> = {
   signed: "signed",
   voted: "voted on",
   closed: "closed voting on",
+  version_uploaded: "uploaded a new version of",
 };
 
 const actionColors: Record<string, { bg: string; text: string }> = {

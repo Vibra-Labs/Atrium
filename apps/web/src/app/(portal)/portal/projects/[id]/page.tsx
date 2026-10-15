@@ -64,6 +64,8 @@ interface Project {
   startDate?: string | null;
   endDate?: string | null;
   files: FileRecord[];
+  /** Open decision tasks this client hasn't voted on, across all task pages. */
+  openVotes?: number;
 }
 
 interface TimelineEntry {
@@ -306,7 +308,7 @@ export default function PortalProjectDetailPage() {
   });
   const toSignCount = pendingDocActions.filter((d) => d.type !== "deliverable" && !d.requiresApproval).length;
   const toApproveCount = pendingDocActions.length - toSignCount;
-  const openVoteCount = tasks.filter((t) => t.type === "decision" && !t.closedAt && !t.votes?.[0]).length;
+  const openVoteCount: number = project?.openVotes ?? 0;
   const actionTotal = toApproveCount + toSignCount + openVoteCount;
 
   const openTaskModal = (taskId: string) => {
@@ -1600,7 +1602,10 @@ export default function PortalProjectDetailPage() {
             viewer="client"
             currentUserId={currentUserId}
             onClose={closeTaskModal}
-            onChange={loadTasks}
+            onChange={() => {
+              loadTasks();
+              loadProject();
+            }}
           />
         );
       })()}

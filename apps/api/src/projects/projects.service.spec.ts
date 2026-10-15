@@ -196,15 +196,45 @@ describe("ProjectsService", () => {
 
     const result = await service.findOneByClient("proj-active", "user-client", "org-1");
 
-    expect(result).toEqual(project);
+    expect(result).toEqual({ ...project, openVotes: 0 });
     expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        include: { files: { where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } } } },
+        include: expect.objectContaining({
+          files: { where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } } },
+        }),
         where: expect.objectContaining({
           id: "proj-active",
           organizationId: "org-1",
           archivedAt: null,
           clients: { some: { userId: "user-client" } },
+        }),
+      }),
+    );
+  });
+
+  it("findOneByClient counts open decision tasks the client hasn't voted on, across all pages", async () => {
+    mockPrisma.project.findFirst.mockReturnValue(
+      Promise.resolve({ id: "p1", files: [], _count: { tasks: 3 } }),
+    );
+
+    const result = await service.findOneByClient("p1", "user-client", "org-1");
+
+    expect(result).toEqual({ id: "p1", files: [], openVotes: 3 });
+    expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  type: "decision",
+                  closedAt: null,
+                  status: { notIn: ["done", "cancelled"] },
+                  votes: { none: { userId: "user-client" } },
+                },
+              },
+            },
+          },
         }),
       }),
     );

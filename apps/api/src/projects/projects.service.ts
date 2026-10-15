@@ -102,10 +102,26 @@ export class ProjectsService {
         archivedAt: null,
         clients: { some: { userId: clientUserId } },
       },
-      include: { files: { where: STANDALONE_FILES } },
+      include: {
+        files: { where: STANDALONE_FILES },
+        // Counted server-side so the portal banner isn't limited to the task page it has loaded.
+        _count: {
+          select: {
+            tasks: {
+              where: {
+                type: "decision",
+                closedAt: null,
+                status: { notIn: ["done", "cancelled"] },
+                votes: { none: { userId: clientUserId } },
+              },
+            },
+          },
+        },
+      },
     });
     if (!project) throw new NotFoundException("Project not found");
-    return project;
+    const { _count, ...rest } = project;
+    return { ...rest, openVotes: _count?.tasks ?? 0 };
   }
 
   async findByClient(

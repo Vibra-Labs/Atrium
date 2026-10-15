@@ -316,4 +316,38 @@ test.describe("Deliverable approvals", () => {
     await ctxB.close();
     await ownerCtx.close();
   });
+
+  test("portal banner counts an open vote that sits beyond the first page of tasks", async ({ browser }) => {
+    const { context: ownerCtx, page: owner } = await createOwner(browser, "vote-page-owner");
+    const { clientEmail, password } = await inviteAndAcceptClient(browser, owner, "vote-page-client");
+    const clients = await (await owner.request.get(`${API_URL}/api/clients?limit=100`)).json();
+    const clientRow = (clients.data ?? clients).find((m: { user: { email: string } }) => m.user.email === clientEmail);
+    const token: string = await csrf(ownerCtx);
+    const project = await (await owner.request.post(`${API_URL}/api/projects`, {
+      data: { name: "Paged votes E2E", clientUserIds: [clientRow.userId] },
+      headers: { "x-csrf-token": token },
+    })).json();
+
+    // 21 ordinary tasks fill page 1 (20 per page); the decision lands on page 2.
+    for (let i = 1; i <= 21; i++) {
+      const res = await owner.request.post(`${API_URL}/api/tasks?projectId=${project.id}`, {
+        data: { title: `Task ${i}` },
+        headers: { "x-csrf-token": token },
+      });
+      expect(res.ok()).toBe(true);
+    }
+    const decision = await owner.request.post(`${API_URL}/api/tasks?projectId=${project.id}`, {
+      data: { title: "Pick a palette", type: "decision", question: "Which palette?", options: [{ label: "Warm" }, { label: "Cool" }] },
+      headers: { "x-csrf-token": token },
+    });
+    expect(decision.ok()).toBe(true);
+
+    const { ctx: clientCtx, page: client } = await loginClient(browser, clientEmail, password);
+    await client.goto(`${WEB_URL}/portal/projects/${project.id}`);
+    await expect(client.getByText("1 item to review")).toBeVisible();
+    await expect(client.getByText("1 vote")).toBeVisible();
+
+    await clientCtx.close();
+    await ownerCtx.close();
+  });
 });

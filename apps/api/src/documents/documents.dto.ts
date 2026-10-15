@@ -88,6 +88,11 @@ export class RespondDocumentDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  version?: number;
 }
 
 export class SendDocumentDto {

@@ -4,11 +4,13 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { randomBytes, createHash } from "crypto";
 import type { Readable } from "stream";
+import type { DocumentResponse } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   paginationArgs,
@@ -35,10 +37,13 @@ const ALLOWED_ACTIONS: Record<string, string[]> = {
   proposal: ["accepted", "declined"],
   nda: ["accepted", "declined"],
   other: ["accepted", "declined"],
+  deliverable: ["accepted", "declined"],
 };
 
 /** Statuses that block respond/sign actions. */
 const RESPOND_BLOCKED_STATUSES = new Set(["draft", "voided", "expired", "accepted", "declined", "signed"]);
+/** Deliverables can be re-decided; only these block a decision. */
+const DELIVERABLE_RESPOND_BLOCKED_STATUSES = new Set(["draft", "voided", "expired"]);
 const SIGN_BLOCKED_STATUSES = new Set(["draft", "voided", "expired", "signed"]);
 
 /** Shared include shape for document queries that need full details. */
@@ -315,13 +320,16 @@ export class DocumentsService {
     ipAddress?: string,
     userAgent?: string,
     reason?: string,
+    version?: number,
   ) {
     const doc = await this.prisma.document.findFirst({
       where: { id, organizationId: orgId },
     });
     if (!doc) throw new NotFoundException("Document not found");
 
-    if (RESPOND_BLOCKED_STATUSES.has(doc.status)) {
+    const isDeliverable: boolean = doc.type === "deliverable";
+    const blocked: Set<string> = isDeliverable ? DELIVERABLE_RESPOND_BLOCKED_STATUSES : RESPOND_BLOCKED_STATUSES;
+    if (blocked.has(doc.status)) {
       throw new BadRequestException(
         `Cannot respond to a document with status "${doc.status}"`,
       );
@@ -352,34 +360,24 @@ export class DocumentsService {
       );
     }
 
-    // For non-signing responses, find existing response without a fieldId
-    const existing = await this.prisma.documentResponse.findFirst({
-      where: { documentId: id, userId, fieldId: null },
-    });
-
-    let response;
-    if (existing) {
-      response = await this.prisma.documentResponse.update({
-        where: { id: existing.id },
-        data: { action, reason: reason || null, ipAddress, userAgent },
-      });
-    } else {
-      response = await this.prisma.documentResponse.create({
-        data: {
-          documentId: id,
-          userId,
-          action,
-          reason: reason || null,
-          ipAddress,
-          userAgent,
-        },
-      });
+    const trimmedReason: string | null = reason?.trim() || null;
+    if (isDeliverable && action === "declined" && !trimmedReason) {
+      throw new BadRequestException("Tell the agency what to change");
     }
 
-    // Update document status based on all responses
-    await this.updateDocumentStatus(id);
+    const response = isDeliverable
+      ? await this.decideDeliverable(id, userId, action, trimmedReason, version, ipAddress, userAgent)
+      : await this.upsertResponse(id, userId, action, trimmedReason, ipAddress, userAgent);
 
-    this.auditService.log(id, action, { userId, ipAddress, userAgent });
+    // Update document status based on all responses
+    if (!isDeliverable) await this.updateDocumentStatus(id);
+
+    this.auditService.log(id, action, {
+      userId,
+      ipAddress,
+      userAgent,
+      metadata: { reason: trimmedReason, version: version ?? doc.currentVersion },
+    });
     this.notifications.notifyDocumentResponded(id, userId, action);
 
     this.activityService
@@ -395,6 +393,71 @@ export class DocumentsService {
       .catch((err) => this.logger.warn({ err }, "Failed to log document response activity"));
 
     return response;
+  }
+
+  private async upsertResponse(
+    id: string,
+    userId: string,
+    action: string,
+    reason: string | null,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<DocumentResponse> {
+    // For non-signing responses, find existing response without a fieldId
+    const existing = await this.prisma.documentResponse.findFirst({
+      where: { documentId: id, userId, fieldId: null },
+    });
+
+    let response: DocumentResponse;
+    if (existing) {
+      response = await this.prisma.documentResponse.update({
+        where: { id: existing.id },
+        data: { action, reason, ipAddress, userAgent },
+      });
+    } else {
+      response = await this.prisma.documentResponse.create({
+        data: {
+          documentId: id,
+          userId,
+          action,
+          reason,
+          ipAddress,
+          userAgent,
+        },
+      });
+    }
+
+    return response;
+  }
+
+  /** Any one client decides a deliverable: the latest decision replaces all others for the current version. */
+  private async decideDeliverable(
+    id: string,
+    userId: string,
+    action: string,
+    reason: string | null,
+    version: number | undefined,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<DocumentResponse> {
+    return this.prisma.$transaction(async (tx) => {
+      // Same lock uploadVersion takes, so a decision and a new version can't interleave.
+      await tx.$queryRawUnsafe(`SELECT id FROM "document" WHERE id = $1 FOR UPDATE`, id);
+      const current = await tx.document.findUnique({ where: { id }, select: { currentVersion: true, status: true } });
+      if (!current) throw new NotFoundException("Document not found");
+      if (DELIVERABLE_RESPOND_BLOCKED_STATUSES.has(current.status)) {
+        throw new BadRequestException(`Cannot respond to a document with status "${current.status}"`);
+      }
+      if (version !== undefined && version !== current.currentVersion) {
+        throw new ConflictException("A newer version was uploaded. Please review it first.");
+      }
+      await tx.documentResponse.deleteMany({ where: { documentId: id, fieldId: null } });
+      const created = await tx.documentResponse.create({
+        data: { documentId: id, userId, action, reason, ipAddress, userAgent },
+      });
+      await tx.document.update({ where: { id }, data: { status: action } });
+      return created;
+    });
   }
 
   private async updateDocumentStatus(documentId: string) {

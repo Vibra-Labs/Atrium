@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { StorageProvider } from "../files/storage/storage.interface";
@@ -622,6 +623,11 @@ describe("DocumentsService", () => {
       );
     }
 
+    it("still blocks changing a decided contract", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({ type: "contract", status: "accepted", requiresApproval: true })));
+      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "declined")).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it("throws NotFoundException when document not found", async () => {
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));
 
@@ -754,6 +760,72 @@ describe("DocumentsService", () => {
       // Should not throw
       await service.respond(DOC_ID, CLIENT_USER, ORG, "accepted");
       expect(mockPrisma.documentResponse.create).toHaveBeenCalled();
+    });
+  });
+
+  describe("respond() — deliverables", () => {
+    function setupDeliverable(overrides: Record<string, unknown> = {}) {
+      const doc = makeDoc({ type: "deliverable", status: "pending", requiresApproval: true, currentVersion: 2, ...overrides });
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(doc));
+      mockPrisma.document.findUnique.mockReturnValue(Promise.resolve(doc));
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1", projectId: PROJECT_ID, userId: CLIENT_USER }));
+      mockPrisma.documentResponse.create.mockReturnValue(Promise.resolve({ id: "resp-1", action: "accepted" }));
+    }
+
+    it("requires a note when requesting changes", async () => {
+      setupDeliverable();
+      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "declined", undefined, undefined, "   ")).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("one client's decision sets the status and replaces earlier decisions", async () => {
+      setupDeliverable();
+      await service.respond(DOC_ID, CLIENT_USER, ORG, "accepted", undefined, undefined, undefined, 2);
+      expect(mockPrisma.documentResponse.deleteMany).toHaveBeenCalledWith({ where: { documentId: DOC_ID, fieldId: null } });
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: DOC_ID }, data: { status: "accepted" } }),
+      );
+      expect(mockPrisma.projectClient.count).not.toHaveBeenCalled();
+    });
+
+    it.each(["accepted", "declined"])("allows changing a decision after '%s'", async (status) => {
+      setupDeliverable({ status });
+      await service.respond(DOC_ID, CLIENT_USER, ORG, "declined", undefined, undefined, "Bigger logo", 2);
+      expect(mockPrisma.document.update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: "declined" } }));
+    });
+
+    it.each(["draft", "voided", "expired"])("still blocks '%s' deliverables", async (status) => {
+      setupDeliverable({ status });
+      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "accepted")).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("returns 409 when the client decided on an outdated version", async () => {
+      setupDeliverable({ currentVersion: 3 });
+      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "accepted", undefined, undefined, undefined, 2)).rejects.toBeInstanceOf(ConflictException);
+      expect(mockPrisma.documentResponse.create).not.toHaveBeenCalled();
+    });
+
+    it("serializes decisions under the row lock and re-reads the version inside it", async () => {
+      // Outer read sees v2, but a v3 upload commits before the lock is taken.
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({ type: "deliverable", status: "pending", requiresApproval: true, currentVersion: 2 })));
+      mockPrisma.document.findUnique.mockReturnValue(Promise.resolve(makeDoc({ type: "deliverable", status: "pending", currentVersion: 3 })));
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1" }));
+      await expect(service.respond(DOC_ID, CLIENT_USER, ORG, "accepted", undefined, undefined, undefined, 2)).rejects.toBeInstanceOf(ConflictException);
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("FOR UPDATE"), DOC_ID);
+    });
+
+    it("keeps the change note in the audit trail", async () => {
+      setupDeliverable();
+      await service.respond(DOC_ID, CLIENT_USER, ORG, "declined", "1.2.3.4", "ua", "Bigger logo", 2);
+      expect(mockAuditService.log).toHaveBeenCalledWith(DOC_ID, "declined", {
+        userId: CLIENT_USER, ipAddress: "1.2.3.4", userAgent: "ua", metadata: { reason: "Bigger logo", version: 2 },
+      });
+    });
+
+    it("notifies the agency once with the deciding client", async () => {
+      setupDeliverable();
+      await service.respond(DOC_ID, CLIENT_USER, ORG, "accepted", undefined, undefined, undefined, 2);
+      expect(mockNotifications.notifyDocumentResponded).toHaveBeenCalledTimes(1);
+      expect(mockNotifications.notifyDocumentResponded).toHaveBeenCalledWith(DOC_ID, CLIENT_USER, "accepted");
     });
   });
 

@@ -324,6 +324,7 @@ export class DocumentsController {
       req.ip,
       String(req.headers["user-agent"] || ""),
       dto.reason,
+      dto.version,
     );
   }
 

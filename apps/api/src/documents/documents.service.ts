@@ -27,6 +27,19 @@ import { DocumentAuditService } from "./document-audit.service";
 import { BillingService } from "../billing/billing.service";
 import { planFeatureMessage } from "../common/helpers/plan-feature";
 
+export interface PendingApproval {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  version: number;
+  sentAt: Date | null;
+  projectId: string;
+  projectName: string;
+  latestReason: string | null;
+  decidedBy: string | null;
+}
+
 /** Max PDF size allowed for signing (50MB) to prevent OOM. */
 const MAX_SIGNABLE_PDF_BYTES = 50 * 1024 * 1024;
 const ALLOWED_SIGNATURE_MIMES = new Set(["image/png", "image/jpeg"]);
@@ -292,7 +305,57 @@ export class DocumentsService {
       }),
       this.prisma.document.count({ where }),
     ]);
-    return paginatedResponse(data, total, page, limit);
+
+    const deliverableIds: string[] = data.filter((d) => d.type === "deliverable").map((d) => d.id);
+    const decisions = deliverableIds.length
+      ? await this.prisma.documentResponse.findMany({
+          where: { documentId: { in: deliverableIds }, fieldId: null },
+          select: { documentId: true, action: true, reason: true, createdAt: true, user: { select: { name: true } } },
+        })
+      : [];
+    const byDoc = new Map(decisions.map((r) => [r.documentId, r]));
+    const rows = data.map((d) => ({ ...d, decision: byDoc.get(d.id) ?? null }));
+    return paginatedResponse(rows, total, page, limit);
+  }
+
+  async findPendingApprovals(orgId: string, projectId?: string): Promise<PendingApproval[]> {
+    const docs = await this.prisma.document.findMany({
+      where: {
+        organizationId: orgId,
+        requiresApproval: true,
+        status: { in: ["pending", "declined"] },
+        project: { archivedAt: null },
+        ...(projectId ? { projectId } : {}),
+      },
+      select: {
+        id: true, title: true, type: true, status: true, currentVersion: true, sentAt: true, projectId: true,
+        project: { select: { name: true } },
+        responses: {
+          where: { fieldId: null },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { reason: true, user: { select: { name: true } } },
+        },
+      },
+      orderBy: { sentAt: "asc" },
+      take: 50,
+    });
+
+    const rank = (status: string): number => (status === "declined" ? 0 : 1);
+    return docs
+      .sort((a, b) => rank(a.status) - rank(b.status))
+      .map((d) => ({
+        id: d.id,
+        title: d.title,
+        type: d.type,
+        status: d.status,
+        version: d.currentVersion,
+        sentAt: d.sentAt,
+        projectId: d.projectId,
+        projectName: d.project.name,
+        latestReason: d.responses[0]?.reason ?? null,
+        decidedBy: d.responses[0]?.user.name ?? null,
+      }));
   }
 
   async assertDocumentAccess(id: string, orgId: string) {

@@ -2152,4 +2152,53 @@ describe("DocumentsService", () => {
       });
     });
   });
+
+  describe("findPendingApprovals()", () => {
+    it("is org-scoped, excludes archived projects, and lists changes requested first", async () => {
+      mockPrisma.document.findMany.mockReturnValue(Promise.resolve([
+        { id: "d1", title: "A", type: "deliverable", status: "pending", currentVersion: 1, sentAt: new Date("2026-10-01"), projectId: PROJECT_ID, project: { name: "Site" }, responses: [] },
+        { id: "d2", title: "B", type: "deliverable", status: "declined", currentVersion: 2, sentAt: new Date("2026-10-05"), projectId: PROJECT_ID, project: { name: "Site" }, responses: [{ reason: "Bigger", user: { name: "Elena" } }] },
+      ]));
+
+      const result = await service.findPendingApprovals(ORG, PROJECT_ID);
+
+      expect(mockPrisma.document.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: ORG, projectId: PROJECT_ID, requiresApproval: true,
+          status: { in: ["pending", "declined"] }, project: { archivedAt: null },
+        }),
+      }));
+      expect(result.map((r) => r.id)).toEqual(["d2", "d1"]);
+      expect(result[0]).toEqual(expect.objectContaining({ version: 2, projectName: "Site", latestReason: "Bigger", decidedBy: "Elena" }));
+    });
+
+    it("omits the project filter when none is given", async () => {
+      mockPrisma.document.findMany.mockReturnValue(Promise.resolve([]));
+      await service.findPendingApprovals(ORG);
+      const where = (mockPrisma.document.findMany.mock.calls.at(-1)![0] as { where: Record<string, unknown> }).where;
+      expect(where.projectId).toBeUndefined();
+    });
+  });
+
+  describe("findByProjectForClient() - deliverable decisions", () => {
+    it("attaches the deciding client's response to deliverables only", async () => {
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1" }));
+      mockPrisma.document.findMany.mockReturnValue(Promise.resolve([
+        makeDoc({ id: "d1", type: "deliverable", status: "accepted" }),
+        makeDoc({ id: "d2", type: "contract", status: "pending" }),
+      ]));
+      mockPrisma.document.count.mockReturnValue(Promise.resolve(2));
+      mockPrisma.documentResponse.findMany.mockReturnValue(Promise.resolve([
+        { documentId: "d1", action: "accepted", reason: null, createdAt: new Date(), user: { name: "Elena" } },
+      ]));
+
+      const res = await service.findByProjectForClient(PROJECT_ID, CLIENT_USER, ORG);
+
+      expect(mockPrisma.documentResponse.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { documentId: { in: ["d1"] }, fieldId: null },
+      }));
+      expect(res.data[0].decision?.user.name).toBe("Elena");
+      expect(res.data[1].decision).toBeNull();
+    });
+  });
 });

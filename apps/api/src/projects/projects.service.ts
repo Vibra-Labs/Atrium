@@ -119,13 +119,17 @@ export class ProjectsService {
     const [data, total] = await Promise.all([
       this.prisma.project.findMany({
         where,
+        include: {
+          _count: { select: { documents: { where: { requiresApproval: true, status: "pending" } } } },
+        },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
       }),
       this.prisma.project.count({ where }),
     ]);
 
-    return paginatedResponse(data, total, page, limit);
+    const rows = data.map(({ _count, ...p }) => ({ ...p, pendingApprovals: _count.documents }));
+    return paginatedResponse(rows, total, page, limit);
   }
 
   async create(data: CreateProjectDto, organizationId: string) {

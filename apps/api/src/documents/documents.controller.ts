@@ -16,7 +16,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
-import { DocumentsService } from "./documents.service";
+import { DocumentsService, type PendingApproval } from "./documents.service";
 import { DocumentAuditService } from "./document-audit.service";
 import { FilesService, UploadedFile as UploadedFileType, DOCUMENT_ALLOWED_MIMES } from "../files/files.service";
 import {
@@ -141,6 +141,15 @@ export class DocumentsController {
       req.ip,
       req.headers["user-agent"],
     );
+  }
+
+  @Get("approvals/pending")
+  @Roles("owner", "admin")
+  findPendingApprovals(
+    @CurrentOrg("id") orgId: string,
+    @Query("projectId") projectId?: string,
+  ): Promise<PendingApproval[]> {
+    return this.documentsService.findPendingApprovals(orgId, projectId);
   }
 
   @Get(":id/audit-trail")

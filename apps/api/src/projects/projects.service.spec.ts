@@ -92,6 +92,16 @@ describe("ProjectsService", () => {
     expect(result.meta.page).toBe(1);
   });
 
+  it("findByClient returns a pendingApprovals count per project", async () => {
+    mockPrisma.project.findMany.mockReturnValue(
+      Promise.resolve([{ id: "p1", name: "Site", _count: { documents: 2 } }]),
+    );
+    mockPrisma.project.count = mock(() => Promise.resolve(1));
+    const res = await service.findByClient("client-1", "org-1", {});
+    expect(res.data[0]).toEqual(expect.objectContaining({ id: "p1", pendingApprovals: 2 }));
+    expect(res.data[0]).not.toHaveProperty("_count");
+  });
+
   it("findOne throws NotFoundException when not found", async () => {
     mockPrisma.project.findFirst.mockReturnValue(Promise.resolve(null));
 

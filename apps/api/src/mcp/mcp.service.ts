@@ -12,6 +12,7 @@ import { UpdatesService } from "../updates/updates.service";
 import { NotesService } from "../notes/notes.service";
 import { ClientsService } from "../clients/clients.service";
 import { BillingService } from "../billing/billing.service";
+import { DocumentsService } from "../documents/documents.service";
 import { runTool } from "./tool-kit";
 import type { McpTool, ToolResult } from "./tool-kit";
 import { workspaceTools } from "./tools/workspace.tools";
@@ -20,6 +21,7 @@ import { clientTools } from "./tools/clients.tools";
 import { taskTools } from "./tools/tasks.tools";
 import { updateTools } from "./tools/updates.tools";
 import { noteTools } from "./tools/notes.tools";
+import { documentTools } from "./tools/documents.tools";
 
 const RATE_LIMIT = 300;
 const RATE_WINDOW_MS = 60_000;
@@ -36,6 +38,7 @@ export class McpService {
     private notes: NotesService,
     private clients: ClientsService,
     private billing: BillingService,
+    private documents: DocumentsService,
     private config: ConfigService,
   ) {}
 
@@ -60,6 +63,7 @@ export class McpService {
       ...taskTools({ tasks: this.tasks }),
       ...updateTools({ updates: this.updates }),
       ...noteTools({ notes: this.notes }),
+      ...documentTools({ documents: this.documents }),
     ];
   }
 

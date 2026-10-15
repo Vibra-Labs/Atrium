@@ -12,7 +12,7 @@ function buildConfig(oauthEnabled = "true", apiUrl = "https://portal.test") {
 
 function buildService(oauthEnabled = "true", apiUrl?: string): McpService {
   const stub = {} as never;
-  return new McpService(stub, stub, stub, stub, stub, stub, buildConfig(oauthEnabled, apiUrl) as never);
+  return new McpService(stub, stub, stub, stub, stub, stub, stub, buildConfig(oauthEnabled, apiUrl) as never);
 }
 
 /**
@@ -30,7 +30,7 @@ class TestMcpService extends McpService {
 
 function buildTestService(): TestMcpService {
   const stub = {} as never;
-  return new TestMcpService(stub, stub, stub, stub, stub, stub, buildConfig() as never);
+  return new TestMcpService(stub, stub, stub, stub, stub, stub, stub, buildConfig() as never);
 }
 
 function ownerReq(apiKeyId?: string, userId = "u1"): Request {
@@ -81,13 +81,13 @@ function buildRes() {
 }
 
 describe("McpService", () => {
-  it("registers exactly the 19 documented tools, with unique names", () => {
+  it("registers exactly the 20 documented tools, with unique names", () => {
     const names = buildService().tools().map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.sort()).toEqual([
       "add_note", "archive_project", "create_project", "create_task", "delete_note",
       "delete_project", "delete_task", "get_client", "get_project", "get_workspace",
-      "list_clients", "list_notes", "list_project_statuses", "list_projects", "list_tasks",
+      "list_clients", "list_notes", "list_pending_approvals", "list_project_statuses", "list_projects", "list_tasks",
       "list_updates", "post_update", "update_project", "update_task",
     ]);
   });

@@ -21,5 +21,6 @@ import { DocumentTokenCleanupTask } from "./document-token-cleanup.task";
     DocumentReminderTask,
     DocumentTokenCleanupTask,
   ],
+  exports: [DocumentsService],
 })
 export class DocumentsModule {}

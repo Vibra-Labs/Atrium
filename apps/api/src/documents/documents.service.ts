@@ -8,6 +8,7 @@ import {
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { randomBytes, createHash } from "crypto";
+import type { Readable } from "stream";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   paginationArgs,
@@ -443,7 +444,15 @@ export class DocumentsService {
     }
   }
 
-  async getViewStream(id: string, userId: string, orgId: string, role: string) {
+  async getViewStream(
+    id: string,
+    userId: string,
+    orgId: string,
+    role: string,
+  ): Promise<
+    | { kind: "stream"; body: Readable; contentType: string; filename: string }
+    | { kind: "link"; url: string }
+  > {
     const doc = await this.prisma.document.findFirst({
       where: { id, organizationId: orgId },
       include: { file: true, signedFile: true },
@@ -453,12 +462,16 @@ export class DocumentsService {
     await assertProjectAccess(this.prisma, doc.projectId, userId, role);
 
     const fileToView = doc.signedFile ?? doc.file;
+    if (fileToView.type === "LINK" && fileToView.url) {
+      this.auditService.log(id, "viewed", { userId });
+      return { kind: "link" as const, url: fileToView.url };
+    }
     if (!fileToView.storageKey) throw new NotFoundException("Document file has no storage object");
     const { body, contentType } = await this.storage.download(fileToView.storageKey);
 
     this.auditService.log(id, "downloaded", { userId });
 
-    return { body, contentType, filename: fileToView.filename };
+    return { kind: "stream" as const, body, contentType, filename: fileToView.filename };
   }
 
   async setSignatureFields(

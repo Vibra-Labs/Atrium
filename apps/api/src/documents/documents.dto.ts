@@ -11,6 +11,7 @@ import {
   Min,
   Max,
   ValidateNested,
+  IsUrl,
 } from "class-validator";
 import { Transform, Type } from "class-transformer";
 
@@ -185,4 +186,34 @@ export class SignDocumentDto {
   @IsString()
   @MaxLength(2000)
   textValue?: string;
+}
+
+export class CreateDeliverableLinkDto {
+  @IsString()
+  @IsNotEmpty()
+  projectId!: string;
+
+  @IsUrl({ protocols: ["http", "https"], require_protocol: true })
+  @MaxLength(2048)
+  url!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true" || value === true)
+  reminderEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === "true" || value === true)
+  sendNow?: boolean;
 }

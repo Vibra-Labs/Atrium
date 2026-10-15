@@ -21,6 +21,7 @@ import { DocumentAuditService } from "./document-audit.service";
 import { FilesService, UploadedFile as UploadedFileType, DOCUMENT_ALLOWED_MIMES } from "../files/files.service";
 import {
   CreateDocumentDto,
+  CreateDeliverableLinkDto,
   SendDocumentDto,
   RespondDocumentDto,
   SetSignatureFieldsDto,
@@ -68,7 +69,7 @@ export class DocumentsController {
         "Only PDF, Word, OpenDocument, and image files are allowed for documents",
       );
     }
-    if (dto.requiresSignature && file.mimetype !== "application/pdf") {
+    if (dto.type !== "deliverable" && dto.requiresSignature && file.mimetype !== "application/pdf") {
       throw new BadRequestException("Signature collection is only supported for PDF files");
     }
 
@@ -81,6 +82,22 @@ export class DocumentsController {
     );
 
     const created = await this.documentsService.create(dto, fileRecord.id, orgId, userId);
+    if (dto.sendNow) return this.documentsService.send(created.id, orgId, userId);
+    return created;
+  }
+
+  @Post("link")
+  @Roles("owner", "admin")
+  async createLink(
+    @Body() dto: CreateDeliverableLinkDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    const file = await this.filesService.createLink(dto.projectId, orgId, userId, { url: dto.url, title: dto.title });
+    const created = await this.documentsService.create(
+      { projectId: dto.projectId, type: "deliverable", title: dto.title, note: dto.note, reminderEnabled: dto.reminderEnabled },
+      file.id, orgId, userId,
+    );
     if (dto.sendNow) return this.documentsService.send(created.id, orgId, userId);
     return created;
   }
@@ -176,10 +193,14 @@ export class DocumentsController {
     @CurrentMember("role") role: string,
     @Res() res: Response,
   ) {
-    const { body, contentType, filename } = await this.documentsService.getViewStream(id, userId, orgId, role);
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", contentDisposition(filename, "inline"));
-    body.pipe(res);
+    const result = await this.documentsService.getViewStream(id, userId, orgId, role);
+    if (result.kind === "link") {
+      res.json({ url: result.url });
+      return;
+    }
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Content-Disposition", contentDisposition(result.filename, "inline"));
+    result.body.pipe(res);
   }
 
   @Get(":id/signing-info")
@@ -382,10 +403,14 @@ export class DocumentsController {
     @Res() res: Response,
   ) {
     const { userId, document } = await this.documentsService.validateAccessToken(token);
-    const { body, contentType, filename } = await this.documentsService.getViewStream(document.id, userId, document.organizationId, "member");
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", contentDisposition(filename, "inline"));
-    body.pipe(res);
+    const result = await this.documentsService.getViewStream(document.id, userId, document.organizationId, "member");
+    if (result.kind === "link") {
+      res.json({ url: result.url });
+      return;
+    }
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Content-Disposition", contentDisposition(result.filename, "inline"));
+    result.body.pipe(res);
   }
 
   @Delete(":id/access-tokens/:tokenId")

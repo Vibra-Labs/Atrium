@@ -1222,6 +1222,23 @@ describe("DocumentsService", () => {
   // generateAccessToken()
   // -------------------------------------------------------------------------
 
+  describe("getViewStream()", () => {
+    it("returns the URL for a link deliverable instead of streaming", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(
+        Promise.resolve(makeDoc({
+          type: "deliverable",
+          file: { id: FILE_ID, type: "LINK", url: "https://figma.com/file/abc", storageKey: null, filename: "Homepage" },
+        })),
+      );
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1" }));
+
+      const result = await service.getViewStream(DOC_ID, CLIENT_USER, ORG, "member");
+
+      expect(result).toEqual({ kind: "link", url: "https://figma.com/file/abc" });
+      expect(mockAuditService.log).toHaveBeenCalledWith(DOC_ID, "viewed", { userId: CLIENT_USER });
+    });
+  });
+
   describe("generateAccessToken()", () => {
     it("throws NotFoundException when document does not belong to org", async () => {
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));

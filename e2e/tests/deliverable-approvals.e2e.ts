@@ -167,4 +167,82 @@ test.describe("Deliverable approvals", () => {
     await clientCtx.close();
     await ownerCtx.close();
   });
+
+  test("two clients: latest deliverable decision wins, contracts still need every client", async ({ browser }) => {
+    const { context: ownerCtx, page: owner } = await createOwner(browser, "deliv-two-owner");
+    const a = await inviteAndAcceptClient(browser, owner, "deliv-two-a");
+    const b = await inviteAndAcceptClient(browser, owner, "deliv-two-b");
+    const clients = await (await owner.request.get(`${API_URL}/api/clients?limit=100`)).json();
+    const rows: { userId: string; user: { email: string } }[] = clients.data ?? clients;
+    const rowA = rows.find((m) => m.user.email === a.clientEmail)!;
+    const rowB = rows.find((m) => m.user.email === b.clientEmail)!;
+    const ownerCsrf: string = await csrf(ownerCtx);
+    const project = await (await owner.request.post(`${API_URL}/api/projects`, {
+      data: { name: "Two Clients E2E", clientUserIds: [rowA.userId, rowB.userId] },
+      headers: { "x-csrf-token": ownerCsrf },
+    })).json();
+
+    const deliverable = await (await owner.request.post(`${API_URL}/api/documents/link`, {
+      data: { projectId: project.id, title: "Brand board", url: "https://example.com/brand", sendNow: true },
+      headers: { "x-csrf-token": ownerCsrf },
+    })).json();
+    const contractRes = await owner.request.post(`${API_URL}/api/documents`, {
+      multipart: {
+        projectId: project.id,
+        type: "contract",
+        title: "Service agreement",
+        requiresApproval: "true",
+        sendNow: "true",
+        file: { name: "agreement.png", mimeType: "image/png", buffer: PNG },
+      },
+      headers: { "x-csrf-token": ownerCsrf },
+    });
+    expect(contractRes.ok()).toBeTruthy();
+    const contract = await contractRes.json();
+    expect(contract.status).toBe("pending");
+
+    const { ctx: ctxA, page: clientA } = await loginClient(browser, a.clientEmail, a.password);
+    const { ctx: ctxB, page: clientB } = await loginClient(browser, b.clientEmail, b.password);
+
+    // Client A approves the deliverable.
+    await clientA.goto(`${WEB_URL}/portal/projects/${project.id}?tab=files&doc=${deliverable.id}`);
+    await clientA.getByRole("button", { name: /^approve$/i }).click();
+    await clientA.getByRole("button", { name: /^confirm$/i }).click();
+    await expect(clientA.getByTestId("deliverable-review")).toHaveCount(0);
+
+    // Client B changes the decision to "request changes".
+    await clientB.goto(`${WEB_URL}/portal/projects/${project.id}?tab=files&doc=${deliverable.id}`);
+    await expect(clientB.getByText(/approved by/i)).toBeVisible();
+    await clientB.getByRole("button", { name: /change decision/i }).click();
+    await clientB.getByTestId("deliverable-review").getByRole("button", { name: /request changes/i }).click();
+    await clientB.getByPlaceholder(/what should change/i).fill("Try a darker palette");
+    await clientB.getByRole("button", { name: /^send$/i }).click();
+    await expect(clientB.getByTestId("deliverable-review")).toHaveCount(0);
+
+    // The status follows the latest decision.
+    await owner.goto(`${WEB_URL}/dashboard/projects/${project.id}?tab=files`);
+    await expect(owner.getByText("Changes requested").first()).toBeVisible();
+    await expect(owner.getByText(/Try a darker palette/)).toBeVisible();
+
+    // A contract still needs every client: one acceptance leaves it pending.
+    const acceptRes = await clientA.request.post(`${API_URL}/api/documents/${contract.id}/respond`, {
+      data: { action: "accepted" },
+      headers: { "x-csrf-token": await csrf(ctxA) },
+    });
+    expect(acceptRes.ok()).toBeTruthy();
+    const afterOne = await (await owner.request.get(`${API_URL}/api/documents/${contract.id}`)).json();
+    expect(afterOne.status).toBe("pending");
+
+    const acceptB = await clientB.request.post(`${API_URL}/api/documents/${contract.id}/respond`, {
+      data: { action: "accepted" },
+      headers: { "x-csrf-token": await csrf(ctxB) },
+    });
+    expect(acceptB.ok()).toBeTruthy();
+    const afterAll = await (await owner.request.get(`${API_URL}/api/documents/${contract.id}`)).json();
+    expect(afterAll.status).toBe("accepted");
+
+    await ctxA.close();
+    await ctxB.close();
+    await ownerCtx.close();
+  });
 });

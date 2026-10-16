@@ -12,7 +12,7 @@ export type SwitchableOrg = {
   slug?: string | null;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 /**
  * Organization identity in the sidebar, doubling as a switcher when the user

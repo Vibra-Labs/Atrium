@@ -145,6 +145,15 @@ export class ProjectsService {
         where,
         include: {
           _count: { select: { documents: { where: { requiresApproval: true, status: "pending" } } } },
+          // Latest progress update and file, for "last updated". Document files
+          // are left out so a draft upload doesn't read as client-visible activity.
+          updates: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+          files: {
+            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } },
+            select: { createdAt: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
         },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
@@ -152,7 +161,49 @@ export class ProjectsService {
       this.prisma.project.count({ where }),
     ]);
 
-    const rows = data.map(({ _count, ...p }) => ({ ...p, pendingApprovals: _count.documents }));
+    // Progress counts checkbox tasks only: an open vote is waiting on the client,
+    // not agency work. Cancelled tasks are dropped so they don't cap the bar.
+    const taskGroups = data.length
+      ? await this.prisma.task.groupBy({
+          by: ["projectId", "status"],
+          where: {
+            projectId: { in: data.map((p) => p.id) },
+            organizationId,
+            type: "checkbox",
+            status: { not: "cancelled" },
+          },
+          _count: { _all: true },
+          _max: { updatedAt: true },
+        })
+      : [];
+
+    const taskStats = new Map<string, { total: number; done: number; lastAt: Date | null }>();
+    for (const g of taskGroups) {
+      const stats = taskStats.get(g.projectId) ?? { total: 0, done: 0, lastAt: null };
+      stats.total += g._count._all;
+      if (g.status === "done") stats.done += g._count._all;
+      if (g._max.updatedAt && (!stats.lastAt || g._max.updatedAt > stats.lastAt)) {
+        stats.lastAt = g._max.updatedAt;
+      }
+      taskStats.set(g.projectId, stats);
+    }
+
+    const rows = data.map(({ _count, updates, files, ...p }) => {
+      const stats = taskStats.get(p.id);
+      // Child records don't touch project.updatedAt, so take whichever moved last.
+      const candidates: (Date | null | undefined)[] = [stats?.lastAt, updates[0]?.createdAt, files[0]?.createdAt];
+      const lastActivityAt = candidates.reduce<Date>(
+        (latest, d) => (d && d > latest ? d : latest),
+        p.updatedAt,
+      );
+      return {
+        ...p,
+        pendingApprovals: _count.documents,
+        taskCount: stats?.total ?? 0,
+        completedTaskCount: stats?.done ?? 0,
+        lastActivityAt,
+      };
+    });
     return paginatedResponse(rows, total, page, limit);
   }
 

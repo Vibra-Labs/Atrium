@@ -34,6 +34,7 @@ const mockPrisma = {
     createMany: mock(() => Promise.resolve({ count: 0 })),
   },
   task: {
+    groupBy: mock(() => Promise.resolve([])),
     create: mock((args: PrismaArgs) =>
       Promise.resolve({ id: `task-${Math.random().toString(36).slice(2, 8)}`, ...args.data }),
     ),
@@ -94,12 +95,53 @@ describe("ProjectsService", () => {
 
   it("findByClient returns a pendingApprovals count per project", async () => {
     mockPrisma.project.findMany.mockReturnValue(
-      Promise.resolve([{ id: "p1", name: "Site", _count: { documents: 2 } }]),
+      Promise.resolve([{ id: "p1", name: "Site", _count: { documents: 2 }, updates: [], files: [] }]),
     );
     mockPrisma.project.count = mock(() => Promise.resolve(1));
     const res = await service.findByClient("client-1", "org-1", {});
     expect(res.data[0]).toEqual(expect.objectContaining({ id: "p1", pendingApprovals: 2 }));
     expect(res.data[0]).not.toHaveProperty("_count");
+  });
+
+  it("findByClient adds checkbox-task progress and the latest client-visible activity", async () => {
+    const projectUpdated = new Date("2026-06-01T10:00:00.000Z");
+    const taskUpdated = new Date("2026-06-03T09:00:00.000Z");
+    const postedUpdate = new Date("2026-06-05T09:00:00.000Z");
+    mockPrisma.project.findMany.mockReturnValueOnce(
+      Promise.resolve([
+        { id: "p1", name: "Site", updatedAt: projectUpdated, _count: { documents: 0 }, updates: [{ createdAt: postedUpdate }], files: [] },
+        { id: "p2", name: "Empty", updatedAt: projectUpdated, _count: { documents: 0 }, updates: [], files: [] },
+      ]),
+    );
+    mockPrisma.project.count.mockReturnValueOnce(Promise.resolve(2));
+    mockPrisma.task.groupBy.mockReturnValueOnce(
+      Promise.resolve([
+        { projectId: "p1", status: "done", _count: { _all: 2 }, _max: { updatedAt: taskUpdated } },
+        { projectId: "p1", status: "open", _count: { _all: 1 }, _max: { updatedAt: projectUpdated } },
+      ]),
+    );
+
+    const res = await service.findByClient("client-1", "org-1", {});
+
+    expect(mockPrisma.task.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ["projectId", "status"],
+        where: {
+          projectId: { in: ["p1", "p2"] },
+          organizationId: "org-1",
+          type: "checkbox",
+          status: { not: "cancelled" },
+        },
+      }),
+    );
+    expect(res.data[0]).toEqual(
+      expect.objectContaining({ taskCount: 3, completedTaskCount: 2, lastActivityAt: postedUpdate }),
+    );
+    expect(res.data[0]).not.toHaveProperty("updates");
+    expect(res.data[0]).not.toHaveProperty("files");
+    expect(res.data[1]).toEqual(
+      expect.objectContaining({ taskCount: 0, completedTaskCount: 0, lastActivityAt: projectUpdated }),
+    );
   });
 
   it("findOne excludes files that belong to a document", async () => {

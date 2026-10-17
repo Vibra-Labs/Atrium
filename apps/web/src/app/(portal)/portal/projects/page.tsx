@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
+import { formatRelativeTime } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
 import { ProjectCardSkeleton } from "@/components/skeletons";
@@ -14,6 +15,30 @@ interface Project {
   status: string;
   description?: string;
   pendingApprovals?: number;
+  taskCount: number;
+  completedTaskCount: number;
+  lastActivityAt: string;
+}
+
+function ProjectProgress({ done, total }: { done: number; total: number }): React.ReactElement {
+  const percent: number = Math.round((done / total) * 100);
+  return (
+    <div className="mt-3 flex items-center gap-3" data-testid="project-progress">
+      <div
+        className="h-1.5 flex-1 max-w-xs overflow-hidden rounded-full bg-[var(--muted)]"
+        role="progressbar"
+        aria-label="Project progress"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${percent}%` }} />
+      </div>
+      <span className="text-xs text-[var(--muted-foreground)]">
+        {done} of {total} tasks done
+      </span>
+    </div>
+  );
 }
 
 interface PaginatedResponse<T> {
@@ -95,7 +120,12 @@ export default function PortalProjectsPage() {
                 href={`/portal/projects/${project.id}`}
                 className="block p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
               >
-                <h3 className="font-medium">{project.name}</h3>
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="font-medium">{project.name}</h3>
+                  <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                    Updated {formatRelativeTime(project.lastActivityAt)}
+                  </span>
+                </div>
                 {project.description && (
                   <p className="text-sm text-[var(--muted-foreground)] mt-1">
                     {project.description}
@@ -108,6 +138,9 @@ export default function PortalProjectsPage() {
                   <span className="inline-block mt-2 ml-2 text-xs px-2 py-1 rounded-full font-medium bg-amber-100 text-amber-800" data-testid="to-review-chip">
                     {project.pendingApprovals} to review
                   </span>
+                )}
+                {project.taskCount > 0 && (
+                  <ProjectProgress done={project.completedTaskCount} total={project.taskCount} />
                 )}
               </Link>
             ))}

@@ -2,6 +2,12 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Project progress in the client portal** — Each project in the client's list shows a progress bar ("7 of 12 tasks done") and when it last changed, including task changes, progress updates and new files. Cancelled tasks and client votes don't count toward progress, and projects without tasks show no bar. Idea from @Bizman365's [PexloPortal](https://github.com/Bizman365/PexloPortal) fork, thanks!
+
 ## [1.11.0] — 2026-10-17
 
 ### Breaking

@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { copyFileSync, existsSync } from "fs";
 import { join } from "path";
 import { withSentryConfig } from "@sentry/nextjs";
+import { resolveInternalApiUrl } from "./src/lib/internal-api-url";
 
 // Copy CHANGELOG.md into the web app directory at config load time so webpack can resolve it
 const changelogSrc = join(__dirname, "../../CHANGELOG.md");
@@ -41,6 +42,14 @@ const nextConfig: NextConfig = {
         ],
       },
     ];
+  },
+  // Dev only: serve /api from the app's origin, as the Docker image does, so a
+  // fresh clone works without NEXT_PUBLIC_API_URL. Production rewrites would
+  // be fixed at build time and bypass the Origin rewrite Caddy relies on.
+  async rewrites() {
+    if (process.env.NODE_ENV !== "development") return [];
+    const apiUrl: string = resolveInternalApiUrl(process.env);
+    return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
   },
   webpack: (config) => {
     config.module.rules.push({

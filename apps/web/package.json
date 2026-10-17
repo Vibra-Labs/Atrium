@@ -22,6 +22,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-pdf": "9",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.0.0",
     "tailwindcss": "3"
   },

@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
@@ -13,18 +12,14 @@ import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { DEFAULT_BRANDING } from "@atrium/shared";
-
-const API_URL = process.env.API_URL || "http://localhost:3001";
+import { serverFetch } from "@/lib/server-api";
+import { logoSrc as buildLogoSrc } from "@/lib/logo-src";
 
 async function getSessionWithRole() {
   try {
-    const cookieStore = await cookies();
-    const cookieHeader = cookieStore.toString();
-    const init = { headers: { Cookie: cookieHeader }, cache: "no-store" as const };
-
-    const [sessionRes, memberRes] = await Promise.all([
-      fetch(`${API_URL}/api/auth/get-session`, init),
-      fetch(`${API_URL}/api/auth/organization/get-active-member`, init),
+    const [sessionRes, memberRes]: [Response, Response] = await Promise.all([
+      serverFetch("/api/auth/get-session"),
+      serverFetch("/api/auth/organization/get-active-member"),
     ]);
 
     if (!sessionRes.ok) return null;
@@ -33,21 +28,23 @@ async function getSessionWithRole() {
 
     const member = memberRes.ok ? await memberRes.json() : null;
     return { ...session, role: member?.role || null };
-  } catch {
+  } catch (err) {
+    // cookies() throws a control-flow signal during static render; let it through.
+    unstable_rethrow(err);
+    console.error("Failed to load session", err);
     return null;
   }
 }
 
 async function getBranding() {
   try {
-    const cookieStore = await cookies();
-    const res = await fetch(`${API_URL}/api/branding`, {
-      headers: { Cookie: cookieStore.toString() },
-      cache: "no-store",
-    });
+    const res: Response = await serverFetch("/api/branding");
     if (!res.ok) return null;
     return res.json();
-  } catch {
+  } catch (err) {
+    // cookies() throws a control-flow signal during static render; let it through.
+    unstable_rethrow(err);
+    console.error("Failed to load branding", err);
     return null;
   }
 }
@@ -55,29 +52,21 @@ async function getBranding() {
 /** Whether the workspace still needs its timezone filled in. Owners only; false on any failure. */
 async function needsTimezone(): Promise<boolean> {
   try {
-    const cookieStore = await cookies();
-    const res = await fetch(`${API_URL}/api/settings`, {
-      headers: { Cookie: cookieStore.toString() },
-      cache: "no-store",
-    });
+    const res: Response = await serverFetch("/api/settings");
     if (!res.ok) return false;
     const settings: { timezone?: string | null } = await res.json();
     return !settings.timezone;
-  } catch {
+  } catch (err) {
+    // cookies() throws a control-flow signal during static render; let it through.
+    unstable_rethrow(err);
+    console.error("Failed to load workspace settings", err);
     return false;
   }
 }
 
 async function getActiveOrg(): Promise<{ id: string; name: string } | null> {
   try {
-    const cookieStore = await cookies();
-    const res = await fetch(
-      `${API_URL}/api/auth/organization/get-full-organization`,
-      {
-        headers: { Cookie: cookieStore.toString() },
-        cache: "no-store",
-      },
-    );
+    const res: Response = await serverFetch("/api/auth/organization/get-full-organization");
     if (!res.ok) return null;
     const org = await res.json();
     if (!org?.id) return null;
@@ -94,11 +83,7 @@ async function getActiveOrg(): Promise<{ id: string; name: string } | null> {
 // Every org this user is a member of, for the sidebar switcher.
 async function getOrgs(): Promise<SwitchableOrg[]> {
   try {
-    const cookieStore = await cookies();
-    const res = await fetch(`${API_URL}/api/auth/organization/list`, {
-      headers: { Cookie: cookieStore.toString() },
-      cache: "no-store",
-    });
+    const res: Response = await serverFetch("/api/auth/organization/list");
     if (!res.ok) return [];
     const orgs = await res.json();
     return Array.isArray(orgs) ? orgs : [];
@@ -109,38 +94,29 @@ async function getOrgs(): Promise<SwitchableOrg[]> {
   }
 }
 
-function getLogoSrc(branding: { logoKey?: string; logoUrl?: string; organizationId?: string } | null) {
-  if (!branding) return null;
-  if (branding.logoKey) return `${API_URL}/api/branding/logo/${branding.organizationId}?k=${encodeURIComponent(branding.logoKey)}`;
-  if (branding.logoUrl) return branding.logoUrl;
-  return null;
-}
-
 async function getSetupStatus() {
   try {
-    const cookieStore = await cookies();
-    const res = await fetch(`${API_URL}/api/setup/status`, {
-      headers: { Cookie: cookieStore.toString() },
-      cache: "no-store",
-    });
+    const res: Response = await serverFetch("/api/setup/status");
     if (!res.ok) return null;
     return res.json() as Promise<{ completed: boolean }>;
-  } catch {
+  } catch (err) {
+    // cookies() throws a control-flow signal during static render; let it through.
+    unstable_rethrow(err);
+    console.error("Failed to load setup status", err);
     return null;
   }
 }
 
 async function getTelemetryStatus(): Promise<boolean | null> {
   try {
-    const cookieStore = await cookies();
-    const res = await fetch(`${API_URL}/api/settings`, {
-      headers: { Cookie: cookieStore.toString() },
-      cache: "no-store",
-    });
+    const res: Response = await serverFetch("/api/settings");
     if (!res.ok) return null;
     const settings = await res.json();
     return settings?.telemetryEnabled ?? null;
-  } catch {
+  } catch (err) {
+    // cookies() throws a control-flow signal during static render; let it through.
+    unstable_rethrow(err);
+    console.error("Failed to load telemetry setting", err);
     return null;
   }
 }
@@ -184,7 +160,7 @@ export default async function DashboardLayout({
     timezoneMissing = needsZone;
   }
 
-  const logoSrc = getLogoSrc(branding);
+  const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");
 
   return (
     <div

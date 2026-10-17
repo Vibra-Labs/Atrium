@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateBrandingDto } from "./branding.dto";
+import { publicApiUrl } from "../common/helpers/public-api-url";
 
 @Injectable()
 export class BrandingService {
@@ -33,7 +34,7 @@ export class BrandingService {
   }
 
   private async buildBrandingShape(org: { id: string; name: string }, branding: Awaited<ReturnType<typeof this.findByOrg>>) {
-    const apiUrl = this.config.get("API_URL", "http://localhost:3001");
+    const apiUrl: string = publicApiUrl(this.config);
     const logoSrc = branding.logoKey
       ? `${apiUrl}/api/branding/logo/${org.id}`
       : branding.logoUrl ?? null;

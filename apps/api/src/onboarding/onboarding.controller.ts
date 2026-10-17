@@ -17,6 +17,7 @@ import { AuthService } from "../auth/auth.service";
 import { BillingService } from "../billing/billing.service";
 import { MailService } from "../mail/mail.service";
 import { SignupDto } from "./signup.dto";
+import { publicApiUrl } from "../common/helpers/public-api-url";
 
 @Controller("onboarding")
 @Public()
@@ -40,10 +41,7 @@ export class OnboardingController {
       throw new ForbiddenException("Signups are disabled");
     }
 
-    const baseUrl = this.config.get(
-      "BETTER_AUTH_URL",
-      "http://localhost:3001",
-    );
+    const baseUrl: string = publicApiUrl(this.config);
 
     // 1. Create user via Better Auth
     const signupReq = new globalThis.Request(

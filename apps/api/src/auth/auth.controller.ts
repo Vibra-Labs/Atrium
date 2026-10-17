@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { AuthService } from "./auth.service";
 import { Public } from "../common";
 import type { Request, Response } from "express";
+import { publicApiUrl } from "../common/helpers/public-api-url";
 
 /**
  * Request headers that must not be forwarded: the proxy re-serializes the
@@ -45,11 +46,7 @@ export class AuthController {
     private authService: AuthService,
     private config: ConfigService,
   ) {
-    this.publicOrigin = (
-      this.config.get("BETTER_AUTH_URL") ||
-      this.config.get("API_URL") ||
-      "http://localhost:3001"
-    ).replace(/\/$/, "");
+    this.publicOrigin = publicApiUrl(this.config);
   }
 
   @All("*path")

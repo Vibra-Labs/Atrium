@@ -2,6 +2,23 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [Unreleased]
+
+### Breaking
+
+- **Split deployments must set `INTERNAL_API_URL`.** If you run the web app and API on separate containers or servers, set it on the web app to the API's private address (e.g. `http://atrium-api:3001`) before upgrading. The web app now refuses to start without it, instead of quietly sending every page through your public URL and back. **The Docker image is not affected:** it sets this for you. See [Required for split deployments](docs/configuration.md#required-for-split-deployments).
+
+### Fixed
+
+- **Logged out right after signing in** on Docker installs opened on a different port or a LAN IP (e.g. Unraid). Pages also load faster.
+- **Creating or switching organizations failed** on Docker installs (#82, thanks @sidelkins).
+- Logos on custom client domains load from that domain.
+- Busy instances could hit the rate limit on normal page loads.
+
+### Changed
+
+- The configuration docs now split environment variables into required, required for split deployments, and optional.
+
 ## [1.10.0] — 2026-10-15
 
 ### Added

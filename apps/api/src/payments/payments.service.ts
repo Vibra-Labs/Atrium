@@ -14,6 +14,7 @@ import { StripeService } from "../billing/stripe.service";
 import { SettingsService } from "../settings/settings.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { calculateInvoiceTotal } from "./invoice-total";
+import { publicApiUrl } from "../common/helpers/public-api-url";
 
 interface StripeConfig {
   stripe: Stripe;
@@ -58,7 +59,7 @@ export class PaymentsService {
     private notifications: NotificationsService,
   ) {
     this.webUrl = this.config.get("WEB_URL", "http://localhost:3000");
-    this.apiUrl = this.config.get("API_URL", "http://localhost:3001");
+    this.apiUrl = publicApiUrl(this.config);
     this.appOrigin = new URL(this.webUrl).origin;
     this.currency = this.config.get("STRIPE_CURRENCY", "usd").toLowerCase();
     this.hmacSecret = this.config.getOrThrow<string>("BETTER_AUTH_SECRET");

@@ -116,28 +116,61 @@ The container also listens on 443 with on-demand TLS, used when a client's own d
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `BETTER_AUTH_SECRET` | Yes | -- | Random string (min 32 chars) for signing auth tokens |
-| `WEB_URL` | Yes | -- | The public URL users open Atrium at, e.g. `https://atrium.example.com`. See [Public URL](#public-url) — sign-in fails with "Invalid origin" on the second login and email links point at `localhost` when this is unset or wrong. |
-| `API_URL` | No | same as `WEB_URL` | Public URL of the API. The unified image serves the app and API from one origin, so only set this when the API is reachable at a different address. |
-| `USE_BUILT_IN_DB` | No | `true` | Set to `false` to use an external database |
-| `DATABASE_URL` | No | auto-generated | PostgreSQL connection string (required when built-in DB is disabled) |
-| `STORAGE_PROVIDER` | No | `local` | File storage backend: `local`, `s3`, `minio`, or `r2` |
-| `S3_ENDPOINT` | No | -- | S3-compatible endpoint URL |
-| `S3_REGION` | No | `us-east-1` | S3 region |
-| `S3_BUCKET` | No | `atrium` | S3 bucket name |
-| `S3_ACCESS_KEY` | No | -- | S3 access key |
-| `S3_SECRET_KEY` | No | -- | S3 secret key |
-| `RESEND_API_KEY` | No | -- | Resend API key for email notifications |
-| `EMAIL_FROM` | No | `noreply@atrium.local` | Sender address for outbound email |
-| `MAX_FILE_SIZE_MB` | No | `50` | Maximum upload size in megabytes |
-| `SECURE_COOKIES` | No | `true` in the image | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. Falls back to `NODE_ENV=production`, which the published image sets. See [Unraid](unraid.md). |
-| `SKIP_DB_PUSH` | No | `false` | Skip automatic schema sync on startup |
-| `DIRECT_URL` | No | -- | Direct (non-pooled) database URL for schema sync |
-| `STRIPE_CONNECT_CLIENT_ID` | No | -- | Stripe Connect platform client ID (`ca_...`). Enables the OAuth "Connect with Stripe" flow for client invoice payments. See [Stripe setup](stripe.md). |
-| `STRIPE_CONNECT_WEBHOOK_SECRET` | No | -- | Signing secret for the Stripe Connect webhook endpoint (`whsec_...`) |
-| `STRIPE_CURRENCY` | No | `usd` | ISO 4217 currency code for invoice payments (e.g. `eur`, `gbp`) |
+### Required
+
+| Variable | Description |
+|---|---|
+| `BETTER_AUTH_SECRET` | Random string (min 32 chars) for signing auth tokens |
+| `WEB_URL` | The public URL users open Atrium at, e.g. `https://atrium.example.com`. See [Public URL](#public-url) — sign-in fails with "Invalid origin" on the second login and email links point at `localhost` when this is unset or wrong. |
+
+That's all you need. Everything below is optional.
+
+### Optional
+
+**Database**
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_BUILT_IN_DB` | `true` | Set to `false` to use an external database |
+| `DATABASE_URL` | auto-generated | PostgreSQL connection string (required when built-in DB is disabled) |
+| `DIRECT_URL` | -- | Direct (non-pooled) database URL for schema sync |
+| `SKIP_DB_PUSH` | `false` | Skip automatic schema sync on startup |
+
+**File storage**
+
+| Variable | Default | Description |
+|---|---|---|
+| `STORAGE_PROVIDER` | `local` | File storage backend: `local`, `s3`, `minio`, or `r2` |
+| `S3_ENDPOINT` | -- | S3-compatible endpoint URL |
+| `S3_REGION` | `us-east-1` | S3 region |
+| `S3_BUCKET` | `atrium` | S3 bucket name |
+| `S3_ACCESS_KEY` | -- | S3 access key |
+| `S3_SECRET_KEY` | -- | S3 secret key |
+| `MAX_FILE_SIZE_MB` | `50` | Maximum upload size in megabytes |
+
+**Email**
+
+| Variable | Default | Description |
+|---|---|---|
+| `RESEND_API_KEY` | -- | Resend API key for email notifications |
+| `EMAIL_FROM` | `noreply@atrium.local` | Sender address for outbound email |
+
+**Payments**
+
+| Variable | Default | Description |
+|---|---|---|
+| `STRIPE_CONNECT_CLIENT_ID` | -- | Stripe Connect platform client ID (`ca_...`). Enables the OAuth "Connect with Stripe" flow for client invoice payments. See [Stripe setup](stripe.md). |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | -- | Signing secret for the Stripe Connect webhook endpoint (`whsec_...`) |
+| `STRIPE_CURRENCY` | `usd` | ISO 4217 currency code for invoice payments (e.g. `eur`, `gbp`) |
+
+**Networking**
+
+| Variable | Default | Description |
+|---|---|---|
+| `API_URL` | same as `WEB_URL` | Public URL of the API. Only set this if the API is reachable at a different address than the app. |
+| `SECURE_COOKIES` | `true` | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. See [Unraid](unraid.md). |
+
+Running the web app and API as separate containers? See [Required for split deployments](configuration.md#required-for-split-deployments).
 
 ## Volumes
 

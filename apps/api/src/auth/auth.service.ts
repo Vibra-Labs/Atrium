@@ -16,6 +16,7 @@ import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
 import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
+import { publicApiUrl } from "../common/helpers/public-api-url";
 
 interface AdminResetContext {
   capturedUrl: string | null;
@@ -36,16 +37,7 @@ export class AuthService {
     private billingService: BillingService,
   ) {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
-    // API_URL is the canonical var; BETTER_AUTH_URL is kept as a fallback for
-    // existing deployments that set it before the rename in v1.4.
-    // Trailing slashes are stripped: they would otherwise reach the OAuth
-    // metadata as `//.well-known/...` and `//api/mcp`, breaking discovery for
-    // clients that fetch those URLs verbatim.
-    const apiUrl: string = (
-      this.config.get("API_URL") ??
-      this.config.get("BETTER_AUTH_URL") ??
-      "http://localhost:3001"
-    ).replace(/\/+$/, "");
+    const apiUrl: string = publicApiUrl(this.config);
     // Lets MCP clients sign in instead of pasting an API key. Opt-out only.
     const mcpOAuthEnabled: boolean =
       this.config.get("MCP_OAUTH_ENABLED", "true") !== "false";

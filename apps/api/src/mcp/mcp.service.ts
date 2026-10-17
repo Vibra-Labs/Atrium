@@ -22,6 +22,7 @@ import { taskTools } from "./tools/tasks.tools";
 import { updateTools } from "./tools/updates.tools";
 import { noteTools } from "./tools/notes.tools";
 import { documentTools } from "./tools/documents.tools";
+import { publicApiUrl } from "../common/helpers/public-api-url";
 
 const RATE_LIMIT = 300;
 const RATE_WINDOW_MS = 60_000;
@@ -45,13 +46,7 @@ export class McpService {
   /** RFC 9728 challenge pointing MCP clients at this API's OAuth metadata. */
   private challenge(): string {
     if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") return "Bearer";
-    // A trailing slash here would produce `//.well-known/...`, which clients
-    // fetch verbatim and discovery does not answer.
-    const apiUrl: string = (
-      this.config.get("API_URL") ??
-      this.config.get("BETTER_AUTH_URL") ??
-      "http://localhost:3001"
-    ).replace(/\/+$/, "");
+    const apiUrl: string = publicApiUrl(this.config);
     return `Bearer resource_metadata="${apiUrl}/.well-known/oauth-protected-resource"`;
   }
 

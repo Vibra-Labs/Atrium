@@ -103,10 +103,12 @@ catch(e) { console.error('API FATAL:', e.stack || e); process.exit(1); }
 " &
 API_PID=$!
 
-# Start Next.js in background
+# Start Next.js in background. Server-side rendering talks to the API inside
+# the container; API_URL above is the public address, which the container may
+# not be able to reach (remapped ports, no hairpin NAT, Cloudflare Access).
 echo "Starting Web server on :3000..."
 cd /app
-HOSTNAME=127.0.0.1 PORT=3000 node apps/web/server.js &
+INTERNAL_API_URL="${INTERNAL_API_URL:-http://127.0.0.1:3001}" HOSTNAME=127.0.0.1 PORT=3000 node apps/web/server.js &
 WEB_PID=$!
 
 # Graceful shutdown

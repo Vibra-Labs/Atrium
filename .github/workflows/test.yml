@@ -32,6 +32,7 @@ jobs:
       API_URL: http://localhost:3001
       WEB_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:3001
+      INTERNAL_API_URL: http://localhost:3001
       # Read at request time by the auth routes; the e2e assertion checks the
       # tag reaches the served HTML.
       NEXT_PUBLIC_TRACKERS: '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]'
@@ -46,6 +47,9 @@ jobs:
           bun-version: latest
 
       - run: bun install --frozen-lockfile
+
+      - name: Check for hardcoded API URLs
+        run: ./scripts/check-api-urls.sh
 
       - run: bun run db:generate
 
@@ -77,3 +81,48 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # The e2e job above runs web and API on separate origins. Production runs the
+  # unified image, same-origin behind Caddy, so test that too, with the port
+  # remapped: server-side calls that go to the public URL fail inside the
+  # container, and an absolute localhost:3001 in browser code fails outside it.
+  docker-smoke:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build unified image
+        run: docker build -f docker/unified.Dockerfile -t atrium:smoke .
+
+      - name: Start container on a remapped port
+        run: |
+          docker run -d --name atrium -p 9000:8080 \
+            -e WEB_URL=http://localhost:9000 \
+            -e BETTER_AUTH_SECRET=ci-smoke-secret-that-is-at-least-32-chars \
+            atrium:smoke
+          for i in $(seq 1 120); do
+            curl -sf http://localhost:9000/api/health >/dev/null && exit 0
+            sleep 1
+          done
+          docker logs atrium
+          exit 1
+
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run smoke test
+        run: bunx playwright test --config=e2e/docker-smoke.config.ts
+        env:
+          CI: "true"
+
+      - name: Container logs
+        if: ${{ failure() }}
+        run: docker logs atrium

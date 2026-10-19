@@ -205,6 +205,27 @@ describe("ProjectsService", () => {
     });
   });
 
+  describe("findAll inactive projects", () => {
+    const lastWhere = (): Record<string, unknown> =>
+      (mockPrisma.project.findMany.mock.calls.at(-1) as unknown as [{ where: Record<string, unknown> }])[0].where;
+
+    it("hides archived and cancelled projects by default", async () => {
+      await service.findAll("org-1", {});
+      expect(lastWhere()).toMatchObject({ archivedAt: null, status: { not: "cancelled" } });
+    });
+
+    it("shows archived and cancelled projects when archived=true", async () => {
+      await service.findAll("org-1", { archived: "true" });
+      expect(lastWhere().archivedAt).toBeUndefined();
+      expect(lastWhere().status).toBeUndefined();
+    });
+
+    it("shows cancelled projects when filtering by the cancelled status", async () => {
+      await service.findAll("org-1", { status: "cancelled" });
+      expect(lastWhere()).toMatchObject({ archivedAt: null, status: "cancelled" });
+    });
+  });
+
   it("findOneByClient throws NotFoundException when project is archived", async () => {
     // The service queries with archivedAt: null — an archived project is excluded
     // at the database layer, so Prisma returns null for it.

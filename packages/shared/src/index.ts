@@ -3,6 +3,7 @@ export const PROJECT_STATUSES = {
   IN_PROGRESS: "in_progress",
   IN_REVIEW: "in_review",
   COMPLETED: "completed",
+  CANCELLED: "cancelled",
 } as const;
 
 export type ProjectStatusValue =
@@ -13,6 +14,7 @@ export const DEFAULT_STATUSES = [
   { name: "In Progress", slug: "in_progress", order: 1, color: "#3b82f6" },
   { name: "In Review", slug: "in_review", order: 2, color: "#f59e0b" },
   { name: "Completed", slug: "completed", order: 3, color: "#10b981" },
+  { name: "Cancelled", slug: "cancelled", order: 4, color: "#ef4444" },
 ];
 
 export const DEFAULT_BRANDING = {

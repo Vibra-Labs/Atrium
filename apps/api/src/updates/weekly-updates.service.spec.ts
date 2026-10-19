@@ -71,7 +71,7 @@ describe("WeeklyUpdatesService.getDue", () => {
     expect(query[0].where).toMatchObject({
       organizationId: "org1",
       archivedAt: null,
-      status: { not: "completed" },
+      status: { notIn: ["completed", "cancelled"] },
       clients: { some: {} },
     });
     expect(due.map((p) => p.projectId)).toEqual(["c", "b"]);

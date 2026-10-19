@@ -81,7 +81,7 @@ export class WeeklyUpdatesService {
       where: {
         organizationId: orgId,
         archivedAt: null,
-        status: { not: "completed" },
+        status: { notIn: ["completed", "cancelled"] },
         clients: { some: {} },
       },
       select: {

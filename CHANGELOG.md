@@ -7,6 +7,13 @@ All notable changes to Atrium will be documented in this file.
 ### Added
 
 - **Project progress in the client portal** — Each project in the client's list shows a progress bar ("7 of 12 tasks done") and when it last changed, including task changes, progress updates and new files. Cancelled tasks and client votes don't count toward progress, and projects without tasks show no bar. Idea from @Bizman365's [PexloPortal](https://github.com/Bizman365/PexloPortal) fork, thanks!
+- **Cancelled project status** — A new default status for contracts that fall through, so they no longer have to be archived. Existing workspaces get it automatically on the next API start.
+
+### Changed
+
+- Cancelled projects are hidden from the projects list and dashboard count like archived ones. The "Show archived" checkbox is now "Show archived & cancelled", and filtering by the Cancelled status also finds them.
+- Cancelled projects no longer appear in weekly client update reminders.
+- Dropdowns now have a padded chevron instead of the browser's default arrow, which sat flush against the edge.
 
 ## [1.11.0] — 2026-10-17
 

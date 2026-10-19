@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnApplicationBootstrap,
+} from "@nestjs/common";
+import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { paginationArgs, paginatedResponse } from "../common";
@@ -7,7 +14,7 @@ interface ProjectWhereInput {
   organizationId?: string;
   archivedAt?: null | Date;
   name?: { contains: string; mode: "default" | "insensitive" };
-  status?: string;
+  status?: string | { not: string };
   clients?: { some: { userId: string } };
   labels?: { some: { labelId: { in: string[] } } };
 }
@@ -26,8 +33,28 @@ const STANDALONE_FILES = {
 };
 
 @Injectable()
-export class ProjectsService {
+export class ProjectsService implements OnApplicationBootstrap {
+  private readonly logger: Logger = new Logger(ProjectsService.name);
+
   constructor(private prisma: PrismaService) {}
+
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      await this.backfillDefaultStatuses();
+    } catch (err) {
+      this.logger.error("Failed to backfill default project statuses", err);
+    }
+  }
+
+  /** Gives existing workspaces any default statuses added since they were created. */
+  async backfillDefaultStatuses(): Promise<void> {
+    const orgs: { id: string }[] = await this.prisma.organization.findMany({ select: { id: true } });
+    if (orgs.length === 0) return;
+    await this.prisma.projectStatus.createMany({
+      data: orgs.flatMap((org) => DEFAULT_STATUSES.map((s) => ({ ...s, organizationId: org.id }))),
+      skipDuplicates: true,
+    });
+  }
 
   async findAll(
     organizationId: string,
@@ -43,8 +70,10 @@ export class ProjectsService {
     const { page = 1, limit = 20, search, status, archived, labels } = query;
     const where: ProjectWhereInput = { organizationId };
 
+    // Archived and cancelled projects are "inactive": hidden unless asked for.
     if (archived !== "true") {
       where.archivedAt = null;
+      where.status = { not: PROJECT_STATUSES.CANCELLED };
     }
 
     if (search) {
@@ -424,7 +453,7 @@ export class ProjectsService {
   async getStats(organizationId: string) {
     const [total, inProgress, completed] = await Promise.all([
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null },
+        where: { organizationId, archivedAt: null, status: { not: PROJECT_STATUSES.CANCELLED } },
       }),
       this.prisma.project.count({
         where: { organizationId, archivedAt: null, status: "in_progress" },

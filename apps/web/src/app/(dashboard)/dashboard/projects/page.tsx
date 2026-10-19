@@ -362,7 +362,7 @@ export default function ProjectsPage() {
             onChange={(e) => setShowArchived(e.target.checked)}
             className="rounded"
           />
-          Show archived
+          Show archived &amp; cancelled
         </label>
       </div>
 

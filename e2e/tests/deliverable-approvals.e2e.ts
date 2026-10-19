@@ -181,7 +181,7 @@ test.describe("Deliverable approvals", () => {
     await expect(owner.getByLabel("Ask client to approve")).toBeChecked();
     await owner.getByRole("button", { name: "Upload a file instead" }).click();
     await expect(owner.getByRole("heading", { name: "Upload File" })).toBeVisible();
-    await owner.getByRole("button", { name: "Cancel" }).click();
+    await owner.getByRole("button", { name: "Cancel", exact: true }).click();
 
     // Plain Upload file: checkbox unchecked, neutral defaults.
     await owner.getByRole("button", { name: /add/i }).first().click();

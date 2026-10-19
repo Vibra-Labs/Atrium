@@ -1057,7 +1057,7 @@ test.describe("Documents", () => {
           // Confirmation dialog should appear
           await expect(page.getByText(/are you sure you want to/i)).toBeVisible({ timeout: 3000 });
           await expect(page.getByRole("button", { name: /confirm accept/i })).toBeVisible();
-          await expect(page.getByRole("button", { name: /cancel/i })).toBeVisible();
+          await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
         }
       }
     });
@@ -1112,7 +1112,7 @@ test.describe("Documents", () => {
           await acceptBtn.click();
           await expect(page.getByText(/are you sure you want to/i)).toBeVisible({ timeout: 3000 });
           // Click cancel
-          await page.getByRole("button", { name: /cancel/i }).click();
+          await page.getByRole("button", { name: /^cancel$/i }).click();
           // Dialog should be gone
           await expect(page.getByText(/are you sure you want to/i)).not.toBeVisible();
         }

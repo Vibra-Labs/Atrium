@@ -1,4 +1,5 @@
 import {
+  ValidateIf,
   IsEmail,
   IsIn,
   IsNotEmpty,
@@ -19,8 +20,9 @@ export class UpdateContactDto {
   name?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsEmail()
-  email?: string;
+  email?: string | null;
 
   @IsOptional()
   @IsString()
@@ -42,8 +44,9 @@ export class UpdateContactDto {
   status?: ContactStatus;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsString()
-  companyId?: string;
+  companyId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -52,8 +55,9 @@ export class UpdateContactDto {
   companyName?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsString()
-  leadSourceId?: string;
+  leadSourceId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -62,8 +66,9 @@ export class UpdateContactDto {
   leadSourceName?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsString()
-  referredById?: string;
+  referredById?: string | null;
 }
 
 export class CreateContactDto extends UpdateContactDto {

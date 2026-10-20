@@ -27,6 +27,7 @@ describe("CompaniesService", () => {
     prisma.company.findFirst.mockImplementation(() => Promise.resolve(null));
     prisma.company.create.mockClear();
     prisma.company.delete.mockClear();
+    prisma.company.update.mockClear();
     prisma.contact.updateMany.mockClear();
     service = new CompaniesService(
       prisma as unknown as PrismaService,
@@ -44,6 +45,17 @@ describe("CompaniesService", () => {
       expect((e as Error).message).toBe("A company with this name already exists");
     }
     expect(prisma.company.create).not.toHaveBeenCalled();
+  });
+
+  it("rename to another company's name is a 409", async () => {
+    prisma.company.findFirst.mockImplementation(() => Promise.resolve({ id: "other" }));
+    try {
+      await service.update("co-1", { name: "acme" }, "org-1");
+      expect(true).toBe(false);
+    } catch (e) {
+      expect(e).toBeInstanceOf(ConflictException);
+    }
+    expect(prisma.company.update).not.toHaveBeenCalled();
   });
 
   it("companies.remove unsets companyId on contacts", async () => {

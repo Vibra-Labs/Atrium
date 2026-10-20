@@ -7,6 +7,9 @@ import { ContactsController } from "./contacts.controller";
 import { CompaniesController } from "./companies.controller";
 import type { ContactRevenueService } from "./contact-revenue.service";
 import { ROLES_KEY } from "../common";
+import { validate } from "class-validator";
+import { plainToInstance } from "class-transformer";
+import { UpdateContactDto } from "./contacts.dto";
 
 const prisma = {
   contact: {
@@ -183,6 +186,64 @@ describe("ContactsService", () => {
     expect(res.data[0]).toMatchObject({ kind: "note", author: { id: "u1", name: "Eve" } });
     expect(res.data[2]).toMatchObject({ author: { id: "u9", name: "Unknown" } });
     expect(res.meta.total).toBe(3);
+  });
+
+  describe("update clearing", () => {
+    beforeEach(() => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
+    });
+    const updateData = (): Record<string, unknown> =>
+      (prisma.contact.update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    for (const field of ["email", "companyId", "leadSourceId", "referredById"] as const) {
+      it(`null clears ${field}`, async () => {
+        await service.update("c-1", { [field]: null }, "org-1");
+        expect(updateData()[field]).toBeNull();
+      });
+    }
+
+    it("undefined leaves the four fields alone", async () => {
+      await service.update("c-1", { name: "New" }, "org-1");
+      const data = updateData();
+      for (const f of ["email", "companyId", "leadSourceId", "referredById"]) {
+        expect(data[f]).toBeUndefined();
+      }
+    });
+
+    it("DTO validation accepts null for the clearable fields", async () => {
+      const dto = plainToInstance(UpdateContactDto, {
+        email: null,
+        companyId: null,
+        leadSourceId: null,
+        referredById: null,
+      });
+      expect(await validate(dto)).toHaveLength(0);
+    });
+
+    it("self-referral is a 400", async () => {
+      const e = await rejects(service.update("c-1", { referredById: "c-1" }, "org-1"));
+      expect(e).toBeInstanceOf(BadRequestException);
+      expect(prisma.contact.update).not.toHaveBeenCalled();
+    });
+
+    it("update and create do not expose profileImportedAt", async () => {
+      prisma.contact.update.mockImplementation(() =>
+        Promise.resolve({ id: "c-1", profileImportedAt: new Date() }),
+      );
+      expect(await service.update("c-1", { name: "x" }, "org-1")).not.toHaveProperty("profileImportedAt");
+      prisma.contact.create.mockImplementation(() =>
+        Promise.resolve({ id: "c-1", profileImportedAt: new Date() }),
+      );
+      expect(await service.create({ name: "x" }, "org-1")).not.toHaveProperty("profileImportedAt");
+    });
+  });
+
+  it("linkProject returns quietly when a concurrent link wins (P2002)", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
+    prisma.project.findFirst.mockImplementation(() => Promise.resolve({ id: "p-1", name: "Site" }));
+    prisma.projectContact.create.mockImplementationOnce(() => Promise.reject({ code: "P2002" }));
+    await service.linkProject("c-1", "p-1", "org-1");
+    expect(prisma.contactEvent.create).not.toHaveBeenCalled();
   });
 
   it("controllers are owner/admin only at class level", () => {

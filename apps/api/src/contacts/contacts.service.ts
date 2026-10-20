@@ -30,6 +30,19 @@ interface NameWhere {
   name: { equals: string; mode: "insensitive" };
 }
 
+interface ResolvedLinks {
+  companyId?: string | null;
+  leadSourceId?: string | null;
+  referredById?: string | null;
+}
+
+function omitImportMarker<T extends { profileImportedAt?: Date | null }>(
+  contact: T,
+): Omit<T, "profileImportedAt"> {
+  const { profileImportedAt: _imported, ...rest } = contact;
+  return rest;
+}
+
 type LinkFields = Pick<
   UpdateContactDto,
   "companyId" | "companyName" | "leadSourceId" | "leadSourceName" | "referredById"
@@ -147,12 +160,13 @@ export class ContactsService {
       throw this.mapDuplicate(e);
     }
     await this.addEvent(contact.id, orgId, "contact_created", "Contact created");
-    return contact;
+    return omitImportMarker(contact);
   }
 
   async update(id: string, dto: UpdateContactDto, orgId: string) {
     await this.getOrThrow(id, orgId);
-    const email = dto.email ? normalizeEmail(dto.email) : undefined;
+    // undefined = leave alone, null = clear.
+    const email = dto.email == null ? dto.email : normalizeEmail(dto.email);
     if (email) await this.assertEmailFree(email, orgId, id);
     if (dto.referredById === id) {
       throw new BadRequestException("A contact cannot refer themselves");
@@ -160,7 +174,7 @@ export class ContactsService {
     const links = await this.resolveLinks(dto, orgId);
 
     try {
-      return await this.prisma.contact.update({
+      const updated = await this.prisma.contact.update({
         where: { id },
         data: {
           name: dto.name,
@@ -172,6 +186,7 @@ export class ContactsService {
           ...links,
         },
       });
+      return omitImportMarker(updated);
     } catch (e) {
       throw this.mapDuplicate(e);
     }
@@ -253,7 +268,13 @@ export class ContactsService {
     });
     if (existing) return;
 
-    await this.prisma.projectContact.create({ data: { projectId, contactId: id } });
+    try {
+      await this.prisma.projectContact.create({ data: { projectId, contactId: id } });
+    } catch (e) {
+      // A concurrent request linked it first; the link exists, which is the goal.
+      if ((e as { code?: string })?.code === "P2002") return;
+      throw e;
+    }
     await this.addEvent(
       id,
       orgId,
@@ -292,14 +313,16 @@ export class ContactsService {
     return e;
   }
 
-  /** Resolves company / lead source / referrer to ids, 404ing for anything outside the org. */
-  private async resolveLinks(
-    dto: LinkFields,
-    orgId: string,
-  ): Promise<{ companyId?: string; leadSourceId?: string; referredById?: string }> {
-    const out: { companyId?: string; leadSourceId?: string; referredById?: string } = {};
+  /**
+   * Resolves company / lead source / referrer to ids, 404ing for anything outside the org.
+   * undefined = leave alone, null = clear.
+   */
+  private async resolveLinks(dto: LinkFields, orgId: string): Promise<ResolvedLinks> {
+    const out: ResolvedLinks = {};
 
-    if (dto.companyId) {
+    if (dto.companyId === null) {
+      out.companyId = null;
+    } else if (dto.companyId) {
       const company = await this.prisma.company.findFirst({
         where: { id: dto.companyId, organizationId: orgId },
       });
@@ -309,7 +332,9 @@ export class ContactsService {
       out.companyId = await this.findOrCreateCompany(dto.companyName.trim(), orgId);
     }
 
-    if (dto.leadSourceId) {
+    if (dto.leadSourceId === null) {
+      out.leadSourceId = null;
+    } else if (dto.leadSourceId) {
       const source = await this.prisma.leadSource.findFirst({
         where: { id: dto.leadSourceId, organizationId: orgId },
       });
@@ -319,7 +344,9 @@ export class ContactsService {
       out.leadSourceId = await this.findOrCreateLeadSource(dto.leadSourceName.trim(), orgId);
     }
 
-    if (dto.referredById) {
+    if (dto.referredById === null) {
+      out.referredById = null;
+    } else if (dto.referredById) {
       const referrer = await this.prisma.contact.findFirst({
         where: { id: dto.referredById, organizationId: orgId },
       });

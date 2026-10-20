@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createOwner, inviteAndAcceptClient } from "./helpers";
 
 /**
  * Portal Isolation Tests
@@ -156,6 +157,50 @@ test.describe("Portal Isolation", () => {
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
       expect(body.data).toBeInstanceOf(Array);
+    });
+  });
+
+  test.describe("Contacts are staff-only", () => {
+    test.setTimeout(120000);
+
+    test("portal client gets 403 on /api/contacts, /api/companies, /api/lead-sources", async ({ browser }) => {
+      const { context: ownerCtx, page: owner } = await createOwner(browser, "contacts-iso-owner");
+      const { clientEmail, password } = await inviteAndAcceptClient(browser, owner, "contacts-iso-client");
+
+      const clientCtx = await browser.newContext({ storageState: undefined });
+      const client = await clientCtx.newPage();
+      await client.goto("http://localhost:3000/login");
+      await client.getByLabel(/email/i).fill(clientEmail);
+      await client.getByLabel(/password/i).fill(password);
+      await client.getByRole("button", { name: /sign in/i }).click();
+      await client.waitForURL(/\/portal/, { timeout: 15000 });
+
+      for (const path of ["contacts", "companies", "lead-sources"]) {
+        const res = await client.request.get(`http://localhost:3001/api/${path}`);
+        expect(res.status(), path).toBe(403);
+      }
+
+      await clientCtx.close();
+      await ownerCtx.close();
+    });
+
+    test("portal client cannot open /dashboard/contacts", async ({ browser }) => {
+      const { context: ownerCtx, page: owner } = await createOwner(browser, "contacts-iso-owner");
+      const { clientEmail, password } = await inviteAndAcceptClient(browser, owner, "contacts-iso-client");
+
+      const clientCtx = await browser.newContext({ storageState: undefined });
+      const client = await clientCtx.newPage();
+      await client.goto("http://localhost:3000/login");
+      await client.getByLabel(/email/i).fill(clientEmail);
+      await client.getByLabel(/password/i).fill(password);
+      await client.getByRole("button", { name: /sign in/i }).click();
+      await client.waitForURL(/\/portal/, { timeout: 15000 });
+
+      await client.goto("http://localhost:3000/dashboard/contacts");
+      await expect(client).toHaveURL(/\/portal/, { timeout: 15000 });
+
+      await clientCtx.close();
+      await ownerCtx.close();
     });
   });
 });

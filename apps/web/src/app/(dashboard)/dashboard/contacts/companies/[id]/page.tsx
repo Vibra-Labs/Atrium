@@ -38,6 +38,7 @@ export default function CompanyPage() {
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -50,9 +51,12 @@ export default function CompanyPage() {
       const res = await apiFetch<CompanyDetail>(`/companies/${id}`);
       setCompany(res);
       setNotes(res.notes ?? "");
+      setLoadFailed(false);
     } catch (err) {
       console.error(err);
-      setNotFound(true);
+      // apiFetch exposes only the API message, so match the 404 text.
+      if (err instanceof Error && err.message === "Company not found") setNotFound(true);
+      else setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -120,6 +124,22 @@ export default function CompanyPage() {
   }
 
   if (loading) return <ProjectDetailSkeleton />;
+  if (loadFailed && !company) {
+    return (
+      <div className="py-12 text-center space-y-2">
+        <p className="text-[var(--muted-foreground)]">Couldn&apos;t load this company.</p>
+        <button
+          onClick={() => {
+            setLoading(true);
+            load();
+          }}
+          className="text-sm hover:underline"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
   if (notFound || !company) {
     return (
       <div className="py-12 text-center space-y-2">

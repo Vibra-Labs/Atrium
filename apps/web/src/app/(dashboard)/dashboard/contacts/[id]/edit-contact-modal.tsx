@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { CompanyField, SourceField } from "../contact-fields";
@@ -37,17 +37,26 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   const [referrerSearch, setReferrerSearch] = useState("");
   const [referrerResults, setReferrerResults] = useState<Option[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
+  const [sourcesError, setSourcesError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadSources = useCallback((): void => {
+    setSourcesError(false);
     apiFetch<Option[]>("/lead-sources")
       .then((res) => {
         setSources(res);
         setSourcesLoaded(true);
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error(err);
+        setSourcesError(true);
+      });
   }, []);
+
+  useEffect(() => {
+    loadSources();
+  }, [loadSources]);
 
   const sourceName =
     sourceChoice === NEW_SOURCE ? newSource : (sources.find((s) => s.id === sourceChoice)?.name ?? "");
@@ -211,6 +220,14 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
               </>
             )}
           </div>
+        )}
+        {sourcesError && (
+          <p className="text-sm text-red-600">
+            Couldn&apos;t load lead sources.{" "}
+            <button type="button" onClick={loadSources} className="underline">
+              Retry
+            </button>
+          </p>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">

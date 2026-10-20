@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
@@ -21,6 +21,9 @@ export function LeadSourcesSection(): React.ReactElement {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState<string>("");
   const [newName, setNewName] = useState<string>("");
+  // True once the current edit is committed or cancelled, so the blur that
+  // follows Enter/Escape (input unmount) does not save again.
+  const editDone = useRef<boolean>(false);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -50,6 +53,8 @@ export function LeadSourcesSection(): React.ReactElement {
   }
 
   async function rename(source: LeadSource): Promise<void> {
+    if (editDone.current) return;
+    editDone.current = true;
     const name = editName.trim();
     if (!name || name === source.name) {
       setEditingId(null);
@@ -62,6 +67,8 @@ export function LeadSourcesSection(): React.ReactElement {
     if (ok) {
       success("Lead source renamed");
       setEditingId(null);
+    } else {
+      editDone.current = false;
     }
   }
 
@@ -116,7 +123,10 @@ export function LeadSourcesSection(): React.ReactElement {
                   onBlur={() => rename(s)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") rename(s);
-                    if (e.key === "Escape") setEditingId(null);
+                    if (e.key === "Escape") {
+                      editDone.current = true;
+                      setEditingId(null);
+                    }
                   }}
                   className={`${inputClass} flex-1`}
                 />
@@ -126,6 +136,7 @@ export function LeadSourcesSection(): React.ReactElement {
               <span className="flex gap-3 text-[var(--muted-foreground)]">
                 <button
                   onClick={() => {
+                    editDone.current = false;
                     setEditingId(s.id);
                     setEditName(s.name);
                   }}

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getOrCreateProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -128,6 +128,28 @@ test.describe("Invoices", () => {
           expect(hasTransition).toBeTruthy();
         }
       }
+    });
+    test("mark paid with a past date shows that date", async ({ page, request }) => {
+      const csrfToken = getCsrfToken();
+      const projectId = await getOrCreateProject(request, "Paid Date E2E");
+      const invoiceId = await createTestInvoice(request, { projectId });
+      const sentRes = await request.put(`${API}/invoices/${invoiceId}`, {
+        data: { status: "sent" },
+        headers: { "x-csrf-token": csrfToken },
+      });
+      expect(sentRes.ok()).toBeTruthy();
+
+      await page.goto(`/dashboard/projects/${projectId}`);
+      await page.getByRole("button", { name: /^invoices$/i }).click();
+      await page.getByText("INV-").first().click();
+      await page.getByRole("button", { name: /mark as paid/i }).click();
+      await page.getByLabel("Paid date").fill("2026-09-01");
+      await page.getByRole("button", { name: /^confirm$/i }).click();
+
+      // The row renders new Date(paidAt).toLocaleDateString() in the browser.
+      const expected = await page.evaluate(() => new Date("2026-09-01").toLocaleDateString());
+      await expect(page.getByText("Marked as paid")).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(expected, { exact: true })).toBeVisible();
     });
   });
 

@@ -12,6 +12,7 @@ import { Pagination } from "@/components/pagination";
 import { ClientItemSkeleton } from "@/components/skeletons";
 import { AddContactModal } from "./add-contact-modal";
 import { ImportContactsModal } from "./import-contacts-modal";
+import { REPEAT_LABELS, STATUS_LABELS, formatDay } from "./shared";
 
 interface ContactRow {
   id: string;
@@ -53,25 +54,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "companies", label: "Companies" },
 ];
 
-const STATUS_LABELS: Record<string, string> = {
-  lead: "Lead",
-  client: "Client",
-  past_client: "Past client",
-};
-
-const REPEAT_LABELS: Record<number, string> = {
-  14: "2 wk",
-  30: "1 mo",
-  90: "3 mo",
-  180: "6 mo",
-  365: "1 yr",
-};
-
 const LIMIT = 20;
-
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 function FollowUp({ at, everyDays }: { at: string | null; everyDays: number | null }) {
   if (!at) return <span className="text-[var(--muted-foreground)]">—</span>;

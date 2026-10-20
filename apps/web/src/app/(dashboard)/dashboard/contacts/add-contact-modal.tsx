@@ -3,11 +3,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-
-interface Company {
-  id: string;
-  name: string;
-}
+import { CompanyField, SourceField } from "./contact-fields";
+import { NEW_SOURCE, inputClass } from "./shared";
 
 interface LeadSource {
   id: string;
@@ -19,10 +16,6 @@ interface Props {
   onCreated: () => void;
 }
 
-const NEW_SOURCE = "__new__";
-const inputClass =
-  "w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:ring-1 focus:ring-[var(--primary)]";
-
 export function AddContactModal({ onClose, onCreated }: Props) {
   const { success, error: showError } = useToast();
   const [name, setName] = useState("");
@@ -30,24 +23,15 @@ export function AddContactModal({ onClose, onCreated }: Props) {
   const [status, setStatus] = useState("lead");
   const [companyText, setCompanyText] = useState("");
   const [companyId, setCompanyId] = useState<string | null>(null);
-  const [companyOpen, setCompanyOpen] = useState(false);
   const [sourceChoice, setSourceChoice] = useState("");
   const [newSource, setNewSource] = useState("");
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [sources, setSources] = useState<LeadSource[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    apiFetch<{ data: Company[] }>("/companies?limit=100")
-      .then((res) => setCompanies(res.data))
-      .catch(console.error);
     apiFetch<LeadSource[]>("/lead-sources").then(setSources).catch(console.error);
   }, []);
-
-  const matches = companies
-    .filter((c) => c.name.toLowerCase().includes(companyText.trim().toLowerCase()))
-    .slice(0, 6);
 
   async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -114,75 +98,21 @@ export function AddContactModal({ onClose, onCreated }: Props) {
             className={inputClass}
           />
         </div>
-        <div className="relative">
-          <label htmlFor="contact-company" className="block text-sm text-[var(--muted-foreground)] mb-1">
-            Company
-          </label>
-          <input
-            id="contact-company"
-            value={companyText}
-            autoComplete="off"
-            onChange={(e) => {
-              setCompanyText(e.target.value);
-              setCompanyId(null);
-              setCompanyOpen(true);
-            }}
-            onFocus={() => setCompanyOpen(true)}
-            onBlur={() => setTimeout(() => setCompanyOpen(false), 150)}
-            className={inputClass}
-          />
-          {companyOpen && companyText.trim() && (
-            <ul
-              role="listbox"
-              className="absolute z-10 mt-1 w-full bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg text-sm overflow-hidden"
-            >
-              {matches.map((c) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={companyId === c.id}
-                    onMouseDown={() => {
-                      setCompanyText(c.name);
-                      setCompanyId(c.id);
-                      setCompanyOpen(false);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-[var(--muted)]"
-                  >
-                    {c.name}
-                  </button>
-                </li>
-              ))}
-              {!companies.some((c) => c.name.toLowerCase() === companyText.trim().toLowerCase()) && (
-                <li className="px-3 py-2 text-[var(--muted-foreground)]">
-                  Create “{companyText.trim()}”
-                </li>
-              )}
-            </ul>
-          )}
-        </div>
+        <CompanyField
+          text={companyText}
+          onChange={(text, id) => {
+            setCompanyText(text);
+            setCompanyId(id);
+          }}
+        />
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="contact-source" className="block text-sm text-[var(--muted-foreground)] mb-1">
-              Source
-            </label>
-            <select
-              id="contact-source"
-              value={sourceChoice}
-              onChange={(e) => setSourceChoice(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">None</option>
-              {sources.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-              <option value={NEW_SOURCE}>
-                {newSource.trim() ? `Add “${newSource.trim()}”` : "Add new source…"}
-              </option>
-            </select>
-          </div>
+          <SourceField
+            sources={sources}
+            choice={sourceChoice}
+            newSource={newSource}
+            onChoice={setSourceChoice}
+            onNewSource={setNewSource}
+          />
           <div>
             <label htmlFor="contact-status" className="block text-sm text-[var(--muted-foreground)] mb-1">
               Status
@@ -199,15 +129,6 @@ export function AddContactModal({ onClose, onCreated }: Props) {
             </select>
           </div>
         </div>
-        {sourceChoice === NEW_SOURCE && (
-          <input
-            aria-label="New source name"
-            placeholder="New source name"
-            value={newSource}
-            onChange={(e) => setNewSource(e.target.value)}
-            className={inputClass}
-          />
-        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
           <button

@@ -132,6 +132,37 @@ describe("ContactBackfillService.run", () => {
     expect(left.map((l) => l.labelId)).toEqual([hot.id]);
   });
 
+  it("migrates client member tags but leaves staff member tags in MemberLabel", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb6-org-${s}`, name: `cb6-${s}`, slug: `cb6-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb6-owner-${s}`, `cb6-admin-${s}`, `cb6-client-${s}`);
+    const owner = await prisma.user.create({ data: { id: `cb6-owner-${s}`, name: "Olga", email: `olga-${s}@x.com`, emailVerified: true } });
+    const admin = await prisma.user.create({ data: { id: `cb6-admin-${s}`, name: "Ada", email: `ada-${s}@x.com`, emailVerified: true } });
+    const client = await prisma.user.create({ data: { id: `cb6-client-${s}`, name: "Cy", email: `cy-${s}@x.com`, emailVerified: true } });
+    const ownerM = await prisma.member.create({ data: { id: `cb6-m-o-${s}`, organizationId: orgId, userId: owner.id, role: "owner" } });
+    const adminM = await prisma.member.create({ data: { id: `cb6-m-a-${s}`, organizationId: orgId, userId: admin.id, role: "admin" } });
+    const clientM = await prisma.member.create({ data: { id: `cb6-m-c-${s}`, organizationId: orgId, userId: client.id, role: "member" } });
+    // The admin was once a client: their old contact is still linked to them.
+    await prisma.contact.create({ data: { organizationId: orgId, name: "Ada", email: admin.email, userId: admin.id, status: "past_client" } });
+    const design = await prisma.label.create({ data: { name: "Design", organizationId: orgId } });
+    await prisma.memberLabel.createMany({
+      data: [
+        { memberId: ownerM.id, labelId: design.id },
+        { memberId: adminM.id, labelId: design.id },
+        { memberId: clientM.id, labelId: design.id },
+      ],
+    });
+
+    await backfill.run();
+
+    const remaining = await prisma.memberLabel.findMany({ where: { member: { organizationId: orgId } } });
+    expect(remaining.map((r) => r.memberId).sort()).toEqual([adminM.id, ownerM.id].sort());
+    const clientContact = await prisma.contact.findFirstOrThrow({ where: { organizationId: orgId, userId: client.id } });
+    expect(await prisma.contactLabel.count({ where: { contactId: clientContact.id } })).toBe(1);
+    expect(await prisma.contactLabel.count({ where: { contact: { organizationId: orgId } } })).toBe(1);
+  });
+
   it("keeps a hand-set status on a linked contact across boots", async () => {
     const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     orgId = (await prisma.organization.create({ data: { id: `cb5-org-${s}`, name: `cb5-${s}`, slug: `cb5-${s}` } })).id;

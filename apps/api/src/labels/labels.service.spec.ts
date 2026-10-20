@@ -22,7 +22,7 @@ const mockPrisma = {
     findFirst: mock(() => Promise.resolve({ id: "file-1" })),
   },
   member: {
-    findFirst: mock(() => Promise.resolve({ id: "member-1", userId: "user-1" })),
+    findFirst: mock(() => Promise.resolve({ id: "member-1", userId: "user-1", role: "member" } as unknown)),
   },
   projectLabel: {
     create: mock(() => Promise.resolve({ id: "pl-1" })),
@@ -65,7 +65,8 @@ function clearMocks() {
   mockPrisma.project.findFirst.mockImplementation(() => Promise.resolve({ id: "proj-1" }));
   mockPrisma.task.findFirst.mockImplementation(() => Promise.resolve({ id: "task-1" }));
   mockPrisma.file.findFirst.mockImplementation(() => Promise.resolve({ id: "file-1" }));
-  mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ id: "member-1", userId: "user-1" }));
+  mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ id: "member-1", userId: "user-1", role: "member" }));
+  mockPrisma.memberLabel.create.mockImplementation(() => Promise.resolve({ id: "ml-1" }));
 }
 
 describe("LabelsService", () => {
@@ -215,12 +216,48 @@ describe("LabelsService", () => {
       expect(mockPrisma.memberLabel.create).not.toHaveBeenCalled();
     });
 
-    it("assign member label rejects staff (no contact)", async () => {
+    it("assign member label 400s when a client has no contact", async () => {
       mockSync.ensureForMember.mockImplementationOnce(() => Promise.resolve(null as never));
       await expect(
         service.assign("lbl-1", { entityType: "member", entityId: "member-1" }, "org-1"),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mockPrisma.contactLabel.create).not.toHaveBeenCalled();
+    });
+
+    for (const role of ["owner", "admin"]) {
+      it(`assign member label on ${role} writes MemberLabel`, async () => {
+        mockPrisma.member.findFirst.mockImplementation(() =>
+          Promise.resolve({ id: "member-1", userId: "user-1", role }),
+        );
+        await service.assign("lbl-1", { entityType: "member", entityId: "member-1" }, "org-1");
+        expect(mockPrisma.memberLabel.create).toHaveBeenCalledWith({
+          data: { memberId: "member-1", labelId: "lbl-1" },
+        });
+        expect(mockSync.ensureForMember).not.toHaveBeenCalled();
+        expect(mockPrisma.contactLabel.create).not.toHaveBeenCalled();
+      });
+    }
+
+    it("assign member label on staff 409s on a duplicate", async () => {
+      mockPrisma.member.findFirst.mockImplementation(() =>
+        Promise.resolve({ id: "member-1", userId: "user-1", role: "admin" }),
+      );
+      mockPrisma.memberLabel.create.mockImplementation(() => Promise.reject({ code: "P2002" }));
+      await expect(
+        service.assign("lbl-1", { entityType: "member", entityId: "member-1" }, "org-1"),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("unassign member label on staff deletes MemberLabel only", async () => {
+      mockPrisma.member.findFirst.mockImplementation(() =>
+        Promise.resolve({ id: "member-1", userId: "user-1", role: "owner" }),
+      );
+      await service.unassign("lbl-1", { entityType: "member", entityId: "member-1" }, "org-1");
+      expect(mockPrisma.memberLabel.deleteMany).toHaveBeenCalledWith({
+        where: { memberId: "member-1", labelId: "lbl-1" },
+      });
+      expect(mockPrisma.contact.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.contactLabel.deleteMany).not.toHaveBeenCalled();
     });
 
     it("unassign member label removes ContactLabel and any legacy MemberLabel", async () => {
@@ -243,7 +280,7 @@ describe("LabelsService", () => {
         where: { contactId: "contact-1", labelId: "lbl-1" },
       });
       expect(mockPrisma.memberLabel.deleteMany).toHaveBeenCalledWith({
-        where: { labelId: "lbl-1", member: { organizationId: "org-1", userId: "user-1" } },
+        where: { labelId: "lbl-1", member: { organizationId: "org-1", userId: "user-1", role: "member" } },
       });
     });
 

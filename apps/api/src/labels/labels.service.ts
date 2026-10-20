@@ -120,9 +120,14 @@ export class LabelsService {
             where: { id: dto.entityId, organizationId: orgId },
           });
           if (!member) throw new BadRequestException("Member not found");
-          // Member tags live on the member's contact now.
+          // Staff tags live on the member; client tags live on the client's contact.
+          if (member.role !== "member") {
+            return await this.prisma.memberLabel.create({
+              data: { memberId: member.id, labelId },
+            });
+          }
           const contact = await this.contactSync.ensureForMember(orgId, member.userId);
-          if (!contact) throw new BadRequestException("Only clients can be tagged");
+          if (!contact) throw new BadRequestException("This client has no contact to tag");
           return await this.prisma.contactLabel.create({
             data: { contactId: contact.id, labelId },
           });
@@ -191,6 +196,10 @@ export class LabelsService {
           where: { id: dto.entityId, organizationId: orgId },
         });
         if (!member) throw new BadRequestException("Member not found");
+        // Staff tags are MemberLabel rows. A client's legacy MemberLabel rows are copied to
+        // their contact on boot, so drop any left too or the tag would come back.
+        await this.prisma.memberLabel.deleteMany({ where: { memberId: member.id, labelId } });
+        if (member.role !== "member") break;
         const contact = await this.prisma.contact.findFirst({
           where: { organizationId: orgId, userId: member.userId },
           select: { id: true },
@@ -200,8 +209,6 @@ export class LabelsService {
             where: { contactId: contact.id, labelId },
           });
         }
-        // Legacy member tags are copied to contacts on boot; drop any left so they can't return.
-        await this.prisma.memberLabel.deleteMany({ where: { memberId: member.id, labelId } });
         break;
       }
       case "contact": {
@@ -215,7 +222,8 @@ export class LabelsService {
         });
         if (contact.userId) {
           await this.prisma.memberLabel.deleteMany({
-            where: { labelId, member: { organizationId: orgId, userId: contact.userId } },
+            // Only a client's legacy rows; a staff member's own tags stay.
+            where: { labelId, member: { organizationId: orgId, userId: contact.userId, role: "member" } },
           });
         }
         break;

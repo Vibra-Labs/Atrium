@@ -133,12 +133,13 @@ export class ContactBackfillService implements OnApplicationBootstrap {
   }
 
   /**
-   * Moves member tags onto contacts once: the copied MemberLabel rows are deleted in the same
-   * transaction, so a tag later removed from the contact isn't copied back on the next boot.
+   * Moves client (role "member") tags onto their contacts once: the copied MemberLabel rows are
+   * deleted in the same transaction, so a tag later removed from the contact isn't copied back on
+   * the next boot. Staff tags stay in MemberLabel, which is where they live.
    */
   private async backfillLabels(orgId: string): Promise<void> {
     const memberLabels = await this.prisma.memberLabel.findMany({
-      where: { member: { organizationId: orgId } },
+      where: { member: { organizationId: orgId, role: "member" } },
       select: { id: true, labelId: true, member: { select: { userId: true } } },
     });
     if (memberLabels.length === 0) return;

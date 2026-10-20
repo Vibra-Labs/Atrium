@@ -19,6 +19,8 @@ import { NotesService } from "../../src/notes/notes.service";
 import { TasksService } from "../../src/tasks/tasks.service";
 import { UpdatesService } from "../../src/updates/updates.service";
 import { ClientsService } from "../../src/clients/clients.service";
+import { ContactsService } from "../../src/contacts/contacts.service";
+import { ContactRevenueService } from "../../src/contacts/contact-revenue.service";
 import { DocumentsService } from "../../src/documents/documents.service";
 import type { AuthService } from "../../src/auth/auth.service";
 import type { BillingService } from "../../src/billing/billing.service";
@@ -49,6 +51,7 @@ async function connect(key: string): Promise<Client> {
  * rows are removed first.
  */
 async function purgeOrg(organizationId: string): Promise<void> {
+  await prisma.contact.deleteMany({ where: { organizationId } });
   await prisma.invoice.deleteMany({ where: { organizationId } });
   await prisma.project.deleteMany({ where: { organizationId } });
   await prisma.organization.deleteMany({ where: { id: organizationId } });
@@ -87,6 +90,7 @@ beforeAll(async () => {
     new TasksService(prisma, noop, noop, noop),
     new UpdatesService(prisma, noop, noop, noop),
     new NotesService(prisma),
+    new ContactsService(prisma, new ContactRevenueService(prisma)),
     clients,
     billingStub,
     new DocumentsService(prisma, noop, noop, noop, noop, noop, billingStub),
@@ -116,7 +120,7 @@ describe("MCP endpoint", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toContain("create_project");
     expect(tools.map((t) => t.name)).toContain("list_pending_approvals");
-    expect(tools.length).toBe(20);
+    expect(tools.length).toBe(23);
     await client.close();
   });
 
@@ -135,6 +139,22 @@ describe("MCP endpoint", () => {
 
     await client.callTool({ name: "add_note", arguments: { projectId, content: "from mcp" } });
     expect(await prisma.projectNote.count({ where: { projectId, authorId: `admin-${stamp}` } })).toBe(1);
+    await client.close();
+  });
+
+  it("list_contacts and add_contact_note read and write Postgres in the key's org", async () => {
+    const client = await connect(adminKey);
+    const contact = await prisma.contact.create({
+      data: { organizationId: orgId, name: `Zed ${stamp}`, email: `zed-${stamp}@test.com`, status: "lead" },
+    });
+
+    const listed = await client.callTool({ name: "list_contacts", arguments: { search: `Zed ${stamp}` } });
+    expect(listed.isError).toBeFalsy();
+    expect(JSON.parse(textOf(listed)).data.map((c: { id: string }) => c.id)).toContain(contact.id);
+
+    const noted = await client.callTool({ name: "add_contact_note", arguments: { contactId: contact.id, content: "from mcp" } });
+    expect(noted.isError).toBeFalsy();
+    expect(await prisma.contactNote.count({ where: { contactId: contact.id, authorId: `admin-${stamp}` } })).toBe(1);
     await client.close();
   });
 

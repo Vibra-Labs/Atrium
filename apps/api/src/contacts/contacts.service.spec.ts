@@ -29,6 +29,7 @@ const prisma = {
     create: mock(() => Promise.resolve({ id: "ls-new" })),
   },
   project: { findFirst: mock(() => Promise.resolve(null as unknown)) },
+  projectClient: { findFirst: mock(() => Promise.resolve(null as unknown)) },
   projectContact: {
     findUnique: mock(() => Promise.resolve(null as unknown)),
     create: mock(() => Promise.resolve({})),
@@ -69,6 +70,7 @@ function resetAll(): void {
   prisma.project.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.label.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.projectContact.findUnique.mockImplementation(() => Promise.resolve(null));
+  prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.contactNote.findMany.mockImplementation(() => Promise.resolve([]));
   prisma.contactEvent.findMany.mockImplementation(() => Promise.resolve([]));
   prisma.contactNote.count.mockImplementation(() => Promise.resolve(0));
@@ -242,6 +244,33 @@ describe("ContactsService", () => {
       );
       expect(await service.create({ name: "x" }, "org-1")).not.toHaveProperty("profileImportedAt");
     });
+  });
+
+  it("unlinkProject refuses while the contact's user is a client on the project", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", userId: "u-1" }));
+    prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve({ projectId: "p-1", userId: "u-1" }));
+    const e = await rejects(service.unlinkProject("c-1", "p-1", "org-1"));
+    expect(e).toBeInstanceOf(BadRequestException);
+    expect((e as Error).message).toBe("Remove them as a client on the project first");
+    expect(prisma.projectClient.findFirst).toHaveBeenCalledWith({
+      where: { projectId: "p-1", userId: "u-1", project: { organizationId: "org-1" } },
+    });
+    expect(prisma.projectContact.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("unlinkProject removes the link when the user is not a client on the project", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", userId: "u-1" }));
+    await service.unlinkProject("c-1", "p-1", "org-1");
+    expect(prisma.projectContact.deleteMany).toHaveBeenCalledWith({
+      where: { contactId: "c-1", projectId: "p-1", project: { organizationId: "org-1" } },
+    });
+  });
+
+  it("unlinkProject skips the client check for a contact without a portal user", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", userId: null }));
+    await service.unlinkProject("c-1", "p-1", "org-1");
+    expect(prisma.projectClient.findFirst).not.toHaveBeenCalled();
+    expect(prisma.projectContact.deleteMany).toHaveBeenCalled();
   });
 
   it("linkProject returns quietly when a concurrent link wins (P2002)", async () => {

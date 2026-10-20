@@ -468,7 +468,14 @@ export class ContactsService {
   }
 
   async unlinkProject(id: string, projectId: string, orgId: string): Promise<void> {
-    await this.getOrThrow(id, orgId);
+    const contact = await this.getOrThrow(id, orgId);
+    // Project edits relink every client, so the link would quietly come back.
+    if (contact.userId) {
+      const client = await this.prisma.projectClient.findFirst({
+        where: { projectId, userId: contact.userId, project: { organizationId: orgId } },
+      });
+      if (client) throw new BadRequestException("Remove them as a client on the project first");
+    }
     await this.prisma.projectContact.deleteMany({
       where: { contactId: id, projectId, project: { organizationId: orgId } },
     });

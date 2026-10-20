@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { LeadSourcesService } from "./lead-sources.service";
 
 const mockPrisma = {
@@ -42,6 +42,16 @@ describe("LeadSourcesService", () => {
     const result = await service.create({ name: "  referral " }, "org-1");
     expect(mockContacts.findOrCreateLeadSource).toHaveBeenCalledWith("referral", "org-1");
     expect(result).toEqual({ id: "ls-1", name: "Referral" });
+  });
+
+  it("create and rename reject blank or whitespace-only names with 400", async () => {
+    for (const name of ["", "   "]) {
+      await expect(service.create({ name }, "org-1")).rejects.toBeInstanceOf(BadRequestException);
+      mockPrisma.leadSource.findFirst.mockImplementationOnce(() => Promise.resolve({ id: "ls-1", name: "Podcast" }));
+      await expect(service.update("ls-1", { name }, "org-1")).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(mockContacts.findOrCreateLeadSource).not.toHaveBeenCalled();
+    expect(mockPrisma.leadSource.update).not.toHaveBeenCalled();
   });
 
   it("rename to existing name 409", async () => {

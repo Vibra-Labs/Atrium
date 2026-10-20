@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
 import { CompaniesService } from "./companies.service";
 import type { ContactRevenueService } from "./contact-revenue.service";
@@ -59,6 +59,16 @@ describe("CompaniesService", () => {
       expect((e as Error).message).toBe("A company with this name already exists");
     }
     expect(prisma.company.create).not.toHaveBeenCalled();
+  });
+
+  it("create and rename reject blank or whitespace-only names with 400", async () => {
+    for (const name of ["", "   "]) {
+      await expect(service.create({ name }, "org-1")).rejects.toBeInstanceOf(BadRequestException);
+      prisma.company.findFirst.mockImplementationOnce(() => Promise.resolve({ id: "co-1" }));
+      await expect(service.update("co-1", { name }, "org-1")).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(prisma.company.create).not.toHaveBeenCalled();
+    expect(prisma.company.update).not.toHaveBeenCalled();
   });
 
   it("rename to another company's name is a 409", async () => {

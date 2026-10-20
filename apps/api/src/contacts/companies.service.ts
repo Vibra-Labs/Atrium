@@ -1,10 +1,16 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse } from "../common";
 import { ContactRevenueService } from "./contact-revenue.service";
 import type { CreateCompanyDto, UpdateCompanyDto } from "./contacts.dto";
 
 const DUPLICATE_MESSAGE = "A company with this name already exists";
+
+function requireName(raw: string): string {
+  const name = raw.trim();
+  if (!name) throw new BadRequestException("Name is required");
+  return name;
+}
 
 @Injectable()
 export class CompaniesService {
@@ -52,7 +58,7 @@ export class CompaniesService {
   }
 
   async create(dto: CreateCompanyDto, orgId: string) {
-    const name = dto.name.trim();
+    const name = requireName(dto.name);
     await this.assertNameFree(name, orgId);
     try {
       return await this.prisma.company.create({
@@ -65,7 +71,7 @@ export class CompaniesService {
 
   async update(id: string, dto: UpdateCompanyDto, orgId: string) {
     await this.getOrThrow(id, orgId);
-    const name = dto.name?.trim();
+    const name = dto.name === undefined ? undefined : requireName(dto.name);
     if (name) await this.assertNameFree(name, orgId, id);
     try {
       return await this.prisma.company.update({

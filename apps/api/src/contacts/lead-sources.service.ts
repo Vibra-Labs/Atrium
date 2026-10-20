@@ -1,7 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { ContactsService } from "./contacts.service";
 import type { LeadSourceDto } from "./contacts.dto";
+
+function requireName(raw: string): string {
+  const name = raw.trim();
+  if (!name) throw new BadRequestException("Name is required");
+  return name;
+}
 
 @Injectable()
 export class LeadSourcesService {
@@ -18,8 +24,8 @@ export class LeadSourcesService {
   }
 
   // Case-insensitive find-or-create: returns the existing source on a match.
-  create(dto: LeadSourceDto, orgId: string) {
-    return this.contacts.findOrCreateLeadSource(dto.name.trim(), orgId);
+  async create(dto: LeadSourceDto, orgId: string) {
+    return this.contacts.findOrCreateLeadSource(requireName(dto.name), orgId);
   }
 
   async update(id: string, dto: LeadSourceDto, orgId: string) {
@@ -28,7 +34,7 @@ export class LeadSourcesService {
     });
     if (!source) throw new NotFoundException("Lead source not found");
 
-    const name = dto.name.trim();
+    const name = requireName(dto.name);
     const clash = await this.prisma.leadSource.findFirst({
       where: { organizationId: orgId, name: { equals: name, mode: "insensitive" } },
     });

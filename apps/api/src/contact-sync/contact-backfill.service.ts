@@ -1,9 +1,17 @@
 import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import type { Contact } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
-import { ContactSyncService, normalizeEmail } from "./contact-sync.service";
+import { ContactSyncService } from "./contact-sync.service";
 
 const DEFAULT_LEAD_SOURCES: string[] = ["Referral", "Website", "Event", "Social"];
+
+interface ProfileFill {
+  phone?: string;
+  address?: string;
+  website?: string;
+  companyId?: string;
+}
 
 /** Turns existing clients, project links, labels and paid invoices into contact data. Idempotent. */
 @Injectable()
@@ -15,12 +23,11 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     private readonly sync: ContactSyncService,
   ) {}
 
-  async onApplicationBootstrap(): Promise<void> {
-    try {
-      await this.run();
-    } catch (err) {
+  onApplicationBootstrap(): void {
+    // Don't hold up boot: the backfill can take a while on large workspaces.
+    void this.run().catch((err: unknown) => {
       this.logger.error("Failed to backfill contacts", err);
-    }
+    });
   }
 
   async run(): Promise<void> {
@@ -49,53 +56,47 @@ export class ContactBackfillService implements OnApplicationBootstrap {
   private async backfillMembers(orgId: string): Promise<void> {
     const members = await this.prisma.member.findMany({
       where: { organizationId: orgId, role: "member" },
-      include: { user: true },
+      select: { id: true, userId: true },
     });
     for (const member of members) {
       try {
-        const existing = await this.prisma.contact.findFirst({
-          where: {
-            organizationId: orgId,
-            OR: [{ userId: member.userId }, { email: normalizeEmail(member.user.email) }],
-          },
-          select: { id: true },
-        });
         const contact = await this.sync.ensureForMember(orgId, member.userId);
-        if (!existing) await this.copyProfile(orgId, member.userId, contact.id);
+        await this.copyProfile(orgId, member.userId, contact);
       } catch (err) {
         this.logger.error(`Failed to backfill contact for member ${member.id}`, err);
       }
     }
   }
 
-  private async copyProfile(orgId: string, userId: string, contactId: string): Promise<void> {
+  /** Re-runnable: only fills fields that are still empty, and adds the note only if there are none. */
+  private async copyProfile(orgId: string, userId: string, contact: Contact): Promise<void> {
     const profile = await this.prisma.clientProfile.findUnique({
       where: { userId_organizationId: { userId, organizationId: orgId } },
     });
     if (!profile) return;
 
+    const data: ProfileFill = {};
+    if (contact.phone == null && profile.phone) data.phone = profile.phone;
+    if (contact.address == null && profile.address) data.address = profile.address;
+    if (contact.website == null && profile.website) data.website = profile.website;
     const companyName = profile.company?.trim();
-    const companyId = companyName ? await this.findOrCreateCompany(orgId, companyName) : null;
-
-    await this.prisma.contact.update({
-      where: { id: contactId },
-      data: {
-        phone: profile.phone,
-        address: profile.address,
-        website: profile.website,
-        ...(companyId ? { companyId } : {}),
-      },
-    });
+    if (contact.companyId == null && companyName) {
+      data.companyId = await this.findOrCreateCompany(orgId, companyName);
+    }
+    if (Object.keys(data).length > 0) {
+      await this.prisma.contact.update({ where: { id: contact.id }, data });
+    }
 
     const description = profile.description?.trim();
     if (!description) return;
+    if ((await this.prisma.contactNote.count({ where: { contactId: contact.id } })) > 0) return;
     const owner = await this.prisma.member.findFirst({
       where: { organizationId: orgId, role: "owner" },
       orderBy: { createdAt: "asc" },
     });
     if (!owner) return;
     await this.prisma.contactNote.create({
-      data: { contactId, organizationId: orgId, authorId: owner.userId, content: description },
+      data: { contactId: contact.id, organizationId: orgId, authorId: owner.userId, content: description },
     });
   }
 
@@ -150,22 +151,37 @@ export class ContactBackfillService implements OnApplicationBootstrap {
       include: { lineItems: true },
     });
     for (const invoice of unstamped) {
-      await this.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          paidAt: invoice.updatedAt,
-          paidAmount: calculateInvoiceTotal(invoice),
-          // keep updatedAt stable so paidAt stays equal to it
-          updatedAt: invoice.updatedAt,
-        },
-      });
+      try {
+        await this.prisma.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            paidAt: invoice.updatedAt,
+            paidAmount: calculateInvoiceTotal(invoice),
+            // keep updatedAt stable so paidAt stays equal to it
+            updatedAt: invoice.updatedAt,
+          },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to stamp paidAt on invoice ${invoice.id}`, err);
+      }
     }
 
-    const paid = await this.prisma.invoice.findMany({
-      where: { organizationId: orgId, status: "paid", projectId: { not: null } },
+    const recorded = await this.prisma.contactEvent.findMany({
+      where: { organizationId: orgId, type: "invoice_paid", refId: { not: null } },
+      select: { refId: true },
+    });
+    const done = new Set(recorded.map((e) => e.refId));
+    const pending = await this.prisma.invoice.findMany({
+      where: {
+        organizationId: orgId,
+        status: "paid",
+        projectId: { not: null },
+        project: { contacts: { some: {} } },
+      },
       select: { id: true },
     });
-    for (const { id } of paid) {
+    for (const { id } of pending) {
+      if (done.has(id)) continue;
       try {
         await this.sync.recordInvoicePaid(id);
       } catch (err) {

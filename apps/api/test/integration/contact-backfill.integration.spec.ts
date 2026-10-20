@@ -8,6 +8,8 @@ import { ContactBackfillService } from "../../src/contact-sync/contact-backfill.
 let prisma: PrismaService;
 let backfill: ContactBackfillService;
 let orgId: string;
+const orgIds: string[] = [];
+const userIds: string[] = [];
 
 beforeAll(async () => {
   assertDisposableDatabase();
@@ -19,7 +21,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (orgId) await prisma.organization.delete({ where: { id: orgId } }).catch(() => undefined);
+  await prisma.organization.deleteMany({ where: { id: { in: orgIds } } }).catch((e: unknown) => console.error(e));
+  await prisma.user.deleteMany({ where: { id: { in: userIds } } }).catch((e: unknown) => console.error(e));
   await prisma?.$disconnect();
 });
 
@@ -40,6 +43,8 @@ describe("ContactBackfillService.run", () => {
   it("turns existing clients, links, labels and paid invoices into contact data, idempotently", async () => {
     const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     orgId = (await prisma.organization.create({ data: { id: `cb-org-${s}`, name: `cb-${s}`, slug: `cb-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb-owner-${s}`, `cb-client-${s}`);
     const owner = await prisma.user.create({ data: { id: `cb-owner-${s}`, name: "Owner", email: `o-${s}@x.com`, emailVerified: true } });
     const client = await prisma.user.create({ data: { id: `cb-client-${s}`, name: "Cleo", email: `Cleo-${s}@X.com`, emailVerified: true } });
     await prisma.member.create({ data: { id: `cb-m-o-${s}`, organizationId: orgId, userId: owner.id, role: "owner" } });
@@ -85,5 +90,38 @@ describe("ContactBackfillService.run", () => {
 
     await backfill.run();
     expect(await counts()).toEqual(first);
+  });
+
+  it("fills empty fields on a lead matched by email, keeps existing values, and re-copies after a partial run", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb2-org-${s}`, name: `cb2-${s}`, slug: `cb2-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb2-owner-${s}`, `cb2-client-${s}`);
+    const owner = await prisma.user.create({ data: { id: `cb2-owner-${s}`, name: "Owner", email: `o2-${s}@x.com`, emailVerified: true } });
+    const client = await prisma.user.create({ data: { id: `cb2-client-${s}`, name: "Lena", email: `lena-${s}@x.com`, emailVerified: true } });
+    await prisma.member.create({ data: { id: `cb2-m-o-${s}`, organizationId: orgId, userId: owner.id, role: "owner" } });
+    await prisma.member.create({ data: { id: `cb2-m-c-${s}`, organizationId: orgId, userId: client.id, role: "member" } });
+    await prisma.contact.create({
+      data: { organizationId: orgId, name: "Lena", email: client.email, status: "lead", phone: "111" },
+    });
+    await prisma.clientProfile.create({
+      data: { userId: client.id, organizationId: orgId, phone: "999", website: "https://lena.dev", description: "Note" },
+    });
+
+    await backfill.run();
+
+    const contact = await prisma.contact.findFirstOrThrow({ where: { organizationId: orgId }, include: { notes: true } });
+    expect(contact.userId).toBe(client.id);
+    expect(contact.phone).toBe("111");
+    expect(contact.website).toBe("https://lena.dev");
+    expect(contact.notes).toHaveLength(1);
+
+    // Simulate a partial earlier run: the contact exists but profile data was never copied.
+    await prisma.contactNote.deleteMany({ where: { contactId: contact.id } });
+    await prisma.contact.update({ where: { id: contact.id }, data: { website: null } });
+    await backfill.run();
+    const again = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id }, include: { notes: true } });
+    expect(again.website).toBe("https://lena.dev");
+    expect(again.notes).toHaveLength(1);
   });
 });

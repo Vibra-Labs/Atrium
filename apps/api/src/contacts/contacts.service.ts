@@ -2,21 +2,48 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@atrium/database";
+import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
+import type { ContactStatus } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
-import { paginationArgs, paginatedResponse } from "../common";
+import { paginationArgs, paginatedResponse, toCsv } from "../common";
+import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { ContactRevenueService } from "./contact-revenue.service";
+import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
+import type { ImportField } from "./contacts-csv";
 import type {
   CreateContactDto,
+  ImportContactsDto,
   ListContactsQueryDto,
   SetFollowUpDto,
   UpdateContactDto,
 } from "./contacts.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const TOO_MANY_ROWS = "CSV has more than 5,000 rows";
+
+const STATUS_LABELS: Record<ContactStatus, string> = {
+  lead: "Lead",
+  client: "Client",
+  past_client: "Past client",
+};
+
+function parseStatus(value: string): ContactStatus {
+  const v = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return v === "client" || v === "past_client" ? v : "lead";
+}
+
+function splitTags(value: string): string[] {
+  const names = value
+    .split(/[;,]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  return names.filter((n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i);
+}
 
 export function startOfUtcDay(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -57,6 +84,8 @@ type LinkFields = Pick<
 
 @Injectable()
 export class ContactsService {
+  private readonly logger = new Logger(ContactsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly revenue: ContactRevenueService,
@@ -65,19 +94,7 @@ export class ContactsService {
   async findAll(orgId: string, query: ListContactsQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where: Prisma.ContactWhereInput = { organizationId: orgId };
-    if (query.status) where.status = query.status;
-    if (query.leadSourceId) where.leadSourceId = query.leadSourceId;
-    if (query.companyId) where.companyId = query.companyId;
-    if (query.labelId) where.labels = { some: { labelId: query.labelId } };
-    const search = query.search?.trim();
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
-        { company: { name: { contains: search, mode: "insensitive" } } },
-      ];
-    }
+    const where = this.buildWhere(orgId, query);
 
     const [contacts, total] = await Promise.all([
       this.prisma.contact.findMany({
@@ -113,6 +130,160 @@ export class ContactsService {
       hasLogin: c.userId != null,
     }));
     return paginatedResponse(data, total, page, limit);
+  }
+
+  private buildWhere(orgId: string, query: ListContactsQueryDto): Prisma.ContactWhereInput {
+    const where: Prisma.ContactWhereInput = { organizationId: orgId };
+    if (query.status) where.status = query.status;
+    if (query.leadSourceId) where.leadSourceId = query.leadSourceId;
+    if (query.companyId) where.companyId = query.companyId;
+    if (query.labelId) where.labels = { some: { labelId: query.labelId } };
+    const search = query.search?.trim();
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { company: { name: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+    return where;
+  }
+
+  previewCsv(csv: string): { headers: string[]; rows: string[][]; total: number } {
+    const [headers = [], ...data] = parseCsv(csv);
+    if (data.length > MAX_IMPORT_ROWS) throw new BadRequestException(TOO_MANY_ROWS);
+    return { headers, rows: data.slice(0, 5), total: data.length };
+  }
+
+  async importCsv(
+    dto: ImportContactsDto,
+    orgId: string,
+    userId: string,
+  ): Promise<{ created: number; skipped: { row: number; reason: string }[] }> {
+    const [headers = [], ...data] = parseCsv(dto.csv);
+    if (data.length > MAX_IMPORT_ROWS) throw new BadRequestException(TOO_MANY_ROWS);
+
+    const columns = new Map<ImportField, number>();
+    headers.forEach((h, i) => {
+      const field = dto.mapping[h];
+      if (field && field !== "skip" && !columns.has(field)) columns.set(field, i);
+    });
+    const cell = (row: string[], field: ImportField): string => {
+      const i = columns.get(field);
+      return i === undefined ? "" : (row[i] ?? "").trim();
+    };
+
+    const skipped: { row: number; reason: string }[] = [];
+    const seen = new Set<string>();
+    let created = 0;
+
+    for (const [i, row] of data.entries()) {
+      const rowNumber = i + 2; // 1-based, header is row 1
+      const name = cell(row, "name");
+      if (!name) {
+        skipped.push({ row: rowNumber, reason: "Missing name" });
+        continue;
+      }
+      const rawEmail = cell(row, "email");
+      const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
+      if (email && seen.has(email)) {
+        skipped.push({ row: rowNumber, reason: "Email already exists" });
+        continue;
+      }
+      let contact: { id: string };
+      try {
+        contact = await this.create(
+          {
+            name,
+            email,
+            phone: cell(row, "phone") || undefined,
+            website: cell(row, "website") || undefined,
+            address: cell(row, "address") || undefined,
+            status: parseStatus(cell(row, "status")),
+            companyName: cell(row, "company") || undefined,
+            leadSourceName: cell(row, "source") || undefined,
+          },
+          orgId,
+        );
+      } catch (e) {
+        if (e instanceof ConflictException) {
+          skipped.push({ row: rowNumber, reason: "Email already exists" });
+        } else {
+          this.logger.error(`Contact import row ${rowNumber} failed`, e);
+          skipped.push({ row: rowNumber, reason: "Invalid row" });
+        }
+        continue;
+      }
+      if (email) seen.add(email);
+      created++;
+      try {
+        await this.attachTags(contact.id, splitTags(cell(row, "tags")), orgId);
+        const notes = cell(row, "notes");
+        if (notes) {
+          await this.prisma.contactNote.create({
+            data: { contactId: contact.id, organizationId: orgId, authorId: userId, content: notes },
+          });
+        }
+      } catch (e) {
+        // The contact exists; losing its tags or note shouldn't discard it.
+        this.logger.error(`Contact import row ${rowNumber}: tags/notes failed`, e);
+      }
+    }
+    return { created, skipped };
+  }
+
+  async exportCsv(orgId: string, query: ListContactsQueryDto): Promise<string> {
+    const contacts = await this.prisma.contact.findMany({
+      where: this.buildWhere(orgId, query),
+      orderBy: { name: "asc" },
+      include: {
+        company: { select: { name: true } },
+        leadSource: { select: { name: true } },
+        labels: { include: { label: { select: { name: true } } } },
+      },
+    });
+    const paid = await this.revenue.paidTotals(
+      contacts.map((c) => c.id),
+      orgId,
+    );
+    const columns: CsvColumn<(typeof contacts)[number]>[] = [
+      { header: "Name", value: (c) => c.name },
+      { header: "Email", value: (c) => c.email },
+      { header: "Phone", value: (c) => c.phone },
+      { header: "Company", value: (c) => c.company?.name },
+      { header: "Website", value: (c) => c.website },
+      { header: "Address", value: (c) => c.address },
+      { header: "Status", value: (c) => STATUS_LABELS[c.status as ContactStatus] ?? c.status },
+      { header: "Source", value: (c) => c.leadSource?.name },
+      { header: "Tags", value: (c) => c.labels.map((l) => l.label.name).join("; ") },
+      { header: "Next follow-up", value: (c) => c.followUpAt?.toISOString().slice(0, 10) },
+      { header: "Paid all time", value: (c) => ((paid.get(c.id) ?? 0) / 100).toFixed(2) },
+    ];
+    return toCsv(columns, contacts);
+  }
+
+  private async attachTags(contactId: string, names: string[], orgId: string): Promise<void> {
+    if (names.length === 0) return;
+    const labelIds: string[] = [];
+    for (const name of names) {
+      const where = { organizationId: orgId, name: { equals: name, mode: "insensitive" as const } };
+      let label = await this.prisma.label.findFirst({ where });
+      if (!label) {
+        try {
+          label = await this.prisma.label.create({
+            data: { organizationId: orgId, name, color: DEFAULT_LABEL_COLOR },
+          });
+        } catch (e) {
+          if ((e as { code?: string })?.code !== "P2002") throw e;
+          label = await this.prisma.label.findFirst({ where });
+        }
+      }
+      if (label && !labelIds.includes(label.id)) labelIds.push(label.id);
+    }
+    await this.prisma.contactLabel.createMany({
+      data: labelIds.map((labelId) => ({ contactId, labelId })),
+      skipDuplicates: true,
+    });
   }
 
   async findOne(id: string, orgId: string) {

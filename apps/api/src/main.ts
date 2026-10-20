@@ -70,6 +70,7 @@ if (isProduction) {
 }
 
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { ValidationPipe } from "@nestjs/common";
 import type { CorsOptionsDelegate } from "@nestjs/common/interfaces/external/cors-options.interface";
@@ -81,11 +82,14 @@ import compression from "compression";
 import helmet from "helmet";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true,
   });
   app.useLogger(app.get(Logger));
+
+  // Contacts CSV import posts the file text (up to 2MB) as JSON; the default limit is 100kb.
+  app.useBodyParser("json", { limit: "3mb" });
 
   // Trust reverse proxies (Cloud Run, Firebase Hosting, Caddy) so that
   // req.protocol reflects the original HTTPS and cookies set correctly.

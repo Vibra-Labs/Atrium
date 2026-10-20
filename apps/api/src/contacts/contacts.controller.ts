@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,11 +8,17 @@ import {
   Post,
   Put,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
 import { ContactsService } from "./contacts.service";
 import {
   CreateContactDto,
+  ImportContactsDto,
   CreateContactNoteDto,
   ListContactsQueryDto,
   SetFollowUpDto,
@@ -25,7 +32,10 @@ import {
   CurrentUser,
   CurrentOrg,
   PaginationQueryDto,
+  contentDisposition,
 } from "../common";
+
+const MAX_CSV_BYTES = 2 * 1024 * 1024;
 
 @Controller("contacts")
 @UseGuards(AuthGuard, RolesGuard)
@@ -34,6 +44,37 @@ export class ContactsController {
   constructor(private contactsService: ContactsService) {}
 
   // Static routes (e.g. export, import) must be declared before ":id".
+
+  @Get("export")
+  async exportCsv(
+    @CurrentOrg("id") orgId: string,
+    @Query() query: ListContactsQueryDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const csv = await this.contactsService.exportCsv(orgId, query);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", contentDisposition("contacts.csv"));
+    res.send(csv);
+  }
+
+  @Post("import/preview")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_CSV_BYTES } }))
+  previewImport(@UploadedFile() file?: { originalname: string; buffer: Buffer }) {
+    if (!file) throw new BadRequestException("No file provided");
+    if (!file.originalname.toLowerCase().endsWith(".csv")) {
+      throw new BadRequestException("Only .csv files are supported");
+    }
+    return this.contactsService.previewCsv(file.buffer.toString("utf8"));
+  }
+
+  @Post("import")
+  importCsv(
+    @Body() dto: ImportContactsDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.contactsService.importCsv(dto, orgId, userId);
+  }
 
   @Get()
   findAll(@CurrentOrg("id") orgId: string, @Query() query: ListContactsQueryDto) {

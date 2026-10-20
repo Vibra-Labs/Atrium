@@ -5,6 +5,7 @@ import {
   IsInt,
   IsIn,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -13,6 +14,7 @@ import {
 import { CONTACT_STATUSES, FOLLOW_UP_REPEAT_DAYS, FOLLOW_UP_SNOOZE_DAYS } from "@atrium/shared";
 import type { ContactStatus } from "@atrium/shared";
 import { PaginationQueryDto } from "../common";
+import type { ImportField } from "./contacts-csv";
 
 export { CONTACT_STATUSES };
 export type { ContactStatus };
@@ -104,6 +106,15 @@ export class ListContactsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   companyId?: string;
+}
+
+export class ImportContactsDto {
+  @IsString()
+  @IsNotEmpty()
+  csv!: string;
+
+  @IsObject()
+  mapping!: Record<string, ImportField>;
 }
 
 export class CreateContactNoteDto {

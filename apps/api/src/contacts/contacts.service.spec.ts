@@ -46,6 +46,11 @@ const prisma = {
     count: mock(() => Promise.resolve(0)),
     create: mock(() => Promise.resolve({})),
   },
+  label: {
+    findFirst: mock(() => Promise.resolve(null as unknown)),
+    create: mock((a: { data: { name: string } }) => Promise.resolve({ id: `l-${a.data.name}` })),
+  },
+  contactLabel: { createMany: mock(() => Promise.resolve({ count: 0 })) },
   user: { findMany: mock(() => Promise.resolve([] as unknown[])) },
 };
 
@@ -62,6 +67,7 @@ function resetAll(): void {
   prisma.company.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.leadSource.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.project.findFirst.mockImplementation(() => Promise.resolve(null));
+  prisma.label.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.projectContact.findUnique.mockImplementation(() => Promise.resolve(null));
   prisma.contactNote.findMany.mockImplementation(() => Promise.resolve([]));
   prisma.contactEvent.findMany.mockImplementation(() => Promise.resolve([]));
@@ -307,6 +313,116 @@ describe("ContactsService", () => {
       expect((await validate(badRepeat)).length).toBeGreaterThan(0);
       const cleared = plainToInstance(SetFollowUpDto, { followUpAt: null, everyDays: null });
       expect((await validate(cleared)).length).toBe(0);
+    });
+  });
+
+  describe("CSV import/export", () => {
+    const mapping = {
+      Name: "name",
+      Email: "email",
+      Company: "company",
+      Source: "source",
+      Tags: "tags",
+      Notes: "notes",
+    } as const;
+
+    it("import skips existing email case-insensitively and duplicates within the file", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "x" }));
+      const csv = "Name,Email\nAnn,ANN@Example.com\n";
+      const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
+      expect(res).toEqual({ created: 0, skipped: [{ row: 2, reason: "Email already exists" }] });
+      expect(prisma.contact.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", email: "ann@example.com" },
+      });
+
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(null));
+      const dup = "Name,Email\nAnn,a@x.com\nAnn2,A@X.com\n";
+      const res2 = await service.importCsv({ csv: dup, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
+      expect(res2).toEqual({ created: 1, skipped: [{ row: 3, reason: "Email already exists" }] });
+    });
+
+    it("import skips rows with no name and keeps going", async () => {
+      const csv = "Name,Email\n,a@x.com\nBob,b@x.com\n";
+      const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
+      expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Missing name" }] });
+      expect(prisma.contactEvent.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("import find-or-creates company, source and tags, and stores notes", async () => {
+      const csv = "Name,Email,Company,Source,Tags,Notes\nAnn,a@x.com,Acme,Podcast,vip; hot,Met at expo\n";
+      const res = await service.importCsv({ csv, mapping }, "org-1", "u-1");
+      expect(res.created).toBe(1);
+      expect(prisma.company.create).toHaveBeenCalledTimes(1);
+      expect(prisma.leadSource.create).toHaveBeenCalledTimes(1);
+      expect(prisma.label.create).toHaveBeenCalledTimes(2);
+      expect(prisma.contactLabel.createMany).toHaveBeenCalledWith({
+        data: [
+          { contactId: "c-1", labelId: "l-vip" },
+          { contactId: "c-1", labelId: "l-hot" },
+        ],
+        skipDuplicates: true,
+      });
+      expect(prisma.contactNote.create).toHaveBeenCalledWith({
+        data: { contactId: "c-1", organizationId: "org-1", authorId: "u-1", content: "Met at expo" },
+      });
+    });
+
+    it("import parses status case-insensitively, defaulting to lead", async () => {
+      const csv = "Name,Status\nA,CLIENT\nB,Past Client\nC,\n";
+      await service.importCsv({ csv, mapping: { Name: "name", Status: "status" } }, "org-1", "u-1");
+      const statuses = prisma.contact.create.mock.calls.map(
+        (c) => (c[0] as { data: { status: string } }).data.status,
+      );
+      expect(statuses).toEqual(["client", "past_client", "lead"]);
+    });
+
+    it("import rejects more than 5,000 rows", async () => {
+      const csv = "Name\n" + Array.from({ length: 5001 }, (_, i) => `n${i}`).join("\n");
+      const e = await rejects(service.importCsv({ csv, mapping: { Name: "name" } }, "org-1", "u-1"));
+      expect(e).toBeInstanceOf(BadRequestException);
+      expect((e as Error).message).toBe("CSV has more than 5,000 rows");
+    });
+
+    it("preview returns headers, first 5 rows and total", () => {
+      const csv = "A,B\n" + Array.from({ length: 7 }, (_, i) => `${i},x`).join("\n");
+      const res = service.previewCsv(csv);
+      expect(res.headers).toEqual(["A", "B"]);
+      expect(res.rows).toHaveLength(5);
+      expect(res.total).toBe(7);
+    });
+
+    it("export neutralises formula cells and includes paid dollars", async () => {
+      prisma.contact.findMany.mockImplementation(() =>
+        Promise.resolve([
+          {
+            id: "c-1",
+            name: '=HYPERLINK("x")',
+            email: "a@x.com",
+            phone: null,
+            website: null,
+            address: null,
+            status: "lead",
+            followUpAt: new Date("2026-11-01T00:00:00Z"),
+            company: { name: "Acme" },
+            leadSource: { name: "Web" },
+            labels: [{ label: { name: "vip" } }, { label: { name: "hot" } }],
+          },
+        ]),
+      );
+      revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map([["c-1", 123456]])));
+      const csv = await service.exportCsv("org-1", {});
+      const [header, line] = csv.split("\r\n");
+      expect(header).toBe(
+        "Name,Email,Phone,Company,Website,Address,Status,Source,Tags,Next follow-up,Paid all time",
+      );
+      expect(line.startsWith(`"'=HYPERLINK(""x"")"`)).toBe(true);
+      expect(line).toContain(",Lead,Web,vip; hot,2026-11-01,1234.56");
+    });
+
+    it("declares export/import routes before :id", () => {
+      const names = Object.getOwnPropertyNames(ContactsController.prototype);
+      expect(names.indexOf("exportCsv")).toBeLessThan(names.indexOf("findOne"));
+      expect(names.indexOf("importCsv")).toBeLessThan(names.indexOf("findOne"));
     });
   });
 });

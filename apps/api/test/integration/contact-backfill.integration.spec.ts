@@ -88,8 +88,65 @@ describe("ContactBackfillService.run", () => {
     expect(first.contactLabels).toBe(1);
     expect(first.leadSources).toBe(4);
 
+    expect(await prisma.memberLabel.count({ where: { memberId: member.id } })).toBe(0);
+
     await backfill.run();
     expect(await counts()).toEqual(first);
+  });
+
+  it("does not re-seed deleted or renamed lead sources", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb3-org-${s}`, name: `cb3-${s}`, slug: `cb3-${s}` } })).id;
+    orgIds.push(orgId);
+
+    await backfill.run();
+    expect(await prisma.leadSource.count({ where: { organizationId: orgId } })).toBe(4);
+
+    await prisma.leadSource.deleteMany({ where: { organizationId: orgId, name: "Social" } });
+    await prisma.leadSource.updateMany({ where: { organizationId: orgId, name: "Event" }, data: { name: "Events" } });
+    await backfill.run();
+
+    const names = (await prisma.leadSource.findMany({ where: { organizationId: orgId } })).map((l) => l.name).sort();
+    expect(names).toEqual(["Events", "Referral", "Website"]);
+  });
+
+  it("copies member tags once, so a removed contact tag stays removed", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb4-org-${s}`, name: `cb4-${s}`, slug: `cb4-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb4-client-${s}`);
+    const client = await prisma.user.create({ data: { id: `cb4-client-${s}`, name: "Tia", email: `tia-${s}@x.com`, emailVerified: true } });
+    const member = await prisma.member.create({ data: { id: `cb4-m-c-${s}`, organizationId: orgId, userId: client.id, role: "member" } });
+    const vip = await prisma.label.create({ data: { name: "VIP", organizationId: orgId } });
+    const hot = await prisma.label.create({ data: { name: "Hot", organizationId: orgId } });
+    await prisma.memberLabel.createMany({ data: [{ memberId: member.id, labelId: vip.id }, { memberId: member.id, labelId: hot.id }] });
+
+    await backfill.run();
+    const contact = await prisma.contact.findFirstOrThrow({ where: { organizationId: orgId } });
+    expect(await prisma.contactLabel.count({ where: { contactId: contact.id } })).toBe(2);
+    expect(await prisma.memberLabel.count({ where: { memberId: member.id } })).toBe(0);
+
+    await prisma.contactLabel.deleteMany({ where: { contactId: contact.id, labelId: vip.id } });
+    await backfill.run();
+    const left = await prisma.contactLabel.findMany({ where: { contactId: contact.id } });
+    expect(left.map((l) => l.labelId)).toEqual([hot.id]);
+  });
+
+  it("keeps a hand-set status on a linked contact across boots", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb5-org-${s}`, name: `cb5-${s}`, slug: `cb5-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb5-client-${s}`);
+    const client = await prisma.user.create({ data: { id: `cb5-client-${s}`, name: "Pax", email: `pax-${s}@x.com`, emailVerified: true } });
+    await prisma.member.create({ data: { id: `cb5-m-c-${s}`, organizationId: orgId, userId: client.id, role: "member" } });
+
+    await backfill.run();
+    const contact = await prisma.contact.findFirstOrThrow({ where: { organizationId: orgId } });
+    expect(contact.status).toBe("client");
+    await prisma.contact.update({ where: { id: contact.id }, data: { status: "past_client" } });
+
+    await backfill.run();
+    expect((await prisma.contact.findUniqueOrThrow({ where: { id: contact.id } })).status).toBe("past_client");
   });
 
   it("fills empty fields on a lead matched by email, keeps existing values, and re-copies after a partial run", async () => {

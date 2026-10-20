@@ -122,6 +122,7 @@ export class LabelsService {
           if (!member) throw new BadRequestException("Member not found");
           // Member tags live on the member's contact now.
           const contact = await this.contactSync.ensureForMember(orgId, member.userId);
+          if (!contact) throw new BadRequestException("Only clients can be tagged");
           return await this.prisma.contactLabel.create({
             data: { contactId: contact.id, labelId },
           });
@@ -199,17 +200,24 @@ export class LabelsService {
             where: { contactId: contact.id, labelId },
           });
         }
+        // Legacy member tags are copied to contacts on boot; drop any left so they can't return.
+        await this.prisma.memberLabel.deleteMany({ where: { memberId: member.id, labelId } });
         break;
       }
       case "contact": {
         const contact = await this.prisma.contact.findFirst({
           where: { id: dto.entityId, organizationId: orgId },
-          select: { id: true },
+          select: { id: true, userId: true },
         });
         if (!contact) throw new BadRequestException("Contact not found");
         await this.prisma.contactLabel.deleteMany({
           where: { contactId: dto.entityId, labelId },
         });
+        if (contact.userId) {
+          await this.prisma.memberLabel.deleteMany({
+            where: { labelId, member: { organizationId: orgId, userId: contact.userId } },
+          });
+        }
         break;
       }
       default:

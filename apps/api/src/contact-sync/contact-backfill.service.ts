@@ -42,10 +42,13 @@ export class ContactBackfillService implements OnApplicationBootstrap {
   }
 
   private async backfillOrg(orgId: string): Promise<void> {
-    await this.prisma.leadSource.createMany({
-      data: DEFAULT_LEAD_SOURCES.map((name) => ({ organizationId: orgId, name })),
-      skipDuplicates: true,
-    });
+    // Only workspaces that predate lead sources; deleted or renamed defaults stay that way.
+    if ((await this.prisma.leadSource.count({ where: { organizationId: orgId } })) === 0) {
+      await this.prisma.leadSource.createMany({
+        data: DEFAULT_LEAD_SOURCES.map((name) => ({ organizationId: orgId, name })),
+        skipDuplicates: true,
+      });
+    }
 
     await this.backfillMembers(orgId);
     await this.backfillProjectLinks(orgId);
@@ -61,6 +64,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     for (const member of members) {
       try {
         const contact = await this.sync.ensureForMember(orgId, member.userId);
+        if (contact?.userId !== member.userId) continue;
         await this.copyProfile(orgId, member.userId, contact);
       } catch (err) {
         this.logger.error(`Failed to backfill contact for member ${member.id}`, err);
@@ -128,10 +132,14 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     await this.prisma.projectContact.createMany({ data, skipDuplicates: true });
   }
 
+  /**
+   * Moves member tags onto contacts once: the copied MemberLabel rows are deleted in the same
+   * transaction, so a tag later removed from the contact isn't copied back on the next boot.
+   */
   private async backfillLabels(orgId: string): Promise<void> {
     const memberLabels = await this.prisma.memberLabel.findMany({
       where: { member: { organizationId: orgId } },
-      select: { labelId: true, member: { select: { userId: true } } },
+      select: { id: true, labelId: true, member: { select: { userId: true } } },
     });
     if (memberLabels.length === 0) return;
     const contacts = await this.prisma.contact.findMany({
@@ -139,11 +147,13 @@ export class ContactBackfillService implements OnApplicationBootstrap {
       select: { id: true, userId: true },
     });
     const byUser = new Map(contacts.map((c) => [c.userId, c.id]));
-    const data = memberLabels.flatMap((m) => {
-      const contactId = byUser.get(m.member.userId);
-      return contactId ? [{ contactId, labelId: m.labelId }] : [];
-    });
-    await this.prisma.contactLabel.createMany({ data, skipDuplicates: true });
+    const copied = memberLabels.filter((m) => byUser.has(m.member.userId));
+    if (copied.length === 0) return;
+    const data = copied.map((m) => ({ contactId: byUser.get(m.member.userId) as string, labelId: m.labelId }));
+    await this.prisma.$transaction([
+      this.prisma.contactLabel.createMany({ data, skipDuplicates: true }),
+      this.prisma.memberLabel.deleteMany({ where: { id: { in: copied.map((m) => m.id) } } }),
+    ]);
   }
 
   private async backfillPaidInvoices(orgId: string): Promise<void> {

@@ -368,7 +368,7 @@ export class ProjectsService implements OnApplicationBootstrap {
     const includeTasks = dto.includeTasks ?? true;
     const includeClients = dto.includeClients ?? false;
 
-    return this.prisma.$transaction(async (tx) => {
+    const duplicated = await this.prisma.$transaction(async (tx) => {
       // Duplicate = fresh copy semantics:
       // - project status uses the schema default (not_started), not the source's
       // - startDate/endDate are copied but future/past relevance is the user's call
@@ -452,6 +452,15 @@ export class ProjectsService implements OnApplicationBootstrap {
       // + options + labels is sequential and can exceed 5s on larger templates.
       timeout: 15000,
     });
+
+    if (duplicated && includeClients) {
+      await this.syncClients(
+        duplicated.id,
+        organizationId,
+        source.clients.map((c) => c.userId),
+      );
+    }
+    return duplicated;
   }
 
   async remove(id: string, organizationId: string) {

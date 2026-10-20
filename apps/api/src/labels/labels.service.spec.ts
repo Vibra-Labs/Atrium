@@ -215,20 +215,44 @@ describe("LabelsService", () => {
       expect(mockPrisma.memberLabel.create).not.toHaveBeenCalled();
     });
 
-    it("unassign member label removes ContactLabel", async () => {
+    it("assign member label rejects staff (no contact)", async () => {
+      mockSync.ensureForMember.mockImplementationOnce(() => Promise.resolve(null as never));
+      await expect(
+        service.assign("lbl-1", { entityType: "member", entityId: "member-1" }, "org-1"),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockPrisma.contactLabel.create).not.toHaveBeenCalled();
+    });
+
+    it("unassign member label removes ContactLabel and any legacy MemberLabel", async () => {
       mockPrisma.contact.findFirst.mockImplementationOnce(() => Promise.resolve({ id: "contact-m" }));
       await service.unassign("lbl-1", { entityType: "member", entityId: "member-1" }, "org-1");
       expect(mockPrisma.contactLabel.deleteMany).toHaveBeenCalledWith({
         where: { contactId: "contact-m", labelId: "lbl-1" },
       });
-      expect(mockPrisma.memberLabel.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.memberLabel.deleteMany).toHaveBeenCalledWith({
+        where: { memberId: "member-1", labelId: "lbl-1" },
+      });
     });
 
-    it("unassign contact label removes ContactLabel", async () => {
+    it("unassign contact label removes ContactLabel and the linked member's MemberLabel", async () => {
+      mockPrisma.contact.findFirst.mockImplementationOnce(() =>
+        Promise.resolve({ id: "contact-1", userId: "user-1" }),
+      );
       await service.unassign("lbl-1", { entityType: "contact", entityId: "contact-1" }, "org-1");
       expect(mockPrisma.contactLabel.deleteMany).toHaveBeenCalledWith({
         where: { contactId: "contact-1", labelId: "lbl-1" },
       });
+      expect(mockPrisma.memberLabel.deleteMany).toHaveBeenCalledWith({
+        where: { labelId: "lbl-1", member: { organizationId: "org-1", userId: "user-1" } },
+      });
+    });
+
+    it("unassign contact label without a linked user leaves MemberLabel alone", async () => {
+      mockPrisma.contact.findFirst.mockImplementationOnce(() =>
+        Promise.resolve({ id: "contact-1", userId: null }),
+      );
+      await service.unassign("lbl-1", { entityType: "contact", entityId: "contact-1" }, "org-1");
+      expect(mockPrisma.memberLabel.deleteMany).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
@@ -16,6 +16,8 @@ function formatDollars(cents: number): string {
 
 @Injectable()
 export class ContactSyncService {
+  private readonly logger = new Logger(ContactSyncService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async addEvent(
@@ -30,26 +32,37 @@ export class ContactSyncService {
     });
   }
 
-  async ensureForMember(orgId: string, userId: string): Promise<Contact> {
+  /**
+   * Gives a portal client (role "member") a contact linked to their user. Staff and non-members
+   * get null. An existing linked contact is returned unchanged so a hand-set status sticks.
+   */
+  async ensureForMember(orgId: string, userId: string): Promise<Contact | null> {
+    const member = await this.prisma.member.findFirst({
+      where: { organizationId: orgId, userId },
+      select: { role: true },
+    });
+    if (member?.role !== "member") return null;
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error(`User ${userId} not found`);
 
     const linked = await this.prisma.contact.findFirst({
       where: { organizationId: orgId, userId },
     });
-    if (linked) {
-      if (linked.status === "client") return linked;
-      return this.prisma.contact.update({
-        where: { id: linked.id },
-        data: { status: "client" },
-      });
-    }
+    if (linked) return linked;
 
     const email = normalizeEmail(user.email);
     const byEmail = await this.prisma.contact.findFirst({
       where: { organizationId: orgId, email },
     });
     if (byEmail) {
+      if (byEmail.userId) {
+        // Email is unique per workspace, so a new contact can't be created; leave it alone.
+        this.logger.warn(
+          `Contact ${byEmail.id} matches user ${userId} by email but is linked to another user; not relinking`,
+        );
+        return byEmail;
+      }
       const updated = await this.prisma.contact.update({
         where: { id: byEmail.id },
         data: { userId, status: "client" },
@@ -69,8 +82,10 @@ export class ContactSyncService {
     if (userIds.length === 0) return;
     const contacts: Contact[] = [];
     for (const userId of userIds) {
-      contacts.push(await this.ensureForMember(orgId, userId));
+      const contact = await this.ensureForMember(orgId, userId);
+      if (contact) contacts.push(contact);
     }
+    if (contacts.length === 0) return;
 
     const existing = await this.prisma.projectContact.findMany({
       where: { projectId, contactId: { in: contacts.map((c) => c.id) } },

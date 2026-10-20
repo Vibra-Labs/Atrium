@@ -4,6 +4,7 @@ import { ContactSyncService, normalizeEmail } from "./contact-sync.service";
 
 const mockPrisma = {
   user: { findUnique: mock(() => Promise.resolve(null as unknown)) },
+  member: { findFirst: mock(() => Promise.resolve({ role: "member" } as unknown)) },
   contact: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
     create: mock(() => Promise.resolve({ id: "c-new" } as unknown)),
@@ -26,6 +27,7 @@ function reset(): void {
   const groups = Object.values(mockPrisma) as Array<Record<string, ReturnType<typeof mock>>>;
   for (const group of groups) for (const fn of Object.values(group)) fn.mockClear();
   mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(null));
+  mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ role: "member" }));
   mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve(null));
   mockPrisma.contactEvent.findMany.mockImplementation(() => Promise.resolve([]));
   mockPrisma.projectContact.findMany.mockImplementation(() => Promise.resolve([]));
@@ -115,18 +117,47 @@ describe("ContactSyncService", () => {
       expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
     });
 
-    it("promotes a linked past client back to client", async () => {
+    it("keeps a hand-set status on an already-linked contact", async () => {
       mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
-      mockPrisma.contact.findFirst.mockImplementation(() =>
-        Promise.resolve({ id: "c-1", userId: "u-1", status: "past_client" }),
-      );
+      const linked = { id: "c-1", userId: "u-1", status: "past_client" };
+      mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve(linked));
 
-      await service.ensureForMember("org-1", "u-1");
+      const result = await service.ensureForMember("org-1", "u-1");
 
-      expect(mockPrisma.contact.update).toHaveBeenCalledWith({
-        where: { id: "c-1" },
-        data: { status: "client" },
+      expect(result).toEqual(linked);
+      expect(mockPrisma.contact.update).not.toHaveBeenCalled();
+      expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
+    });
+
+    it("does not take over an email match linked to another user", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
+      const other = { id: "c-9", email: "bob@x.com", userId: "u-other", status: "client" };
+      mockPrisma.contact.findFirst
+        .mockImplementationOnce(() => Promise.resolve(null)) // by userId
+        .mockImplementationOnce(() => Promise.resolve(other)); // by email
+
+      const result = await service.ensureForMember("org-1", "u-1");
+
+      expect(result).toEqual(other);
+      expect(mockPrisma.contact.update).not.toHaveBeenCalled();
+      expect(mockPrisma.contact.create).not.toHaveBeenCalled();
+      expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
+    });
+
+    it("is a no-op for staff (owner/admin) and non-members", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
+      for (const member of [{ role: "admin" }, { role: "owner" }, null]) {
+        mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve(member));
+        const result = await service.ensureForMember("org-1", "u-1");
+        expect(result).toBeNull();
+      }
+      expect(mockPrisma.member.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", userId: "u-1" },
+        select: { role: true },
       });
+      expect(mockPrisma.contact.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.contact.create).not.toHaveBeenCalled();
+      expect(mockPrisma.contact.update).not.toHaveBeenCalled();
     });
   });
 
@@ -154,6 +185,15 @@ describe("ContactSyncService", () => {
           refId: "p-1",
         },
       });
+    });
+
+    it("skips staff users", async () => {
+      mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ role: "admin" }));
+
+      await service.linkProjectClients("p-1", "org-1", ["u-1"]);
+
+      expect(mockPrisma.projectContact.createMany).not.toHaveBeenCalled();
+      expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
     });
 
     it("does not log an event for an already-linked contact", async () => {

@@ -490,6 +490,21 @@ describe("ProjectsService", () => {
           { projectId: "new-3", userId: "u-2" },
         ],
       });
+      expect(mockContactSync.linkProjectClients).toHaveBeenCalledWith("new-3", "org-1", ["u-1", "u-2"]);
+    });
+
+    it("does not link contacts when clients are not copied", async () => {
+      mockPrisma.project.findFirst.mockReturnValue(Promise.resolve(sourceProject));
+      mockPrisma.project.create.mockReturnValue(
+        Promise.resolve({ id: "new-4", name: "NoClients", organizationId: "org-1" }),
+      );
+      mockPrisma.project.findUnique.mockReturnValue(
+        Promise.resolve({ id: "new-4", name: "NoClients", organizationId: "org-1", clients: [] }),
+      );
+
+      await service.duplicate("src-1", { name: "NoClients", includeTasks: false }, "org-1");
+
+      expect(mockContactSync.linkProjectClients).not.toHaveBeenCalled();
     });
 
     it("scopes the source lookup to the provided organizationId", async () => {

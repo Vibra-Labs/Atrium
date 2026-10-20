@@ -13,6 +13,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StripeService } from "../billing/stripe.service";
 import { SettingsService } from "../settings/settings.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { calculateInvoiceTotal } from "./invoice-total";
 import { publicApiUrl } from "../common/helpers/public-api-url";
 
@@ -57,6 +58,7 @@ export class PaymentsService {
     private settingsService: SettingsService,
     private config: ConfigService,
     private notifications: NotificationsService,
+    private contactSync: ContactSyncService,
   ) {
     this.webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     this.apiUrl = publicApiUrl(this.config);
@@ -677,5 +679,11 @@ export class PaymentsService {
 
     this.logger.log(`Invoice ${invoice.invoiceNumber} marked as paid via Stripe`);
     this.notifications.notifyInvoicePaid(invoice.id);
+    try {
+      await this.contactSync.recordInvoicePaid(invoice.id);
+    } catch (err) {
+      Sentry.captureException(err);
+      this.logger.error("Failed to record invoice paid on contact", err);
+    }
   }
 }

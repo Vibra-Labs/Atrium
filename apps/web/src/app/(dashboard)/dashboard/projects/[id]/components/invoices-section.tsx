@@ -65,6 +65,8 @@ export function InvoicesSection({
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [paidDate, setPaidDate] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState("");
@@ -295,12 +297,13 @@ export function InvoicesSection({
   };
 
   // Status transition
-  const handleStatusChange = async (invoiceId: string, newStatus: string) => {
+  const handleStatusChange = async (invoiceId: string, newStatus: string, paidAt?: string) => {
     try {
       await apiFetch(`/invoices/${invoiceId}`, {
         method: "PUT",
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, ...(paidAt ? { paidAt } : {}) }),
       });
+      setPayingId(null);
       loadInvoices();
       success(`Invoice marked as ${newStatus}`);
     } catch (err) {
@@ -815,12 +818,41 @@ export function InvoicesSection({
                         </button>
                       )}
                       {(inv.status === "sent" || inv.status === "overdue") && !isArchived && !inv.stripePaymentIntentId && (
-                        <button
-                          onClick={() => handleStatusChange(inv.id, "paid")}
-                          className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:opacity-90"
-                        >
-                          Mark as Paid
-                        </button>
+                        payingId === inv.id ? (
+                          <span className="flex items-center gap-2">
+                            <input
+                              type="date"
+                              aria-label="Paid date"
+                              value={paidDate}
+                              max={new Date().toISOString().split("T")[0]}
+                              onChange={(e) => setPaidDate(e.target.value)}
+                              className="px-2 py-1 border border-[var(--border)] rounded-lg text-xs bg-[var(--background)]"
+                            />
+                            <button
+                              onClick={() => handleStatusChange(inv.id, "paid", paidDate)}
+                              disabled={!paidDate}
+                              className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:opacity-90 disabled:opacity-50"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setPayingId(null)}
+                              className="text-xs text-[var(--muted-foreground)] hover:underline"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setPaidDate(new Date().toISOString().split("T")[0]);
+                              setPayingId(inv.id);
+                            }}
+                            className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:opacity-90"
+                          >
+                            Mark as Paid
+                          </button>
+                        )
                       )}
                       <button
                         onClick={() => handleViewPdf(inv.id, inv.invoiceNumber)}

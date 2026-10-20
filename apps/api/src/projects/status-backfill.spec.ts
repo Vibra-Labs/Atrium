@@ -17,7 +17,7 @@ function build(orgIds: string[]) {
       createMany: mock((_args: CreateManyArgs) => Promise.resolve({ count: 0 })),
     },
   };
-  const service = new ProjectsService(prisma as unknown as PrismaService);
+  const service = new ProjectsService(prisma as unknown as PrismaService, {} as never);
   return { service, prisma };
 }
 

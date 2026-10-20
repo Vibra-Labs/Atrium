@@ -51,6 +51,7 @@ function makeService(): AuthService {
     mockPrisma as unknown as PrismaService,
     mockMail as unknown as MailService,
     mockBilling as unknown as BillingService,
+    {} as never,
   );
 }
 
@@ -358,6 +359,7 @@ describe("AuthService", () => {
         mockPrisma as unknown as PrismaService,
         mockMail as unknown as MailService,
         mockBilling as unknown as BillingService,
+        {} as never,
       );
     }
 

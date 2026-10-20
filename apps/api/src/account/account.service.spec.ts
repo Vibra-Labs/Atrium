@@ -137,6 +137,10 @@ function clearAllMocks() {
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
+const mockContactSync = {
+  detachUserEverywhere: mock(() => Promise.resolve()),
+};
+
 describe("AccountService", () => {
   let service: AccountService;
 
@@ -146,7 +150,9 @@ describe("AccountService", () => {
       mockPrisma as unknown as PrismaService,
       mockStorage as unknown as StorageProvider,
       mockLogger as never,
+      mockContactSync as never,
     );
+    mockContactSync.detachUserEverywhere.mockClear();
   });
 
   // =========================================================================
@@ -315,6 +321,12 @@ describe("AccountService", () => {
 
       expect(msg1).toBe(msg2);
       expect(msg1).toBe("Password verification failed.");
+    });
+
+    it("deletion detaches contacts", async () => {
+      await service.deleteAccount("user-1", "correct-password");
+
+      expect(mockContactSync.detachUserEverywhere).toHaveBeenCalledWith("user-1");
     });
 
     it("deletes orgs where user is sole owner", async () => {

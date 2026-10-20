@@ -1,9 +1,12 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
 } from "@nestjs/common";
+import * as Sentry from "@sentry/nestjs";
+import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { UpdateClientProfileDto } from "./client-profile.dto";
@@ -11,9 +14,12 @@ import { MCP_ACTOR_ROLES, paginatedResponse, revokeMemberCredentials } from "../
 
 @Injectable()
 export class ClientsService {
+  private readonly logger = new Logger(ClientsService.name);
+
   constructor(
     private prisma: PrismaService,
     private authService: AuthService,
+    private contactSync: ContactSyncService,
   ) {}
 
   async generateResetLink(
@@ -81,6 +87,15 @@ export class ClientsService {
       }),
       this.prisma.member.delete({ where: { id: memberId } }),
     ]);
+
+    if (member.role === "member") {
+      try {
+        await this.contactSync.detachMember(orgId, member.userId);
+      } catch (err) {
+        Sentry.captureException(err);
+        this.logger.error("Failed to detach contact after member removal", err);
+      }
+    }
   }
 
   async changeRole(

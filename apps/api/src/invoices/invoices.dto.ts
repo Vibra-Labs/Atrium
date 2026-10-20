@@ -76,6 +76,11 @@ export class UpdateInvoiceDto {
   @IsOptional()
   @MaxLength(2000)
   notes?: string;
+
+  // Only honoured when the invoice transitions to paid.
+  @IsDateString()
+  @IsOptional()
+  paidAt?: string;
 }
 
 export class CreateUploadedInvoiceDto {

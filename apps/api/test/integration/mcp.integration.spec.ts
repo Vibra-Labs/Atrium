@@ -80,10 +80,10 @@ beforeAll(async () => {
   // Notifications, activity logging, storage and the logger are side effects
   // the tools do not depend on; every method is a resolved no-op.
   const noop = new Proxy({}, { get: () => () => Promise.resolve() }) as never;
-  clients = new ClientsService(prisma, {} as never);
+  clients = new ClientsService(prisma, {} as never, {} as never);
   const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub, configStub);
   const mcp = new McpService(
-    new ProjectsService(prisma),
+    new ProjectsService(prisma, {} as never),
     new TasksService(prisma, noop, noop, noop),
     new UpdatesService(prisma, noop, noop, noop),
     new NotesService(prisma),

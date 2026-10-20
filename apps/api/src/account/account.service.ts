@@ -1,5 +1,7 @@
 import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import * as Sentry from "@sentry/nestjs";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
+import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { verifyPassword } from "better-auth/crypto";
 import { DELETED_USER_SENTINEL } from "@atrium/shared";
@@ -13,6 +15,7 @@ export class AccountService {
     private prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private storage: StorageProvider,
     @InjectPinoLogger(AccountService.name) private readonly logger: PinoLogger,
+    private contactSync: ContactSyncService,
   ) {}
 
   async getDeletionInfo(userId: string): Promise<DeletionInfo> {
@@ -150,6 +153,13 @@ export class AccountService {
       // Delete the user row (cascades Session, Account, Member, ProjectClient)
       await tx.user.delete({ where: { id: userId } });
     });
+
+    try {
+      await this.contactSync.detachUserEverywhere(userId);
+    } catch (err) {
+      Sentry.captureException(err);
+      this.logger.error({ err, userId }, "Failed to detach contacts after account deletion");
+    }
 
     // Purge file blobs from storage (fire-and-forget, best-effort)
     if (storageKeys.length > 0) {

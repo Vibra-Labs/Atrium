@@ -12,6 +12,10 @@ interface PrismaArgs {
   data?: Record<string, unknown>;
 }
 
+const mockContactSync = {
+  recordInvoicePaid: mock(() => Promise.resolve()),
+};
+
 const mockNotifications = {
   notifyInvoiceSent: mock(() => {}),
 };
@@ -84,7 +88,8 @@ describe("InvoicesService", () => {
 
   beforeEach(() => {
     prisma = makeBasePrisma();
-    service = new InvoicesService(prisma as unknown as PrismaService, mockNotifications as unknown as NotificationsService);
+    service = new InvoicesService(prisma as unknown as PrismaService, mockNotifications as unknown as NotificationsService, mockContactSync as never);
+    mockContactSync.recordInvoicePaid.mockClear();
   });
 
   // --- Invoice number format ---
@@ -301,5 +306,60 @@ describe("InvoicesService", () => {
     await service.update("inv-1", { status: "sent" }, orgId);
 
     expect(mockNotifications.notifyInvoiceSent).toHaveBeenCalledWith("inv-1");
+  });
+
+  // --- marking paid ---
+
+  function sentInvoice(): void {
+    prisma.invoice.findFirst.mockImplementation(() =>
+      Promise.resolve({
+        id: "inv-1",
+        status: "sent",
+        type: "itemized",
+        organizationId: orgId,
+        lineItems: [{ description: "Work", quantity: 2, unitPrice: 5000 }],
+      }),
+    );
+  }
+
+  test("marking paid sets paidAt from dto and paidAmount from total", async () => {
+    sentInvoice();
+
+    await service.update("inv-1", { status: "paid", paidAt: "2026-09-01" }, orgId);
+
+    const data = (prisma.invoice.update.mock.calls[0][0] as PrismaArgs).data!;
+    expect(data.paidAt).toEqual(new Date("2026-09-01"));
+    expect(data.paidAmount).toBe(10000);
+    expect(mockContactSync.recordInvoicePaid).toHaveBeenCalledWith("inv-1");
+  });
+
+  test("marking paid without paidAt uses now", async () => {
+    sentInvoice();
+    const before = Date.now();
+
+    await service.update("inv-1", { status: "paid" }, orgId);
+
+    const data = (prisma.invoice.update.mock.calls[0][0] as PrismaArgs).data!;
+    expect((data.paidAt as Date).getTime()).toBeGreaterThanOrEqual(before);
+    expect(data.paidAmount).toBe(10000);
+  });
+
+  test("paidAt is ignored when not transitioning to paid", async () => {
+    sentInvoice();
+
+    await service.update("inv-1", { notes: "x", paidAt: "2026-09-01" }, orgId);
+
+    const data = (prisma.invoice.update.mock.calls[0][0] as PrismaArgs).data!;
+    expect(data.paidAt).toBeUndefined();
+    expect(mockContactSync.recordInvoicePaid).not.toHaveBeenCalled();
+  });
+
+  test("marking paid succeeds when contact sync fails", async () => {
+    sentInvoice();
+    mockContactSync.recordInvoicePaid.mockReturnValueOnce(Promise.reject(new Error("boom")));
+
+    const result = await service.update("inv-1", { status: "paid" }, orgId);
+
+    expect(result).toBeDefined();
   });
 });

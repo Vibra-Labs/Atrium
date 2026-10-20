@@ -40,6 +40,10 @@ const mockPrisma = {
   $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
+const mockContactSync = {
+  detachMember: mock(() => Promise.resolve()),
+};
+
 const mockAuthService = {
   generateResetLink: mock(() =>
     Promise.resolve({
@@ -78,7 +82,9 @@ describe("ClientsService", () => {
     service = new ClientsService(
       mockPrisma as unknown as PrismaService,
       mockAuthService as unknown as AuthService,
+      mockContactSync as never,
     );
+    mockContactSync.detachMember.mockClear();
     mockPrisma.member.findFirst.mockClear();
     mockPrisma.member.count.mockClear();
     mockPrisma.member.delete.mockClear();
@@ -144,6 +150,27 @@ describe("ClientsService", () => {
 
       // Confirm the transaction was called
       expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+
+    it("removeMember detaches the contact and keeps project links", async () => {
+      const member = makeMember({ id: "member-1", userId: "user-2", role: "member" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockPrisma.project.findMany.mockReturnValue(Promise.resolve([{ id: "proj-1" }]));
+
+      await service.removeMember("member-1", "org-1", "user-requester", "admin");
+
+      expect(mockContactSync.detachMember).toHaveBeenCalledWith("org-1", "user-2");
+      expect((mockPrisma as Record<string, unknown>).projectContact).toBeUndefined();
+    });
+
+    it("removeMember does not detach a contact when the member was staff", async () => {
+      const member = makeMember({ id: "member-1", userId: "user-3", role: "admin" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockPrisma.project.findMany.mockReturnValue(Promise.resolve([]));
+
+      await service.removeMember("member-1", "org-1", "user-requester", "owner");
+
+      expect(mockContactSync.detachMember).not.toHaveBeenCalled();
     });
 
     it("scopes ProjectClient deletion to only the current org's projects", async () => {

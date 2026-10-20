@@ -3,10 +3,14 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Logger,
 } from "@nestjs/common";
+import * as Sentry from "@sentry/nestjs";
 import type { Invoice, InvoiceLineItem } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { ContactSyncService } from "../contact-sync/contact-sync.service";
+import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { paginationArgs, paginatedResponse } from "../common";
 import { CreateInvoiceDto, CreateUploadedInvoiceDto, UpdateInvoiceDto, InvoiceListQueryDto } from "./invoices.dto";
 
@@ -18,9 +22,12 @@ interface InvoiceWhereInput {
 
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private contactSync: ContactSyncService,
   ) {}
 
   async create(dto: CreateInvoiceDto, orgId: string, retries = 0): Promise<Invoice & { lineItems: InvoiceLineItem[] }> {
@@ -241,6 +248,7 @@ export class InvoicesService {
   async update(id: string, dto: UpdateInvoiceDto, orgId: string) {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, organizationId: orgId },
+      include: { lineItems: true },
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
 
@@ -263,6 +271,18 @@ export class InvoicesService {
     const isTransitionToSent =
       dto.status === "sent" && invoice.status !== "sent";
 
+    const isTransitionToPaid = dto.status === "paid" && invoice.status !== "paid";
+    const paidFields = isTransitionToPaid
+      ? {
+          paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
+          paidAmount: calculateInvoiceTotal({
+            type: invoice.type,
+            amount: invoice.amount,
+            lineItems: dto.lineItems ?? invoice.lineItems,
+          }),
+        }
+      : {};
+
     const dueDateValue =
       dto.dueDate === null
         ? null
@@ -283,6 +303,7 @@ export class InvoicesService {
             status: dto.status,
             dueDate: dueDateValue,
             notes: dto.notes,
+            ...paidFields,
             lineItems: {
               create: dto.lineItems!.map((item) => ({
                 description: item.description,
@@ -301,6 +322,7 @@ export class InvoicesService {
           status: dto.status,
           dueDate: dueDateValue,
           notes: dto.notes,
+          ...paidFields,
         },
         include: { lineItems: true },
       });
@@ -308,6 +330,15 @@ export class InvoicesService {
 
     if (isTransitionToSent) {
       this.notifications.notifyInvoiceSent(id);
+    }
+
+    if (isTransitionToPaid) {
+      try {
+        await this.contactSync.recordInvoicePaid(id);
+      } catch (err) {
+        Sentry.captureException(err);
+        this.logger.error("Failed to record invoice paid on contact", err);
+      }
     }
 
     return updated;

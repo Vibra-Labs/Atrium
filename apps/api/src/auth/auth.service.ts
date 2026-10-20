@@ -10,6 +10,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
 import { applyConsentOutcome, guardTokenExchange } from "../mcp-auth/consent-hooks";
 import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials";
+import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
@@ -35,6 +36,7 @@ export class AuthService {
     private prisma: PrismaService,
     private mail: MailService,
     private billingService: BillingService,
+    private contactSync: ContactSyncService,
   ) {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     const apiUrl: string = publicApiUrl(this.config);
@@ -312,6 +314,23 @@ export class AuthService {
             // The invite being accepted is still pending and counted, so it is reserved out.
             beforeAcceptInvitation: async ({ invitation }) => {
               await this.assertInviteWithinPlan(invitation.organizationId, invitation.role ?? "member", 1);
+            },
+            afterCreateInvitation: async ({ invitation }) => {
+              try {
+                await this.contactSync.recordInvited(invitation.organizationId, invitation.email);
+              } catch (err) {
+                Sentry.captureException(err);
+                this.logger.error("Failed to record invitation on contact", err);
+              }
+            },
+            afterAcceptInvitation: async ({ invitation, user }) => {
+              if ((invitation.role ?? "member") !== "member") return;
+              try {
+                await this.contactSync.ensureForMember(invitation.organizationId, user.id);
+              } catch (err) {
+                Sentry.captureException(err);
+                this.logger.error("Failed to sync contact after invitation accepted", err);
+              }
             },
             afterCreateOrganization: async ({ organization }) => {
               await this.seedOrganizationDefaults(organization.id);

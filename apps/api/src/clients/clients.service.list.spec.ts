@@ -16,7 +16,7 @@ function buildPrisma(members: unknown[], total: number) {
 describe("ClientsService.list", () => {
   it("returns members enriched with profiles, scoped to the org", async () => {
     const prisma = buildPrisma([{ id: "m2", userId: "u2", role: "member" }], 1);
-    const service = new ClientsService(prisma as never, {} as never);
+    const service = new ClientsService(prisma as never, {} as never, {} as never);
 
     const result = await service.list("org1", 1, 20);
 
@@ -27,7 +27,7 @@ describe("ClientsService.list", () => {
 
   it("filters by name or email when search is given", async () => {
     const prisma = buildPrisma([], 0);
-    await new ClientsService(prisma as never, {} as never).list("org1", 1, 20, "glo");
+    await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, "glo");
     expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({
       organizationId: "org1",
       user: { OR: [
@@ -38,7 +38,7 @@ describe("ClientsService.list", () => {
   });
 
   it("findMember throws NotFound when the user is not in the org", async () => {
-    const service = new ClientsService(buildPrisma([], 0) as never, {} as never);
+    const service = new ClientsService(buildPrisma([], 0) as never, {} as never, {} as never);
     await expect(service.findMember("nope", "org1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -275,7 +275,7 @@ beforeAll(async () => {
   assertDisposableDatabase();
   prisma = new PrismaService();
   await prisma.$connect();
-  auth = new AuthService(config, prisma, mail, billing);
+  auth = new AuthService(config, prisma, mail, billing, {} as never);
 
   const signUp = await auth.auth.handler(
     new Request(`${API}/api/auth/sign-up/email`, {
@@ -624,7 +624,7 @@ describe("MCP_OAUTH_ENABLED=false", () => {
         throw new Error(`Missing ${key}`);
       },
     } as unknown as ConfigService;
-    disabled = new AuthService(disabledConfig, prisma, mail, billing);
+    disabled = new AuthService(disabledConfig, prisma, mail, billing, {} as never);
   });
 
   async function hit(path: string, init: RequestInit = {}): Promise<number> {
@@ -1120,7 +1120,7 @@ describe("OAuth token → MCP actor", () => {
 
   it("stays dead after the user is removed and re-added, and after demote then re-promote", async () => {
     const mcpAuth = new McpAuthService(prisma);
-    const clients = new ClientsService(prisma, {} as never);
+    const clients = new ClientsService(prisma, {} as never, {} as never);
     const clientId = await registerClient("IT Client Revive");
     const tokens = await authorizeAndExchange(clientId);
 

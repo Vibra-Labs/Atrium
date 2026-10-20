@@ -310,6 +310,7 @@ describe("AccountService", () => {
         mockPrisma as unknown as PrismaService,
         mockStorage as unknown as StorageProvider,
         mockLogger as never,
+        mockContactSync as never,
       );
       mockVerifyPassword.mockImplementation(() => Promise.resolve(false));
       let msg2 = "";

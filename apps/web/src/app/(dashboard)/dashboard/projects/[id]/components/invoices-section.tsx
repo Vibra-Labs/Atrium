@@ -55,6 +55,13 @@ const statusColors: Record<string, { bg: string; text: string }> = {
   overdue: { bg: "#fee2e2", text: "#b91c1c" },
 };
 
+// Today's date in the user's timezone as YYYY-MM-DD (toISOString would give the UTC date).
+function localDateString(): string {
+  const d = new Date();
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function InvoicesSection({
   projectId,
   isArchived,
@@ -824,7 +831,7 @@ export function InvoicesSection({
                               type="date"
                               aria-label="Paid date"
                               value={paidDate}
-                              max={new Date().toISOString().split("T")[0]}
+                              max={localDateString()}
                               onChange={(e) => setPaidDate(e.target.value)}
                               className="px-2 py-1 border border-[var(--border)] rounded-lg text-xs bg-[var(--background)]"
                             />
@@ -845,7 +852,7 @@ export function InvoicesSection({
                         ) : (
                           <button
                             onClick={() => {
-                              setPaidDate(new Date().toISOString().split("T")[0]);
+                              setPaidDate(localDateString());
                               setPayingId(inv.id);
                             }}
                             className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:opacity-90"

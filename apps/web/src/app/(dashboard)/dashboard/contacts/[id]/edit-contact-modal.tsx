@@ -83,13 +83,14 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
     setError("");
     const body: Record<string, string | null> = {
       name: name.trim(),
-      email: email.trim() || null,
       phone: phone.trim(),
       website: website.trim(),
       address: address.trim(),
       status,
       referredById: isReferral ? (referrer?.id ?? null) : null,
     };
+    // A portal client's email comes from their account and can't be changed here.
+    if (!contact.hasLogin) body.email = email.trim() || null;
     if (companyId) body.companyId = companyId;
     else if (companyText.trim()) body.companyName = companyText.trim();
     else body.companyId = null;
@@ -130,7 +131,20 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
         </div>
         <div>
           <label htmlFor="edit-email" className={labelClass}>Email</label>
-          <input id="edit-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+          <input
+            id="edit-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            readOnly={contact.hasLogin}
+            aria-describedby={contact.hasLogin ? "edit-email-hint" : undefined}
+            className={`${inputClass}${contact.hasLogin ? " opacity-60 cursor-not-allowed" : ""}`}
+          />
+          {contact.hasLogin && (
+            <p id="edit-email-hint" className="mt-1 text-xs text-[var(--muted-foreground)]">
+              This email comes from their portal account.
+            </p>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

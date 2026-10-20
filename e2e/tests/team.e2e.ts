@@ -59,6 +59,32 @@ test.describe("People (Team & Clients)", () => {
       await expect(page.getByText("(you)")).toBeVisible();
     });
 
+    test("owner can tag a staff member and the badge shows", async ({ page, request }) => {
+      const name = `Staff tag ${Date.now()}`;
+      const created = await request.post(`${API}/labels`, {
+        data: { name },
+        headers: { "x-csrf-token": getCsrfToken() },
+      });
+      expect(created.ok()).toBeTruthy();
+      const label = (await created.json()) as { id: string };
+
+      await page.goto("/dashboard/clients");
+      const row = page.getByTestId("team-member-row").filter({ hasText: "(you)" });
+      await row.getByRole("button", { name: "Edit labels" }).click();
+      await row.getByRole("option", { name }).click();
+      await expect(row.getByRole("option", { name })).toHaveAttribute("aria-selected", "true");
+
+      // Stored on the member (staff tag), so the badge shows after a reload.
+      await page.reload();
+      await expect(
+        page.getByTestId("team-member-row").filter({ hasText: "(you)" }).getByText(name, { exact: true }),
+      ).toBeVisible();
+
+      await request.delete(`${API}/labels/${label.id}`, {
+        headers: { "x-csrf-token": getCsrfToken() },
+      });
+    });
+
     test("team invite form is visible for owner", async ({ page }) => {
       await page.goto("/dashboard/clients");
       await expect(

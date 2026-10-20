@@ -9,6 +9,7 @@ import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, D
 import { track } from "@/lib/track";
 import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
+import { LabelPicker } from "@/components/label-picker";
 import { downloadCsv } from "@/lib/download";
 import { copyToClipboard } from "@/lib/clipboard";
 import Link from "next/link";
@@ -167,6 +168,26 @@ export default function PeoplePage() {
   };
 
   const [resendingId, setResendingId] = useState<string>("");
+  const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
+
+  useEffect(() => {
+    apiFetch<LabelRecord[]>("/labels").then(setOrgLabels).catch(console.error);
+  }, []);
+
+  // Staff tags live on the member (MemberLabel); the API picks the right home by role.
+  const handleToggleMemberLabel = async (member: MemberRecord, labelId: string) => {
+    const assigned = (member.labels ?? []).some((l) => l.label.id === labelId);
+    try {
+      await apiFetch(`/labels/${labelId}/assign`, {
+        method: assigned ? "DELETE" : "POST",
+        body: JSON.stringify({ entityType: "member", entityId: member.id }),
+      });
+      await loadMembers();
+    } catch (err) {
+      console.error(err);
+      showError(err instanceof Error ? err.message : "Failed to update tags");
+    }
+  };
 
   const handleResendInvitation = async (inv: Invitation) => {
     setResendingId(inv.id);
@@ -396,6 +417,7 @@ export default function PeoplePage() {
   const teamInvitations = invitations.filter((inv) => inv.role !== "member");
   const clientInvitations = invitations.filter((inv) => inv.role === "member");
   const isOwner = currentRole === "owner";
+  const canTag = currentRole === "owner" || currentRole === "admin";
 
   const tabs: { id: TabId; label: string; count: number }[] = [
     { id: "team", label: "Team", count: team.length },
@@ -665,13 +687,25 @@ export default function PeoplePage() {
                   return (
                     <div
                       key={member.id}
+                      data-testid="team-member-row"
                       className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg"
                     >
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="text-sm font-medium">{member.user.name}</p>
                           {isSelf && (
                             <span className="text-xs text-[var(--muted-foreground)]">(you)</span>
+                          )}
+                          {(member.labels ?? []).map((l) => (
+                            <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                          ))}
+                          {canTag && (
+                            <LabelPicker
+                              labels={orgLabels}
+                              assigned={(member.labels ?? []).map((l) => l.label.id)}
+                              onToggle={(labelId) => handleToggleMemberLabel(member, labelId)}
+                              onLabelsChange={setOrgLabels}
+                            />
                           )}
                         </div>
                         <p className="text-xs text-[var(--muted-foreground)]">

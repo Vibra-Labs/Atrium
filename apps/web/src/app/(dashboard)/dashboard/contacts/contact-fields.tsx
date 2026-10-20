@@ -114,6 +114,7 @@ export function SourceField({ sources, choice, newSource, onChoice, onNewSource 
           aria-label="New source name"
           placeholder="New source name"
           value={newSource}
+          maxLength={100}
           onChange={(e) => onNewSource(e.target.value)}
           className={`${inputClass} col-span-2 order-last`}
         />

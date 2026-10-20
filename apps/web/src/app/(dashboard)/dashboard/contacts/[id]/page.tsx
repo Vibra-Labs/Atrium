@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { useAppConfig } from "@/lib/app-config";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
@@ -25,6 +26,8 @@ export default function ContactPage() {
   const [editing, setEditing] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [timelineKey, setTimelineKey] = useState(0);
+  const [atClientLimit, setAtClientLimit] = useState(false);
+  const config = useAppConfig();
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -40,6 +43,20 @@ export default function ContactPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Same check as the Clients page: at the plan's client limit, offer the upgrade instead.
+  useEffect(() => {
+    if (!config?.billingEnabled) return;
+    Promise.all([
+      apiFetch<{ subscription: { plan: { maxClients: number } } | null }>("/billing/subscription"),
+      apiFetch<{ clients: number }>("/billing/usage"),
+    ])
+      .then(([sub, usage]) => {
+        const max = sub.subscription?.plan.maxClients;
+        setAtClientLimit(max !== undefined && max !== -1 && usage.clients >= max);
+      })
+      .catch((err: unknown) => console.error(err));
+  }, [config?.billingEnabled]);
 
   // Any change on the page may have added an automatic timeline event.
   const refresh = useCallback((): void => {
@@ -130,7 +147,16 @@ export default function ContactPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {contact.email && !contact.hasLogin && (
+          {contact.email && !contact.hasLogin && atClientLimit && (
+            <Link
+              href="/dashboard/settings/billing?reason=clients"
+              title="Client limit reached. Upgrade to Pro for unlimited clients."
+              className="px-3 py-2 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
+            >
+              Upgrade to invite
+            </Link>
+          )}
+          {contact.email && !contact.hasLogin && !atClientLimit && (
             <button
               onClick={invite}
               disabled={inviting}

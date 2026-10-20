@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { createLatestSaver } from "@/lib/latest-saver";
 import { useToast } from "@/components/toast";
 import { inputClass } from "../shared";
 
@@ -28,6 +29,12 @@ function localMidnightIso(date: string): string {
   return new Date(`${date}T00:00:00`).toISOString();
 }
 
+interface FollowUpDraft {
+  contactId: string;
+  date: string;
+  repeat: number | null;
+}
+
 interface Props {
   contactId: string;
   followUpAt: string | null;
@@ -40,11 +47,44 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
   const [date, setDate] = useState(toLocalDate(followUpAt));
   const [repeat, setRepeat] = useState<number | null>(everyDays);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  // What the inputs show right now; every save sends all of it, never a stale half.
+  const draft = useRef<{ date: string; repeat: number | null }>({
+    date: toLocalDate(followUpAt),
+    repeat: everyDays,
+  });
+  const callbacks = useRef({ onChanged, showError });
+
+  useEffect(() => {
+    callbacks.current = { onChanged, showError };
+  }, [onChanged, showError]);
 
   useEffect(() => {
     setDate(toLocalDate(followUpAt));
     setRepeat(everyDays);
+    draft.current = { date: toLocalDate(followUpAt), repeat: everyDays };
   }, [followUpAt, everyDays]);
+
+  // Blur on the date and change on the repeat select fire back to back; saves run one at a
+  // time and the last one always carries the latest date and repeat.
+  const [saveDraft] = useState(() =>
+    createLatestSaver<FollowUpDraft>(
+      async ({ contactId: id, date: nextDate, repeat: nextRepeat }) => {
+        try {
+          await apiFetch(`/contacts/${id}/follow-up`, {
+            method: "PUT",
+            body: JSON.stringify({
+              followUpAt: nextDate ? localMidnightIso(nextDate) : null,
+              everyDays: nextDate ? nextRepeat : null,
+            }),
+          });
+        } catch (err) {
+          console.error(err);
+          callbacks.current.showError(err instanceof Error ? err.message : "Failed to save follow-up");
+        }
+      },
+      () => callbacks.current.onChanged(),
+    ),
+  );
 
   async function run(path: string, init: RequestInit, failure: string): Promise<void> {
     try {
@@ -56,18 +96,8 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
     }
   }
 
-  function save(nextDate: string, nextRepeat: number | null): Promise<void> {
-    return run(
-      "",
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          followUpAt: nextDate ? localMidnightIso(nextDate) : null,
-          everyDays: nextDate ? nextRepeat : null,
-        }),
-      },
-      "Failed to save follow-up",
-    );
+  function save(): Promise<void> {
+    return saveDraft({ contactId, ...draft.current });
   }
 
   return (
@@ -80,9 +110,12 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
           type="date"
           aria-label="Follow-up date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => {
+            setDate(e.target.value);
+            draft.current = { ...draft.current, date: e.target.value };
+          }}
           onBlur={() => {
-            if (date !== toLocalDate(followUpAt)) save(date, repeat);
+            if (draft.current.date !== toLocalDate(followUpAt)) save();
           }}
           className={inputClass}
         />
@@ -92,7 +125,8 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
           onChange={(e) => {
             const next = e.target.value ? Number(e.target.value) : null;
             setRepeat(next);
-            if (date) save(date, next);
+            draft.current = { ...draft.current, repeat: next };
+            if (draft.current.date) save();
           }}
           className={inputClass}
         >
@@ -118,7 +152,12 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
               Snooze
             </button>
             <button
-              onClick={() => save("", null)}
+              onClick={() => {
+                setDate("");
+                setRepeat(null);
+                draft.current = { date: "", repeat: null };
+                save();
+              }}
               className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
             >
               Clear

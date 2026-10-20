@@ -116,12 +116,23 @@ describe("ContactBackfillService.run", () => {
     expect(contact.website).toBe("https://lena.dev");
     expect(contact.notes).toHaveLength(1);
 
-    // Simulate a partial earlier run: the contact exists but profile data was never copied.
+    expect(contact.profileImportedAt).not.toBeNull();
+
+    // A user clears the website and deletes the note: later boots must not refill them.
     await prisma.contactNote.deleteMany({ where: { contactId: contact.id } });
     await prisma.contact.update({ where: { id: contact.id }, data: { website: null } });
     await backfill.run();
-    const again = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id }, include: { notes: true } });
-    expect(again.website).toBe("https://lena.dev");
-    expect(again.notes).toHaveLength(1);
+    const cleared = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id }, include: { notes: true } });
+    expect(cleared.website).toBeNull();
+    expect(cleared.notes).toHaveLength(0);
+
+    // A failed/partial copy leaves profileImportedAt null and is retried.
+    await prisma.contact.update({ where: { id: contact.id }, data: { profileImportedAt: null } });
+    await backfill.run();
+    const retried = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id }, include: { notes: true } });
+    expect(retried.website).toBe("https://lena.dev");
+    expect(retried.phone).toBe("111");
+    expect(retried.notes).toHaveLength(1);
+    expect(retried.profileImportedAt).not.toBeNull();
   });
 });

@@ -986,6 +986,7 @@ model Contact {
   followUpEveryDays  Int? // null = one-off
   followUpOwnerId    String? // userId of who set it; receives the reminder
   followUpNotifiedAt DateTime?
+  profileImportedAt  DateTime? // set once ClientProfile data was copied in by the boot backfill
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

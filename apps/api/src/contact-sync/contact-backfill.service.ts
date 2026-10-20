@@ -11,6 +11,7 @@ interface ProfileFill {
   address?: string;
   website?: string;
   companyId?: string;
+  profileImportedAt: Date;
 }
 
 /** Turns existing clients, project links, labels and paid invoices into contact data. Idempotent. */
@@ -68,45 +69,46 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     }
   }
 
-  /** Re-runnable: only fills fields that are still empty, and adds the note only if there are none. */
+  /**
+   * One-time and atomic: runs only while profileImportedAt is null, and all writes (including
+   * setting profileImportedAt) commit together, so a failure is retried on the next boot while a
+   * success is never repeated (values a user later clears stay cleared).
+   */
   private async copyProfile(orgId: string, userId: string, contact: Contact): Promise<void> {
+    if (contact.profileImportedAt) return;
     const profile = await this.prisma.clientProfile.findUnique({
       where: { userId_organizationId: { userId, organizationId: orgId } },
     });
     if (!profile) return;
 
-    const data: ProfileFill = {};
-    if (contact.phone == null && profile.phone) data.phone = profile.phone;
-    if (contact.address == null && profile.address) data.address = profile.address;
-    if (contact.website == null && profile.website) data.website = profile.website;
-    const companyName = profile.company?.trim();
-    if (contact.companyId == null && companyName) {
-      data.companyId = await this.findOrCreateCompany(orgId, companyName);
-    }
-    if (Object.keys(data).length > 0) {
-      await this.prisma.contact.update({ where: { id: contact.id }, data });
-    }
+    await this.prisma.$transaction(async (tx) => {
+      const data: ProfileFill = { profileImportedAt: new Date() };
+      if (contact.phone == null && profile.phone) data.phone = profile.phone;
+      if (contact.address == null && profile.address) data.address = profile.address;
+      if (contact.website == null && profile.website) data.website = profile.website;
+      const companyName = profile.company?.trim();
+      if (contact.companyId == null && companyName) {
+        const existing = await tx.company.findFirst({
+          where: { organizationId: orgId, name: { equals: companyName, mode: "insensitive" } },
+        });
+        const company =
+          existing ?? (await tx.company.create({ data: { organizationId: orgId, name: companyName } }));
+        data.companyId = company.id;
+      }
+      await tx.contact.update({ where: { id: contact.id }, data });
 
-    const description = profile.description?.trim();
-    if (!description) return;
-    if ((await this.prisma.contactNote.count({ where: { contactId: contact.id } })) > 0) return;
-    const owner = await this.prisma.member.findFirst({
-      where: { organizationId: orgId, role: "owner" },
-      orderBy: { createdAt: "asc" },
+      const description = profile.description?.trim();
+      if (!description) return;
+      if ((await tx.contactNote.count({ where: { contactId: contact.id } })) > 0) return;
+      const owner = await tx.member.findFirst({
+        where: { organizationId: orgId, role: "owner" },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!owner) return;
+      await tx.contactNote.create({
+        data: { contactId: contact.id, organizationId: orgId, authorId: owner.userId, content: description },
+      });
     });
-    if (!owner) return;
-    await this.prisma.contactNote.create({
-      data: { contactId: contact.id, organizationId: orgId, authorId: owner.userId, content: description },
-    });
-  }
-
-  private async findOrCreateCompany(orgId: string, name: string): Promise<string> {
-    const existing = await this.prisma.company.findFirst({
-      where: { organizationId: orgId, name: { equals: name, mode: "insensitive" } },
-    });
-    if (existing) return existing.id;
-    const created = await this.prisma.company.create({ data: { organizationId: orgId, name } });
-    return created.id;
   }
 
   private async backfillProjectLinks(orgId: string): Promise<void> {

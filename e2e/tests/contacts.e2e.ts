@@ -268,3 +268,89 @@ test.describe("Contact page", () => {
     await context.close();
   });
 });
+
+test.describe("Company page", () => {
+  test("company page totals two contacts on one project once", async ({ page, request }) => {
+    const headers = { "x-csrf-token": getCsrfToken() };
+    const stamp = Date.now();
+    const company = `Totals Co ${stamp}`;
+    const first = await createContact(request, { name: `First ${stamp}`, companyName: company });
+    const second = await createContact(request, { name: `Second ${stamp}`, companyName: company });
+
+    const project = await (
+      await request.post(`${API}/projects`, { data: { name: `Shared project ${stamp}` }, headers })
+    ).json();
+    for (const id of [first, second]) {
+      const link = await request.post(`${API}/contacts/${id}/projects/${project.id}`, { headers });
+      expect(link.ok()).toBeTruthy();
+    }
+    const invoice = await (
+      await request.post(`${API}/invoices`, {
+        data: {
+          projectId: project.id,
+          lineItems: [{ description: "Work", quantity: 1, unitPrice: 120000 }],
+        },
+        headers,
+      })
+    ).json();
+    for (const body of [{ status: "sent" }, { status: "paid", paidAt: new Date().toISOString() }]) {
+      const res = await request.put(`${API}/invoices/${invoice.id}`, { data: body, headers });
+      expect(res.ok()).toBeTruthy();
+    }
+
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: "Companies" }).click();
+    await page.getByRole("link", { name: company }).click();
+
+    await expect(page.getByRole("heading", { name: company })).toBeVisible();
+    const strip = page.getByTestId("revenue-strip");
+    await expect(strip).toContainText("$1,200.00");
+    await expect(strip).not.toContainText("$2,400.00");
+    await expect(page.getByRole("link", { name: `First ${stamp}` })).toBeVisible();
+    await expect(page.getByRole("link", { name: `Second ${stamp}` })).toBeVisible();
+  });
+
+  test("edit notes and delete a company", async ({ page, request }) => {
+    const stamp = Date.now();
+    const company = `Notes Co ${stamp}`;
+    const personId = await createContact(request, { name: `Member ${stamp}`, companyName: company });
+    const companies = await (await request.get(`${API}/companies?limit=100`)).json();
+    const id = companies.data.find((c: { name: string }) => c.name === company).id;
+
+    await page.goto(`/dashboard/contacts/companies/${id}`);
+    await page.getByLabel("Notes").fill("Prefers email");
+    await page.getByLabel("Notes").blur();
+    await expect(page.getByText("Notes saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Notes")).toHaveValue("Prefers email");
+
+    await page.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("button", { name: "Delete" }).last().click();
+    await expect(page).toHaveURL(/\/dashboard\/contacts\?tab=companies/);
+    await expect(page.getByRole("link", { name: company })).toHaveCount(0);
+
+    const person = await (await request.get(`${API}/contacts/${personId}`)).json();
+    expect(person.company).toBeNull();
+  });
+});
+
+test.describe("Lead source settings", () => {
+  test("rename a lead source in settings", async ({ page, request }) => {
+    const stamp = Date.now();
+    const created = await request.post(`${API}/lead-sources`, {
+      data: { name: `Podcast ${stamp}` },
+      headers: { "x-csrf-token": getCsrfToken() },
+    });
+    expect(created.ok()).toBeTruthy();
+
+    await page.goto("/dashboard/settings/workspace");
+    await page.getByRole("button", { name: `Edit Podcast ${stamp}` }).click();
+    const input = page.getByLabel(`Rename Podcast ${stamp}`);
+    await input.fill(`Webinar ${stamp}`);
+    await input.press("Enter");
+
+    await expect(page.getByText("Lead source renamed")).toBeVisible();
+    await expect(page.getByText(`Webinar ${stamp}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Podcast ${stamp}`, { exact: true })).toHaveCount(0);
+  });
+});

@@ -12,17 +12,18 @@ interface LeadSource {
 }
 
 interface Props {
+  company?: { id: string; name: string };
   onClose: () => void;
   onCreated: () => void;
 }
 
-export function AddContactModal({ onClose, onCreated }: Props) {
+export function AddContactModal({ company, onClose, onCreated }: Props) {
   const { success, error: showError } = useToast();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("lead");
-  const [companyText, setCompanyText] = useState("");
-  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [companyText, setCompanyText] = useState(company?.name ?? "");
+  const [companyId, setCompanyId] = useState<string | null>(company?.id ?? null);
   const [sourceChoice, setSourceChoice] = useState("");
   const [newSource, setNewSource] = useState("");
   const [sources, setSources] = useState<LeadSource[]>([]);

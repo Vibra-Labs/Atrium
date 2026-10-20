@@ -94,6 +94,11 @@ export default function ContactsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
+  // Deep link from a company page back to the Companies tab.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "companies") setTab("companies");
+  }, []);
+
   useEffect(() => {
     apiFetch<Option[]>("/labels").then(setLabels).catch(console.error);
     apiFetch<Option[]>("/lead-sources").then(setSources).catch(console.error);

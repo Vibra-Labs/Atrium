@@ -121,14 +121,16 @@ export class UpdateCompanyDto {
   name?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsString()
   @MaxLength(500)
-  website?: string;
+  website?: string | null;
 
   @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsString()
   @MaxLength(5000)
-  notes?: string;
+  notes?: string | null;
 }
 
 export class CreateCompanyDto extends UpdateCompanyDto {

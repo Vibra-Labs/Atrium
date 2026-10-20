@@ -72,6 +72,20 @@ describe("CompaniesService", () => {
     expect(prisma.company.update).not.toHaveBeenCalled();
   });
 
+  it("update clears website and notes on null, leaves an omitted field alone", async () => {
+    prisma.company.findFirst.mockImplementation(() => Promise.resolve({ id: "co-1" }));
+    await service.update("co-1", { website: null, notes: null }, "org-1");
+    expect(prisma.company.update).toHaveBeenLastCalledWith({
+      where: { id: "co-1" },
+      data: { name: undefined, website: null, notes: null },
+    });
+    prisma.company.findFirst.mockImplementationOnce(() => Promise.resolve({ id: "co-1" }));
+    await service.update("co-1", { notes: "x" }, "org-1");
+    const data = (prisma.company.update.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(data.website).toBeUndefined();
+    expect(data.notes).toBe("x");
+  });
+
   it("companies.remove unsets companyId on contacts", async () => {
     prisma.company.findFirst.mockImplementation(() => Promise.resolve({ id: "co-1" }));
     await service.remove("co-1", "org-1");

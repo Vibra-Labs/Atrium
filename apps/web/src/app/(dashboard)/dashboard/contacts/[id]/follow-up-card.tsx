@@ -80,9 +80,9 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
           type="date"
           aria-label="Follow-up date"
           value={date}
-          onChange={(e) => {
-            setDate(e.target.value);
-            save(e.target.value, repeat);
+          onChange={(e) => setDate(e.target.value)}
+          onBlur={() => {
+            if (date !== toLocalDate(followUpAt)) save(date, repeat);
           }}
           className={inputClass}
         />

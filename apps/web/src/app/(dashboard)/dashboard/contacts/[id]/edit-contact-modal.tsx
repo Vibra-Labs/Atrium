@@ -36,11 +36,17 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   const [referrer, setReferrer] = useState<Option | null>(contact.referredBy);
   const [referrerSearch, setReferrerSearch] = useState("");
   const [referrerResults, setReferrerResults] = useState<Option[]>([]);
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    apiFetch<Option[]>("/lead-sources").then(setSources).catch(console.error);
+    apiFetch<Option[]>("/lead-sources")
+      .then((res) => {
+        setSources(res);
+        setSourcesLoaded(true);
+      })
+      .catch(console.error);
   }, []);
 
   const sourceName =
@@ -217,7 +223,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
           </button>
           <button
             type="submit"
-            disabled={saving || !name.trim() || (sourceChoice === NEW_SOURCE && !newSource.trim())}
+            disabled={saving || !sourcesLoaded || !name.trim() || (sourceChoice === NEW_SOURCE && !newSource.trim())}
             className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors disabled:opacity-40"
           >
             {saving ? "Saving..." : "Save"}

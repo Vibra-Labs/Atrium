@@ -44,13 +44,15 @@ function ProjectsSection({ contact, onChanged }: Props) {
   const linkedIds = new Set(contact.projects.map((p) => p.id));
   const available = options.filter((p) => !linkedIds.has(p.id));
 
-  async function link(projectId: string): Promise<void> {
+  async function link(projectId: string): Promise<boolean> {
     try {
       await apiFetch(`/contacts/${contact.id}/projects/${projectId}`, { method: "POST" });
       onChanged();
+      return true;
     } catch (err) {
       console.error(err);
       showError(err instanceof Error ? err.message : "Failed to link project");
+      return false;
     }
   }
 
@@ -73,7 +75,8 @@ function ProjectsSection({ contact, onChanged }: Props) {
         method: "POST",
         body: JSON.stringify({ name }),
       });
-      await link(project.id);
+      // Keep the form open if linking fails; the project already exists.
+      if (!(await link(project.id))) return;
       setNewName("");
       setCreating(false);
     } catch (err) {

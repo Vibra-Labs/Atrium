@@ -90,8 +90,10 @@ test.describe("Contacts list", () => {
     await page.goto("/dashboard");
     const input = await openSearchPalette(page);
     await input.fill(name);
-    await expect(page.getByText("Contacts", { exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: new RegExp(name) })).toBeVisible();
+    // Scoped to the palette: the sidebar also has a "Contacts" link.
+    const palette = page.getByRole("dialog", { name: "Global search" });
+    await expect(palette.getByText("Contacts", { exact: true })).toBeVisible();
+    await expect(palette.getByRole("link", { name: new RegExp(name) })).toBeVisible();
   });
 
   test("follow-up due today shows Today, past shows Overdue", async ({ page, request }) => {
@@ -130,6 +132,8 @@ test.describe("Contacts list", () => {
     await page.goto("/dashboard/contacts");
     await page.getByRole("button", { name: "Companies" }).click();
     await expect(page.getByRole("columnheader", { name: "Paid, all time" })).toBeVisible();
+    // Search rather than rely on the company landing on page 1.
+    await page.getByPlaceholder("Search companies").fill(company);
     await expect(page.getByRole("link", { name: company })).toBeVisible();
   });
 });
@@ -173,6 +177,10 @@ test.describe("Contact page", () => {
     await page.getByLabel("Follow-up date").fill(localDate(today));
     await page.getByLabel("Repeat").selectOption({ label: "Every 3 months" });
     await expect(page.getByRole("button", { name: "Done" })).toBeVisible();
+    // Leaving the date input saves on blur and the select saves on change; the repeat must win.
+    await expect
+      .poll(async () => (await (await request.get(`${API}/contacts/${id}`)).json()).followUpEveryDays)
+      .toBe(90);
 
     await page.getByRole("button", { name: "Done" }).click();
 
@@ -224,6 +232,30 @@ test.describe("Contact page", () => {
     await expect(strip).toContainText("Paid, all time");
     await expect(strip).toContainText("$1,200.00");
     await expect(strip).toHaveAttribute("title", "Paid invoices on this contact's projects");
+  });
+
+  test("at the client limit, invite becomes an upgrade link", async ({ page, request }) => {
+    const id = await createContact(request, {
+      name: `Limit ${Date.now()}`,
+      email: `limit-${Date.now()}@example.com`,
+    });
+    await page.route("**/api/health/config", (route) =>
+      route.fulfill({ json: { billingEnabled: true, signupEnabled: true } }),
+    );
+    await page.route("**/api/billing/subscription", (route) =>
+      route.fulfill({
+        json: {
+          subscription: { plan: { maxMembers: 1, maxClients: 5 } },
+          usage: { members: 1, clients: 5 },
+        },
+      }),
+    );
+
+    await page.goto(`/dashboard/contacts/${id}`);
+    const upgrade = page.getByRole("link", { name: "Upgrade to invite" });
+    await expect(upgrade).toBeVisible();
+    await expect(upgrade).toHaveAttribute("href", "/dashboard/settings/billing?reason=clients");
+    await expect(page.getByRole("button", { name: "Invite to portal" })).toHaveCount(0);
   });
 
   test("invite to portal keeps notes", async ({ browser }) => {
@@ -300,6 +332,7 @@ test.describe("Company page", () => {
 
     await page.goto("/dashboard/contacts");
     await page.getByRole("button", { name: "Companies" }).click();
+    await page.getByPlaceholder("Search companies").fill(company);
     await page.getByRole("link", { name: company }).click();
 
     await expect(page.getByRole("heading", { name: company })).toBeVisible();
@@ -314,8 +347,7 @@ test.describe("Company page", () => {
     const stamp = Date.now();
     const company = `Notes Co ${stamp}`;
     const personId = await createContact(request, { name: `Member ${stamp}`, companyName: company });
-    const companies = await (await request.get(`${API}/companies?limit=100`)).json();
-    const id = companies.data.find((c: { name: string }) => c.name === company).id;
+    const id = (await (await request.get(`${API}/contacts/${personId}`)).json()).company.id;
 
     await page.goto(`/dashboard/contacts/companies/${id}`);
     await page.getByLabel("Notes").fill("Prefers email");

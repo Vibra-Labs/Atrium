@@ -31,6 +31,8 @@ interface MondayDigestEmailProps {
   activity: DigestActivityItem[];
   moreActivity: number;
   overdueInvoices: { invoiceNumber: string; due: string; url: string }[];
+  followUps: { name: string; due: string; url: string; overdue: boolean }[];
+  moreFollowUps: number;
   dashboardUrl: string;
   settingsUrl: string;
 }
@@ -46,6 +48,8 @@ export function MondayDigestEmail({
   activity,
   moreActivity,
   overdueInvoices,
+  followUps,
+  moreFollowUps,
   dashboardUrl,
   settingsUrl,
 }: MondayDigestEmailProps) {
@@ -110,6 +114,25 @@ export function MondayDigestEmail({
                   <span style={muted}>· due {inv.due}</span>
                 </Text>
               ))}
+            </Section>
+          )}
+
+          {followUps.length > 0 && (
+            <Section>
+              <Text style={heading2}>
+                <strong>Follow-ups</strong>
+              </Text>
+              {followUps.map((f) => (
+                <Text key={f.url} style={item}>
+                  <Link href={f.url} style={{ color: "#006b68" }}>
+                    {f.name}
+                  </Link>{" "}
+                  <span style={{ ...muted, color: f.overdue ? "#b91c1c" : "#6b7280" }}>
+                    · {f.overdue ? `Overdue since ${f.due}` : `due ${f.due}`}
+                  </span>
+                </Text>
+              ))}
+              {moreFollowUps > 0 && <Text style={muted}>and {moreFollowUps} more</Text>}
             </Section>
           )}
 

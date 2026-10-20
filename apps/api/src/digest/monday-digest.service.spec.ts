@@ -5,7 +5,7 @@ const NOW = new Date("2026-10-12T08:00:00Z");
 const WEEK_AGO = new Date("2026-10-05T08:00:00Z");
 const NEXT_WEEK = new Date("2026-10-19T08:00:00Z");
 
-function build(data: { tasks?: unknown[]; taskCount?: number; notes?: unknown[]; noteCount?: number; invoices?: unknown[] } = {}) {
+function build(data: { tasks?: unknown[]; taskCount?: number; notes?: unknown[]; noteCount?: number; invoices?: unknown[]; contacts?: unknown[]; contactCount?: number } = {}) {
   const prisma = {
     task: {
       findMany: mock(() => Promise.resolve(data.tasks ?? [])),
@@ -16,6 +16,10 @@ function build(data: { tasks?: unknown[]; taskCount?: number; notes?: unknown[];
       count: mock(() => Promise.resolve(data.noteCount ?? (data.notes ?? []).length)),
     },
     invoice: { findMany: mock(() => Promise.resolve(data.invoices ?? [])) },
+    contact: {
+      findMany: mock(() => Promise.resolve(data.contacts ?? [])),
+      count: mock(() => Promise.resolve(data.contactCount ?? (data.contacts ?? []).length)),
+    },
   };
   return { service: new MondayDigestService(prisma as never), prisma };
 }
@@ -73,5 +77,26 @@ describe("MondayDigestService.collect", () => {
       OR: [{ status: "overdue" }, { status: "sent", dueDate: { lt: NOW } }],
     });
     expect(digest.overdueInvoices).toEqual([{ invoiceNumber: "INV-0004", dueDate: new Date("2026-10-01T00:00:00Z"), projectId: "p1" }]);
+  });
+
+  it("collects follow-ups due this week including overdue", async () => {
+    const { service, prisma } = build({
+      contacts: [
+        { id: "c1", name: "Ana Ruiz", followUpAt: new Date("2026-10-09T00:00:00Z") },
+        { id: "c2", name: "Bo Lee", followUpAt: new Date("2026-10-14T00:00:00Z") },
+      ],
+      contactCount: 14,
+    });
+    const digest = await service.collect({ userId: "u1", organizationId: "org1" }, NOW);
+
+    const args = (prisma.contact.findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown>; take: number }])[0];
+    expect(args.where).toEqual({ organizationId: "org1", followUpAt: { lte: NEXT_WEEK } });
+    expect(args.take).toBe(10);
+    expect(digest.followUps).toEqual([
+      { name: "Ana Ruiz", contactId: "c1", dueAt: new Date("2026-10-09T00:00:00Z"), overdue: true },
+      { name: "Bo Lee", contactId: "c2", dueAt: new Date("2026-10-14T00:00:00Z"), overdue: false },
+    ]);
+    expect(digest.followUpTotal).toBe(14);
+    expect(digest.isEmpty).toBe(false);
   });
 });

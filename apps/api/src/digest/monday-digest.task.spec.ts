@@ -23,11 +23,13 @@ const FULL: MondayDigest = {
   activity: [{ title: "New comment on Homepage", message: "Looks great!", link: "/dashboard/projects/p1" }],
   activityTotal: 1,
   overdueInvoices: [{ invoiceNumber: "INV-0004", dueDate: new Date("2026-10-01T00:00:00Z"), projectId: "p1" }],
+  followUps: [],
+  followUpTotal: 0,
   isEmpty: false,
 };
 
 const EMPTY: MondayDigest = {
-  tasks: [], taskTotal: 0, activity: [], activityTotal: 0, overdueInvoices: [], isEmpty: true,
+  tasks: [], taskTotal: 0, activity: [], activityTotal: 0, overdueInvoices: [], followUps: [], followUpTotal: 0, isEmpty: true,
 };
 
 function build(opts: { digest?: MondayDigest; claimCount?: number; sent?: boolean; members?: unknown[] } = {}) {
@@ -62,6 +64,28 @@ describe("MondayDigestTask", () => {
       mondayDigest: true,
       OR: [{ mondayDigestSentAt: null }, { mondayDigestSentAt: { lt: SIX_DAYS_AGO } }],
     });
+  });
+
+  it("summary mentions follow-ups", async () => {
+    const withFollowUps: MondayDigest = {
+      ...EMPTY,
+      isEmpty: false,
+      followUps: [
+        { name: "Ana Ruiz", contactId: "c1", dueAt: new Date("2026-10-09T00:00:00Z"), overdue: true },
+        { name: "Bo Lee", contactId: "c2", dueAt: new Date("2026-10-14T00:00:00Z"), overdue: false },
+      ],
+      followUpTotal: 2,
+    };
+    expect(digestSubject(withFollowUps)).toBe("Your week: 2 follow-ups");
+
+    const { task, mail } = build({ digest: withFollowUps });
+    await task.sendDigests(NOW);
+    const html = (mail.send.mock.calls[0] as unknown as [string, string, string])[2];
+    expect(html).toContain("Follow-ups");
+    expect(html).toContain("Ana Ruiz");
+    expect(html).toContain("Overdue");
+    expect(html).toContain("Oct 14");
+    expect(html).toContain("https://app.atrium.test/dashboard/contacts/c2");
   });
 
   it("emails what's due, what changed and overdue invoices, through the workspace's mail settings", async () => {

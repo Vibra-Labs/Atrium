@@ -23,6 +23,7 @@ export function digestSubject(digest: MondayDigest): string {
   if (digest.taskTotal > 0) parts.push(`${plural(digest.taskTotal, "task")} due`);
   if (digest.activityTotal > 0) parts.push(plural(digest.activityTotal, "update"));
   if (digest.overdueInvoices.length > 0) parts.push(plural(digest.overdueInvoices.length, "overdue invoice"));
+  if (digest.followUpTotal > 0) parts.push(plural(digest.followUpTotal, "follow-up"));
   return `Your week: ${parts.join(", ")}`;
 }
 
@@ -127,6 +128,13 @@ export class MondayDigestTask {
             due: shortDate(inv.dueDate),
             url: inv.projectId ? `${webUrl}/dashboard/projects/${inv.projectId}?tab=invoices` : dashboardUrl,
           })),
+          followUps: digest.followUps.map((f) => ({
+            name: f.name,
+            due: shortDate(f.dueAt),
+            url: `${webUrl}/dashboard/contacts/${f.contactId}`,
+            overdue: f.overdue,
+          })),
+          moreFollowUps: digest.followUpTotal - digest.followUps.length,
           dashboardUrl,
           settingsUrl: `${webUrl}/dashboard/settings/account#notifications`,
         }),

@@ -23,6 +23,7 @@ import {
   ListContactsQueryDto,
   SetFollowUpDto,
   SnoozeFollowUpDto,
+  TimelineQueryDto,
   UpdateContactDto,
 } from "./contacts.dto";
 import {
@@ -31,7 +32,6 @@ import {
   Roles,
   CurrentUser,
   CurrentOrg,
-  PaginationQueryDto,
   contentDisposition,
 } from "../common";
 
@@ -123,7 +123,7 @@ export class ContactsController {
   timeline(
     @Param("id") id: string,
     @CurrentOrg("id") orgId: string,
-    @Query() pagination: PaginationQueryDto,
+    @Query() pagination: TimelineQueryDto,
   ) {
     return this.contactsService.timeline(id, orgId, pagination.page, pagination.limit);
   }

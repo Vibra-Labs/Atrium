@@ -21,11 +21,21 @@ const mockPrisma = {
   },
   project: { findUnique: mock(() => Promise.resolve({ id: "p-1", name: "Site" } as unknown)) },
   invoice: { findUnique: mock(() => Promise.resolve(null as unknown)) },
+  memberLabel: {
+    findMany: mock(() => Promise.resolve([] as unknown[])),
+    deleteMany: mock((a: unknown) => Promise.resolve({ count: 0, a })),
+  },
+  contactLabel: { createMany: mock((a: unknown) => Promise.resolve({ count: 0, a })) },
+  $transaction: mock((ops: unknown[]) => Promise.all(ops)),
 };
 
 function reset(): void {
-  const groups = Object.values(mockPrisma) as Array<Record<string, ReturnType<typeof mock>>>;
+  const { $transaction, ...models } = mockPrisma;
+  $transaction.mockClear();
+  const groups = Object.values(models) as Array<Record<string, ReturnType<typeof mock>>>;
   for (const group of groups) for (const fn of Object.values(group)) fn.mockClear();
+  mockPrisma.memberLabel.findMany.mockImplementation(() => Promise.resolve([]));
+  mockPrisma.contact.create.mockImplementation(() => Promise.resolve({ id: "c-new" }));
   mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(null));
   mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ role: "member" }));
   mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve(null));
@@ -138,10 +148,58 @@ describe("ContactSyncService", () => {
 
       const result = await service.ensureForMember("org-1", "u-1");
 
-      expect(result).toEqual(other);
+      expect(result).toBeNull();
       expect(mockPrisma.contact.update).not.toHaveBeenCalled();
       expect(mockPrisma.contact.create).not.toHaveBeenCalled();
       expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
+    });
+
+    it("returns the winner when a concurrent create races it (P2002)", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
+      const winner = { id: "c-won", email: "bob@x.com", userId: "u-1", status: "client" };
+      mockPrisma.contact.findFirst
+        .mockImplementationOnce(() => Promise.resolve(null)) // by userId
+        .mockImplementationOnce(() => Promise.resolve(null)) // by email
+        .mockImplementationOnce(() => Promise.resolve(winner)); // refetch by userId
+      mockPrisma.contact.create.mockImplementationOnce(() => Promise.reject({ code: "P2002" }));
+
+      const result = await service.ensureForMember("org-1", "u-1");
+
+      expect(result).toEqual(winner);
+      expect(mockPrisma.contact.findFirst.mock.calls[2][0]).toEqual({
+        where: { organizationId: "org-1", userId: "u-1" },
+      });
+      expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
+    });
+
+    it("after a P2002 race, falls back to the email match and refuses one linked to another user", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
+      const lead = { id: "c-lead", email: "bob@x.com", userId: null, status: "lead" };
+      mockPrisma.contact.findFirst
+        .mockImplementationOnce(() => Promise.resolve(null))
+        .mockImplementationOnce(() => Promise.resolve(null))
+        .mockImplementationOnce(() => Promise.resolve(null)) // refetch by userId
+        .mockImplementationOnce(() => Promise.resolve(lead)); // refetch by email
+      mockPrisma.contact.create.mockImplementationOnce(() => Promise.reject({ code: "P2002" }));
+      expect(await service.ensureForMember("org-1", "u-1")).toEqual(lead);
+      expect(mockPrisma.contact.findFirst.mock.calls[3][0]).toEqual({
+        where: { organizationId: "org-1", email: "bob@x.com" },
+      });
+
+      const taken = { ...lead, userId: "u-other" };
+      mockPrisma.contact.findFirst
+        .mockImplementationOnce(() => Promise.resolve(null))
+        .mockImplementationOnce(() => Promise.resolve(null))
+        .mockImplementationOnce(() => Promise.resolve(null))
+        .mockImplementationOnce(() => Promise.resolve(taken));
+      mockPrisma.contact.create.mockImplementationOnce(() => Promise.reject({ code: "P2002" }));
+      expect(await service.ensureForMember("org-1", "u-1")).toBeNull();
+    });
+
+    it("rethrows non-unique create errors", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
+      mockPrisma.contact.create.mockImplementationOnce(() => Promise.reject(new Error("db down")));
+      await expect(service.ensureForMember("org-1", "u-1")).rejects.toThrow("db down");
     });
 
     it("is a no-op for staff (owner/admin) and non-members", async () => {
@@ -231,6 +289,42 @@ describe("ContactSyncService", () => {
       await service.syncRoleChange("org-1", "u-1", "owner", "member");
       expect(mockPrisma.contact.create).toHaveBeenCalled();
       expect(mockPrisma.contact.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("moves staff tags onto the new contact when staff is demoted to client", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
+      mockPrisma.memberLabel.findMany.mockImplementation(() =>
+        Promise.resolve([
+          { id: "ml-1", labelId: "l-1" },
+          { id: "ml-2", labelId: "l-2" },
+        ]),
+      );
+
+      await service.syncRoleChange("org-1", "u-1", "admin", "member");
+
+      expect(mockPrisma.memberLabel.findMany).toHaveBeenCalledWith({
+        where: { member: { organizationId: "org-1", userId: "u-1" } },
+        select: { id: true, labelId: true },
+      });
+      expect(mockPrisma.contactLabel.createMany).toHaveBeenCalledWith({
+        data: [
+          { contactId: "c-new", labelId: "l-1" },
+          { contactId: "c-new", labelId: "l-2" },
+        ],
+        skipDuplicates: true,
+      });
+      expect(mockPrisma.memberLabel.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ["ml-1", "ml-2"] } },
+      });
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves a promoted client's tags on their contact", async () => {
+      await service.syncRoleChange("org-1", "u-1", "member", "owner");
+      expect(mockPrisma.memberLabel.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.contactLabel.createMany).not.toHaveBeenCalled();
+      expect(mockPrisma.memberLabel.deleteMany).not.toHaveBeenCalled();
     });
 
     it("does nothing between staff roles or for an unchanged role", async () => {

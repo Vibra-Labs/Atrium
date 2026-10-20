@@ -7,14 +7,20 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from "class-validator";
+import { Type } from "class-transformer";
 import { CONTACT_STATUSES, FOLLOW_UP_REPEAT_DAYS, FOLLOW_UP_SNOOZE_DAYS } from "@atrium/shared";
 import type { ContactStatus } from "@atrium/shared";
 import { PaginationQueryDto } from "../common";
 
 export { CONTACT_STATUSES };
+
+export const LEAD_SOURCE_NAME_MAX = 100;
+export const TIMELINE_MAX_PAGE = 50;
 export type { ContactStatus };
 
 export class UpdateContactDto {
@@ -67,7 +73,7 @@ export class UpdateContactDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(200)
+  @MaxLength(LEAD_SOURCE_NAME_MAX)
   leadSourceName?: string;
 
   @IsOptional()
@@ -150,8 +156,18 @@ export class CreateCompanyDto extends UpdateCompanyDto {
 export class LeadSourceDto {
   @IsString()
   @MinLength(1)
-  @MaxLength(100)
+  @MaxLength(LEAD_SOURCE_NAME_MAX)
   name!: string;
+}
+
+/** page * limit is fetched from each of notes and events, so keep it bounded (≤ 5,000). */
+export class TimelineQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(TIMELINE_MAX_PAGE)
+  declare page?: number;
 }
 
 export class SetFollowUpDto {

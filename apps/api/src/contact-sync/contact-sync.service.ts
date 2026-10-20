@@ -56,13 +56,8 @@ export class ContactSyncService {
       where: { organizationId: orgId, email },
     });
     if (byEmail) {
-      if (byEmail.userId) {
-        // Email is unique per workspace, so a new contact can't be created; leave it alone.
-        this.logger.warn(
-          `Contact ${byEmail.id} matches user ${userId} by email but is linked to another user; not relinking`,
-        );
-        return byEmail;
-      }
+      // Email is unique per workspace, so a new contact can't be created; leave it alone.
+      if (byEmail.userId) return this.refuseTaken(byEmail, userId);
       const updated = await this.prisma.contact.update({
         where: { id: byEmail.id },
         data: { userId, status: "client" },
@@ -71,11 +66,45 @@ export class ContactSyncService {
       return updated;
     }
 
-    const created = await this.prisma.contact.create({
-      data: { organizationId: orgId, name: user.name, email, userId, status: "client" },
-    });
+    let created: Contact;
+    try {
+      created = await this.prisma.contact.create({
+        data: { organizationId: orgId, name: user.name, email, userId, status: "client" },
+      });
+    } catch (err) {
+      if ((err as { code?: string })?.code !== "P2002") throw err;
+      // A concurrent call created it first; return what won.
+      const winner =
+        (await this.prisma.contact.findFirst({ where: { organizationId: orgId, userId } })) ??
+        (await this.prisma.contact.findFirst({ where: { organizationId: orgId, email } }));
+      if (winner?.userId && winner.userId !== userId) return this.refuseTaken(winner, userId);
+      return winner;
+    }
     await this.addEvent(created.id, orgId, "contact_created", "Contact created");
     return created;
+  }
+
+  private refuseTaken(contact: Contact, userId: string): null {
+    this.logger.warn(
+      `Contact ${contact.id} matches user ${userId} by email but is linked to another user; not relinking`,
+    );
+    return null;
+  }
+
+  /** Moves a member's own (staff) tags onto their contact, e.g. after a demotion to client. */
+  private async moveMemberLabels(orgId: string, userId: string, contactId: string): Promise<void> {
+    const rows = await this.prisma.memberLabel.findMany({
+      where: { member: { organizationId: orgId, userId } },
+      select: { id: true, labelId: true },
+    });
+    if (rows.length === 0) return;
+    await this.prisma.$transaction([
+      this.prisma.contactLabel.createMany({
+        data: rows.map((r) => ({ contactId, labelId: r.labelId })),
+        skipDuplicates: true,
+      }),
+      this.prisma.memberLabel.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } }),
+    ]);
   }
 
   async linkProjectClients(projectId: string, orgId: string, userIds: string[]): Promise<void> {
@@ -122,11 +151,16 @@ export class ContactSyncService {
     });
   }
 
-  /** Keeps the contact link in step with a role change: only role "member" is a portal client. */
+  /**
+   * Keeps the contact link in step with a role change: only role "member" is a portal client.
+   * A demoted staff member's tags move to their contact; a promoted client's tags stay on the
+   * contact, which is now a past-client record.
+   */
   async syncRoleChange(orgId: string, userId: string, previousRole: string, newRole: string): Promise<void> {
     if (previousRole === newRole) return;
     if (newRole === "member") {
-      await this.ensureForMember(orgId, userId);
+      const contact = await this.ensureForMember(orgId, userId);
+      if (contact) await this.moveMemberLabels(orgId, userId, contact.id);
     } else if (previousRole === "member") {
       await this.detachMember(orgId, userId);
     }

@@ -9,7 +9,13 @@ import type { ContactRevenueService } from "./contact-revenue.service";
 import { ROLES_KEY } from "../common";
 import { validate } from "class-validator";
 import { plainToInstance } from "class-transformer";
-import { UpdateContactDto, SetFollowUpDto, SnoozeFollowUpDto } from "./contacts.dto";
+import {
+  CreateContactDto,
+  TimelineQueryDto,
+  UpdateContactDto,
+  SetFollowUpDto,
+  SnoozeFollowUpDto,
+} from "./contacts.dto";
 
 const prisma = {
   contact: {
@@ -196,6 +202,83 @@ describe("ContactsService", () => {
     expect(res.meta.total).toBe(3);
   });
 
+  it("timeline bounds the rows it fetches", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
+    const e = await rejects(service.timeline("c-1", "org-1", 51, 100));
+    expect(e).toBeInstanceOf(BadRequestException);
+    expect(prisma.contactNote.findMany).not.toHaveBeenCalled();
+
+    await service.timeline("c-1", "org-1", 50, 100);
+    const arg = prisma.contactNote.findMany.mock.calls[0][0] as unknown as { take: number };
+    expect(arg.take).toBe(5000);
+  });
+
+  it("TimelineQueryDto caps page at 50", async () => {
+    expect((await validate(plainToInstance(TimelineQueryDto, { page: "51" }))).length).toBeGreaterThan(0);
+    expect((await validate(plainToInstance(TimelineQueryDto, { page: "50", limit: "100" }))).length).toBe(0);
+  });
+
+  describe("company and lead source names", () => {
+    for (const field of ["companyName", "leadSourceName"] as const) {
+      it(`blank ${field} is a 400 on create and update`, async () => {
+        const e1 = await rejects(service.create({ name: "Ann", [field]: "   " }, "org-1"));
+        expect(e1).toBeInstanceOf(BadRequestException);
+        expect((e1 as Error).message).toBe("Name is required");
+        prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", userId: null }));
+        const e2 = await rejects(service.update("c-1", { [field]: " " }, "org-1"));
+        expect(e2).toBeInstanceOf(BadRequestException);
+        expect(prisma.contact.create).not.toHaveBeenCalled();
+        expect(prisma.contact.update).not.toHaveBeenCalled();
+        expect(prisma.company.create).not.toHaveBeenCalled();
+        expect(prisma.leadSource.create).not.toHaveBeenCalled();
+      });
+    }
+
+    it("companyName and leadSourceName are trimmed before lookup", async () => {
+      await service.create({ name: "Ann", companyName: "  Acme ", leadSourceName: " Podcast " }, "org-1");
+      expect(prisma.company.create).toHaveBeenCalledWith({ data: { organizationId: "org-1", name: "Acme" } });
+      expect(prisma.leadSource.create).toHaveBeenCalledWith({ data: { organizationId: "org-1", name: "Podcast" } });
+    });
+
+    it("leadSourceName max length matches LeadSourceDto (100)", async () => {
+      const ok = plainToInstance(CreateContactDto, { name: "A", leadSourceName: "x".repeat(100) });
+      expect(await validate(ok)).toHaveLength(0);
+      const tooLong = plainToInstance(CreateContactDto, { name: "A", leadSourceName: "x".repeat(101) });
+      expect((await validate(tooLong)).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("email of a contact with a portal login", () => {
+    const linked = { id: "c-1", userId: "u-1", email: "bob@x.com" };
+
+    it("changing it is a 400", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(linked));
+      for (const email of ["new@x.com", null]) {
+        const e = await rejects(service.update("c-1", { email }, "org-1"));
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as Error).message).toBe("This contact's email comes from their portal account");
+      }
+      expect(prisma.contact.update).not.toHaveBeenCalled();
+    });
+
+    it("resending the same email (any case) is allowed", async () => {
+      prisma.contact.findFirst
+        .mockImplementationOnce(() => Promise.resolve(linked)) // getOrThrow
+        .mockImplementationOnce(() => Promise.resolve(null)); // assertEmailFree
+      await service.update("c-1", { email: " Bob@X.com", name: "Bob" }, "org-1");
+      expect(prisma.contact.update).toHaveBeenCalled();
+    });
+
+    it("a contact without a login can change email", async () => {
+      prisma.contact.findFirst
+        .mockImplementationOnce(() => Promise.resolve({ ...linked, userId: null }))
+        .mockImplementationOnce(() => Promise.resolve(null));
+      await service.update("c-1", { email: "new@x.com" }, "org-1");
+      const arg = prisma.contact.update.mock.calls[0][0] as unknown as { data: { email: string } };
+      expect(arg.data.email).toBe("new@x.com");
+    });
+  });
+
   describe("update clearing", () => {
     beforeEach(() => {
       prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
@@ -291,14 +374,32 @@ describe("ContactsService", () => {
     const lastUpdate = (): { data: Record<string, unknown> } =>
       prisma.contact.update.mock.calls[0][0] as { data: Record<string, unknown> };
 
-    it("done on repeating moves date by interval from start of today", async () => {
+    it("done on repeating moves the previous date forward by the interval, keeping its time", async () => {
+      // Local midnight in New York (EDT) for Oct 20.
       prisma.contact.findFirst.mockImplementation(() =>
-        Promise.resolve({ id: "c-1", followUpEveryDays: 30 }),
+        Promise.resolve({ id: "c-1", followUpEveryDays: 30, followUpAt: new Date("2026-10-20T04:00:00Z") }),
       );
       await service.completeFollowUp("c-1", "org-1", NOW);
-      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-19T00:00:00Z"));
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-19T04:00:00Z"));
       expect(lastUpdate().data.followUpEveryDays).toBe(30);
       expect(lastUpdate().data.followUpNotifiedAt).toBeNull();
+    });
+
+    it("done on an overdue repeating follow-up skips ahead until it is after now", async () => {
+      prisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve({ id: "c-1", followUpEveryDays: 14, followUpAt: new Date("2026-09-01T04:00:00Z") }),
+      );
+      await service.completeFollowUp("c-1", "org-1", NOW);
+      // Sep 1 + 14 = Sep 15, Sep 29, Oct 13, Oct 27 (first after Oct 20 15:30Z).
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-10-27T04:00:00Z"));
+    });
+
+    it("done on a repeating follow-up with no date falls back to now + interval", async () => {
+      prisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve({ id: "c-1", followUpEveryDays: 30, followUpAt: null }),
+      );
+      await service.completeFollowUp("c-1", "org-1", NOW);
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-19T15:30:00Z"));
     });
 
     it("done on one-off clears", async () => {
@@ -393,6 +494,14 @@ describe("ContactsService", () => {
       });
       expect(prisma.contactNote.create).toHaveBeenCalledWith({
         data: { contactId: "c-1", organizationId: "org-1", authorId: "u-1", content: "Met at expo" },
+      });
+    });
+
+    it("import truncates the source name to the lead source limit (100)", async () => {
+      const csv = `Name,Source\nAnn,${"s".repeat(150)}\n`;
+      await service.importCsv({ csv, mapping: { Name: "name", Source: "source" } }, "org-1", "u-1");
+      expect(prisma.leadSource.create).toHaveBeenCalledWith({
+        data: { organizationId: "org-1", name: "s".repeat(100) },
       });
     });
 

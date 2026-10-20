@@ -16,12 +16,14 @@ import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { ContactRevenueService } from "./contact-revenue.service";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
 import type { ImportField, ImportMapping } from "./contacts-csv";
+import { LEAD_SOURCE_NAME_MAX, TIMELINE_MAX_PAGE } from "./contacts.dto";
 import type {
   CreateContactDto,
   ListContactsQueryDto,
   SetFollowUpDto,
   UpdateContactDto,
 } from "./contacts.dto";
+import { requireName } from "./require-name";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOO_MANY_ROWS = "CSV has more than 5,000 rows";
@@ -45,8 +47,15 @@ function splitTags(value: string): string[] {
   return names.filter((n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i);
 }
 
-export function startOfUtcDay(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+/**
+ * Next date of a repeating follow-up: the previous date stepped forward by the interval until it
+ * is after now, which keeps the time of day the user picked (their local midnight).
+ */
+function nextRepeat(previous: Date | null, everyDays: number, now: Date): Date {
+  const step = everyDays * DAY_MS;
+  if (!previous) return new Date(now.getTime() + step);
+  const behind = Math.max(0, now.getTime() - previous.getTime());
+  return new Date(previous.getTime() + (Math.floor(behind / step) + 1) * step);
 }
 
 export interface TimelineItem {
@@ -206,7 +215,7 @@ export class ContactsService {
             address: cell(row, "address").slice(0, 500) || undefined,
             status: parseStatus(cell(row, "status")),
             companyName: cell(row, "company").slice(0, 200) || undefined,
-            leadSourceName: cell(row, "source").slice(0, 200) || undefined,
+            leadSourceName: cell(row, "source").slice(0, LEAD_SOURCE_NAME_MAX) || undefined,
           },
           orgId,
         );
@@ -347,9 +356,12 @@ export class ContactsService {
   }
 
   async update(id: string, dto: UpdateContactDto, orgId: string) {
-    await this.getOrThrow(id, orgId);
+    const contact = await this.getOrThrow(id, orgId);
     // undefined = leave alone, null = clear.
     const email = dto.email == null ? dto.email : normalizeEmail(dto.email);
+    if (contact.userId && email !== undefined && email !== contact.email) {
+      throw new BadRequestException("This contact's email comes from their portal account");
+    }
     if (email) await this.assertEmailFree(email, orgId, id);
     if (dto.referredById === id) {
       throw new BadRequestException("A contact cannot refer themselves");
@@ -384,6 +396,10 @@ export class ContactsService {
   }
 
   async timeline(id: string, orgId: string, page = 1, limit = 20) {
+    // Each source is fetched up to page * limit rows, so the page must stay bounded.
+    if (page > TIMELINE_MAX_PAGE) {
+      throw new BadRequestException(`page must not be greater than ${TIMELINE_MAX_PAGE}`);
+    }
     await this.getOrThrow(id, orgId);
     const where = { contactId: id, organizationId: orgId };
     const take = page * limit;
@@ -501,7 +517,7 @@ export class ContactsService {
     return this.prisma.contact.update({
       where: { id },
       data: {
-        followUpAt: every ? new Date(startOfUtcDay(now).getTime() + every * DAY_MS) : null,
+        followUpAt: every ? nextRepeat(contact.followUpAt, every, now) : null,
         followUpEveryDays: every ?? null,
         followUpNotifiedAt: null,
       },
@@ -553,8 +569,8 @@ export class ContactsService {
       });
       if (!company) throw new NotFoundException("Company not found");
       out.companyId = company.id;
-    } else if (dto.companyName) {
-      out.companyId = (await this.findOrCreateCompany(dto.companyName.trim(), orgId)).id;
+    } else if (dto.companyName != null) {
+      out.companyId = (await this.findOrCreateCompany(requireName(dto.companyName), orgId)).id;
     }
 
     if (dto.leadSourceId === null) {
@@ -565,8 +581,8 @@ export class ContactsService {
       });
       if (!source) throw new NotFoundException("Lead source not found");
       out.leadSourceId = source.id;
-    } else if (dto.leadSourceName) {
-      out.leadSourceId = (await this.findOrCreateLeadSource(dto.leadSourceName.trim(), orgId)).id;
+    } else if (dto.leadSourceName != null) {
+      out.leadSourceId = (await this.findOrCreateLeadSource(requireName(dto.leadSourceName), orgId)).id;
     }
 
     if (dto.referredById === null) {

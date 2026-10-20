@@ -47,13 +47,33 @@ function splitTags(value: string): string[] {
   return names.filter((n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i);
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * Next date of a repeating follow-up: the previous date stepped forward by the interval until it
- * is after now, which keeps the time of day the user picked (their local midnight).
+ * Follow-ups are calendar dates, stored at noon UTC of the date so whole-day steps never cross
+ * a day boundary and the UTC date reads the same in every time zone.
+ */
+function noonUtc(day: string): Date {
+  return new Date(`${day}T12:00:00.000Z`);
+}
+
+/** Noon UTC of now's UTC date plus `days`. */
+function noonUtcInDays(now: Date, days: number): Date {
+  return new Date(noonUtc(now.toISOString().slice(0, 10)).getTime() + days * DAY_MS);
+}
+
+/** "YYYY-MM-DD" -> noon UTC; a full ISO timestamp (API/MCP callers) is kept as sent. */
+function parseFollowUpAt(value: string): Date {
+  return DATE_ONLY.test(value) ? noonUtc(value) : new Date(value);
+}
+
+/**
+ * Next date of a repeating follow-up: the previous date stepped forward by whole days until it
+ * is after now. With no previous date, noon UTC today + the interval.
  */
 function nextRepeat(previous: Date | null, everyDays: number, now: Date): Date {
   const step = everyDays * DAY_MS;
-  if (!previous) return new Date(now.getTime() + step);
+  if (!previous) return noonUtcInDays(now, everyDays);
   const behind = Math.max(0, now.getTime() - previous.getTime());
   return new Date(previous.getTime() + (Math.floor(behind / step) + 1) * step);
 }
@@ -499,7 +519,7 @@ export class ContactsService {
 
   async setFollowUp(id: string, dto: SetFollowUpDto, orgId: string, userId: string) {
     await this.getOrThrow(id, orgId);
-    const followUpAt = dto.followUpAt ? new Date(dto.followUpAt) : null;
+    const followUpAt = dto.followUpAt ? parseFollowUpAt(dto.followUpAt) : null;
     return this.prisma.contact.update({
       where: { id },
       data: {
@@ -528,7 +548,7 @@ export class ContactsService {
     await this.getOrThrow(id, orgId);
     return this.prisma.contact.update({
       where: { id },
-      data: { followUpAt: new Date(now.getTime() + days * DAY_MS), followUpNotifiedAt: null },
+      data: { followUpAt: noonUtcInDays(now, days), followUpNotifiedAt: null },
     });
   }
 

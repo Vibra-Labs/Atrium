@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { createLatestSaver } from "@/lib/latest-saver";
 import { useToast } from "@/components/toast";
+import { followUpDay } from "@/lib/follow-up-date";
 import { inputClass } from "../shared";
 
 const REPEAT_OPTIONS: { days: number; label: string }[] = [
@@ -14,20 +15,6 @@ const REPEAT_OPTIONS: { days: number; label: string }[] = [
   { days: 365, label: "1 year" },
 ];
 const SNOOZE_DAYS = [1, 3, 7];
-
-/** ISO timestamp -> local "YYYY-MM-DD" for a date input. */
-function toLocalDate(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-
-/** Local "YYYY-MM-DD" -> ISO timestamp of local midnight. */
-function localMidnightIso(date: string): string {
-  return new Date(`${date}T00:00:00`).toISOString();
-}
 
 interface FollowUpDraft {
   contactId: string;
@@ -44,12 +31,12 @@ interface Props {
 
 export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Props) {
   const { error: showError } = useToast();
-  const [date, setDate] = useState(toLocalDate(followUpAt));
+  const [date, setDate] = useState(followUpDay(followUpAt));
   const [repeat, setRepeat] = useState<number | null>(everyDays);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   // What the inputs show right now; every save sends all of it, never a stale half.
   const draft = useRef<{ date: string; repeat: number | null }>({
-    date: toLocalDate(followUpAt),
+    date: followUpDay(followUpAt),
     repeat: everyDays,
   });
   const callbacks = useRef({ onChanged, showError });
@@ -59,9 +46,9 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
   }, [onChanged, showError]);
 
   useEffect(() => {
-    setDate(toLocalDate(followUpAt));
+    setDate(followUpDay(followUpAt));
     setRepeat(everyDays);
-    draft.current = { date: toLocalDate(followUpAt), repeat: everyDays };
+    draft.current = { date: followUpDay(followUpAt), repeat: everyDays };
   }, [followUpAt, everyDays]);
 
   // Blur on the date and change on the repeat select fire back to back; saves run one at a
@@ -73,7 +60,8 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
           await apiFetch(`/contacts/${id}/follow-up`, {
             method: "PUT",
             body: JSON.stringify({
-              followUpAt: nextDate ? localMidnightIso(nextDate) : null,
+              // A plain date; the API stores it as noon UTC so it never shifts a day.
+              followUpAt: nextDate || null,
               everyDays: nextDate ? nextRepeat : null,
             }),
           });
@@ -115,7 +103,7 @@ export function FollowUpCard({ contactId, followUpAt, everyDays, onChanged }: Pr
             draft.current = { ...draft.current, date: e.target.value };
           }}
           onBlur={() => {
-            if (draft.current.date !== toLocalDate(followUpAt)) save();
+            if (draft.current.date !== followUpDay(followUpAt)) save();
           }}
           className={inputClass}
         />

@@ -163,6 +163,37 @@ describe("ContactBackfillService.run", () => {
     expect(await prisma.contactLabel.count({ where: { contact: { organizationId: orgId } } })).toBe(1);
   });
 
+  it("role changes: a demoted admin's tags move to their contact and stay there after re-promotion", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb7-org-${s}`, name: `cb7-${s}`, slug: `cb7-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb7-admin-${s}`);
+    const sync = new ContactSyncService(prisma);
+    const user = await prisma.user.create({ data: { id: `cb7-admin-${s}`, name: "Dee", email: `dee-${s}@x.com`, emailVerified: true } });
+    const member = await prisma.member.create({ data: { id: `cb7-m-${s}`, organizationId: orgId, userId: user.id, role: "admin" } });
+    const label = await prisma.label.create({ data: { name: "Design", organizationId: orgId } });
+    await prisma.memberLabel.create({ data: { memberId: member.id, labelId: label.id } });
+
+    // Demote (the member row changes first, as in changeRole and the Better Auth hook).
+    await prisma.member.update({ where: { id: member.id }, data: { role: "member" } });
+    await sync.syncRoleChange(orgId, user.id, "admin", "member");
+
+    const contact = await prisma.contact.findFirstOrThrow({ where: { organizationId: orgId, userId: user.id } });
+    expect(contact.status).toBe("client");
+    expect((await prisma.contactLabel.findMany({ where: { contactId: contact.id } })).map((l) => l.labelId)).toEqual([label.id]);
+    expect(await prisma.memberLabel.count({ where: { memberId: member.id } })).toBe(0);
+
+    // Promote again: the contact becomes a past-client record and keeps its tags.
+    await prisma.member.update({ where: { id: member.id }, data: { role: "admin" } });
+    await sync.syncRoleChange(orgId, user.id, "member", "admin");
+
+    const after = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id } });
+    expect(after.userId).toBeNull();
+    expect(after.status).toBe("past_client");
+    expect(await prisma.contactLabel.count({ where: { contactId: contact.id } })).toBe(1);
+    expect(await prisma.memberLabel.count({ where: { memberId: member.id } })).toBe(0);
+  });
+
   it("keeps a hand-set status on a linked contact across boots", async () => {
     const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     orgId = (await prisma.organization.create({ data: { id: `cb5-org-${s}`, name: `cb5-${s}`, slug: `cb5-${s}` } })).id;

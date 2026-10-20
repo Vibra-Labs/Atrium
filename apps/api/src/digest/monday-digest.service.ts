@@ -31,6 +31,11 @@ export interface MondayDigest {
 }
 
 /** What an owner/admin should look at as their week starts. */
+/** Follow-ups are calendar dates: compare their UTC date, not the timestamp. */
+function utcDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 @Injectable()
 export class MondayDigestService {
   constructor(private prisma: PrismaService) {}
@@ -101,7 +106,9 @@ export class MondayDigestService {
       activityTotal,
       overdueInvoices,
       followUps: followUps.flatMap((c) =>
-        c.followUpAt ? [{ name: c.name, contactId: c.id, dueAt: c.followUpAt, overdue: c.followUpAt < now }] : [],
+        c.followUpAt
+          ? [{ name: c.name, contactId: c.id, dueAt: c.followUpAt, overdue: utcDay(c.followUpAt) < utcDay(now) }]
+          : [],
       ),
       followUpTotal,
       isEmpty: taskTotal === 0 && activityTotal === 0 && overdueInvoices.length === 0 && followUpTotal === 0,

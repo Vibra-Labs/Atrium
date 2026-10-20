@@ -385,6 +385,14 @@ describe("ContactsService", () => {
       expect(lastUpdate().data.followUpNotifiedAt).toBeNull();
     });
 
+    it("done on a date-only (noon UTC) follow-up keeps it at noon UTC on the next date", async () => {
+      prisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve({ id: "c-1", followUpEveryDays: 30, followUpAt: new Date("2026-10-20T12:00:00.000Z") }),
+      );
+      await service.completeFollowUp("c-1", "org-1", NOW);
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-19T12:00:00.000Z"));
+    });
+
     it("done on an overdue repeating follow-up skips ahead until it is after now", async () => {
       prisma.contact.findFirst.mockImplementation(() =>
         Promise.resolve({ id: "c-1", followUpEveryDays: 14, followUpAt: new Date("2026-09-01T04:00:00Z") }),
@@ -394,12 +402,12 @@ describe("ContactsService", () => {
       expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-10-27T04:00:00Z"));
     });
 
-    it("done on a repeating follow-up with no date falls back to now + interval", async () => {
+    it("done on a repeating follow-up with no date falls back to noon UTC today + interval", async () => {
       prisma.contact.findFirst.mockImplementation(() =>
         Promise.resolve({ id: "c-1", followUpEveryDays: 30, followUpAt: null }),
       );
       await service.completeFollowUp("c-1", "org-1", NOW);
-      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-19T15:30:00Z"));
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-19T12:00:00.000Z"));
     });
 
     it("done on one-off clears", async () => {
@@ -411,10 +419,10 @@ describe("ContactsService", () => {
       expect(lastUpdate().data.followUpEveryDays).toBeNull();
     });
 
-    it("snooze resets notified", async () => {
+    it("snooze moves to noon UTC of today + days and resets notified", async () => {
       prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
       await service.snoozeFollowUp("c-1", 3, "org-1", NOW);
-      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-10-23T15:30:00Z"));
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-10-23T12:00:00.000Z"));
       expect(lastUpdate().data.followUpNotifiedAt).toBeNull();
     });
 
@@ -426,6 +434,22 @@ describe("ContactsService", () => {
         followUpEveryDays: 14,
         followUpNotifiedAt: null,
       });
+    });
+
+    it("set stores a plain date at noon UTC and keeps a full ISO timestamp as sent", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
+      await service.setFollowUp("c-1", { followUpAt: "2026-11-01" }, "org-1", "u-1");
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-01T12:00:00.000Z"));
+      prisma.contact.update.mockClear();
+      await service.setFollowUp("c-1", { followUpAt: "2026-11-01T05:00:00Z" }, "org-1", "u-1");
+      expect(lastUpdate().data.followUpAt).toEqual(new Date("2026-11-01T05:00:00Z"));
+    });
+
+    it("SetFollowUpDto accepts a plain date or a full ISO timestamp", async () => {
+      for (const followUpAt of ["2026-11-01", "2026-11-01T05:00:00Z"]) {
+        expect(await validate(plainToInstance(SetFollowUpDto, { followUpAt }))).toHaveLength(0);
+      }
+      expect((await validate(plainToInstance(SetFollowUpDto, { followUpAt: "11/01/2026" }))).length).toBeGreaterThan(0);
     });
 
     it("set with null clears everything; unknown contact is 404", async () => {

@@ -16,7 +16,3 @@ export const NEW_SOURCE = "__new__";
 
 export const inputClass =
   "w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:ring-1 focus:ring-[var(--primary)]";
-
-export function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}

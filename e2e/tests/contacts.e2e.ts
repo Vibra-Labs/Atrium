@@ -98,11 +98,11 @@ test.describe("Contacts list", () => {
 
   test("follow-up due today shows Today, past shows Overdue", async ({ page, request }) => {
     const stamp = Date.now();
-    const noon = (offsetDays: number): string => {
+    // Follow-ups are plain dates; "Today" is the browser's local date.
+    const day = (offsetDays: number): string => {
       const d = new Date();
       d.setDate(d.getDate() + offsetDays);
-      d.setHours(12, 0, 0, 0);
-      return d.toISOString();
+      return localDate(d);
     };
     for (const [label, offset] of [["Today", 0], ["Late", -3]] as const) {
       const created = await request.post(`${API}/contacts`, {
@@ -111,7 +111,7 @@ test.describe("Contacts list", () => {
       });
       const { id } = await created.json();
       const set = await request.put(`${API}/contacts/${id}/follow-up`, {
-        data: { followUpAt: noon(offset) },
+        data: { followUpAt: day(offset) },
         headers: { "x-csrf-token": getCsrfToken() },
       });
       expect(set.ok()).toBeTruthy();
@@ -184,11 +184,12 @@ test.describe("Contact page", () => {
 
     await page.getByRole("button", { name: "Done" }).click();
 
-    // The API moves the date to start of today (UTC) + 90 days.
-    const utcMidnight = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
-    );
-    const expected = localDate(new Date(utcMidnight.getTime() + 90 * 24 * 60 * 60 * 1000));
+    // The picked date is stored as noon UTC; Done moves it 90 calendar days on.
+    const picked = new Date(`${localDate(today)}T12:00:00Z`);
+    const expected = new Date(picked.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await expect
+      .poll(async () => (await (await request.get(`${API}/contacts/${id}`)).json()).followUpAt)
+      .toBe(`${expected}T12:00:00.000Z`);
     await expect(page.getByLabel("Follow-up date")).toHaveValue(expected);
     await expect(page.getByLabel("Repeat")).toHaveValue("90");
   });

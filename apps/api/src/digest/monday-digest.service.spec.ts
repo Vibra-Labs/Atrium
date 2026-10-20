@@ -84,6 +84,8 @@ describe("MondayDigestService.collect", () => {
       contacts: [
         { id: "c1", name: "Ana Ruiz", followUpAt: new Date("2026-10-09T00:00:00Z") },
         { id: "c2", name: "Bo Lee", followUpAt: new Date("2026-10-14T00:00:00Z") },
+        // Due today (by date) is not overdue, even though its timestamp is before now.
+        { id: "c3", name: "Cy Day", followUpAt: new Date("2026-10-12T05:00:00Z") },
       ],
       contactCount: 14,
     });
@@ -95,6 +97,7 @@ describe("MondayDigestService.collect", () => {
     expect(digest.followUps).toEqual([
       { name: "Ana Ruiz", contactId: "c1", dueAt: new Date("2026-10-09T00:00:00Z"), overdue: true },
       { name: "Bo Lee", contactId: "c2", dueAt: new Date("2026-10-14T00:00:00Z"), overdue: false },
+      { name: "Cy Day", contactId: "c3", dueAt: new Date("2026-10-12T05:00:00Z"), overdue: false },
     ]);
     expect(digest.followUpTotal).toBe(14);
     expect(digest.isEmpty).toBe(false);

@@ -12,7 +12,8 @@ import { Pagination } from "@/components/pagination";
 import { ClientItemSkeleton } from "@/components/skeletons";
 import { AddContactModal } from "./add-contact-modal";
 import { ImportContactsModal } from "./import-contacts-modal";
-import { REPEAT_LABELS, STATUS_LABELS, formatDay } from "./shared";
+import { followUpWhen, formatFollowUpDay } from "@/lib/follow-up-date";
+import { REPEAT_LABELS, STATUS_LABELS } from "./shared";
 
 interface ContactRow {
   id: string;
@@ -58,16 +59,12 @@ const LIMIT = 20;
 
 function FollowUp({ at, everyDays }: { at: string | null; everyDays: number | null }) {
   if (!at) return <span className="text-[var(--muted-foreground)]">—</span>;
-  const day = formatDay(at);
-  const due = new Date(at);
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(startOfToday);
-  endOfToday.setDate(endOfToday.getDate() + 1);
-  if (due < startOfToday) {
+  const day = formatFollowUpDay(at);
+  const when = followUpWhen(at);
+  if (when === "overdue") {
     return <span className="text-red-600">Overdue · {day}</span>;
   }
-  if (due < endOfToday) {
+  if (when === "today") {
     return <span>Today</span>;
   }
   if (everyDays) {

@@ -1,6 +1,8 @@
 import {
   ValidateIf,
+  IsDateString,
   IsEmail,
+  IsInt,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -8,10 +10,12 @@ import {
   MaxLength,
   MinLength,
 } from "class-validator";
+import { CONTACT_STATUSES, FOLLOW_UP_REPEAT_DAYS, FOLLOW_UP_SNOOZE_DAYS } from "@atrium/shared";
+import type { ContactStatus } from "@atrium/shared";
 import { PaginationQueryDto } from "../common";
 
-export const CONTACT_STATUSES = ["lead", "client", "past_client"] as const;
-export type ContactStatus = (typeof CONTACT_STATUSES)[number];
+export { CONTACT_STATUSES };
+export type { ContactStatus };
 
 export class UpdateContactDto {
   @IsOptional()
@@ -139,4 +143,22 @@ export class LeadSourceDto {
   @MinLength(1)
   @MaxLength(100)
   name!: string;
+}
+
+export class SetFollowUpDto {
+  @ValidateIf((_, v) => v !== null)
+  @IsDateString()
+  followUpAt!: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsInt()
+  @IsIn(FOLLOW_UP_REPEAT_DAYS)
+  everyDays?: number | null;
+}
+
+export class SnoozeFollowUpDto {
+  @IsInt()
+  @IsIn(FOLLOW_UP_SNOOZE_DAYS)
+  days!: number;
 }

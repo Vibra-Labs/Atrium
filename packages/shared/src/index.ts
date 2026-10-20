@@ -56,6 +56,12 @@ export const DEFAULT_LABEL_COLOR = "#6b7280";
 
 export const DEFAULT_LEAD_SOURCES: string[] = ["Referral", "Website", "Event", "Social"];
 
+export const CONTACT_STATUSES = ["lead", "client", "past_client"] as const;
+export type ContactStatus = (typeof CONTACT_STATUSES)[number];
+
+export const FOLLOW_UP_REPEAT_DAYS: readonly number[] = [14, 30, 90, 180, 365];
+export const FOLLOW_UP_SNOOZE_DAYS: readonly number[] = [1, 3, 7];
+
 export const CALENDAR_EVENT_TYPES = [
   "task",
   "project_start",

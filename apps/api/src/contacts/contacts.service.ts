@@ -12,8 +12,15 @@ import { ContactRevenueService } from "./contact-revenue.service";
 import type {
   CreateContactDto,
   ListContactsQueryDto,
+  SetFollowUpDto,
   UpdateContactDto,
 } from "./contacts.dto";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function startOfUtcDay(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
 
 export interface TimelineItem {
   kind: "note" | "event";
@@ -288,6 +295,41 @@ export class ContactsService {
     await this.getOrThrow(id, orgId);
     await this.prisma.projectContact.deleteMany({
       where: { contactId: id, projectId, project: { organizationId: orgId } },
+    });
+  }
+
+  async setFollowUp(id: string, dto: SetFollowUpDto, orgId: string, userId: string) {
+    await this.getOrThrow(id, orgId);
+    const followUpAt = dto.followUpAt ? new Date(dto.followUpAt) : null;
+    return this.prisma.contact.update({
+      where: { id },
+      data: {
+        followUpAt,
+        followUpEveryDays: followUpAt ? (dto.everyDays ?? null) : null,
+        followUpOwnerId: followUpAt ? userId : null,
+        followUpNotifiedAt: null,
+      },
+    });
+  }
+
+  async completeFollowUp(id: string, orgId: string, now: Date = new Date()) {
+    const contact = await this.getOrThrow(id, orgId);
+    const every = contact.followUpEveryDays;
+    return this.prisma.contact.update({
+      where: { id },
+      data: {
+        followUpAt: every ? new Date(startOfUtcDay(now).getTime() + every * DAY_MS) : null,
+        followUpEveryDays: every ?? null,
+        followUpNotifiedAt: null,
+      },
+    });
+  }
+
+  async snoozeFollowUp(id: string, days: number, orgId: string, now: Date = new Date()) {
+    await this.getOrThrow(id, orgId);
+    return this.prisma.contact.update({
+      where: { id },
+      data: { followUpAt: new Date(now.getTime() + days * DAY_MS), followUpNotifiedAt: null },
     });
   }
 

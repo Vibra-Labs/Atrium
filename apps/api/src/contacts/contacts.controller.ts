@@ -14,6 +14,8 @@ import {
   CreateContactDto,
   CreateContactNoteDto,
   ListContactsQueryDto,
+  SetFollowUpDto,
+  SnoozeFollowUpDto,
   UpdateContactDto,
 } from "./contacts.dto";
 import {
@@ -106,5 +108,29 @@ export class ContactsController {
     @CurrentOrg("id") orgId: string,
   ) {
     return this.contactsService.unlinkProject(id, projectId, orgId);
+  }
+
+  @Put(":id/follow-up")
+  setFollowUp(
+    @Param("id") id: string,
+    @Body() dto: SetFollowUpDto,
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.contactsService.setFollowUp(id, dto, orgId, userId);
+  }
+
+  @Post(":id/follow-up/done")
+  followUpDone(@Param("id") id: string, @CurrentOrg("id") orgId: string) {
+    return this.contactsService.completeFollowUp(id, orgId);
+  }
+
+  @Post(":id/follow-up/snooze")
+  snoozeFollowUp(
+    @Param("id") id: string,
+    @Body() dto: SnoozeFollowUpDto,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    return this.contactsService.snoozeFollowUp(id, dto.days, orgId);
   }
 }

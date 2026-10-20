@@ -36,6 +36,7 @@ import { IntegrationsModule } from "./integrations/integrations.module";
 import { McpModule } from "./mcp/mcp.module";
 import { McpAuthModule } from "./mcp-auth/mcp-auth.module";
 import { ContactSyncModule } from "./contact-sync/contact-sync.module";
+import { ContactsModule } from "./contacts/contacts.module";
 import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
 import { PreviewModeMiddleware } from "./auth/preview-mode.middleware";
@@ -71,6 +72,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     ThrottlerModule.forRoot([{ ttl: 60000, limit: parseInt(process.env.THROTTLE_LIMIT || "100", 10) }]),
     PrismaModule,
     ContactSyncModule,
+    ContactsModule,
     AuthModule,
     ProjectsModule,
     FilesModule,

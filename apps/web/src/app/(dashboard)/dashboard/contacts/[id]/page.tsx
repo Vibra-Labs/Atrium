@@ -44,15 +44,15 @@ export default function ContactPage() {
     load();
   }, [load]);
 
-  // Same check as the Clients page: at the plan's client limit, offer the upgrade instead.
+  // At the plan's client limit (the rule the invite API enforces), offer the upgrade instead.
   useEffect(() => {
     if (!config?.billingEnabled) return;
-    Promise.all([
-      apiFetch<{ subscription: { plan: { maxClients: number } } | null }>("/billing/subscription"),
-      apiFetch<{ clients: number }>("/billing/usage"),
-    ])
-      .then(([sub, usage]) => {
-        const max = sub.subscription?.plan.maxClients;
+    apiFetch<{
+      subscription: { plan: { maxClients: number } } | null;
+      usage: { clients: number };
+    }>("/billing/subscription")
+      .then(({ subscription, usage }) => {
+        const max = subscription?.plan.maxClients;
         setAtClientLimit(max !== undefined && max !== -1 && usage.clients >= max);
       })
       .catch((err: unknown) => console.error(err));

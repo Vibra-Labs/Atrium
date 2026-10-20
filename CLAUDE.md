@@ -52,6 +52,8 @@ The API uses `nest start --watch` for hot reload. The web app uses Next.js dev s
 - **MCP**: `mcp/` -- stateless MCP server at `POST /api/mcp`; tools in `mcp/tools/*.tools.ts` are thin adapters over existing services. The controller is `@Public()` and checks identity itself
 - **MCP auth**: `mcp-auth/` -- OAuth tokens (Better Auth `mcp` plugin) → workspace-bound actor via `McpGrant`; honoured only on `/api/mcp`. Kept out of `mcp/` to avoid a module cycle with `AuthModule`
 - **Integrations**: `integrations/` -- Slack/Discord/signed-webhook destinations. `NotificationsService` calls `IntegrationDispatcher.dispatch()` from each `notify*` method; deliveries are rows retried by a per-minute cron (`SKIP LOCKED` claim). Pro feature (`integrations`)
+- **Contacts**: `contacts/` -- contacts, companies, lead sources, revenue, follow-up reminders cron, CSV import/export. Owner/admin only, free on all plans
+- **Contact sync**: `contact-sync/` -- keeps `Contact`/`ProjectContact` in step with invites, project clients, account deletion and invoice payments; boot backfill
 - **Health**: `health.controller.ts` -- DB connectivity check
 
 Global middleware/guards applied in `app.module.ts` and `main.ts`:
@@ -68,7 +70,7 @@ Global middleware/guards applied in `app.module.ts` and `main.ts`:
 
 Next.js App Router with route groups:
 - `(auth)/` -- `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/accept-invite`
-- `(dashboard)/` -- `/dashboard`, `/dashboard/projects`, `/dashboard/projects/[id]`, `/dashboard/clients`, `/dashboard/settings/{account,workspace,payments}`
+- `(dashboard)/` -- `/dashboard`, `/dashboard/projects`, `/dashboard/projects/[id]`, `/dashboard/clients`, `/dashboard/contacts`, `/dashboard/settings/{account,workspace,payments}`
 - `(portal)/` -- `/portal`, `/portal/projects`, `/portal/projects/[id]`
 
 ## Database (packages/database)

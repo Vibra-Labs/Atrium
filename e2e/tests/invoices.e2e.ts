@@ -129,6 +129,12 @@ test.describe("Invoices", () => {
         }
       }
     });
+  });
+
+  // A zone west of UTC is where a midnight-UTC paidAt would render as the previous day.
+  test.describe("Manual paid date", () => {
+    test.use({ timezoneId: "America/Los_Angeles", locale: "en-US" });
+
     test("mark paid with a past date shows that date", async ({ page, request }) => {
       const csrfToken = getCsrfToken();
       const projectId = await getOrCreateProject(request, "Paid Date E2E");
@@ -146,10 +152,10 @@ test.describe("Invoices", () => {
       await page.getByLabel("Paid date").fill("2026-09-01");
       await page.getByRole("button", { name: /^confirm$/i }).click();
 
-      // The row renders new Date(paidAt).toLocaleDateString() in the browser.
-      const expected = await page.evaluate(() => new Date("2026-09-01").toLocaleDateString());
-      await expect(page.getByText("Marked as paid")).toBeVisible({ timeout: 10000 });
-      await expect(page.getByText(expected, { exact: true })).toBeVisible();
+      // Scoped to the paid-details box so a due date cannot match.
+      const paidBox = page.getByText("Marked as paid").locator("xpath=..");
+      await expect(paidBox).toBeVisible({ timeout: 10000 });
+      await expect(paidBox).toContainText("9/1/2026");
     });
   });
 

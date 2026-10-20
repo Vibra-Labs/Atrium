@@ -20,6 +20,11 @@ interface InvoiceWhereInput {
   status?: string;
 }
 
+/** A date-only value is stored at noon UTC so it reads as the same day in every timezone. */
+function parsePaidAt(value: string): Date {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00.000Z` : value);
+}
+
 @Injectable()
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
@@ -274,7 +279,7 @@ export class InvoicesService {
     const isTransitionToPaid = dto.status === "paid" && invoice.status !== "paid";
     const paidFields = isTransitionToPaid
       ? {
-          paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
+          paidAt: dto.paidAt ? parsePaidAt(dto.paidAt) : new Date(),
           paidAmount: calculateInvoiceTotal({
             type: invoice.type,
             amount: invoice.amount,

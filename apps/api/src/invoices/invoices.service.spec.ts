@@ -328,9 +328,27 @@ describe("InvoicesService", () => {
     await service.update("inv-1", { status: "paid", paidAt: "2026-09-01" }, orgId);
 
     const data = (prisma.invoice.update.mock.calls[0][0] as PrismaArgs).data!;
-    expect(data.paidAt).toEqual(new Date("2026-09-01"));
+    expect(data.paidAt).toEqual(new Date("2026-09-01T12:00:00.000Z"));
     expect(data.paidAmount).toBe(10000);
     expect(mockContactSync.recordInvoicePaid).toHaveBeenCalledWith("inv-1");
+  });
+
+  test("date-only paidAt is stored at noon UTC", async () => {
+    sentInvoice();
+
+    await service.update("inv-1", { status: "paid", paidAt: "2026-09-01" }, orgId);
+
+    const data = (prisma.invoice.update.mock.calls[0][0] as PrismaArgs).data!;
+    expect((data.paidAt as Date).toISOString()).toBe("2026-09-01T12:00:00.000Z");
+  });
+
+  test("full ISO paidAt is stored as given", async () => {
+    sentInvoice();
+
+    await service.update("inv-1", { status: "paid", paidAt: "2026-09-01T03:30:00.000Z" }, orgId);
+
+    const data = (prisma.invoice.update.mock.calls[0][0] as PrismaArgs).data!;
+    expect((data.paidAt as Date).toISOString()).toBe("2026-09-01T03:30:00.000Z");
   });
 
   test("marking paid without paidAt uses now", async () => {

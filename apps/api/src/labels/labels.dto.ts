@@ -25,7 +25,7 @@ export class UpdateLabelDto {
 
 export class AssignLabelDto {
   @IsString()
-  @IsIn(["project", "task", "file", "member"])
+  @IsIn(["project", "task", "file", "member", "contact"])
   entityType!: string;
 
   @IsString()

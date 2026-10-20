@@ -184,7 +184,6 @@ export class ClientsService {
           hourlyRateCents: true,
           lastSeenAt: true,
           user: { select: { id: true, name: true, email: true } },
-          labels: { select: { label: { select: { id: true, name: true, color: true } } } },
         },
         orderBy: { createdAt: "asc" },
         skip: (page - 1) * limit,
@@ -199,7 +198,21 @@ export class ClientsService {
     });
     const profileMap = new Map(profiles.map((p) => [p.userId, p]));
 
-    const enriched = data.map((m) => ({ ...m, profile: profileMap.get(m.userId) || null }));
+    // Tags live on the member's contact; keep the `labels: { label }[]` shape.
+    const contacts = await this.prisma.contact.findMany({
+      where: { organizationId: orgId, userId: { in: userIds } },
+      select: {
+        userId: true,
+        labels: { select: { label: { select: { id: true, name: true, color: true } } } },
+      },
+    });
+    const labelsByUser = new Map(contacts.map((c) => [c.userId, c.labels]));
+
+    const enriched = data.map((m) => ({
+      ...m,
+      labels: labelsByUser.get(m.userId) ?? [],
+      profile: profileMap.get(m.userId) || null,
+    }));
     return paginatedResponse(enriched, total, page, limit);
   }
 

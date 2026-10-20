@@ -13,7 +13,7 @@ import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
-import { DEFAULT_STATUSES, DEFAULT_BRANDING } from "@atrium/shared";
+import { DEFAULT_STATUSES, DEFAULT_BRANDING, DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
 import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
@@ -416,6 +416,10 @@ export class AuthService {
       });
       await tx.systemSettings.create({
         data: { organizationId },
+      });
+      await tx.leadSource.createMany({
+        data: DEFAULT_LEAD_SOURCES.map((name) => ({ organizationId, name })),
+        skipDuplicates: true,
       });
     });
   }

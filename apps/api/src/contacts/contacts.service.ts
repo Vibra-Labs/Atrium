@@ -329,7 +329,7 @@ export class ContactsService {
       if (!company) throw new NotFoundException("Company not found");
       out.companyId = company.id;
     } else if (dto.companyName) {
-      out.companyId = await this.findOrCreateCompany(dto.companyName.trim(), orgId);
+      out.companyId = (await this.findOrCreateCompany(dto.companyName.trim(), orgId)).id;
     }
 
     if (dto.leadSourceId === null) {
@@ -341,7 +341,7 @@ export class ContactsService {
       if (!source) throw new NotFoundException("Lead source not found");
       out.leadSourceId = source.id;
     } else if (dto.leadSourceName) {
-      out.leadSourceId = await this.findOrCreateLeadSource(dto.leadSourceName.trim(), orgId);
+      out.leadSourceId = (await this.findOrCreateLeadSource(dto.leadSourceName.trim(), orgId)).id;
     }
 
     if (dto.referredById === null) {
@@ -356,7 +356,7 @@ export class ContactsService {
     return out;
   }
 
-  private findOrCreateCompany(name: string, orgId: string): Promise<string> {
+  private findOrCreateCompany(name: string, orgId: string): Promise<{ id: string; name: string }> {
     const delegate = this.prisma.company;
     return this.findOrCreate(
       name,
@@ -366,7 +366,7 @@ export class ContactsService {
     );
   }
 
-  private findOrCreateLeadSource(name: string, orgId: string): Promise<string> {
+  findOrCreateLeadSource(name: string, orgId: string): Promise<{ id: string; name: string }> {
     const delegate = this.prisma.leadSource;
     return this.findOrCreate(
       name,
@@ -376,25 +376,25 @@ export class ContactsService {
     );
   }
 
-  private async findOrCreate(
+  private async findOrCreate<T extends { id: string }>(
     name: string,
     orgId: string,
-    find: (where: NameWhere) => Promise<{ id: string } | null>,
-    create: (data: { organizationId: string; name: string }) => Promise<{ id: string }>,
-  ): Promise<string> {
+    find: (where: NameWhere) => Promise<T | null>,
+    create: (data: { organizationId: string; name: string }) => Promise<T>,
+  ): Promise<T> {
     const where: NameWhere = {
       organizationId: orgId,
       name: { equals: name, mode: "insensitive" },
     };
     const existing = await find(where);
-    if (existing) return existing.id;
+    if (existing) return existing;
     try {
-      return (await create({ organizationId: orgId, name })).id;
+      return await create({ organizationId: orgId, name });
     } catch (e) {
       // Lost a race with a concurrent create of the same name.
       if ((e as { code?: string })?.code === "P2002") {
         const winner = await find(where);
-        if (winner) return winner.id;
+        if (winner) return winner;
       }
       throw e;
     }

@@ -54,6 +54,8 @@ export type TaskTypeValue = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
 
 export const DEFAULT_LABEL_COLOR = "#6b7280";
 
+export const DEFAULT_LEAD_SOURCES: string[] = ["Referral", "Website", "Event", "Social"];
+
 export const CALENDAR_EVENT_TYPES = [
   "task",
   "project_start",

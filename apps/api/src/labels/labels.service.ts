@@ -7,6 +7,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateLabelDto, UpdateLabelDto, AssignLabelDto } from "./labels.dto";
 import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
+import { ContactSyncService } from "../contact-sync/contact-sync.service";
 
 function isPrismaUniqueViolation(err: unknown): boolean {
   return (
@@ -19,7 +20,10 @@ function isPrismaUniqueViolation(err: unknown): boolean {
 
 @Injectable()
 export class LabelsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private contactSync: ContactSyncService,
+  ) {}
 
   async findAll(orgId: string) {
     return this.prisma.label.findMany({
@@ -116,8 +120,20 @@ export class LabelsService {
             where: { id: dto.entityId, organizationId: orgId },
           });
           if (!member) throw new BadRequestException("Member not found");
-          return await this.prisma.memberLabel.create({
-            data: { memberId: dto.entityId, labelId },
+          // Member tags live on the member's contact now.
+          const contact = await this.contactSync.ensureForMember(orgId, member.userId);
+          return await this.prisma.contactLabel.create({
+            data: { contactId: contact.id, labelId },
+          });
+        }
+        case "contact": {
+          const contact = await this.prisma.contact.findFirst({
+            where: { id: dto.entityId, organizationId: orgId },
+            select: { id: true },
+          });
+          if (!contact) throw new BadRequestException("Contact not found");
+          return await this.prisma.contactLabel.create({
+            data: { contactId: dto.entityId, labelId },
           });
         }
         default:
@@ -174,8 +190,25 @@ export class LabelsService {
           where: { id: dto.entityId, organizationId: orgId },
         });
         if (!member) throw new BadRequestException("Member not found");
-        await this.prisma.memberLabel.deleteMany({
-          where: { memberId: dto.entityId, labelId },
+        const contact = await this.prisma.contact.findFirst({
+          where: { organizationId: orgId, userId: member.userId },
+          select: { id: true },
+        });
+        if (contact) {
+          await this.prisma.contactLabel.deleteMany({
+            where: { contactId: contact.id, labelId },
+          });
+        }
+        break;
+      }
+      case "contact": {
+        const contact = await this.prisma.contact.findFirst({
+          where: { id: dto.entityId, organizationId: orgId },
+          select: { id: true },
+        });
+        if (!contact) throw new BadRequestException("Contact not found");
+        await this.prisma.contactLabel.deleteMany({
+          where: { contactId: dto.entityId, labelId },
         });
         break;
       }

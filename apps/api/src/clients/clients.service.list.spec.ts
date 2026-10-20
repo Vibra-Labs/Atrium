@@ -10,6 +10,11 @@ function buildPrisma(members: unknown[], total: number) {
       findFirst: mock(() => Promise.resolve(members[0] ?? null)),
     },
     clientProfile: { findMany: mock(() => Promise.resolve([{ userId: "u2", company: "Globex" }])) },
+    contact: {
+      findMany: mock(() =>
+        Promise.resolve([{ userId: "u2", labels: [{ label: { id: "l1", name: "VIP", color: "#fff" } }] }]),
+      ),
+    },
   };
 }
 
@@ -23,6 +28,24 @@ describe("ClientsService.list", () => {
     expect(result.data[0].profile).toEqual({ userId: "u2", company: "Globex" });
     expect(result.meta.total).toBe(1);
     expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({ organizationId: "org1" });
+  });
+
+  it("returns labels from the member's contact in the { label } shape", async () => {
+    const prisma = buildPrisma(
+      [
+        { id: "m2", userId: "u2", role: "member" },
+        { id: "m3", userId: "u3", role: "member" },
+      ],
+      2,
+    );
+    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20);
+
+    expect(prisma.contact.findMany.mock.calls[0][0].where).toEqual({
+      organizationId: "org1",
+      userId: { in: ["u2", "u3"] },
+    });
+    expect(result.data[0].labels).toEqual([{ label: { id: "l1", name: "VIP", color: "#fff" } }]);
+    expect(result.data[1].labels).toEqual([]);
   });
 
   it("filters by name or email when search is given", async () => {

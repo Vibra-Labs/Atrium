@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  MinLength,
 } from "class-validator";
 import { PaginationQueryDto } from "../common";
 
@@ -131,4 +132,11 @@ export class CreateCompanyDto extends UpdateCompanyDto {
   @IsNotEmpty()
   @MaxLength(200)
   declare name: string;
+}
+
+export class LeadSourceDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  name!: string;
 }

@@ -1,10 +1,9 @@
 import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
+import { DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { ContactSyncService } from "./contact-sync.service";
-
-const DEFAULT_LEAD_SOURCES: string[] = ["Referral", "Website", "Event", "Social"];
 
 interface ProfileFill {
   phone?: string;

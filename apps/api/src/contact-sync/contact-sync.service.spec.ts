@@ -217,6 +217,30 @@ describe("ContactSyncService", () => {
     });
   });
 
+  describe("syncRoleChange", () => {
+    it("detaches the contact when a client is promoted to staff", async () => {
+      await service.syncRoleChange("org-1", "u-1", "member", "admin");
+      expect(mockPrisma.contact.updateMany).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", userId: "u-1" },
+        data: { userId: null, status: "past_client" },
+      });
+    });
+
+    it("ensures a contact when staff is demoted to client", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve(bob));
+      await service.syncRoleChange("org-1", "u-1", "owner", "member");
+      expect(mockPrisma.contact.create).toHaveBeenCalled();
+      expect(mockPrisma.contact.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("does nothing between staff roles or for an unchanged role", async () => {
+      await service.syncRoleChange("org-1", "u-1", "admin", "owner");
+      await service.syncRoleChange("org-1", "u-1", "member", "member");
+      expect(mockPrisma.contact.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.member.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
   describe("detachUserEverywhere", () => {
     it("clears the user across all orgs", async () => {
       await service.detachUserEverywhere("u-1");

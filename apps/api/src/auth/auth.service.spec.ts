@@ -522,4 +522,59 @@ describe("AuthService", () => {
       expect((err as APIError).message).toContain("clients limit (5/5)");
     });
   });
+  describe("membership hooks keep contacts in sync", () => {
+    interface MemberHookArgs {
+      member: { id: string; userId: string; organizationId: string; role: string };
+      previousRole?: string;
+    }
+    type Hook = (data: MemberHookArgs) => Promise<void>;
+    interface OrgPlugin {
+      id: string;
+      options?: { organizationHooks?: Record<string, Hook> };
+    }
+
+    const sync = {
+      detachMember: mock((): Promise<void> => Promise.resolve()),
+      syncRoleChange: mock((): Promise<void> => Promise.resolve()),
+    };
+
+    function hook(name: string): Hook {
+      sync.detachMember.mockClear();
+      sync.syncRoleChange.mockClear();
+      const svc = new AuthService(
+        mockConfig as unknown as ConfigService,
+        mockPrisma as unknown as PrismaService,
+        mockMail as unknown as MailService,
+        mockBilling as unknown as BillingService,
+        sync as never,
+      );
+      const plugins = (svc.auth as unknown as { options: { plugins: OrgPlugin[] } }).options.plugins;
+      const fn = plugins.find((p) => p.id === "organization")?.options?.organizationHooks?.[name];
+      if (!fn) throw new Error(`missing hook ${name}`);
+      return fn;
+    }
+
+    const client = { id: "m-1", userId: "u-1", organizationId: "org-1", role: "member" };
+
+    it("afterRemoveMember detaches a removed client's contact", async () => {
+      await hook("afterRemoveMember")({ member: client });
+      expect(sync.detachMember).toHaveBeenCalledWith("org-1", "u-1");
+    });
+
+    it("afterRemoveMember ignores staff", async () => {
+      await hook("afterRemoveMember")({ member: { ...client, role: "admin" } });
+      expect(sync.detachMember).not.toHaveBeenCalled();
+    });
+
+    it("afterRemoveMember swallows sync errors", async () => {
+      const fn = hook("afterRemoveMember");
+      sync.detachMember.mockImplementationOnce(() => Promise.reject(new Error("db down")));
+      await fn({ member: client });
+    });
+
+    it("afterUpdateMemberRole syncs the contact for the role change", async () => {
+      await hook("afterUpdateMemberRole")({ member: { ...client, role: "admin" }, previousRole: "member" });
+      expect(sync.syncRoleChange).toHaveBeenCalledWith("org-1", "u-1", "member", "admin");
+    });
+  });
 });

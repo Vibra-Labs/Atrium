@@ -343,12 +343,35 @@ export class AuthService {
             },
             // Atrium's own role endpoint revokes in the same transaction
             // (ClientsService.changeRole); this covers Better Auth's route.
-            afterUpdateMemberRole: async ({ member }) => {
+            afterUpdateMemberRole: async ({ member, previousRole }) => {
               try {
                 await revokeCredentialsIfDemoted(this.prisma, member);
               } catch (err) {
                 Sentry.captureException(err);
                 this.logger.error("Failed to revoke credentials after demotion", err);
+              }
+              try {
+                await this.contactSync.syncRoleChange(
+                  member.organizationId,
+                  member.userId,
+                  previousRole,
+                  member.role,
+                );
+              } catch (err) {
+                Sentry.captureException(err);
+                this.logger.error("Failed to sync contact after role change", err);
+              }
+            },
+            // Atrium's own remove endpoint detaches itself (ClientsService.removeMember);
+            // this covers Better Auth's /organization/remove-member. /organization/leave
+            // does not fire this hook in Better Auth 1.4.18.
+            afterRemoveMember: async ({ member }) => {
+              if (member.role !== "member") return;
+              try {
+                await this.contactSync.detachMember(member.organizationId, member.userId);
+              } catch (err) {
+                Sentry.captureException(err);
+                this.logger.error("Failed to detach contact after member removal", err);
               }
             },
           },

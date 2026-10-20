@@ -122,6 +122,16 @@ export class ContactSyncService {
     });
   }
 
+  /** Keeps the contact link in step with a role change: only role "member" is a portal client. */
+  async syncRoleChange(orgId: string, userId: string, previousRole: string, newRole: string): Promise<void> {
+    if (previousRole === newRole) return;
+    if (newRole === "member") {
+      await this.ensureForMember(orgId, userId);
+    } else if (previousRole === "member") {
+      await this.detachMember(orgId, userId);
+    }
+  }
+
   async detachUserEverywhere(userId: string): Promise<void> {
     await this.prisma.contact.updateMany({
       where: { userId },

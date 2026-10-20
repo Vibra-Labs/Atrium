@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
+import type { Member } from "@atrium/database";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -123,19 +124,28 @@ export class ClientsService {
     if (!validRoles.includes(newRole)) {
       throw new BadRequestException("Invalid role");
     }
+    let updated: Member;
     if (MCP_ACTOR_ROLES.includes(newRole)) {
-      return this.prisma.member.update({
+      updated = await this.prisma.member.update({
         where: { id: memberId },
         data: { role: newRole },
       });
+    } else {
+      [updated] = await this.prisma.$transaction([
+        this.prisma.member.update({
+          where: { id: memberId },
+          data: { role: newRole },
+        }),
+        ...revokeMemberCredentials(this.prisma, memberId),
+      ]);
     }
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.member.update({
-        where: { id: memberId },
-        data: { role: newRole },
-      }),
-      ...revokeMemberCredentials(this.prisma, memberId),
-    ]);
+
+    try {
+      await this.contactSync.syncRoleChange(orgId, member.userId, member.role, newRole);
+    } catch (err) {
+      Sentry.captureException(err);
+      this.logger.error("Failed to sync contact after role change", err);
+    }
     return updated;
   }
 

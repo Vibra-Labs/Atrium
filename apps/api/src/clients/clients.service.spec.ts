@@ -42,6 +42,7 @@ const mockPrisma = {
 
 const mockContactSync = {
   detachMember: mock(() => Promise.resolve()),
+  syncRoleChange: mock((): Promise<void> => Promise.resolve()),
 };
 
 const mockAuthService = {
@@ -85,6 +86,8 @@ describe("ClientsService", () => {
       mockContactSync as never,
     );
     mockContactSync.detachMember.mockClear();
+    mockContactSync.syncRoleChange.mockClear();
+    mockContactSync.syncRoleChange.mockImplementation(() => Promise.resolve());
     mockPrisma.member.findFirst.mockClear();
     mockPrisma.member.count.mockClear();
     mockPrisma.member.delete.mockClear();
@@ -362,6 +365,36 @@ describe("ClientsService", () => {
       mockPrisma.member.update.mockReturnValue(
         Promise.resolve({ id: "member-1", role: "owner" }),
       );
+
+      const result = await service.changeRole("member-1", "owner", "org-1", "user-requester");
+
+      expect(result.role).toBe("owner");
+    });
+
+    it("syncs the contact for a promotion to staff", async () => {
+      const member = makeMember({ id: "member-1", userId: "user-target", role: "member" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockPrisma.member.update.mockReturnValue(Promise.resolve({ id: "member-1", role: "admin" }));
+
+      await service.changeRole("member-1", "admin", "org-1", "user-requester");
+
+      expect(mockContactSync.syncRoleChange).toHaveBeenCalledWith("org-1", "user-target", "member", "admin");
+    });
+
+    it("syncs the contact for a demotion to member", async () => {
+      const admin = makeMember({ id: "member-1", userId: "user-target", role: "admin" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(admin));
+
+      await service.changeRole("member-1", "member", "org-1", "user-requester");
+
+      expect(mockContactSync.syncRoleChange).toHaveBeenCalledWith("org-1", "user-target", "admin", "member");
+    });
+
+    it("still returns the updated member when the contact sync fails", async () => {
+      const member = makeMember({ id: "member-1", userId: "user-target", role: "member" });
+      mockPrisma.member.findFirst.mockReturnValue(Promise.resolve(member));
+      mockPrisma.member.update.mockReturnValue(Promise.resolve({ id: "member-1", role: "owner" }));
+      mockContactSync.syncRoleChange.mockImplementation(() => Promise.reject(new Error("db down")));
 
       const result = await service.changeRole("member-1", "owner", "org-1", "user-requester");
 

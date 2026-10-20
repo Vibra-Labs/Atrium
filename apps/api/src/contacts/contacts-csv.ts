@@ -15,6 +15,25 @@ export type ImportField = (typeof IMPORT_FIELDS)[number];
 
 export const MAX_IMPORT_ROWS = 5000;
 
+export type ImportMapping = Record<string, ImportField>;
+
+/** Parses the `mapping` form field; returns null unless it is a JSON object of header -> valid ImportField. */
+export function parseMapping(raw: unknown): ImportMapping | null {
+  if (typeof raw !== "string") return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const entries = Object.entries(parsed);
+  const valid = entries.every(
+    ([, v]) => typeof v === "string" && (IMPORT_FIELDS as readonly string[]).includes(v),
+  );
+  return valid ? (Object.fromEntries(entries) as ImportMapping) : null;
+}
+
 /** Parses RFC 4180 CSV: BOM, quoted fields with commas/newlines/escaped quotes, CRLF or LF. */
 export function parseCsv(text: string): string[][] {
   const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;

@@ -16,9 +16,9 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { ContactsService } from "./contacts.service";
+import { parseMapping } from "./contacts-csv";
 import {
   CreateContactDto,
-  ImportContactsDto,
   CreateContactNoteDto,
   ListContactsQueryDto,
   SetFollowUpDto,
@@ -36,6 +36,19 @@ import {
 } from "../common";
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
+
+interface CsvUpload {
+  originalname: string;
+  buffer: Buffer;
+}
+
+function readCsvUpload(file: CsvUpload | undefined): string {
+  if (!file) throw new BadRequestException("No file provided");
+  if (!file.originalname.toLowerCase().endsWith(".csv")) {
+    throw new BadRequestException("Only .csv files are supported");
+  }
+  return file.buffer.toString("utf8");
+}
 
 @Controller("contacts")
 @UseGuards(AuthGuard, RolesGuard)
@@ -59,21 +72,22 @@ export class ContactsController {
 
   @Post("import/preview")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_CSV_BYTES } }))
-  previewImport(@UploadedFile() file?: { originalname: string; buffer: Buffer }) {
-    if (!file) throw new BadRequestException("No file provided");
-    if (!file.originalname.toLowerCase().endsWith(".csv")) {
-      throw new BadRequestException("Only .csv files are supported");
-    }
-    return this.contactsService.previewCsv(file.buffer.toString("utf8"));
+  previewImport(@UploadedFile() file?: CsvUpload) {
+    return this.contactsService.previewCsv(readCsvUpload(file));
   }
 
   @Post("import")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_CSV_BYTES } }))
   importCsv(
-    @Body() dto: ImportContactsDto,
+    @UploadedFile() file: CsvUpload | undefined,
+    @Body("mapping") rawMapping: unknown,
     @CurrentOrg("id") orgId: string,
     @CurrentUser("id") userId: string,
   ) {
-    return this.contactsService.importCsv(dto, orgId, userId);
+    const csv = readCsvUpload(file);
+    const mapping = parseMapping(rawMapping);
+    if (!mapping) throw new BadRequestException("Invalid mapping");
+    return this.contactsService.importCsv({ csv, mapping }, orgId, userId);
   }
 
   @Get()

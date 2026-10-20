@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { isEmail } from "class-validator";
 import { Prisma } from "@atrium/database";
 import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
 import type { ContactStatus } from "@atrium/shared";
@@ -14,10 +15,9 @@ import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { ContactRevenueService } from "./contact-revenue.service";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
-import type { ImportField } from "./contacts-csv";
+import type { ImportField, ImportMapping } from "./contacts-csv";
 import type {
   CreateContactDto,
-  ImportContactsDto,
   ListContactsQueryDto,
   SetFollowUpDto,
   UpdateContactDto,
@@ -156,7 +156,7 @@ export class ContactsService {
   }
 
   async importCsv(
-    dto: ImportContactsDto,
+    dto: { csv: string; mapping: ImportMapping },
     orgId: string,
     userId: string,
   ): Promise<{ created: number; skipped: { row: number; reason: string }[] }> {
@@ -165,8 +165,9 @@ export class ContactsService {
 
     const columns = new Map<ImportField, number>();
     headers.forEach((h, i) => {
+      if (!Object.hasOwn(dto.mapping, h)) return;
       const field = dto.mapping[h];
-      if (field && field !== "skip" && !columns.has(field)) columns.set(field, i);
+      if (field !== "skip" && !columns.has(field)) columns.set(field, i);
     });
     const cell = (row: string[], field: ImportField): string => {
       const i = columns.get(field);
@@ -185,6 +186,10 @@ export class ContactsService {
         continue;
       }
       const rawEmail = cell(row, "email");
+      if (rawEmail && !isEmail(rawEmail)) {
+        skipped.push({ row: rowNumber, reason: "Invalid email" });
+        continue;
+      }
       const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
       if (email && seen.has(email)) {
         skipped.push({ row: rowNumber, reason: "Email already exists" });
@@ -194,14 +199,14 @@ export class ContactsService {
       try {
         contact = await this.create(
           {
-            name,
+            name: name.slice(0, 200),
             email,
-            phone: cell(row, "phone") || undefined,
-            website: cell(row, "website") || undefined,
-            address: cell(row, "address") || undefined,
+            phone: cell(row, "phone").slice(0, 50) || undefined,
+            website: cell(row, "website").slice(0, 500) || undefined,
+            address: cell(row, "address").slice(0, 500) || undefined,
             status: parseStatus(cell(row, "status")),
-            companyName: cell(row, "company") || undefined,
-            leadSourceName: cell(row, "source") || undefined,
+            companyName: cell(row, "company").slice(0, 200) || undefined,
+            leadSourceName: cell(row, "source").slice(0, 200) || undefined,
           },
           orgId,
         );

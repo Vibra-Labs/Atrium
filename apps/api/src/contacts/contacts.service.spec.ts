@@ -419,6 +419,71 @@ describe("ContactsService", () => {
       expect(line).toContain(",Lead,Web,vip; hot,2026-11-01,1234.56");
     });
 
+    it("import skips rows with an invalid email and truncates long fields", async () => {
+      const long = "x".repeat(600);
+      const csv = `Name,Email,Address\nAnn,not-an-email,\n${"n".repeat(250)},ok@x.com,${long}\n`;
+      const res = await service.importCsv(
+        { csv, mapping: { Name: "name", Email: "email", Address: "address" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Invalid email" }] });
+      const data = (prisma.contact.create.mock.calls[0][0] as {
+        data: { name: string; address: string };
+      }).data;
+      expect(data.name).toHaveLength(200);
+      expect(data.address).toHaveLength(500);
+    });
+
+    it("import ignores prototype-named headers", async () => {
+      const csv = "constructor,Name\nzzz,Ann\n";
+      const res = await service.importCsv({ csv, mapping: { Name: "name" } }, "org-1", "u-1");
+      expect(res.created).toBe(1);
+    });
+
+    it("export passes filters through to the where clause", async () => {
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+      await service.exportCsv("org-1", { status: "client", labelId: "l-1", search: " ann " });
+      const arg = prisma.contact.findMany.mock.calls[0][0] as { where: Record<string, unknown> };
+      expect(arg.where).toMatchObject({
+        organizationId: "org-1",
+        status: "client",
+        labels: { some: { labelId: "l-1" } },
+      });
+      expect(arg.where.OR).toBeDefined();
+    });
+
+    describe("controller upload handling", () => {
+      const calls: unknown[] = [];
+      const fake = {
+        previewCsv: (t: string) => ({ t }),
+        importCsv: (...a: unknown[]) => calls.push(a),
+      };
+      const ctrl = new ContactsController(fake as unknown as ContactsService);
+      const csvFile = { originalname: "a.CSV", buffer: Buffer.from("Name\nAnn\n") };
+
+      it("rejects a missing file or non-.csv extension", () => {
+        expect(() => ctrl.previewImport(undefined)).toThrow("No file provided");
+        expect(() => ctrl.previewImport({ ...csvFile, originalname: "a.txt" })).toThrow(
+          "Only .csv files are supported",
+        );
+        expect(() => ctrl.importCsv(undefined, '{"Name":"name"}', "org-1", "u-1")).toThrow(
+          "No file provided",
+        );
+      });
+
+      it("rejects an invalid mapping with 400", () => {
+        for (const bad of [undefined, "nope", "[]", "null", '{"Name":"bogus"}', '{"Name":1}']) {
+          expect(() => ctrl.importCsv(csvFile, bad, "org-1", "u-1")).toThrow("Invalid mapping");
+        }
+      });
+
+      it("passes the csv text and parsed mapping to the service", () => {
+        ctrl.importCsv(csvFile, '{"Name":"name"}', "org-1", "u-1");
+        expect(calls[0]).toEqual([{ csv: "Name\nAnn\n", mapping: { Name: "name" } }, "org-1", "u-1"]);
+      });
+    });
+
     it("declares export/import routes before :id", () => {
       const names = Object.getOwnPropertyNames(ContactsController.prototype);
       expect(names.indexOf("exportCsv")).toBeLessThan(names.indexOf("findOne"));

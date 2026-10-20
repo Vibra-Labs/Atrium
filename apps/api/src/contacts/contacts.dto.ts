@@ -83,6 +83,13 @@ export class CreateContactDto extends UpdateContactDto {
   declare name: string;
 }
 
+export class ListCompaniesQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  search?: string;
+}
+
 export class ListContactsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()

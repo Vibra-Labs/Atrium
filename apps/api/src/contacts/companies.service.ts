@@ -19,8 +19,12 @@ export class CompaniesService {
     private readonly revenue: ContactRevenueService,
   ) {}
 
-  async findAll(orgId: string, page = 1, limit = 20) {
-    const where = { organizationId: orgId };
+  async findAll(orgId: string, page = 1, limit = 20, search?: string) {
+    const term = search?.trim();
+    const where = {
+      organizationId: orgId,
+      ...(term ? { name: { contains: term, mode: "insensitive" as const } } : {}),
+    };
     const [companies, total] = await Promise.all([
       this.prisma.company.findMany({
         where,

@@ -10,13 +10,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { CompaniesService } from "./companies.service";
-import { CreateCompanyDto, UpdateCompanyDto } from "./contacts.dto";
+import { CreateCompanyDto, ListCompaniesQueryDto, UpdateCompanyDto } from "./contacts.dto";
 import {
   AuthGuard,
   RolesGuard,
   Roles,
   CurrentOrg,
-  PaginationQueryDto,
 } from "../common";
 
 @Controller("companies")
@@ -26,8 +25,8 @@ export class CompaniesController {
   constructor(private companiesService: CompaniesService) {}
 
   @Get()
-  findAll(@CurrentOrg("id") orgId: string, @Query() pagination: PaginationQueryDto) {
-    return this.companiesService.findAll(orgId, pagination.page, pagination.limit);
+  findAll(@CurrentOrg("id") orgId: string, @Query() query: ListCompaniesQueryDto) {
+    return this.companiesService.findAll(orgId, query.page, query.limit, query.search);
   }
 
   @Post()

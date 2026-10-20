@@ -125,7 +125,9 @@ export default function ContactsPage() {
     setLoading(true);
     try {
       if (tab === "companies") {
-        const res = await apiFetch<Paginated<CompanyRow>>(`/companies?page=${page}&limit=${LIMIT}`);
+        const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+        if (debouncedSearch) params.set("search", debouncedSearch);
+        const res = await apiFetch<Paginated<CompanyRow>>(`/companies?${params}`);
         if (id !== requestId.current) return;
         setCompanies(res.data);
         setTotalPages(res.meta.totalPages);
@@ -144,7 +146,7 @@ export default function ContactsPage() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [tab, page, filterParams, showError]);
+  }, [tab, page, debouncedSearch, filterParams, showError]);
 
   useEffect(() => {
     load();
@@ -195,6 +197,8 @@ export default function ContactsPage() {
           <button
             key={t.id}
             onClick={() => {
+              // Contact and company searches mean different things; don't carry one over.
+              if ((t.id === "companies") !== (tab === "companies")) setSearch("");
               setTab(t.id);
               setPage(1);
             }}
@@ -209,51 +213,53 @@ export default function ContactsPage() {
         ))}
       </div>
 
-      {tab !== "companies" && (
-        <div className="flex gap-2 flex-wrap">
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search name, company, email"
-            className={`${selectClass} flex-1 min-w-[12rem]`}
-          />
-          <select
-            aria-label="Filter by tag"
-            value={labelId}
-            onChange={(e) => {
-              setLabelId(e.target.value);
-              setPage(1);
-            }}
-            className={selectClass}
-          >
-            <option value="">All tags</option>
-            {labels.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Filter by source"
-            value={leadSourceId}
-            onChange={(e) => {
-              setLeadSourceId(e.target.value);
-              setPage(1);
-            }}
-            className={selectClass}
-          >
-            <option value="">All sources</option>
-            {sources.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div className="flex gap-2 flex-wrap">
+        <input
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          placeholder={tab === "companies" ? "Search companies" : "Search name, company, email"}
+          className={`${selectClass} flex-1 min-w-[12rem]`}
+        />
+        {tab !== "companies" && (
+          <>
+            <select
+              aria-label="Filter by tag"
+              value={labelId}
+              onChange={(e) => {
+                setLabelId(e.target.value);
+                setPage(1);
+              }}
+              className={selectClass}
+            >
+              <option value="">All tags</option>
+              {labels.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter by source"
+              value={leadSourceId}
+              onChange={(e) => {
+                setLeadSourceId(e.target.value);
+                setPage(1);
+              }}
+              className={selectClass}
+            >
+              <option value="">All sources</option>
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
 
       {loading ? (
         <div className="space-y-2">

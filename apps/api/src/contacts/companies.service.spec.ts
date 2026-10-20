@@ -49,6 +49,15 @@ describe("CompaniesService", () => {
     expect(revenue.paidTotalsForCompanies).toHaveBeenCalledWith(["co-1", "co-2"], "org-1");
   });
 
+  it("findAll filters by name case-insensitively when searching", async () => {
+    prisma.company.findMany.mockClear();
+    prisma.company.count.mockClear();
+    await service.findAll("org-1", 1, 20, " Acme ");
+    const where = { organizationId: "org-1", name: { contains: "Acme", mode: "insensitive" } };
+    expect(prisma.company.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }));
+    expect(prisma.company.count).toHaveBeenCalledWith({ where });
+  });
+
   it("create rejects duplicate names case-insensitively with 409", async () => {
     prisma.company.findFirst.mockImplementation(() => Promise.resolve({ id: "x" }));
     try {

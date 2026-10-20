@@ -219,7 +219,7 @@ export function AddContactModal({ onClose, onCreated }: Props) {
           </button>
           <button
             type="submit"
-            disabled={saving || !name.trim()}
+            disabled={saving || !name.trim() || (sourceChoice === NEW_SOURCE && !newSource.trim())}
             className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors disabled:opacity-40"
           >
             {saving ? "Adding..." : "Add contact"}

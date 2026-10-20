@@ -54,6 +54,27 @@ export class ContactRevenueService {
     return totals;
   }
 
+  /** Paid total per company; an invoice shared by several of its contacts counts once. */
+  async paidTotalsForCompanies(companyIds: string[], orgId: string): Promise<Map<string, number>> {
+    const totals = new Map<string, number>();
+    if (companyIds.length === 0) return totals;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ companyId: string; paid: bigint | number }>
+    >`
+      SELECT d."companyId" AS "companyId", COALESCE(SUM(d."paidCents"), 0) AS paid
+      FROM (
+        SELECT DISTINCT c."companyId", t.id, t."paidCents"
+        FROM "project_contact" pc
+        JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
+        JOIN (${this.invoiceTotals(orgId)}) t ON t."projectId" = pc."projectId"
+        WHERE c."companyId" IN (${Prisma.join(companyIds)}) AND t.status = 'paid'
+      ) d
+      GROUP BY d."companyId"
+    `;
+    for (const r of rows) totals.set(r.companyId, Number(r.paid));
+    return totals;
+  }
+
   /** One row per invoice with its total and paid amount, so line items never fan out sums. */
   private invoiceTotals(orgId: string): Prisma.Sql {
     return Prisma.sql`

@@ -24,7 +24,12 @@ export class CompaniesService {
       }),
       this.prisma.company.count({ where }),
     ]);
-    return paginatedResponse(companies, total, page, limit);
+    const paid = await this.revenue.paidTotalsForCompanies(
+      companies.map((c) => c.id),
+      orgId,
+    );
+    const data = companies.map((c) => ({ ...c, paidCents: paid.get(c.id) ?? 0 }));
+    return paginatedResponse(data, total, page, limit);
   }
 
   async findOne(id: string, orgId: string) {

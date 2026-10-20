@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, Plus, Upload } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -30,6 +30,7 @@ interface CompanyRow {
   id: string;
   name: string;
   _count: { contacts: number };
+  paidCents: number;
 }
 
 interface Option {
@@ -75,8 +76,16 @@ function formatDay(iso: string): string {
 function FollowUp({ at, everyDays }: { at: string | null; everyDays: number | null }) {
   if (!at) return <span className="text-[var(--muted-foreground)]">—</span>;
   const day = formatDay(at);
-  if (new Date(at).getTime() < Date.now()) {
+  const due = new Date(at);
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(startOfToday);
+  endOfToday.setDate(endOfToday.getDate() + 1);
+  if (due < startOfToday) {
     return <span className="text-red-600">Overdue · {day}</span>;
+  }
+  if (due < endOfToday) {
+    return <span>Today</span>;
   }
   if (everyDays) {
     const every = REPEAT_LABELS[everyDays] ?? `${everyDays} d`;
@@ -121,11 +130,15 @@ export default function ContactsPage() {
     return params;
   }, [debouncedSearch, tab, labelId, leadSourceId]);
 
+  const requestId = useRef(0);
+
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     setLoading(true);
     try {
       if (tab === "companies") {
         const res = await apiFetch<Paginated<CompanyRow>>(`/companies?page=${page}&limit=${LIMIT}`);
+        if (id !== requestId.current) return;
         setCompanies(res.data);
         setTotalPages(res.meta.totalPages);
       } else {
@@ -133,14 +146,15 @@ export default function ContactsPage() {
         params.set("page", String(page));
         params.set("limit", String(LIMIT));
         const res = await apiFetch<Paginated<ContactRow>>(`/contacts?${params}`);
+        if (id !== requestId.current) return;
         setContacts(res.data);
         setTotalPages(res.meta.totalPages);
       }
     } catch (err) {
       console.error(err);
-      showError("Failed to load contacts");
+      if (id === requestId.current) showError("Failed to load contacts");
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [tab, page, filterParams, showError]);
 
@@ -269,6 +283,7 @@ export default function ContactsPage() {
                 <tr className="text-left text-[var(--muted-foreground)] border-b border-[var(--border)]">
                   <th className="px-4 py-2.5 font-medium">Company</th>
                   <th className="px-4 py-2.5 font-medium">People</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Paid, all time</th>
                 </tr>
               </thead>
               <tbody>
@@ -280,6 +295,9 @@ export default function ContactsPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">{c._count.contacts}</td>
+                    <td className="px-4 py-3 text-right">
+                      {c.paidCents > 0 ? formatCurrency(c.paidCents) : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

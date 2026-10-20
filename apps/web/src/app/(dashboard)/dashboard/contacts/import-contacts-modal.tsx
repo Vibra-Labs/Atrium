@@ -212,7 +212,7 @@ export function ImportContactsModal({ onClose, onImported }: Props) {
                 disabled={busy || !hasName}
                 className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-40"
               >
-                {busy ? "Importing..." : `Import ${preview.total} contacts`}
+                {busy ? "Importing..." : `Import ${preview.total} ${preview.total === 1 ? "contact" : "contacts"}`}
               </button>
             </div>
           </div>

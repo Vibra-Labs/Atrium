@@ -127,6 +127,9 @@ describe("ContactRevenueService", () => {
     expect((await revenue.forContact(second.id, d.orgId, new Date())).paidCents).toBe(100000);
     const totals = await revenue.paidTotals([d.contactId, second.id], d.orgId);
     expect(totals.get(second.id)).toBe(100000);
+    const byCompany = await revenue.paidTotalsForCompanies([company.id], d.orgId);
+    expect(byCompany.get(company.id)).toBe(100000);
+    expect((await revenue.paidTotalsForCompanies([company.id], (await seed()).orgId)).size).toBe(0);
   });
 
   it("invoices without a project are not counted", async () => {

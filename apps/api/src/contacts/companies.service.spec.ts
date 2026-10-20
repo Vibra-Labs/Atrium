@@ -18,6 +18,7 @@ const prisma = {
 };
 const revenue = {
   forCompany: mock(() => Promise.resolve({ paidCents: 0, outstandingCents: 0, monthly: [] })),
+  paidTotalsForCompanies: mock(() => Promise.resolve(new Map<string, number>([["co-1", 1234]]))),
 };
 
 describe("CompaniesService", () => {
@@ -33,6 +34,19 @@ describe("CompaniesService", () => {
       prisma as unknown as PrismaService,
       revenue as unknown as ContactRevenueService,
     );
+  });
+
+  it("findAll adds paidCents per company, 0 when none", async () => {
+    prisma.company.findMany.mockImplementation(() =>
+      Promise.resolve([
+        { id: "co-1", name: "A", _count: { contacts: 2 } },
+        { id: "co-2", name: "B", _count: { contacts: 0 } },
+      ]),
+    );
+    prisma.company.count.mockImplementation(() => Promise.resolve(2));
+    const res = await service.findAll("org-1");
+    expect(res.data.map((c: { paidCents: number }) => c.paidCents)).toEqual([1234, 0]);
+    expect(revenue.paidTotalsForCompanies).toHaveBeenCalledWith(["co-1", "co-2"], "org-1");
   });
 
   it("create rejects duplicate names case-insensitively with 409", async () => {

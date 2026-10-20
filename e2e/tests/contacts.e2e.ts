@@ -92,4 +92,43 @@ test.describe("Contacts list", () => {
     await expect(page.getByText("Contacts", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: new RegExp(name) })).toBeVisible();
   });
+
+  test("follow-up due today shows Today, past shows Overdue", async ({ page, request }) => {
+    const stamp = Date.now();
+    const noon = (offsetDays: number): string => {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      d.setHours(12, 0, 0, 0);
+      return d.toISOString();
+    };
+    for (const [label, offset] of [["Today", 0], ["Late", -3]] as const) {
+      const created = await request.post(`${API}/contacts`, {
+        data: { name: `${label} ${stamp}` },
+        headers: { "x-csrf-token": getCsrfToken() },
+      });
+      const { id } = await created.json();
+      const set = await request.put(`${API}/contacts/${id}/follow-up`, {
+        data: { followUpAt: noon(offset) },
+        headers: { "x-csrf-token": getCsrfToken() },
+      });
+      expect(set.ok()).toBeTruthy();
+    }
+
+    await page.goto("/dashboard/contacts");
+    await page.getByPlaceholder(/search name, company, email/i).fill(String(stamp));
+    await expect(page.getByRole("row", { name: new RegExp(`Today ${stamp}`) })).toContainText("Today");
+    await expect(page.getByRole("row", { name: new RegExp(`Late ${stamp}`) })).toContainText("Overdue");
+  });
+
+  test("companies tab shows people and paid columns", async ({ page, request }) => {
+    const company = `TabCo${Date.now()}`;
+    await request.post(`${API}/contacts`, {
+      data: { name: `Member ${company}`, companyName: company },
+      headers: { "x-csrf-token": getCsrfToken() },
+    });
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: "Companies" }).click();
+    await expect(page.getByRole("columnheader", { name: "Paid, all time" })).toBeVisible();
+    await expect(page.getByRole("link", { name: company })).toBeVisible();
+  });
 });

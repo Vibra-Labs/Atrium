@@ -10,6 +10,7 @@ import { ProjectsService } from "../projects/projects.service";
 import { TasksService } from "../tasks/tasks.service";
 import { UpdatesService } from "../updates/updates.service";
 import { NotesService } from "../notes/notes.service";
+import { ContactsService } from "../contacts/contacts.service";
 import { ClientsService } from "../clients/clients.service";
 import { BillingService } from "../billing/billing.service";
 import { DocumentsService } from "../documents/documents.service";
@@ -21,6 +22,7 @@ import { clientTools } from "./tools/clients.tools";
 import { taskTools } from "./tools/tasks.tools";
 import { updateTools } from "./tools/updates.tools";
 import { noteTools } from "./tools/notes.tools";
+import { contactTools } from "./tools/contacts.tools";
 import { documentTools } from "./tools/documents.tools";
 import { publicApiUrl } from "../common/helpers/public-api-url";
 
@@ -37,6 +39,7 @@ export class McpService {
     private tasks: TasksService,
     private updates: UpdatesService,
     private notes: NotesService,
+    private contacts: ContactsService,
     private clients: ClientsService,
     private billing: BillingService,
     private documents: DocumentsService,
@@ -58,6 +61,7 @@ export class McpService {
       ...taskTools({ tasks: this.tasks }),
       ...updateTools({ updates: this.updates }),
       ...noteTools({ notes: this.notes }),
+      ...contactTools({ contacts: this.contacts }),
       ...documentTools({ documents: this.documents }),
     ];
   }

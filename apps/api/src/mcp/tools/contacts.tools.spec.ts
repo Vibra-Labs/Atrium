@@ -1,0 +1,49 @@
+import { describe, expect, it, mock } from "bun:test";
+import { contactTools } from "./contacts.tools";
+import { runTool } from "../tool-kit";
+import type { Actor } from "../../common";
+
+const admin = { user: { id: "u1" }, organization: { id: "org1" }, member: { role: "admin" } } as unknown as Actor;
+
+function build() {
+  const contacts = {
+    findAll: mock(() => Promise.resolve({ data: [], meta: {} })),
+    findOne: mock(() => Promise.resolve({ id: "c1" })),
+    addNote: mock(() => Promise.resolve({ id: "n1" })),
+  };
+  const tools = contactTools({ contacts: contacts as never });
+  return { contacts, get: (n: string) => tools.find((t) => t.name === n)! };
+}
+
+describe("contact tools", () => {
+  it("list_contacts passes filters and paging, scoped to the org", async () => {
+    const { contacts, get } = build();
+    const input = get("list_contacts").inputSchema.parse({ search: "ann", status: "lead" });
+    await runTool(get("list_contacts"), input, admin);
+    expect(contacts.findAll).toHaveBeenCalledWith("org1", { search: "ann", status: "lead", page: 1, limit: 20 });
+  });
+
+  it("list_contacts rejects an unknown status", () => {
+    const schema = build().get("list_contacts").inputSchema;
+    expect(schema.safeParse({ status: "customer" }).success).toBe(false);
+  });
+
+  it("get_contact is scoped to the org", async () => {
+    const { contacts, get } = build();
+    await runTool(get("get_contact"), { contactId: "c1" }, admin);
+    expect(contacts.findOne).toHaveBeenCalledWith("c1", "org1");
+  });
+
+  it("add_contact_note authors the note as the acting user", async () => {
+    const { contacts, get } = build();
+    await runTool(get("add_contact_note"), { contactId: "c1", content: "Called" }, admin);
+    expect(contacts.addNote).toHaveBeenCalledWith("c1", "Called", "org1", "u1");
+  });
+
+  it("add_contact_note rejects blank content and trims padded content", () => {
+    const schema = build().get("add_contact_note").inputSchema;
+    expect(schema.safeParse({ contactId: "c1", content: "  " }).success).toBe(false);
+    const parsed = schema.safeParse({ contactId: "c1", content: "  Hi  " });
+    expect((parsed.data as { content: string }).content).toBe("Hi");
+  });
+});

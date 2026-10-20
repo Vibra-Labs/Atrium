@@ -1,6 +1,8 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { SearchService } from "./search.service";
 import type { PrismaService } from "../prisma/prisma.service";
+import { SearchController } from "./search.controller";
+import { ROLES_KEY } from "../common/decorators/roles.decorator";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -33,6 +35,12 @@ const mockPrisma = {
     findMany: mock(() => Promise.resolve([])),
   },
   clientProfile: {
+    findMany: mock(() => Promise.resolve([])),
+  },
+  contact: {
+    findMany: mock(() => Promise.resolve([])),
+  },
+  company: {
     findMany: mock(() => Promise.resolve([])),
   },
 };
@@ -99,6 +107,8 @@ function clearAllMocks() {
   mockPrisma.file.findMany.mockClear();
   mockPrisma.member.findMany.mockClear();
   mockPrisma.clientProfile.findMany.mockClear();
+  mockPrisma.contact.findMany.mockClear();
+  mockPrisma.company.findMany.mockClear();
 }
 
 function resetAllMocksToEmpty() {
@@ -107,6 +117,8 @@ function resetAllMocksToEmpty() {
   mockPrisma.file.findMany.mockReturnValue(Promise.resolve([]));
   mockPrisma.member.findMany.mockReturnValue(Promise.resolve([]));
   mockPrisma.clientProfile.findMany.mockReturnValue(Promise.resolve([]));
+  mockPrisma.contact.findMany.mockReturnValue(Promise.resolve([]));
+  mockPrisma.company.findMany.mockReturnValue(Promise.resolve([]));
 }
 
 // ---------------------------------------------------------------------------
@@ -674,6 +686,59 @@ describe("SearchService", () => {
 
       // Should return exactly 5 — the cap applied by Prisma
       expect(result.projects).toHaveLength(5);
+    });
+  });
+
+  // =========================================================================
+  // Contacts and companies
+  // =========================================================================
+
+  describe("contacts and companies", () => {
+    it("search includes contacts for staff", async () => {
+      mockPrisma.contact.findMany.mockReturnValue(
+        Promise.resolve([
+          { id: "c-1", name: "Ann Alpha", email: "ann@x.com", company: { name: "Alpha Co" } },
+          { id: "c-2", name: "Al Alpha", email: null, company: null },
+        ]),
+      );
+      mockPrisma.company.findMany.mockReturnValue(
+        Promise.resolve([{ id: "co-1", name: "Alpha Co" }]),
+      );
+
+      const result = await service.search(ORG, QUERY);
+
+      expect(result.contacts).toEqual([
+        { id: "c-1", name: "Ann Alpha", email: "ann@x.com", company: "Alpha Co" },
+        { id: "c-2", name: "Al Alpha", email: null, company: null },
+      ]);
+      expect(result.companies).toEqual([{ id: "co-1", name: "Alpha Co" }]);
+    });
+
+    it("scopes contact and company queries to the org, insensitive, take 5", async () => {
+      await service.search(ORG, QUERY);
+
+      const contactCall = (mockPrisma.contact.findMany as ReturnType<typeof mock>)
+        .mock.calls[0][0] as PrismaArgs;
+      expect(contactCall.where?.organizationId).toBe(ORG);
+      expect(contactCall.take).toBe(5);
+      const json = JSON.stringify(contactCall.where);
+      expect(json).toContain("email");
+      expect(json).toContain("company");
+      expect(json).toContain("insensitive");
+
+      expect(mockPrisma.company.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG }),
+          take: 5,
+        }),
+      );
+    });
+
+    it("search excludes contacts for clients: the controller is owner/admin only", () => {
+      expect(Reflect.getMetadata(ROLES_KEY, SearchController)).toEqual([
+        "owner",
+        "admin",
+      ]);
     });
   });
 

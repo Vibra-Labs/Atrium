@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
-import { Search, FolderOpen, CheckSquare, FileText, Users, Loader2 } from "lucide-react";
+import { Search, FolderOpen, CheckSquare, FileText, Users, Contact, Building2, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -37,11 +37,25 @@ interface ClientResult {
   user: { id: string; name: string; email: string };
 }
 
+interface ContactResult {
+  id: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+}
+
+interface CompanyResult {
+  id: string;
+  name: string;
+}
+
 interface SearchResults {
   projects: ProjectResult[];
   tasks: TaskResult[];
   files: FileResult[];
   clients: ClientResult[];
+  contacts?: ContactResult[];
+  companies?: CompanyResult[];
 }
 
 interface FlatItem {
@@ -64,6 +78,12 @@ function buildFlatItems(results: SearchResults): FlatItem[] {
   }
   for (const c of results.clients) {
     items.push({ key: `client-${c.id}`, href: `/dashboard/clients`, label: c.user.name, sublabel: c.company || c.user.email });
+  }
+  for (const c of results.contacts ?? []) {
+    items.push({ key: `contact-${c.id}`, href: `/dashboard/contacts/${c.id}`, label: c.name, sublabel: c.company || c.email || undefined });
+  }
+  for (const c of results.companies ?? []) {
+    items.push({ key: `company-${c.id}`, href: `/dashboard/contacts/companies/${c.id}`, label: c.name });
   }
   return items;
 }
@@ -150,8 +170,8 @@ export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) 
     }
   };
 
-  const { projects = [], tasks = [], files = [], clients = [] } = results ?? {};
-  const hasResults = projects.length > 0 || tasks.length > 0 || files.length > 0 || clients.length > 0;
+  const { projects = [], tasks = [], files = [], clients = [], contacts = [], companies = [] } = results ?? {};
+  const hasResults = projects.length > 0 || tasks.length > 0 || files.length > 0 || clients.length > 0 || contacts.length > 0 || companies.length > 0;
 
   return (
     <>
@@ -287,6 +307,45 @@ export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) 
                             href="/dashboard/clients"
                             label={c.user.name}
                             sublabel={c.company || c.user.email}
+                            active={activeIndex === idx}
+                            ref={(el) => { itemRefs.current[idx] = el; }}
+                            onMouseEnter={() => setActiveIndex(idx)}
+                            onClick={close}
+                          />
+                        );
+                      })}
+                    </Section>
+                  )}
+
+                  {contacts.length > 0 && (
+                    <Section icon={<Contact size={13} />} label="Contacts">
+                      {contacts.map((c) => {
+                        const idx = indexByKey.get(`contact-${c.id}`)!;
+                        return (
+                          <ResultRow
+                            key={c.id}
+                            href={`/dashboard/contacts/${c.id}`}
+                            label={c.name}
+                            sublabel={c.company || c.email || undefined}
+                            active={activeIndex === idx}
+                            ref={(el) => { itemRefs.current[idx] = el; }}
+                            onMouseEnter={() => setActiveIndex(idx)}
+                            onClick={close}
+                          />
+                        );
+                      })}
+                    </Section>
+                  )}
+
+                  {companies.length > 0 && (
+                    <Section icon={<Building2 size={13} />} label="Companies">
+                      {companies.map((c) => {
+                        const idx = indexByKey.get(`company-${c.id}`)!;
+                        return (
+                          <ResultRow
+                            key={c.id}
+                            href={`/dashboard/contacts/companies/${c.id}`}
+                            label={c.name}
                             active={activeIndex === idx}
                             ref={(el) => { itemRefs.current[idx] = el; }}
                             onMouseEnter={() => setActiveIndex(idx)}

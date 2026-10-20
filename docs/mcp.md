@@ -112,6 +112,7 @@ and similar) at the same URL with the same header. Nothing leaves your network.
 | `list_tasks`, `create_task`, `update_task`, `delete_task` | Manage tasks |
 | `list_updates`, `post_update` | Client-visible progress updates |
 | `list_notes`, `add_note`, `delete_note` | Internal notes (never visible to clients) |
+| `list_contacts`, `get_contact`, `add_contact_note` | CRM contacts and their internal notes (team only) |
 
 19 tools in total. List tools take `page` and `limit` (max 50). `post_update` is
 visible to clients and may trigger email notifications.

@@ -13,6 +13,6 @@ import { NotificationsModule } from "../notifications/notifications.module";
   imports: [NotificationsModule],
   controllers: [ContactsController, CompaniesController, LeadSourcesController],
   providers: [ContactsService, CompaniesService, LeadSourcesService, ContactRevenueService, FollowUpTask],
-  exports: [ContactRevenueService],
+  exports: [ContactsService, ContactRevenueService],
 })
 export class ContactsModule {}

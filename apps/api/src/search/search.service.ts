@@ -6,7 +6,7 @@ export class SearchService {
   constructor(private prisma: PrismaService) {}
 
   async search(orgId: string, q: string) {
-    const [projects, tasks, files, members] = await Promise.all([
+    const [projects, tasks, files, members, contactRows, companies] = await Promise.all([
       this.prisma.project.findMany({
         where: {
           organizationId: orgId,
@@ -72,7 +72,39 @@ export class SearchService {
         },
         take: 5,
       }),
+      this.prisma.contact.findMany({
+        where: {
+          organizationId: orgId,
+          OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+            { company: { name: { contains: q, mode: "insensitive" } } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          company: { select: { name: true } },
+        },
+        take: 5,
+      }),
+      this.prisma.company.findMany({
+        where: {
+          organizationId: orgId,
+          name: { contains: q, mode: "insensitive" },
+        },
+        select: { id: true, name: true },
+        take: 5,
+      }),
     ]);
+
+    const contacts = contactRows.map((c) => ({
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      company: c.company?.name ?? null,
+    }));
 
     const memberUserIds = members.map((m) => m.userId);
     const clientProfiles =
@@ -90,6 +122,6 @@ export class SearchService {
       company: profileByUserId.get(m.userId)?.company ?? null,
     }));
 
-    return { projects, tasks, files, clients };
+    return { projects, tasks, files, clients, contacts, companies };
   }
 }

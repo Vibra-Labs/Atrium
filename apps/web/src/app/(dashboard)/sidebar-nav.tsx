@@ -9,6 +9,7 @@ import {
   Settings,
   Calendar,
   BarChart3,
+  Contact,
 } from "lucide-react";
 
 const navItems = [
@@ -16,6 +17,7 @@ const navItems = [
   { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
   { href: "/dashboard/calendar", label: "Calendar", icon: Calendar },
   { href: "/dashboard/clients", label: "People", icon: Users },
+  { href: "/dashboard/contacts", label: "Contacts", icon: Contact },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];

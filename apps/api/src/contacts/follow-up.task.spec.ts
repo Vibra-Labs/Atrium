@@ -84,8 +84,17 @@ describe("FollowUpTask", () => {
   });
 
   it("one failing contact does not stop the rest", async () => {
-    const { task, notifications } = build({ contacts: [fake("a"), fake("b")] });
+    const { task, notifications, contacts } = build({ contacts: [fake("a"), fake("b")] });
     notifications.create.mockImplementationOnce(() => Promise.reject(new Error("boom")));
     expect(await task.sendDue(NOW)).toBe(1);
+    expect(contacts[0].followUpNotifiedAt).toBeNull();
+    expect(contacts[1].followUpNotifiedAt).toEqual(NOW);
+  });
+
+  it("does not count a contact with no recipients, but marks it notified", async () => {
+    const { task, notifications, contacts } = build({ adminIds: [], ownerIds: [] });
+    expect(await task.sendDue(NOW)).toBe(0);
+    expect(notifications.create).not.toHaveBeenCalled();
+    expect(contacts[0].followUpNotifiedAt).toEqual(NOW);
   });
 });

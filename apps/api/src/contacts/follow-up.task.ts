@@ -55,6 +55,10 @@ export class FollowUpTask {
           where: { id: contact.id },
           data: { followUpNotifiedAt: now },
         });
+        if (recipients.length === 0) {
+          this.logger.warn(`No one to remind about contact ${contact.id}; skipping`);
+          continue;
+        }
         sent++;
       } catch (err) {
         this.logger.error(`Follow-up reminder failed for contact ${contact.id}`, err);

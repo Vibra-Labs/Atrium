@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
 } from "react";
 
 interface ConfirmOptions {
@@ -61,8 +62,10 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const needsTextConfirm = !!options?.confirmText;
   const textMatches = !needsTextConfirm || inputValue === options?.confirmText;
 
+  const value = useMemo<ConfirmContextValue>(() => ({ confirm }), [confirm]);
+
   return (
-    <ConfirmContext.Provider value={{ confirm }}>
+    <ConfirmContext.Provider value={value}>
       {children}
       {options && (
         <div

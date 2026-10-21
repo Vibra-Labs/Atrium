@@ -28,6 +28,7 @@ import {
 } from "@/components/task-detail-modal";
 import { downloadCsv } from "@/lib/download";
 import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
+import { useCachedApi } from "@/lib/cached";
 
 interface TaskRecord {
   id: string;
@@ -83,7 +84,7 @@ export function TasksSection({
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [members, setMembers] = useState<OrgMember[]>([]);
-  const [labels, setLabels] = useState<TaskDetailLabel[]>([]);
+  const labels: TaskDetailLabel[] = useCachedApi<TaskDetailLabel[]>("/labels") ?? [];
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [newTitle, setNewTitle] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
@@ -113,9 +114,6 @@ export function TasksSection({
   useEffect(() => {
     apiFetch<PaginatedResponse<OrgMember>>("/clients?limit=100")
       .then((res) => setMembers(res.data.filter((m) => m.role === "owner" || m.role === "admin")))
-      .catch(console.error);
-    apiFetch<TaskDetailLabel[]>("/labels")
-      .then(setLabels)
       .catch(console.error);
   }, []);
 
@@ -617,7 +615,6 @@ export function TasksSection({
           projectId={projectId}
           members={members.map((m) => ({ userId: m.userId, user: m.user }))}
           labels={labels}
-          onLabelsChange={setLabels}
           onClose={closeTask}
           onChange={loadTasks}
           onDelete={() => {

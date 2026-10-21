@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { resetPlanState } from "@/lib/plan-features";
+import { clearCached } from "@/lib/cached";
 
 export type SwitchableOrg = {
   id: string;
@@ -78,6 +79,7 @@ export function OrgSwitcher({
       if (!res.ok) throw new Error(`set-active failed (${res.status})`);
       setOpen(false);
       resetPlanState();
+      clearCached();
       router.replace("/dashboard");
       router.refresh();
     } catch (err) {

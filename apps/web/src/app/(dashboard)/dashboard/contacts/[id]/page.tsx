@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { loadSubscription } from "@/lib/cached";
 import { useAppConfig } from "@/lib/app-config";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
@@ -51,15 +52,10 @@ export default function ContactPage() {
   // At the plan's client limit (the rule the invite API enforces), offer the upgrade instead.
   useEffect(() => {
     if (!config?.billingEnabled) return;
-    apiFetch<{
-      subscription: { plan: { maxClients: number } } | null;
-      usage: { clients: number };
-    }>("/billing/subscription")
-      .then(({ subscription, usage }) => {
-        const max = subscription?.plan.maxClients;
-        setAtClientLimit(max !== undefined && max !== -1 && usage.clients >= max);
-      })
-      .catch((err: unknown) => console.error(err));
+    loadSubscription().then((res) => {
+      const max = res?.subscription?.plan?.maxClients;
+      if (res) setAtClientLimit(max !== undefined && max !== -1 && res.usage.clients >= max);
+    });
   }, [config?.billingEnabled]);
 
   // An open invitation for this contact, so its link can be copied when email isn't delivered.

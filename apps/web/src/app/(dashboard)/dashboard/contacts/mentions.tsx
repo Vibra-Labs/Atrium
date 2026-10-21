@@ -78,17 +78,24 @@ function useContactSearch(query: string | null, excludeId?: string): PickedConta
       setResults([]);
       return;
     }
+    // Set by the cleanup, so a response for an older query can't overwrite the newer one.
+    let stale = false;
     const t = setTimeout(() => {
       const params = new URLSearchParams({ limit: "6" });
       if (query.trim()) params.set("search", query.trim());
       apiFetch<{ data: PickedContact[] }>(`/contacts?${params}`)
-        .then((res) => setResults(res.data.filter((c) => c.id !== excludeId).map((c) => ({ id: c.id, name: c.name }))))
+        .then((res) => {
+          if (!stale) setResults(res.data.filter((c) => c.id !== excludeId).map((c) => ({ id: c.id, name: c.name })));
+        })
         .catch((err: unknown) => {
           console.error(err);
-          setResults([]);
+          if (!stale) setResults([]);
         });
     }, 200);
-    return () => clearTimeout(t);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
   }, [query, excludeId]);
   return results;
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, RefreshCw, Sparkles, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { loadSubscription } from "@/lib/cached";
 import { useToast } from "@/components/toast";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useIsTrialing } from "@/lib/plan-features";
@@ -182,7 +183,7 @@ export function CustomDomainSection() {
 
   useEffect(() => {
     Promise.all([
-      apiFetch<Subscription>("/billing/subscription").catch(() => null),
+      loadSubscription(),
       apiFetch<CustomDomainData>("/settings/custom-domain").catch(() => null),
     ]).then(([sub, domainData]) => {
       setIsPaid(!sub || sub.subscription?.plan?.slug !== "free");

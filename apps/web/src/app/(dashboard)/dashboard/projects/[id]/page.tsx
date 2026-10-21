@@ -21,6 +21,7 @@ import { InvoicesSection } from "./components/invoices-section";
 import { NotesSection } from "./components/notes-section";
 import { TimeTab } from "./time-tab";
 import { useSession } from "@/lib/session-context";
+import { useCachedApi } from "@/lib/cached";
 
 interface FileRecord {
   id: string;
@@ -141,7 +142,7 @@ export default function ProjectDetailPage() {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
   const [project, setProject] = useState<Project | null>(null);
-  const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
+  const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
   const [clients, setClients] = useState<ClientMember[]>([]);
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
@@ -166,7 +167,7 @@ export default function ProjectDetailPage() {
   const session = useSession();
   const currentRole: string | null = session.role || null;
   const currentUserId: string | null = session.userId || null;
-  const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
+  const orgLabels: LabelRecord[] = useCachedApi<LabelRecord[]>("/labels") ?? [];
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
   const [duplicateIncludeTasks, setDuplicateIncludeTasks] = useState(true);
@@ -183,17 +184,11 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     loadProject();
-    apiFetch<ProjectStatus[]>("/projects/statuses")
-      .then(setStatuses)
-      .catch(console.error);
     apiFetch<ClientMember[] | PaginatedResponse<ClientMember>>("/clients")
       .then((res) => {
         const data = Array.isArray(res) ? res : res.data;
         setClients(data.filter((m: ClientMember) => m.role === "member"));
       })
-      .catch(console.error);
-    apiFetch<LabelRecord[]>("/labels")
-      .then(setOrgLabels)
       .catch(console.error);
   }, [loadProject, id]);
 
@@ -408,7 +403,6 @@ export default function ProjectDetailPage() {
             labels={orgLabels}
             assigned={projectLabelIds}
             onToggle={handleLabelToggle}
-            onLabelsChange={setOrgLabels}
             disabled={isArchived}
           />
         </div>

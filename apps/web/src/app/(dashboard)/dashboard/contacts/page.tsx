@@ -30,6 +30,7 @@ import {
 } from "./list-state";
 import type { Filters, ListState, TabId } from "./list-state";
 import { useSearchParams } from "next/navigation";
+import { loadSubscription, useCachedApi } from "@/lib/cached";
 
 interface ContactRow {
   id: string;
@@ -142,8 +143,8 @@ export default function ContactsPage() {
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [labels, setLabels] = useState<Option[] | null>(null);
-  const [sources, setSources] = useState<Option[] | null>(null);
+  const labels: Option[] | null = useCachedApi<Option[]>("/labels");
+  const sources: Option[] | null = useCachedApi<Option[]>("/lead-sources");
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -159,30 +160,11 @@ export default function ContactsPage() {
 
   useEffect(() => {
     if (!config?.billingEnabled) return;
-    apiFetch<{ subscription: { plan: { maxClients: number } } | null; usage: { clients: number } }>(
-      "/billing/subscription",
-    )
-      .then(({ subscription, usage }) => {
-        const max = subscription?.plan.maxClients;
-        if (max !== undefined && max !== -1) setClientLimit({ max, used: usage.clients });
-      })
-      .catch((err: unknown) => console.error(err));
+    loadSubscription().then((res) => {
+      const max = res?.subscription?.plan?.maxClients;
+      if (res && max !== undefined && max !== -1) setClientLimit({ max, used: res.usage.clients });
+    });
   }, [config?.billingEnabled]);
-
-  useEffect(() => {
-    apiFetch<Option[]>("/labels")
-      .then(setLabels)
-      .catch((err: unknown) => {
-        console.error(err);
-        setLabels([]);
-      });
-    apiFetch<Option[]>("/lead-sources")
-      .then(setSources)
-      .catch((err: unknown) => {
-        console.error(err);
-        setSources([]);
-      });
-  }, []);
 
   // A tag or source filter from an old link may point at one that was deleted since: drop it
   // rather than show a chip with a raw id.

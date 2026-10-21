@@ -15,6 +15,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { useAppConfig } from "@/lib/app-config";
 import { ResetLinkModal, usePasswordReset } from "@/components/password-reset-link";
 import { PendingInvitationRow, type Invitation } from "./pending-invitation-row";
+import { loadSubscription, useCachedApi } from "@/lib/cached";
 
 interface LabelRecord {
   id: string;
@@ -67,11 +68,7 @@ export default function TeamPage(): React.ReactElement {
   const [inviteLink, setInviteLink] = useState<string>("");
   const [inviting, setInviting] = useState<boolean>(false);
   const [resendingId, setResendingId] = useState<string>("");
-  const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
-
-  useEffect(() => {
-    apiFetch<LabelRecord[]>("/labels").then(setOrgLabels).catch(console.error);
-  }, []);
+  const orgLabels: LabelRecord[] = useCachedApi<LabelRecord[]>("/labels") ?? [];
 
   const loadMembers = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -106,13 +103,10 @@ export default function TeamPage(): React.ReactElement {
 
   const loadLimit = useCallback((): void => {
     if (!config?.billingEnabled) return;
-    apiFetch<{ subscription: { plan: { maxMembers: number } } | null; usage: { members: number } }>(
-      "/billing/subscription",
-    )
-      .then(({ subscription, usage }) => {
-        if (subscription?.plan) setMemberLimit({ max: subscription.plan.maxMembers, used: usage.members });
-      })
-      .catch((err: unknown) => console.error(err));
+    loadSubscription().then((res) => {
+      const plan = res?.subscription?.plan;
+      if (res && plan) setMemberLimit({ max: plan.maxMembers, used: res.usage.members });
+    });
   }, [config?.billingEnabled]);
 
   useEffect(() => {
@@ -420,7 +414,6 @@ export default function TeamPage(): React.ReactElement {
                           labels={orgLabels}
                           assigned={(member.labels ?? []).map((l) => l.label.id)}
                           onToggle={(labelId) => handleToggleMemberLabel(member, labelId)}
-                          onLabelsChange={setOrgLabels}
                         />
                       )}
                     </div>

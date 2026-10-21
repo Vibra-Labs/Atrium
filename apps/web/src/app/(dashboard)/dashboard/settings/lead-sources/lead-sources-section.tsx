@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
+import { invalidate } from "@/lib/cached";
 
 interface LeadSource {
   id: string;
@@ -43,6 +44,7 @@ export function LeadSourcesSection(): React.ReactElement {
   async function run(action: () => Promise<unknown>, failure: string): Promise<boolean> {
     try {
       await action();
+      invalidate("/lead-sources");
       await load();
       return true;
     } catch (err) {

@@ -12,6 +12,7 @@ import { Avatar } from "@/components/avatar";
 import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
 import { TASK_STATUS_OPTIONS } from "@/lib/task-status";
 import { ManualEntryModal } from "@/components/manual-entry-modal";
+import { invalidate } from "@/lib/cached";
 
 export interface TaskDetailRecord {
   id: string;
@@ -56,7 +57,6 @@ export function TaskDetailModal({
   currentUserId,
   members,
   labels,
-  onLabelsChange,
   onClose,
   onChange,
   onDelete,
@@ -68,7 +68,6 @@ export function TaskDetailModal({
   currentUserId?: string | null;
   members?: TaskDetailMember[];
   labels?: TaskDetailLabel[];
-  onLabelsChange?: (labels: TaskDetailLabel[]) => void;
   onClose: () => void;
   /** Called after a successful mutation so the caller can refresh its list. */
   onChange: () => void;
@@ -242,10 +241,7 @@ export function TaskDetailModal({
         method: "POST",
         body: JSON.stringify({ name: newLabelName.trim(), color: newLabelColor }),
       });
-      if (onLabelsChange) {
-        const updated = await apiFetch<TaskDetailLabel[]>("/labels");
-        onLabelsChange(updated);
-      }
+      invalidate("/labels");
       await handleToggleLabel(created.id);
       setNewLabelName("");
       setNewLabelColor(PRESET_COLORS[0].hex);

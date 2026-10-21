@@ -18,6 +18,7 @@ import { NEW_SOURCE, PHONE_LABELS, STATUS_LABELS, inputClass, labelClass } from 
 import type { ContactPhone } from "../shared";
 import type { ContactDetail } from "./types";
 import { ReferrerField } from "../mentions";
+import { invalidate, loadCached } from "@/lib/cached";
 
 interface Option {
   id: string;
@@ -63,15 +64,14 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
 
   const loadSources = useCallback((): void => {
     setSourcesError(false);
-    apiFetch<Option[]>("/lead-sources")
-      .then((res) => {
+    loadCached("/lead-sources", () => apiFetch<Option[]>("/lead-sources")).then((res) => {
+      if (res) {
         setSources(res);
         setSourcesLoaded(true);
-      })
-      .catch((err) => {
-        console.error(err);
+      } else {
         setSourcesError(true);
-      });
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -111,6 +111,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
     }
     try {
       await apiFetch(`/contacts/${contact.id}`, { method: "PUT", body: JSON.stringify(body) });
+      if (body.leadSourceName) invalidate("/lead-sources");
       success("Contact updated");
       onSaved();
     } catch (err) {

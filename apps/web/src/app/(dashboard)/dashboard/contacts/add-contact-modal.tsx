@@ -17,6 +17,7 @@ import { NEW_SOURCE, PHONE_LABELS, STATUS_LABELS, inputClass, labelClass } from 
 import type { ContactPhone } from "./shared";
 import { MentionTextarea, ReferrerField, toNoteContent } from "./mentions";
 import type { PickedContact } from "./mentions";
+import { invalidate, useCachedApi } from "@/lib/cached";
 
 interface LeadSource {
   id: string;
@@ -49,13 +50,9 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
   const [companyId, setCompanyId] = useState<string | null>(company?.id ?? null);
   const [sourceChoice, setSourceChoice] = useState("");
   const [newSource, setNewSource] = useState("");
-  const [sources, setSources] = useState<LeadSource[]>([]);
+  const sources: LeadSource[] = useCachedApi<LeadSource[]>("/lead-sources") ?? [];
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    apiFetch<LeadSource[]>("/lead-sources").then(setSources).catch(console.error);
-  }, []);
 
   async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -88,6 +85,8 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
     let contact: { id: string };
     try {
       contact = await apiFetch<{ id: string }>("/contacts", { method: "POST", body: JSON.stringify(body) });
+      // A new or "Referral" source name may have created a lead source.
+      if (body.leadSourceName) invalidate("/lead-sources");
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Failed to add contact";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
@@ -50,12 +50,17 @@ export default function PortalProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [page, setPage] = useState(1);
+  const [pageState, setPageState] = useState({ page: 1, filterKey: "" });
+  const requestId = useRef(0);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
+  // The page belongs to the search it was chosen under, so a new search falls back to page 1.
+  const page: number = pageState.filterKey === debouncedSearch ? pageState.page : 1;
+  const setPage = (next: number): void => setPageState({ page: next, filterKey: debouncedSearch });
 
   const loadProjects = useCallback(async () => {
+    const myRequest: number = ++requestId.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), limit: "20" });
@@ -63,22 +68,20 @@ export default function PortalProjectsPage() {
       const res = await apiFetch<PaginatedResponse<Project>>(
         `/projects/mine?${params}`,
       );
+      if (myRequest !== requestId.current) return;
       setProjects(res.data);
       setTotalPages(res.meta.totalPages);
     } catch (err) {
+      if (myRequest !== requestId.current) return;
       setError(err instanceof Error ? err.message : "Failed to load projects");
     } finally {
-      setLoading(false);
+      if (myRequest === requestId.current) setLoading(false);
     }
   }, [page, debouncedSearch]);
 
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch]);
 
   return (
     <div>

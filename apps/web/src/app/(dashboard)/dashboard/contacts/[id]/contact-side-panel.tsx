@@ -13,6 +13,7 @@ import { LabelBadge } from "@/components/label-badge";
 import { inputClass } from "../shared";
 import { FollowUpCard } from "./follow-up-card";
 import type { ContactDetail } from "./types";
+import { useCachedApi } from "@/lib/cached";
 
 interface Label {
   id: string;
@@ -158,11 +159,7 @@ function ProjectsSection({ contact, onChanged }: Props) {
 
 function TagsSection({ contact, onChanged }: Props) {
   const { error: showError } = useToast();
-  const [orgLabels, setOrgLabels] = useState<Label[]>([]);
-
-  useEffect(() => {
-    apiFetch<Label[]>("/labels").then(setOrgLabels).catch(console.error);
-  }, []);
+  const orgLabels: Label[] = useCachedApi<Label[]>("/labels") ?? [];
 
   const assigned = contact.labels.map((l) => l.id);
 
@@ -189,7 +186,6 @@ function TagsSection({ contact, onChanged }: Props) {
           labels={orgLabels}
           assigned={assigned}
           onToggle={toggle}
-          onLabelsChange={setOrgLabels}
           align="right"
         />
       </div>

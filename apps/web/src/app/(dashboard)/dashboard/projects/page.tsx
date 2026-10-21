@@ -11,6 +11,7 @@ import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
 import { useAppConfig } from "@/lib/app-config";
+import { loadSubscription, useCachedApi } from "@/lib/cached";
 
 interface LabelRecord {
   id: string;
@@ -51,15 +52,21 @@ export default function ProjectsPage() {
   const [planLimits, setPlanLimits] = useState<{ maxProjects: number; projectsUsed: number } | null>(null);
 
   // Pagination & filters
-  const [page, setPage] = useState(1);
+  // The page belongs to the filters it was chosen under, so changing a filter
+  // falls back to page 1 in the same render instead of in a follow-up effect.
+  const [pageState, setPageState] = useState({ page: 1, filterKey: "" });
+  const requestId = useRef(0);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
-  const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
+  const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
+  const orgLabels: LabelRecord[] = useCachedApi<LabelRecord[]>("/labels") ?? [];
   const [labelFilter, setLabelFilter] = useState<string[]>([]);
+  const filterKey: string = JSON.stringify([debouncedSearch, statusFilter, showArchived, labelFilter]);
+  const page: number = pageState.filterKey === filterKey ? pageState.page : 1;
+  const setPage = (next: number): void => setPageState({ page: next, filterKey });
   const [labelFilterOpen, setLabelFilterOpen] = useState(false);
   const labelFilterRef = useRef<HTMLDivElement>(null);
 
@@ -74,16 +81,8 @@ export default function ProjectsPage() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [labelFilterOpen]);
 
-  useEffect(() => {
-    apiFetch<ProjectStatus[]>("/projects/statuses")
-      .then(setStatuses)
-      .catch(console.error);
-    apiFetch<LabelRecord[]>("/labels")
-      .then(setOrgLabels)
-      .catch(console.error);
-  }, []);
-
   const loadProjects = useCallback(async () => {
+    const myRequest: number = ++requestId.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), limit: "20" });
@@ -94,12 +93,14 @@ export default function ProjectsPage() {
       const res = await apiFetch<PaginatedResponse<Project>>(
         `/projects?${params}`,
       );
+      if (myRequest !== requestId.current) return;
       setProjects(res.data);
       setTotalPages(res.meta.totalPages);
     } catch (err) {
+      if (myRequest !== requestId.current) return;
       setError(err instanceof Error ? err.message : "Failed to load projects");
     } finally {
-      setLoading(false);
+      if (myRequest === requestId.current) setLoading(false);
     }
   }, [page, debouncedSearch, statusFilter, showArchived, labelFilter]);
 
@@ -107,15 +108,10 @@ export default function ProjectsPage() {
     loadProjects();
   }, [loadProjects]);
 
-  // Reset page when filters change
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, statusFilter, showArchived, labelFilter]);
-
   useEffect(() => {
     if (!config?.billingEnabled) return;
     Promise.all([
-      apiFetch<{ subscription: { plan: { maxProjects: number } } | null }>("/billing/subscription").catch(() => null),
+      loadSubscription(),
       apiFetch<{ projects: number }>("/billing/usage").catch(() => null),
     ]).then(([sub, usage]) => {
       if (sub?.subscription?.plan && usage != null) {

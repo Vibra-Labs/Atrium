@@ -5,6 +5,7 @@ import { Plus, Pencil, Settings } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import Link from "next/link";
 import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
+import { invalidate } from "@/lib/cached";
 
 interface Label {
   id: string;
@@ -16,14 +17,12 @@ export function LabelPicker({
   labels,
   assigned,
   onToggle,
-  onLabelsChange,
   disabled,
   align = "left",
 }: {
   labels: Label[];
   assigned: string[];
   onToggle: (labelId: string) => void;
-  onLabelsChange?: (labels: Label[]) => void;
   disabled?: boolean;
   align?: "left" | "right";
 }) {
@@ -62,10 +61,7 @@ export function LabelPicker({
         method: "POST",
         body: JSON.stringify({ name: newName.trim(), color: newColor }),
       });
-      if (onLabelsChange) {
-        const updated = await apiFetch<Label[]>("/labels");
-        onLabelsChange(updated);
-      }
+      invalidate("/labels");
       onToggle(created.id);
       setNewName("");
       setNewColor(PRESET_COLORS[0].hex);

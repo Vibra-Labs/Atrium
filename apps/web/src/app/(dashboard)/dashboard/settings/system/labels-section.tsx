@@ -6,6 +6,7 @@ import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
+import { invalidate } from "@/lib/cached";
 
 interface Label {
   id: string;
@@ -53,6 +54,7 @@ export function LabelsSection() {
       setNewName("");
       setNewColor(PRESET_COLORS[0].hex);
       success("Label created");
+      invalidate("/labels");
       loadLabels();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to create label");
@@ -76,6 +78,7 @@ export function LabelsSection() {
       });
       setEditingId(null);
       success("Label updated");
+      invalidate("/labels");
       loadLabels();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to update label");
@@ -93,6 +96,7 @@ export function LabelsSection() {
     try {
       await apiFetch(`/labels/${label.id}`, { method: "DELETE" });
       success("Label deleted");
+      invalidate("/labels");
       loadLabels();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to delete label");

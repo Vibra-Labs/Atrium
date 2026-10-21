@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
 } from "react";
 import { CheckCircle, XCircle, Info, X } from "lucide-react";
 
@@ -57,11 +58,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const value: ToastContextValue = {
-    success: useCallback((msg: string) => addToast("success", msg), [addToast]),
-    error: useCallback((msg: string) => addToast("error", msg), [addToast]),
-    info: useCallback((msg: string) => addToast("info", msg), [addToast]),
-  };
+  // Stable, so showing a toast doesn't re-render every component that calls useToast().
+  const value = useMemo<ToastContextValue>(
+    () => ({
+      success: (msg: string) => addToast("success", msg),
+      error: (msg: string) => addToast("error", msg),
+      info: (msg: string) => addToast("info", msg),
+    }),
+    [addToast],
+  );
 
   return (
     <ToastContext.Provider value={value}>

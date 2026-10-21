@@ -121,6 +121,7 @@ export function LabelsSection() {
           />
           <button
             type="button"
+            aria-label="Add label"
             onClick={handleCreate}
             disabled={creating || !newName.trim()}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm font-medium disabled:opacity-50"

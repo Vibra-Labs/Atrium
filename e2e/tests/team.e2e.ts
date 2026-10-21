@@ -92,7 +92,8 @@ test.describe("Team", () => {
       const row = page.getByTestId("team-member-row").filter({ hasText: "(you)" });
       await row.getByRole("button", { name: "Edit labels" }).click();
       await row.getByRole("option", { name }).click();
-      await expect(row.getByRole("option", { name })).toHaveAttribute("aria-selected", "true");
+      // Tagging reloads the members, which closes the picker; the badge shows the result.
+      await expect(row.getByText(name, { exact: true })).toBeVisible();
 
       // Stored on the member (staff tag), so the badge shows after a reload.
       await page.reload();
@@ -123,7 +124,8 @@ test.describe("Team", () => {
     test("current user row shows their role badge", async ({ page }) => {
       await page.goto(TEAM);
       const memberRow = page.getByTestId("team-member-row").filter({ hasText: "(you)" });
-      await expect(memberRow.locator("span.rounded-full")).toBeVisible();
+      // Staff tags are rounded badges too, so pick the role by its text.
+      await expect(memberRow.locator("span.rounded-full", { hasText: /^(owner|admin)$/ })).toBeVisible();
     });
 
     test("members section heading is visible", async ({ page }) => {

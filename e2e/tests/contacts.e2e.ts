@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { applyContactFilter, createOwner, getCsrfToken, openSearchPalette } from "./helpers";
 
 const API = "http://localhost:3001/api";
@@ -68,7 +68,7 @@ test.describe("Contacts list", () => {
     await createContact(request, { name: `Sorta ${stamp}`, rating: "hot" });
     await createContact(request, { name: `Sortb ${stamp}`, rating: "hot" });
     await page.goto("/dashboard/contacts");
-    await page.getByPlaceholder("Search name, company, email").fill(String(stamp));
+    await searchList(page, "Search name, company, email", String(stamp));
     const rows = page.getByTestId("contact-row");
     await expect(rows).toHaveCount(2);
     await expect(rows.first()).toContainText(`Sorta ${stamp}`);
@@ -108,7 +108,7 @@ test.describe("Contacts list", () => {
     expect(res.ok()).toBeTruthy();
 
     await page.goto("/dashboard/contacts");
-    await page.getByPlaceholder(/search name, company, email/i).fill(company);
+    await searchList(page, "Search name, company, email", company);
     await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
   });
 
@@ -124,7 +124,7 @@ test.describe("Contacts list", () => {
     const { id } = await res.json();
 
     await page.goto("/dashboard/contacts");
-    await page.getByPlaceholder(/search name, company, email/i).fill(company);
+    await searchList(page, "Search name, company, email", company);
     // Click the company cell, not the name link.
     await page.getByTestId("contact-row").filter({ hasText: name }).getByText(company).click();
     await expect(page).toHaveURL(new RegExp(`/dashboard/contacts/${id}$`));
@@ -309,7 +309,7 @@ test.describe("Contacts list", () => {
     }
 
     await page.goto("/dashboard/contacts");
-    await page.getByPlaceholder(/search name, company, email/i).fill(String(stamp));
+    await searchList(page, "Search name, company, email", String(stamp));
     await expect(page.getByRole("row", { name: new RegExp(`Today ${stamp}`) })).toContainText("Today");
     await expect(page.getByRole("row", { name: new RegExp(`Late ${stamp}`) })).toContainText("Overdue");
   });
@@ -324,7 +324,7 @@ test.describe("Contacts list", () => {
     await page.getByRole("button", { name: "Companies" }).click();
     await expect(page.getByRole("columnheader", { name: "Paid, all time" })).toBeVisible();
     // Search rather than rely on the company landing on page 1.
-    await page.getByPlaceholder("Search companies").fill(company);
+    await searchList(page, "Search companies", company);
     await expect(page.getByRole("link", { name: company })).toBeVisible();
   });
 
@@ -335,7 +335,7 @@ test.describe("Contacts list", () => {
     await createContact(request, { name: `Small one ${stamp}`, companyName: `Small${stamp}` });
     await page.goto("/dashboard/contacts");
     await page.getByRole("button", { name: "Companies" }).click();
-    await page.getByPlaceholder("Search companies").fill(String(stamp));
+    await searchList(page, "Search companies", String(stamp));
     const rows = page.getByTestId("company-row");
     await expect(rows).toHaveCount(2);
 
@@ -352,7 +352,7 @@ test.describe("Contacts list", () => {
     const name = `Backnav ${stamp}`;
     await createContact(request, { name, rating: "hot" });
     await page.goto("/dashboard/contacts");
-    await page.getByPlaceholder("Search name, company, email").fill(String(stamp));
+    await searchList(page, "Search name, company, email", String(stamp));
     await applyContactFilter(page, "Rating", "Hot");
     await page.getByRole("button", { name: "Paid, all time", exact: true }).click();
     await expect(page).toHaveURL(/sort=paid/);
@@ -427,6 +427,19 @@ test.describe("Contacts on a phone", () => {
     await expect(page.getByRole("link", { name: "Team", exact: true })).toBeVisible();
   });
 });
+
+/**
+ * Types into a list's search box and waits until the search is in the address, i.e. applied.
+ * Text typed before the page has hydrated is reset by React, so this retries until it sticks.
+ */
+async function searchList(page: Page, placeholder: string, text: string): Promise<void> {
+  const box = page.getByPlaceholder(placeholder);
+  const q = new URLSearchParams({ q: text }).toString().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(async () => {
+    await box.fill(text);
+    await expect(page).toHaveURL(new RegExp(`[?&]${q}(&|$)`), { timeout: 2000 });
+  }).toPass({ timeout: 20000 });
+}
 
 async function createContact(
   request: APIRequestContext,
@@ -510,11 +523,11 @@ test.describe("Contact page", () => {
     const id = await createContact(request, { name: `Referred ${stamp}`, referredById: refId });
 
     await page.goto(`/dashboard/contacts/${id}`);
-    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     const more = page.getByRole("button", { name: /^More info · 1 filled/ });
     await expect(more).toBeVisible();
     await more.click();
-    await expect(page.getByText(refName)).toBeVisible();
+    await expect(page.getByTestId("referrer-name")).toHaveText(refName);
     await page.getByLabel("About").fill(`About ${stamp}`);
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Contact updated")).toBeVisible();
@@ -730,7 +743,7 @@ test.describe("Company page", () => {
 
     await page.goto("/dashboard/contacts");
     await page.getByRole("button", { name: "Companies" }).click();
-    await page.getByPlaceholder("Search companies").fill(company);
+    await searchList(page, "Search companies", company);
     await page.getByRole("link", { name: company }).click();
 
     await expect(page.getByRole("heading", { name: company })).toBeVisible();

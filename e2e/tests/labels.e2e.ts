@@ -13,7 +13,7 @@ test.describe("Labels", () => {
 
     // Fill in label name and create
     await page.getByPlaceholder("New label name").fill("E2E Test Label");
-    await page.getByRole("button", { name: /add/i }).click();
+    await page.getByRole("button", { name: "Add label" }).click();
 
     // Should see success toast
     await expect(page.getByText(/label created/i)).toBeVisible({ timeout: 5000 });
@@ -28,7 +28,7 @@ test.describe("Labels", () => {
 
     // Create a label first
     await page.getByPlaceholder("New label name").fill("Edit Me Label");
-    await page.getByRole("button", { name: /add/i }).click();
+    await page.getByRole("button", { name: "Add label" }).click();
     await expect(page.getByText(/label created/i)).toBeVisible({ timeout: 5000 });
 
     // Click the edit (pencil) button for the label
@@ -51,15 +51,15 @@ test.describe("Labels", () => {
 
     // Create a label first
     await page.getByPlaceholder("New label name").fill("Delete Me Label");
-    await page.getByRole("button", { name: /add/i }).click();
+    await page.getByRole("button", { name: "Add label" }).click();
     await expect(page.getByText(/label created/i)).toBeVisible({ timeout: 5000 });
 
     // Find the label row that contains exactly the label name text, then click the trash button
     const labelRow = page.locator(".border.rounded-lg").filter({ hasText: "Delete Me Label" });
     await labelRow.locator("button").nth(1).click(); // second button is trash (first is pencil/edit)
 
-    // Confirm deletion
-    await page.getByRole("button", { name: /delete/i }).click();
+    // Confirm deletion (exact: the lead source rows on this page have "Delete <name>" buttons)
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
 
     // Should see success toast
     await expect(page.getByText(/label deleted/i)).toBeVisible({ timeout: 5000 });
@@ -70,7 +70,7 @@ test.describe("Labels", () => {
     await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText("Loading...").first()).not.toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder("New label name").fill("Project Tag");
-    await page.getByRole("button", { name: /add/i }).click();
+    await page.getByRole("button", { name: "Add label" }).click();
     await expect(page.getByText(/label created/i)).toBeVisible({ timeout: 5000 });
 
     // Navigate to projects page

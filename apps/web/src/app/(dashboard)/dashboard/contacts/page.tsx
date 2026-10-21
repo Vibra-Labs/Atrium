@@ -23,13 +23,13 @@ import {
   ACCESS_FILTERS,
   COMPANY_SORTS,
   CONTACT_SORTS,
-  NO_FILTERS,
   TABS,
   listQuery,
   readListState,
   sortsFor,
 } from "./list-state";
-import type { Filters, TabId } from "./list-state";
+import type { Filters, ListState, TabId } from "./list-state";
+import { useSearchParams } from "next/navigation";
 
 interface ContactRow {
   id: string;
@@ -127,42 +127,35 @@ export default function ContactsPage() {
   const config = useAppConfig();
   const [clientLimit, setClientLimit] = useState<ClientLimit | null>(null);
   const rowLink = useRowLink();
-  const [tab, setTab] = useState<TabId>("all");
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
-  const [order, setOrder] = useState<{ sort: string; dir: SortDir }>({ sort: "name", dir: "asc" });
-  const [page, setPage] = useState(1);
+  // Sort, filters, search, tab and page live in the address: Back from a contact (and deep links
+  // such as /dashboard/clients -> ?access=portal, or a company page -> ?tab=companies) restore them.
+  // Read while rendering, so nothing typed before the page finishes loading gets overwritten.
+  const searchParams = useSearchParams();
+  const [initial] = useState<ListState>(() => readListState(`?${searchParams.toString()}`));
+  const [tab, setTab] = useState<TabId>(initial.tab);
+  const [search, setSearch] = useState<string>(initial.search);
+  const [debouncedSearch, setDebouncedSearch] = useState<string>(initial.search.trim());
+  const [filters, setFilters] = useState<Filters>(initial.filters);
+  const [order, setOrder] = useState<{ sort: string; dir: SortDir }>({ sort: initial.sort, dir: initial.dir });
+  const [page, setPage] = useState<number>(initial.page);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [labels, setLabels] = useState<Option[] | null>(null);
   const [sources, setSources] = useState<Option[] | null>(null);
-  // The list waits for the address to be read, so Back restores it without a flash of defaults.
-  const [ready, setReady] = useState<boolean>(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  // Sort, filters, search, tab and page live in the address: Back from a contact (and deep links
-  // such as /dashboard/clients -> ?access=portal, or a company page -> ?tab=companies) restore them.
   useEffect(() => {
-    const state = readListState(window.location.search);
-    setTab(state.tab);
-    setSearch(state.search);
-    setDebouncedSearch(state.search.trim());
-    setPage(state.page);
-    setOrder({ sort: state.sort, dir: state.dir });
-    setFilters(state.filters);
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!ready) return;
     const query = listQuery({ tab, search: debouncedSearch, page, sort: order.sort, dir: order.dir, filters });
     const url = `${window.location.pathname}${query ? `?${query}` : ""}`;
-    if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", url);
-  }, [ready, tab, debouncedSearch, page, order, filters]);
+    // Keeping Next's own history state makes this a plain address update: the router doesn't
+    // act on it, so a delayed search update can't cancel a click that is opening a contact.
+    if (url !== `${window.location.pathname}${window.location.search}`) {
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }, [tab, debouncedSearch, page, order, filters]);
 
   useEffect(() => {
     if (!config?.billingEnabled) return;
@@ -218,7 +211,6 @@ export default function ContactsPage() {
   const requestId = useRef(0);
 
   const load = useCallback(async () => {
-    if (!ready) return;
     const id = ++requestId.current;
     setLoading(true);
     try {
@@ -248,7 +240,7 @@ export default function ContactsPage() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [ready, tab, page, debouncedSearch, filterParams, order, showError]);
+  }, [tab, page, debouncedSearch, filterParams, order, showError]);
 
   useEffect(() => {
     load();

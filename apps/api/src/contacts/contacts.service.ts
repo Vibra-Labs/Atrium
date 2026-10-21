@@ -789,7 +789,8 @@ export class ContactsService {
       if (isPrismaUniqueViolation(e)) return;
       throw e;
     }
-    await addContactEvent(this.prisma, 
+    await addContactEvent(
+      this.prisma,
       id,
       orgId,
       "project_linked",

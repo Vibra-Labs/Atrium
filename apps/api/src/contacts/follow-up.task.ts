@@ -52,17 +52,19 @@ export class FollowUpTask {
             where: { id: contact.id, followUpNotifiedAt: null, followUpAt: contact.followUpAt },
             data: { followUpNotifiedAt: now },
           });
-          if (count === 0 || recipients.length === 0) return count > 0;
-          await tx.notification.createMany({
-            data: recipients.map((userId) => ({
-              userId,
-              organizationId: contact.organizationId,
-              type: "contact_follow_up",
-              title: `Follow up with ${contact.name}`,
-              message: `Follow-up due ${formatDate(contact.followUpAt as Date)}`,
-              link: `/dashboard/contacts/${contact.id}`,
-            })),
-          });
+          if (count === 0) return false;
+          if (recipients.length > 0) {
+            await tx.notification.createMany({
+              data: recipients.map((userId) => ({
+                userId,
+                organizationId: contact.organizationId,
+                type: "contact_follow_up",
+                title: `Follow up with ${contact.name}`,
+                message: `Follow-up due ${formatDate(contact.followUpAt as Date)}`,
+                link: `/dashboard/contacts/${contact.id}`,
+              })),
+            });
+          }
           return true;
         });
         if (!claimed) continue;

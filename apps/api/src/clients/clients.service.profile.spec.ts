@@ -4,13 +4,14 @@ import { ClientsService } from "./clients.service";
 
 const profile = { company: "Acme", phone: "555", address: null, website: null, description: "Bakery" };
 
-function build(contact: { id: string } | null) {
+function build(contact: { id: string } | null, role = "admin") {
   const contactSync = { ensureForMember: mock(() => Promise.resolve(contact)) };
   const contacts = {
     portalProfile: mock(() => Promise.resolve(profile)),
     updatePortalProfile: mock(() => Promise.resolve(profile)),
   };
-  const service = new ClientsService({} as never, {} as never, contactSync as never, contacts as never);
+  const prisma = { member: { findFirst: mock(() => Promise.resolve({ role })) } };
+  const service = new ClientsService(prisma as never, {} as never, contactSync as never, contacts as never);
   return { service, contactSync, contacts };
 }
 
@@ -42,8 +43,16 @@ describe("ClientsService profile (stored on the contact)", () => {
 
   it("staff cannot write a profile", async () => {
     const { service, contacts } = build(null);
-    await expect(service.updateProfile("u-1", "org-1", { company: "Acme" })).rejects.toBeInstanceOf(
-      ForbiddenException,
+    await expect(service.updateProfile("u-1", "org-1", { company: "Acme" })).rejects.toThrow(
+      new ForbiddenException("Only portal clients have a profile"),
+    );
+    expect(contacts.updatePortalProfile).not.toHaveBeenCalled();
+  });
+
+  it("a client whose contact can't be linked gets a neutral message, not 'not a client'", async () => {
+    const { service, contacts } = build(null, "member");
+    await expect(service.updateProfile("u-1", "org-1", { company: "Acme" })).rejects.toThrow(
+      new ForbiddenException("Your profile can't be loaded right now"),
     );
     expect(contacts.updatePortalProfile).not.toHaveBeenCalled();
   });

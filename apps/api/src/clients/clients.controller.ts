@@ -18,11 +18,10 @@ import {
   CurrentOrg,
   CurrentUser,
   CurrentMember,
-  PaginationQueryDto,
 } from "../common";
 import { ClientsService } from "./clients.service";
 import { presentInvitations } from "./invitations";
-import { ChangeRoleDto, SetRateDto } from "./clients.dto";
+import { ChangeRoleDto, ListMembersQueryDto, SetRateDto } from "./clients.dto";
 import { UpdateClientProfileDto } from "./client-profile.dto";
 
 @Controller("clients")
@@ -38,9 +37,9 @@ export class ClientsController {
   @Roles("owner", "admin")
   async list(
     @CurrentOrg("id") orgId: string,
-    @Query() query: PaginationQueryDto,
+    @Query() query: ListMembersQueryDto,
   ) {
-    return this.clientsService.list(orgId, query.page, query.limit);
+    return this.clientsService.list(orgId, query.page, query.limit, undefined, query.role);
   }
 
   @Get("invitations")

@@ -70,9 +70,11 @@ export class ContactBackfillService implements OnApplicationBootstrap {
   async backfillContactFields(orgId: string): Promise<void> {
     const unsplit = await this.prisma.contact.findMany({
       where: { organizationId: orgId, firstName: null },
-      select: { id: true, name: true, updatedAt: true },
+      select: { id: true, name: true, email: true, updatedAt: true },
     });
     for (const contact of unsplit) {
+      // A contact made from an invitation is named after the email until the person joins.
+      if (contact.email && contact.name === contact.email) continue;
       const names = splitName(contact.name);
       if (!names.firstName) continue;
       try {
@@ -104,21 +106,32 @@ export class ContactBackfillService implements OnApplicationBootstrap {
   }
 
   /**
-   * Gives every pending portal invitation (expired ones too: they can still be re-sent) a
-   * contact, as new invitations get one. Idempotent: an existing contact is found by email.
+   * Once per workspace: gives each open (pending, unexpired) portal invitation sent before
+   * invitations created contacts a contact. Later invitations get one when they are sent, so a
+   * second pass would only bring back contacts the owner deleted or re-addressed. The marker is
+   * set only when every invitation succeeded, so a failure is retried on the next boot.
    */
-  async backfillInvitees(orgId: string): Promise<void> {
+  async backfillInvitees(orgId: string, now: Date = new Date()): Promise<void> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { inviteesBackfilledAt: true },
+    });
+    if (!org || org.inviteesBackfilledAt) return;
     const invitations = await this.prisma.invitation.findMany({
-      where: { organizationId: orgId, role: "member", status: "pending" },
+      where: { organizationId: orgId, role: "member", status: "pending", expiresAt: { gt: now } },
       select: { id: true, email: true },
     });
+    let failed: boolean = false;
     for (const invitation of invitations) {
       try {
         await this.sync.ensureForInvitee(orgId, invitation.email);
       } catch (err) {
+        failed = true;
         this.logger.error(`Failed to backfill contact for invitation ${invitation.id}`, err);
       }
     }
+    if (failed) return;
+    await this.prisma.organization.update({ where: { id: orgId }, data: { inviteesBackfilledAt: now } });
   }
 
   /**
@@ -207,19 +220,8 @@ export class ContactBackfillService implements OnApplicationBootstrap {
           existing ?? (await tx.company.create({ data: { organizationId: orgId, name: companyName } }));
         data.companyId = company.id;
       }
+      // The description goes to About only; notes copied by earlier versions are left as they are.
       await tx.contact.update({ where: { id: contact.id }, data });
-
-      const description = profile.description?.trim();
-      if (!description) return;
-      if ((await tx.contactNote.count({ where: { contactId: contact.id } })) > 0) return;
-      const owner = await tx.member.findFirst({
-        where: { organizationId: orgId, role: "owner" },
-        orderBy: { createdAt: "asc" },
-      });
-      if (!owner) return;
-      await tx.contactNote.create({
-        data: { contactId: contact.id, organizationId: orgId, authorId: owner.userId, content: description },
-      });
     });
   }
 

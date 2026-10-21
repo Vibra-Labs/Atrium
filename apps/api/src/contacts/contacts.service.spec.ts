@@ -581,6 +581,30 @@ describe("ContactsService", () => {
       });
     });
 
+    it("access=pending with a search keeps both conditions", async () => {
+      prisma.invitation.findMany.mockImplementation(() => Promise.resolve([{ email: "ann@x.com" }]));
+      await service.findAll("org-1", { access: "pending", search: "ann" });
+      expect(whereOf()).toEqual({
+        organizationId: "org-1",
+        userId: null,
+        email: { in: ["ann@x.com"] },
+        OR: [
+          { name: { contains: "ann", mode: "insensitive" } },
+          { email: { contains: "ann", mode: "insensitive" } },
+          { company: { name: { contains: "ann", mode: "insensitive" } } },
+        ],
+      });
+    });
+
+    it("access=none with a search keeps both conditions", async () => {
+      prisma.invitation.findMany.mockImplementation(() => Promise.resolve([{ email: "ann@x.com" }]));
+      await service.findAll("org-1", { access: "none", search: "bo" });
+      const where = whereOf();
+      expect(where.AND).toEqual([{ OR: [{ email: null }, { email: { notIn: ["ann@x.com"] } }] }]);
+      expect(where.OR).toHaveLength(3);
+      expect(where.userId).toBeNull();
+    });
+
     it("access=none with no open invites is just 'no login'", async () => {
       await service.findAll("org-1", { access: "none" });
       expect(whereOf()).toEqual({ organizationId: "org-1", userId: null });

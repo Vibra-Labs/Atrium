@@ -95,6 +95,8 @@ model Organization {
   updatedAt      DateTime @updatedAt
   metadata       String?
   setupCompleted Boolean  @default(false)
+  // Set once the contacts boot backfill gave pending client invitations a contact.
+  inviteesBackfilledAt DateTime?
 
   members          Member[]
   invitations      Invitation[]

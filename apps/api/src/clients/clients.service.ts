@@ -13,6 +13,7 @@ import type { PortalProfile } from "../contacts/contacts.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { UpdateClientProfileDto } from "./client-profile.dto";
+import type { MemberKind } from "./clients.dto";
 import { MCP_ACTOR_ROLES, paginatedResponse, revokeMemberCredentials } from "../common";
 
 @Injectable()
@@ -172,9 +173,10 @@ export class ClientsService {
     });
   }
 
-  async list(orgId: string, page = 1, limit = 20, search?: string) {
+  async list(orgId: string, page = 1, limit = 20, search?: string, kind?: MemberKind) {
     const where = {
       organizationId: orgId,
+      ...(kind === "staff" ? { role: { not: "member" } } : kind === "client" ? { role: "member" } : {}),
       ...(search
         ? {
             user: {
@@ -268,7 +270,14 @@ export class ClientsService {
 
   async updateProfile(userId: string, orgId: string, dto: UpdateClientProfileDto): Promise<PortalProfile> {
     const contact = await this.contactSync.ensureForMember(orgId, userId);
-    if (!contact) throw new ForbiddenException("Only portal clients have a profile");
-    return this.contacts.updatePortalProfile(contact.id, dto, orgId);
+    if (contact) return this.contacts.updatePortalProfile(contact.id, dto, orgId);
+    const member = await this.prisma.member.findFirst({
+      where: { organizationId: orgId, userId },
+      select: { role: true },
+    });
+    if (member?.role !== "member") throw new ForbiddenException("Only portal clients have a profile");
+    // A client whose email matches a contact linked to someone else: not their fault.
+    this.logger.warn(`No contact for portal client ${userId} in organization ${orgId}; profile not saved`);
+    throw new ForbiddenException("Your profile can't be loaded right now");
   }
 }

@@ -27,6 +27,8 @@ describe("ContactBackfillService.backfillContactFields", () => {
         Promise.resolve([
           { id: "c-1", name: "Ann Marie Lee", updatedAt },
           { id: "c-2", name: "Cher", updatedAt },
+          // Made from an invitation: keeps no first name until the person joins.
+          { id: "c-9", name: "inv@x.com", email: "inv@x.com", updatedAt },
         ]),
       )
       .mockImplementationOnce(() => Promise.resolve([]));
@@ -42,6 +44,7 @@ describe("ContactBackfillService.backfillContactFields", () => {
       where: { id: "c-2" },
       data: { firstName: "Cher", lastName: null, updatedAt },
     });
+    expect(prisma.contact.update).toHaveBeenCalledTimes(2);
   });
 
   it("seeds phones from the legacy phone column only where phones is empty", async () => {
@@ -107,7 +110,8 @@ describe("ContactBackfillService.backfillContactFields", () => {
     expect(prisma.contact.update).toHaveBeenCalledTimes(2);
   });
 
-  it("copying a client profile also copies its description into About", async () => {
+  it("copying a client profile puts its description in About, not in a note", async () => {
+    const noteCreate = mock(() => Promise.resolve({}));
     const txUpdate = mock((_args: { data: Record<string, unknown> }) => Promise.resolve({}));
     const withProfile = {
       ...prisma,
@@ -117,7 +121,8 @@ describe("ContactBackfillService.backfillContactFields", () => {
       $transaction: mock((fn: (tx: unknown) => Promise<void>) =>
         fn({
           contact: { update: txUpdate },
-          contactNote: { count: mock(() => Promise.resolve(1)) },
+          contactNote: { count: mock(() => Promise.resolve(0)), create: noteCreate },
+          member: { findFirst: mock(() => Promise.resolve({ userId: "owner" })) },
         }),
       ),
     };
@@ -138,33 +143,65 @@ describe("ContactBackfillService.backfillContactFields", () => {
     });
 
     expect(txUpdate.mock.calls[0][0].data).toMatchObject({ description: "Likes email" });
+    expect(noteCreate).not.toHaveBeenCalled();
   });
 });
 
 describe("ContactBackfillService.backfillInvitees", () => {
-  it("finds or creates a contact for every pending portal invitation, logging failures", async () => {
+  const now = new Date("2026-10-21T00:00:00Z");
+
+  function build(marker: Date | null, failEmail?: string) {
     const ensureForInvitee = mock((_o: string, email: string) =>
-      email === "bad@x.com" ? Promise.reject(new Error("db down")) : Promise.resolve({ id: "c" }),
+      email === failEmail ? Promise.reject(new Error("db down")) : Promise.resolve({ id: "c" }),
     );
-    const findMany = mock((_args: unknown) =>
-      Promise.resolve([
-        { id: "i-1", email: "Ann@X.com" },
-        { id: "i-2", email: "bad@x.com" },
-        { id: "i-3", email: "cy@x.com" },
-      ]),
-    );
+    const prismaMock = {
+      organization: {
+        findUnique: mock(() => Promise.resolve({ inviteesBackfilledAt: marker })),
+        update: mock((_a: unknown) => Promise.resolve({})),
+      },
+      invitation: {
+        findMany: mock((_args: unknown) =>
+          Promise.resolve([
+            { id: "i-1", email: "Ann@X.com" },
+            { id: "i-2", email: "bad@x.com" },
+            { id: "i-3", email: "cy@x.com" },
+          ]),
+        ),
+      },
+    };
     const svc = new ContactBackfillService(
-      { invitation: { findMany } } as unknown as PrismaService,
+      prismaMock as unknown as PrismaService,
       { ensureForInvitee } as unknown as ContactSyncService,
     );
+    return { svc, prismaMock, ensureForInvitee };
+  }
 
-    await svc.backfillInvitees("org-1");
-
-    expect(findMany).toHaveBeenCalledWith({
-      where: { organizationId: "org-1", role: "member", status: "pending" },
+  it("runs once: open (unexpired) client invitations only, then sets the marker", async () => {
+    const { svc, prismaMock, ensureForInvitee } = build(null);
+    await svc.backfillInvitees("org-1", now);
+    expect(prismaMock.invitation.findMany).toHaveBeenCalledWith({
+      where: { organizationId: "org-1", role: "member", status: "pending", expiresAt: { gt: now } },
       select: { id: true, email: true },
     });
     expect(ensureForInvitee.mock.calls.map((c) => c[1])).toEqual(["Ann@X.com", "bad@x.com", "cy@x.com"]);
+    expect(prismaMock.organization.update).toHaveBeenCalledWith({
+      where: { id: "org-1" },
+      data: { inviteesBackfilledAt: now },
+    });
+  });
+
+  it("does nothing once the marker is set", async () => {
+    const { svc, prismaMock, ensureForInvitee } = build(new Date());
+    await svc.backfillInvitees("org-1", now);
+    expect(prismaMock.invitation.findMany).not.toHaveBeenCalled();
+    expect(ensureForInvitee).not.toHaveBeenCalled();
+  });
+
+  it("logs a failing invitation, carries on, and leaves the marker unset so it retries", async () => {
+    const { svc, prismaMock, ensureForInvitee } = build(null, "bad@x.com");
+    await svc.backfillInvitees("org-1", now);
+    expect(ensureForInvitee).toHaveBeenCalledTimes(3);
+    expect(prismaMock.organization.update).not.toHaveBeenCalled();
   });
 });
 

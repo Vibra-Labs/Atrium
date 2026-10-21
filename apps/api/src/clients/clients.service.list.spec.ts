@@ -6,7 +6,7 @@ function buildPrisma(members: unknown[], total: number) {
   return {
     member: {
       findMany: mock(() => Promise.resolve(members)),
-      count: mock(() => Promise.resolve(total)),
+      count: mock((_a: { where: unknown }) => Promise.resolve(total)),
       findFirst: mock(() => Promise.resolve(members[0] ?? null)),
     },
     contact: {
@@ -98,6 +98,24 @@ describe("ClientsService.list", () => {
         { email: { contains: "glo", mode: "insensitive" } },
       ] },
     });
+  });
+
+  it("role=staff lists owners and admins only; role=client lists portal clients only", async () => {
+    const prisma = buildPrisma([], 0);
+    const service = new ClientsService(prisma as never, {} as never, {} as never);
+    await service.list("org1", 1, 100, undefined, "staff");
+    await service.list("org1", 1, 100, undefined, "client");
+    expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({ organizationId: "org1", role: { not: "member" } });
+    expect(prisma.member.findMany.mock.calls[1][0].where).toEqual({ organizationId: "org1", role: "member" });
+    expect(prisma.member.count.mock.calls[0][0].where).toEqual({ organizationId: "org1", role: { not: "member" } });
+  });
+
+  it("ListMembersQueryDto accepts only staff / client", async () => {
+    const { validate } = await import("class-validator");
+    const { plainToInstance } = await import("class-transformer");
+    const { ListMembersQueryDto } = await import("./clients.dto");
+    expect(await validate(plainToInstance(ListMembersQueryDto, { role: "staff" }))).toHaveLength(0);
+    expect(await validate(plainToInstance(ListMembersQueryDto, { role: "owner" }))).not.toHaveLength(0);
   });
 
   it("findMember throws NotFound when the user is not in the org", async () => {

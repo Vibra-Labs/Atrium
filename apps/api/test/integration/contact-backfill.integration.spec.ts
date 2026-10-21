@@ -76,9 +76,10 @@ describe("ContactBackfillService.run", () => {
     expect(contacts[0].phones).toEqual([{ label: "Phone", number: "555" }]);
     expect([contacts[0].firstName, contacts[0].lastName]).toEqual(["Cleo", null]);
     expect(contacts[0].company?.name).toBe("northwind");
-    expect(contacts[0].notes).toHaveLength(1);
-    expect(contacts[0].notes[0].content).toBe("Likes email");
-    expect(contacts[0].notes[0].authorId).toBe(owner.id);
+    // The profile description becomes About, not a note.
+    expect(contacts[0].description).toBe("Likes email");
+    expect(contacts[0].notes).toHaveLength(0);
+    expect(owner.id).toBeTruthy();
     expect(await prisma.company.count({ where: { organizationId: orgId } })).toBe(1);
     const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
     expect(inv.paidAt?.getTime()).toBe(inv.updatedAt.getTime());
@@ -271,29 +272,33 @@ describe("ContactBackfillService.run", () => {
     expect(contact.userId).toBe(client.id);
     expect(contact.phone).toBe("111");
     expect(contact.website).toBe("https://lena.dev");
-    expect(contact.notes).toHaveLength(1);
+    expect(contact.description).toBe("Note");
+    expect(contact.notes).toHaveLength(0);
 
     expect(contact.profileImportedAt).not.toBeNull();
 
-    // A user clears the website and deletes the note: later boots must not refill them.
-    await prisma.contactNote.deleteMany({ where: { contactId: contact.id } });
-    await prisma.contact.update({ where: { id: contact.id }, data: { website: null } });
+    // A user clears the website and About: later boots must not refill them.
+    await prisma.contact.update({ where: { id: contact.id }, data: { website: null, description: "" } });
     await backfill.run();
-    const cleared = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id }, include: { notes: true } });
+    const cleared = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id } });
     expect(cleared.website).toBeNull();
-    expect(cleared.notes).toHaveLength(0);
+    expect(cleared.description).toBe("");
 
     // A failed/partial copy leaves profileImportedAt null and is retried.
-    await prisma.contact.update({ where: { id: contact.id }, data: { profileImportedAt: null } });
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { profileImportedAt: null, website: null, description: null },
+    });
     await backfill.run();
     const retried = await prisma.contact.findUniqueOrThrow({ where: { id: contact.id }, include: { notes: true } });
     expect(retried.website).toBe("https://lena.dev");
     expect(retried.phone).toBe("111");
-    expect(retried.notes).toHaveLength(1);
+    expect(retried.description).toBe("Note");
+    expect(retried.notes).toHaveLength(0);
     expect(retried.profileImportedAt).not.toBeNull();
   });
 
-  it("gives pending portal invitations a contact once, and leaves staff invitations alone", async () => {
+  it("gives open portal invitations a contact once per workspace, and never brings one back", async () => {
     const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     orgId = (await prisma.organization.create({ data: { id: `cb9-org-${s}`, name: `cb9-${s}`, slug: `cb9-${s}` } })).id;
     orgIds.push(orgId);
@@ -314,15 +319,17 @@ describe("ContactBackfillService.run", () => {
     await backfill.run();
 
     const contacts = await prisma.contact.findMany({ where: { organizationId: orgId }, orderBy: { email: "asc" } });
-    expect(contacts.map((c) => [c.email, c.status])).toEqual([
-      [`known-${s}@x.com`, "client"],
-      [`new-${s}@x.com`, "lead"],
-      [`old-${s}@x.com`, "lead"],
+    expect(contacts.map((c) => [c.email, c.status, c.firstName])).toEqual([
+      [`known-${s}@x.com`, "client", "Known"],
+      [`new-${s}@x.com`, "lead", null],
     ]);
     expect((await prisma.contact.findUniqueOrThrow({ where: { id: known.id } })).name).toBe("Known");
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: orgId } })).inviteesBackfilledAt).not.toBeNull();
 
+    // The owner deletes the invite-only lead: later boots must not recreate it.
+    await prisma.contact.deleteMany({ where: { organizationId: orgId, email: `new-${s}@x.com` } });
     await backfill.run();
-    expect(await prisma.contact.count({ where: { organizationId: orgId } })).toBe(3);
+    expect(await prisma.contact.count({ where: { organizationId: orgId } })).toBe(1);
   });
 
   it("copies the old profile description into About once, also for contacts imported earlier", async () => {

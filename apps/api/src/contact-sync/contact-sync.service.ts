@@ -205,7 +205,8 @@ export class ContactSyncService {
     let created: Contact;
     try {
       created = await this.prisma.contact.create({
-        data: { organizationId: orgId, name: email, firstName: email, email, status: "lead" },
+        // No first name: the email stands in as the name until they join (ensureForMember renames).
+        data: { organizationId: orgId, name: email, email, status: "lead" },
       });
     } catch (err) {
       if ((err as { code?: string })?.code !== "P2002") throw err;

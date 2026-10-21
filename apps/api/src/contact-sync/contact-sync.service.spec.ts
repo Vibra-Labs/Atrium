@@ -372,7 +372,6 @@ describe("ContactSyncService", () => {
         data: {
           organizationId: "org-1",
           name: "new@x.com",
-          firstName: "new@x.com",
           email: "new@x.com",
           status: "lead",
         },

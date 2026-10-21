@@ -20,6 +20,7 @@ import { FilesSection } from "./components/files-section";
 import { InvoicesSection } from "./components/invoices-section";
 import { NotesSection } from "./components/notes-section";
 import { TimeTab } from "./time-tab";
+import { useSession } from "@/lib/session-context";
 
 interface FileRecord {
   id: string;
@@ -162,8 +163,9 @@ export default function ProjectDetailPage() {
     }
     if (searchParams.get("task")) setActiveTab("tasks");
   }, [searchParams]);
-  const [currentRole, setCurrentRole] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const session = useSession();
+  const currentRole: string | null = session.role || null;
+  const currentUserId: string | null = session.userId || null;
   const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
@@ -189,12 +191,6 @@ export default function ProjectDetailPage() {
         const data = Array.isArray(res) ? res : res.data;
         setClients(data.filter((m: ClientMember) => m.role === "member"));
       })
-      .catch(console.error);
-    apiFetch<{ role: string }>("/auth/organization/get-active-member")
-      .then((member) => setCurrentRole(member.role))
-      .catch(console.error);
-    apiFetch<{ user: { id: string } }>("/auth/get-session")
-      .then((s) => setCurrentUserId(s.user.id))
       .catch(console.error);
     apiFetch<LabelRecord[]>("/labels")
       .then(setOrgLabels)

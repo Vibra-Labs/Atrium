@@ -14,20 +14,13 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { DEFAULT_BRANDING } from "@atrium/shared";
 import { serverFetch } from "@/lib/server-api";
 import { logoSrc as buildLogoSrc } from "@/lib/logo-src";
+import { SessionProvider } from "@/lib/session-context";
 
-async function getSessionWithRole() {
+async function getSession() {
   try {
-    const [sessionRes, memberRes]: [Response, Response] = await Promise.all([
-      serverFetch("/api/auth/get-session"),
-      serverFetch("/api/auth/organization/get-active-member"),
-    ]);
-
-    if (!sessionRes.ok) return null;
-    const session = await sessionRes.json();
-    if (!session) return null;
-
-    const member = memberRes.ok ? await memberRes.json() : null;
-    return { ...session, role: member?.role || null };
+    const res: Response = await serverFetch("/api/auth/get-session");
+    if (!res.ok) return null;
+    return res.json();
   } catch (err) {
     // cookies() throws a control-flow signal during static render; let it through.
     unstable_rethrow(err);
@@ -49,28 +42,30 @@ async function getBranding() {
   }
 }
 
-/** Whether the workspace still needs its timezone filled in. Owners only; false on any failure. */
-async function needsTimezone(): Promise<boolean> {
+/** Owner-only workspace settings; null on any failure (including non-owners). */
+async function getSettings(): Promise<{
+  timezone?: string | null;
+  telemetryEnabled?: boolean | null;
+} | null> {
   try {
     const res: Response = await serverFetch("/api/settings");
-    if (!res.ok) return false;
-    const settings: { timezone?: string | null } = await res.json();
-    return !settings.timezone;
+    if (!res.ok) return null;
+    return res.json();
   } catch (err) {
     // cookies() throws a control-flow signal during static render; let it through.
     unstable_rethrow(err);
     console.error("Failed to load workspace settings", err);
-    return false;
+    return null;
   }
 }
 
-async function getActiveOrg(): Promise<{ id: string; name: string } | null> {
+async function getActiveOrg(): Promise<{ id: string; name: string; role: string } | null> {
   try {
     const res: Response = await serverFetch("/api/organization/current");
     if (!res.ok) return null;
-    const org: { id?: string; name: string } = await res.json();
+    const org: { id?: string; name: string; role?: string } = await res.json();
     if (!org?.id) return null;
-    return { id: org.id, name: org.name };
+    return { id: org.id, name: org.name, role: org.role ?? "" };
   } catch (err) {
     // cookies() throws a control-flow signal during Next's static render
     // pass; that must propagate, not be logged as a failure.
@@ -107,39 +102,30 @@ async function getSetupStatus() {
   }
 }
 
-async function getTelemetryStatus(): Promise<boolean | null> {
-  try {
-    const res: Response = await serverFetch("/api/settings");
-    if (!res.ok) return null;
-    const settings = await res.json();
-    return settings?.telemetryEnabled ?? null;
-  } catch (err) {
-    // cookies() throws a control-flow signal during static render; let it through.
-    unstable_rethrow(err);
-    console.error("Failed to load telemetry setting", err);
-    return null;
-  }
-}
-
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [session, branding, activeOrg, orgs] = await Promise.all([
-    getSessionWithRole(),
+  // One round: setup status and settings are owner-only, so non-owners
+  // just ignore those results.
+  const [session, branding, activeOrg, orgs, setupStatus, settings] = await Promise.all([
+    getSession(),
     getBranding(),
     getActiveOrg(),
     getOrgs(),
+    getSetupStatus(),
+    getSettings(),
   ]);
   const orgName = activeOrg?.name || null;
+  const role: string = activeOrg?.role ?? "";
 
   if (!session) {
     redirect("/login");
   }
 
   // Clients (members) should use the portal, not the dashboard
-  if (session.role === "member") {
+  if (role === "member") {
     redirect("/portal");
   }
 
@@ -147,22 +133,23 @@ export default async function DashboardLayout({
   let telemetryEnabled: boolean | null = null;
   let timezoneMissing: boolean = false;
   const isHostedDeployment = process.env.NEXT_PUBLIC_SENTRY_ENABLED === "true";
-  if (session.role === "owner") {
-    const [setupStatus, telemetry, needsZone] = await Promise.all([
-      getSetupStatus(),
-      isHostedDeployment ? Promise.resolve(true) : getTelemetryStatus(),
-      needsTimezone(),
-    ]);
+  if (role === "owner") {
     if (setupStatus && !setupStatus.completed) {
       redirect("/setup");
     }
-    telemetryEnabled = telemetry;
-    timezoneMissing = needsZone;
+    telemetryEnabled = isHostedDeployment ? true : (settings?.telemetryEnabled ?? null);
+    timezoneMissing = settings !== null && !settings.timezone;
   }
 
   const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");
 
   return (
+    <SessionProvider
+      userId={session.user?.id ?? ""}
+      userName={session.user?.name ?? ""}
+      role={role}
+      orgId={activeOrg?.id ?? ""}
+    >
     <div
       className="min-h-screen flex"
       style={
@@ -213,14 +200,15 @@ export default async function DashboardLayout({
           {!session.user?.emailVerified && (
             <EmailVerificationBanner email={session.user?.email} />
           )}
-          {session.role === "owner" && <TrialBanner />}
+          {role === "owner" && <TrialBanner />}
           {timezoneMissing && <TimezoneSync />}
-          {session.role === "owner" && telemetryEnabled === null && (
+          {role === "owner" && telemetryEnabled === null && (
             <TelemetryConsentBanner />
           )}
           {children}
         </main>
       </div>
     </div>
+    </SessionProvider>
   );
 }

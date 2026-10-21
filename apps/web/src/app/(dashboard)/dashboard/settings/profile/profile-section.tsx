@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session-context";
 import { EmailPreferencesSection } from "./email-preferences-section";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
@@ -10,8 +11,8 @@ import type { DeletionInfo } from "@atrium/shared";
 export function ProfileSection(): React.ReactElement {
   const { success, error: showError } = useToast();
   const confirm = useConfirm();
-  const [name, setName] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
+  const { userName } = useSession();
+  const [name, setName] = useState<string>(userName);
 
   const [currentPassword, setCurrentPassword] = useState<string>("");
   const [newPassword, setNewPassword] = useState<string>("");
@@ -21,16 +22,6 @@ export function ProfileSection(): React.ReactElement {
   const [deletionInfo, setDeletionInfo] = useState<DeletionInfo | null>(null);
 
   useEffect(() => {
-    apiFetch<{ user: { name: string } }>("/auth/get-session")
-      .then((session) => {
-        setName(session.user.name);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
-
     apiFetch<DeletionInfo>("/account/deletion-info")
       .then(setDeletionInfo)
       .catch((err) => console.error(err));
@@ -112,7 +103,6 @@ export function ProfileSection(): React.ReactElement {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
 
   const isOwner = deletionInfo !== null && deletionInfo.ownedOrganizations.length > 0;
 

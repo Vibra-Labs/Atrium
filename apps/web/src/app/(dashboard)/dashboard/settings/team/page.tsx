@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { UserPlus, Copy, Check, Trash2, UsersRound, Sparkles, ExternalLink, KeyRound } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session-context";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
@@ -57,8 +58,7 @@ export default function TeamPage(): React.ReactElement {
   const [members, setMembers] = useState<MemberRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string>("");
-  const [currentRole, setCurrentRole] = useState<string>("");
+  const { userId: currentUserId, role: currentRole } = useSession();
   const [copied, setCopied] = useState<string>("");
 
   const [email, setEmail] = useState<string>("");
@@ -70,12 +70,6 @@ export default function TeamPage(): React.ReactElement {
   const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
 
   useEffect(() => {
-    apiFetch<{ user: { id: string } }>("/auth/get-session")
-      .then((session) => setCurrentUserId(session.user.id))
-      .catch(console.error);
-    apiFetch<{ role: string }>("/auth/organization/get-active-member")
-      .then((member) => setCurrentRole(member.role))
-      .catch(console.error);
     apiFetch<LabelRecord[]>("/labels").then(setOrgLabels).catch(console.error);
   }, []);
 

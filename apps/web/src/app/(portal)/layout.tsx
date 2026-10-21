@@ -10,6 +10,7 @@ import { PreviewBanner } from "@/components/preview-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { serverFetch } from "@/lib/server-api";
 import { logoSrc as buildLogoSrc } from "@/lib/logo-src";
+import { SessionProvider } from "@/lib/session-context";
 
 async function getBranding() {
   try {
@@ -24,12 +25,13 @@ async function getBranding() {
   }
 }
 
-async function getOrgName(): Promise<string | null> {
+async function getOrg(): Promise<{ id: string; name: string; role: string } | null> {
   try {
     const res: Response = await serverFetch("/api/organization/current");
     if (!res.ok) return null;
-    const org: { name?: string } = await res.json();
-    return org?.name || null;
+    const org: { id?: string; name?: string; role?: string } = await res.json();
+    if (!org?.id) return null;
+    return { id: org.id, name: org.name ?? "", role: org.role ?? "" };
   } catch (err) {
     // cookies() throws a control-flow signal during static render; let it through.
     unstable_rethrow(err);
@@ -43,19 +45,26 @@ export default async function PortalLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [session, branding, orgName] = await Promise.all([
+  const [session, branding, org] = await Promise.all([
     getSession(),
     getBranding(),
-    getOrgName(),
+    getOrg(),
   ]);
   if (!session) {
     redirect("/login");
   }
 
+  const orgName: string | null = org?.name || null;
   const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");
 
   return (
     <Suspense fallback={null}>
+      <SessionProvider
+        userId={session.user?.id ?? ""}
+        userName={session.user?.name ?? ""}
+        role={org?.role ?? ""}
+        orgId={org?.id ?? ""}
+      >
       <PreviewModeProvider>
         <div
           style={
@@ -103,6 +112,7 @@ export default async function PortalLayout({
           )}
         </div>
       </PreviewModeProvider>
+      </SessionProvider>
     </Suspense>
   );
 }

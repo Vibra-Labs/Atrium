@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session-context";
+import { usePreviewMode } from "@/lib/preview-mode";
 import { formatRelativeTime } from "@/lib/utils";
 import { MessageSquare, Send, Trash2 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
@@ -18,42 +20,6 @@ interface PaginatedResponse<T> {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
-// Cache session per page load — keyed by userId to avoid stale data across logins.
-// The cache is invalidated on full page reload (module re-evaluation).
-let sessionCache: { userId: string; role: string } | null = null;
-let sessionPromise: Promise<{ userId: string; role: string } | null> | null = null;
-
-function useSession() {
-  const [session, setSession] = useState(sessionCache);
-  useEffect(() => {
-    if (sessionCache) {
-      setSession(sessionCache);
-      return;
-    }
-    if (!sessionPromise) {
-      sessionPromise = apiFetch<{ user: { id: string }; member?: { role: string } }>("/auth/get-session")
-        .then((s) => {
-          sessionCache = { userId: s.user.id, role: s.member?.role || "member" };
-          return sessionCache;
-        })
-        .catch(() => {
-          sessionPromise = null;
-          return null;
-        });
-    }
-    sessionPromise.then((s) => {
-      if (s) setSession(s);
-    });
-  }, []);
-  return session;
-}
-
-/** Call this on logout to clear cached session data. */
-export function clearCommentsSessionCache() {
-  sessionCache = null;
-  sessionPromise = null;
-}
-
 export function CommentsSection({
   targetType,
   targetId,
@@ -66,6 +32,7 @@ export function CommentsSection({
   alwaysExpanded?: boolean;
 }) {
   const session = useSession();
+  const { preview } = usePreviewMode();
   const [comments, setComments] = useState<CommentRecord[]>([]);
   const [newComment, setNewComment] = useState("");
   const [posting, setPosting] = useState(false);
@@ -73,7 +40,7 @@ export function CommentsSection({
   const [count, setCount] = useState(initialCount);
   const [loaded, setLoaded] = useState(false);
 
-  const canDeleteOthers = session?.role === "owner" || session?.role === "admin";
+  const canDeleteOthers: boolean = !preview && (session.role === "owner" || session.role === "admin");
 
   useEffect(() => {
     setCount(initialCount);
@@ -161,7 +128,7 @@ export function CommentsSection({
                 </div>
                 <p className="text-sm mt-0.5 whitespace-pre-wrap">{linkify(comment.content)}</p>
               </div>
-              {(comment.author.id === session?.userId || canDeleteOthers) && (
+              {(comment.author.id === session.userId || canDeleteOthers) && (
                 <button
                   onClick={() => handleDelete(comment.id)}
                   data-testid={`delete-comment-${comment.id}`}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session-context";
 import { useToast } from "@/components/toast";
 
 /** Stored on the client's contact in the workspace; null when not set. */
@@ -15,8 +16,8 @@ interface ClientProfile {
 
 export default function PortalSettingsPage() {
   const { success, error: showError } = useToast();
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(true);
+  const { userName } = useSession();
+  const [name, setName] = useState(userName);
 
   // Password fields
   const [currentPassword, setCurrentPassword] = useState("");
@@ -32,12 +33,6 @@ export default function PortalSettingsPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
-    apiFetch<{ user: { name: string } }>("/auth/get-session")
-      .then((session) => {
-        setName(session.user.name);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
     apiFetch<ClientProfile>("/clients/me/profile")
       .then((p) => {
         setProfile(p);
@@ -133,7 +128,6 @@ export default function PortalSettingsPage() {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
 
   return (
     <div className="space-y-8">

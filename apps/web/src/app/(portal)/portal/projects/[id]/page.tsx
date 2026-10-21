@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session-context";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { Pagination } from "@/components/pagination";
@@ -250,8 +251,9 @@ export default function PortalProjectDetailPage() {
   const [newRequestTitle, setNewRequestTitle] = useState("");
   const [newRequestDesc, setNewRequestDesc] = useState("");
   const [postingRequest, setPostingRequest] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const { userId } = useSession();
+  const currentUserId: string | null = userId || null;
+  const sessionLoaded: boolean = true;
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -506,16 +508,6 @@ export default function PortalProjectDetailPage() {
       console.error(err);
     }
   };
-
-  useEffect(() => {
-    apiFetch<{ user: { id: string } }>("/auth/get-session")
-      .then((s) => setCurrentUserId(s.user.id))
-      .catch((err) => {
-        console.error(err);
-        toast.error("Could not load your session. Some actions may be unavailable.");
-      })
-      .finally(() => setSessionLoaded(true));
-  }, [toast]);
 
   useEffect(() => {
     loadProject();

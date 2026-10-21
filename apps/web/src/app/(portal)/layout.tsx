@@ -24,11 +24,11 @@ async function getBranding() {
   }
 }
 
-async function getOrgName() {
+async function getOrgName(): Promise<string | null> {
   try {
-    const res: Response = await serverFetch("/api/auth/organization/get-full-organization");
+    const res: Response = await serverFetch("/api/organization/current");
     if (!res.ok) return null;
-    const org = await res.json();
+    const org: { name?: string } = await res.json();
     return org?.name || null;
   } catch (err) {
     // cookies() throws a control-flow signal during static render; let it through.

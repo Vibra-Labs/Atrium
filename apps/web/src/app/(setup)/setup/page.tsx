@@ -44,7 +44,11 @@ function SetupWizardContent() {
   useEffect(() => {
     Promise.all([
       apiFetch<SwitchableOrg[]>("/auth/organization/list"),
-      apiFetch<{ id: string } | null>("/auth/organization/get-full-organization"),
+      // No active workspace is a 401 here, not an error worth losing the org list over.
+      apiFetch<{ id: string }>("/organization/current").catch((err: unknown) => {
+        console.error("Failed to load the active organization", err);
+        return null;
+      }),
     ])
       .then(([list, active]) => {
         const all = Array.isArray(list) ? list : [];
@@ -76,7 +80,7 @@ function SetupWizardContent() {
 
     // Load org name for pre-filling
     fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || ""}/api/auth/organization/get-full-organization`,
+      `${process.env.NEXT_PUBLIC_API_URL || ""}/api/organization/current`,
       { credentials: "include" },
     )
       .then((res) => res.json())

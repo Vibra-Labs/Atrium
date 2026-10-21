@@ -43,7 +43,7 @@ export default function OrganizationsSettingsPage(): React.ReactElement {
         fetch(`${API_URL}/api/auth/organization/list`, {
           credentials: "include",
         }),
-        fetch(`${API_URL}/api/auth/organization/get-full-organization`, {
+        fetch(`${API_URL}/api/organization/current`, {
           credentials: "include",
         }),
       ]);

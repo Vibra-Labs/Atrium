@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { ForbiddenException } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { AuthController } from "./auth.controller";
 
@@ -179,5 +180,108 @@ describe("AuthController", () => {
     expect(headers.get("content-length")).toBeNull();
     expect(headers.get("transfer-encoding")).toBeNull();
     expect(headers.get("host")).toBe("portal.test");
+  });
+
+  describe("organization routes that list other members", () => {
+    /** An auth-route request as SessionMiddleware leaves it: the caller's active org and role. */
+    function orgReq(url: string, role: string | undefined, method: string = "GET"): Request {
+      return {
+        method,
+        originalUrl: url,
+        headers: {},
+        organization: { id: "org-1", slug: "acme" },
+        member: role ? { id: "m-1", userId: "u-1", organizationId: "org-1", role } : undefined,
+      } as unknown as Request;
+    }
+
+    async function call(req: Request): Promise<{ forwarded: boolean; error: unknown }> {
+      const { controller, captured, sent } = build();
+      let error: unknown;
+      try {
+        await controller.handleAuth(req, expressRes(sent));
+      } catch (err) {
+        error = err;
+      }
+      return { forwarded: captured.request !== undefined, error };
+    }
+
+    const refused: string[] = [
+      "/api/auth/organization/get-full-organization",
+      "/api/auth/organization/list-members",
+      "/api/auth/organization/list-invitations",
+      "/api/auth/organization/get-active-member-role?userId=u-2",
+    ];
+
+    for (const url of refused) {
+      it(`refuses ${url} to a portal client`, async () => {
+        const { forwarded, error } = await call(orgReq(url, "member"));
+        expect(error).toBeInstanceOf(ForbiddenException);
+        expect(forwarded).toBe(false);
+      });
+
+      it(`refuses ${url} to a caller with no membership`, async () => {
+        const { forwarded, error } = await call(orgReq(url, undefined));
+        expect(error).toBeInstanceOf(ForbiddenException);
+        expect(forwarded).toBe(false);
+      });
+    }
+
+    for (const role of ["owner", "admin"]) {
+      it(`forwards them for an ${role}`, async () => {
+        for (const url of refused) {
+          const { forwarded, error } = await call(orgReq(url, role));
+          expect(error).toBeUndefined();
+          expect(forwarded).toBe(true);
+        }
+      });
+    }
+
+    it("refuses spellings of a blocked path that Better Auth may still route", async () => {
+      for (const url of [
+        "/api/auth/organization/list-members/",
+        "/api/auth//organization/list-members",
+        "/api/auth/organization/LIST-MEMBERS",
+        "/api/auth/organization/list%2Dmembers",
+      ]) {
+        const { forwarded, error } = await call(orgReq(url, "member"));
+        expect(error).toBeInstanceOf(ForbiddenException);
+        expect(forwarded).toBe(false);
+      }
+    });
+
+    it("refuses an owner reading another workspace by id or slug", async () => {
+      for (const url of [
+        "/api/auth/organization/list-members?organizationId=org-2",
+        "/api/auth/organization/get-full-organization?organizationSlug=other",
+      ]) {
+        const { forwarded, error } = await call(orgReq(url, "owner"));
+        expect(error).toBeInstanceOf(ForbiddenException);
+        expect(forwarded).toBe(false);
+      }
+    });
+
+    it("forwards an owner naming their own active workspace", async () => {
+      const { forwarded } = await call(
+        orgReq("/api/auth/organization/get-full-organization?organizationId=org-1&organizationSlug=acme", "owner"),
+      );
+      expect(forwarded).toBe(true);
+    });
+
+    it("forwards the routes portal, login and accept-invite use, for a portal client", async () => {
+      const routes: [string, string][] = [
+        ["GET", "/api/auth/organization/list"],
+        ["POST", "/api/auth/organization/set-active"],
+        ["GET", "/api/auth/organization/get-active-member"],
+        ["POST", "/api/auth/organization/accept-invitation"],
+        ["GET", "/api/auth/organization/get-invitation?id=inv-1"],
+        ["POST", "/api/auth/organization/leave"],
+        ["GET", "/api/auth/get-session"],
+      ];
+      for (const [method, url] of routes) {
+        const { forwarded, error } = await call(orgReq(url, "member", method));
+        expect(error).toBeUndefined();
+        expect(forwarded).toBe(true);
+      }
+    });
   });
 });

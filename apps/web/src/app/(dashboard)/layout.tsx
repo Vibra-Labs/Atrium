@@ -66,9 +66,9 @@ async function needsTimezone(): Promise<boolean> {
 
 async function getActiveOrg(): Promise<{ id: string; name: string } | null> {
   try {
-    const res: Response = await serverFetch("/api/auth/organization/get-full-organization");
+    const res: Response = await serverFetch("/api/organization/current");
     if (!res.ok) return null;
-    const org = await res.json();
+    const org: { id?: string; name: string } = await res.json();
     if (!org?.id) return null;
     return { id: org.id, name: org.name };
   } catch (err) {

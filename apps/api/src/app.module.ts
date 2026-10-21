@@ -37,6 +37,7 @@ import { McpModule } from "./mcp/mcp.module";
 import { McpAuthModule } from "./mcp-auth/mcp-auth.module";
 import { ContactSyncModule } from "./contact-sync/contact-sync.module";
 import { ContactsModule } from "./contacts/contacts.module";
+import { OrganizationModule } from "./organization/organization.module";
 import { HealthController } from "./health.controller";
 import { SessionMiddleware } from "./auth/session.middleware";
 import { PreviewModeMiddleware } from "./auth/preview-mode.middleware";
@@ -103,6 +104,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     IntegrationsModule,
     McpModule,
     McpAuthModule,
+    OrganizationModule,
   ],
   controllers: [HealthController],
   providers: [

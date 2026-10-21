@@ -31,7 +31,7 @@ export function BrandingPageSection(): React.ReactElement {
   useEffect(() => {
     Promise.all([
       apiFetch<Branding>("/branding"),
-      fetch(`${API_URL}/api/auth/organization/get-full-organization`, {
+      fetch(`${API_URL}/api/organization/current`, {
         credentials: "include",
       }).then((r) => (r.ok ? r.json() : null)),
     ])

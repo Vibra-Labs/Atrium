@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, ListFilter, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ListFilter, X } from "lucide-react";
 
 export type SortDir = "asc" | "desc";
 
@@ -36,6 +36,8 @@ const triggerClass =
   "inline-flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] transition-colors whitespace-nowrap";
 const panelClass =
   "absolute z-20 mt-1 min-w-[12rem] max-h-80 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] shadow-lg py-1 text-sm";
+const categoryPanelClass =
+  "absolute z-20 mt-1 min-w-[11rem] rounded-lg border border-[var(--border)] bg-[var(--background)] shadow-lg py-1 text-sm";
 const itemClass =
   "w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--muted)] focus:bg-[var(--muted)] outline-none";
 
@@ -89,40 +91,48 @@ export function FilterMenu({ groups, values, onChange }: FilterMenuProps) {
         <ListFilter size={14} aria-hidden="true" /> Filter
       </button>
       {open && (
-        <div role="menu" aria-label={group ? group.label : "Filter by"} className={`${panelClass} right-0`}>
-          {group ? (
-            <>
-              <button type="button" role="menuitem" onClick={() => setGroupKey(null)} className={`${itemClass} text-[var(--muted-foreground)]`}>
-                <ChevronLeft size={14} aria-hidden="true" /> {group.label}
-              </button>
-              {group.options.length === 0 && (
-                <p className="px-3 py-1.5 text-[var(--muted-foreground)]">Nothing to filter by yet</p>
-              )}
-              {group.options.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={values[group.key] === o.value}
-                  onClick={() => {
-                    onChange(group.key, o.value);
-                    close();
-                  }}
-                  className={itemClass}
-                >
-                  <span className="flex-1">{o.label}</span>
-                  {values[group.key] === o.value && <Check size={14} aria-hidden="true" />}
-                </button>
-              ))}
-            </>
-          ) : (
-            groups.map((g) => (
-              <button key={g.key} type="button" role="menuitem" onClick={() => setGroupKey(g.key)} className={itemClass}>
+        // No overflow here: it would clip the side panel. The category list is short.
+        <div role="menu" aria-label="Filter by" className={`${categoryPanelClass} right-0`}>
+          {groups.map((g) => (
+            <div key={g.key} className="relative" onMouseEnter={() => setGroupKey(g.key)}>
+              <button
+                type="button"
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={groupKey === g.key}
+                onClick={() => setGroupKey(g.key)}
+                className={`${itemClass} ${groupKey === g.key ? "bg-[var(--muted)]" : ""}`}
+              >
                 <span className="flex-1">{g.label}</span>
-                <ChevronRight size={14} aria-hidden="true" className="text-[var(--muted-foreground)]" />
+                {values[g.key] && <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)]" aria-hidden="true" />}
+                <ChevronLeft size={14} aria-hidden="true" className="text-[var(--muted-foreground)]" />
               </button>
-            ))
-          )}
+              {group?.key === g.key && (
+                // Opens to the side, so the categories stay in view.
+                <div role="menu" aria-label={g.label} className={`${panelClass} top-0 right-full mr-1 mt-0 -translate-y-1`}>
+                  {g.options.length === 0 && (
+                    <p className="px-3 py-1.5 text-[var(--muted-foreground)]">Nothing to filter by yet</p>
+                  )}
+                  {g.options.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={values[g.key] === o.value}
+                      onClick={() => {
+                        onChange(g.key, o.value);
+                        close();
+                      }}
+                      className={itemClass}
+                    >
+                      <span className="flex-1">{o.label}</span>
+                      {values[g.key] === o.value && <Check size={14} aria-hidden="true" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

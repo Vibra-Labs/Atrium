@@ -830,7 +830,10 @@ test.describe("Company typeahead", () => {
     await page.getByRole("option", { name: company(120) }).click();
     await expect(page.getByLabel("Company", { exact: true })).toHaveValue(company(120));
     await page.getByRole("button", { name: /^add contact$/i }).last().click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
+    // The shared workspace has more contacts than one page shows; find the new one by name.
+    await searchList(page, "Search name, company, email", `Typeahead${stamp}`);
     const row = page.getByRole("row", { name: new RegExp(`Typeahead${stamp}`) });
     await expect(row).toBeVisible();
     await expect(row.getByText(company(120))).toBeVisible();

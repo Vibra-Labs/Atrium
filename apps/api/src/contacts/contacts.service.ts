@@ -328,13 +328,14 @@ export class ContactsService {
       // Case-insensitive like rankRows' localeCompare(base); accents still count here.
       key = Prisma.sql`lower(co.name COLLATE "und-x-icu")`;
     } else {
-      const paid = this.revenue.paidPerContactSql(orgId, Prisma.sql`pc."contactId" = ANY(${ids}::text[])`);
+      const paid = this.revenue.paidPerContactSql(orgId, Prisma.sql`pc."contactId" IN (SELECT id FROM ids)`);
       join = Prisma.sql`LEFT JOIN (${paid}) p ON p."contactId" = c.id`;
       key = Prisma.sql`COALESCE(p.paid, 0)`;
     }
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      WITH ids AS (SELECT unnest(${ids}::text[]) AS id)
       SELECT c.id FROM "contact" c ${join}
-      WHERE c."organizationId" = ${orgId} AND c.id = ANY(${ids}::text[])
+      WHERE c."organizationId" = ${orgId} AND c.id IN (SELECT id FROM ids)
       ${rankOrderSql(key, dir, "c")}
       LIMIT ${limit} OFFSET ${(page - 1) * limit}
     `;

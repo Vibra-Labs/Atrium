@@ -43,7 +43,7 @@ export class ContactRevenueService {
   async paidTotals(contactIds: string[] | null, orgId: string): Promise<Map<string, number>> {
     const totals = new Map<string, number>();
     if (contactIds?.length === 0) return totals;
-    const only = contactIds ? Prisma.sql`pc."contactId" IN (${Prisma.join(contactIds)})` : Prisma.sql`TRUE`;
+    const only = contactIds ? Prisma.sql`pc."contactId" IN (${Prisma.join(contactIds)})` : undefined;
     const rows = await this.prisma.$queryRaw<Array<{ contactId: string; paid: bigint | number }>>(
       this.paidPerContactSql(orgId, only),
     );
@@ -58,7 +58,7 @@ export class ContactRevenueService {
   async paidTotalsForCompanies(companyIds: string[] | null, orgId: string): Promise<Map<string, number>> {
     const totals = new Map<string, number>();
     if (companyIds?.length === 0) return totals;
-    const only = companyIds ? Prisma.sql`c."companyId" IN (${Prisma.join(companyIds)})` : Prisma.sql`TRUE`;
+    const only = companyIds ? Prisma.sql`c."companyId" IN (${Prisma.join(companyIds)})` : undefined;
     const rows = await this.prisma.$queryRaw<Array<{ companyId: string; paid: bigint | number }>>(
       this.paidPerCompanySql(orgId, only),
     );
@@ -67,37 +67,52 @@ export class ContactRevenueService {
   }
 
   /**
-   * A query yielding `("contactId", paid)` for each contact with a paid invoice, limited by
-   * `only` (over `pc`, the project_contact row). Usable as a subquery.
+   * A query yielding `("contactId", paid)` for each contact with a paid invoice. `only` (over
+   * `pc`, the project_contact row, and `c`, the contact) limits the contacts and, with them, the
+   * invoices that get totalled; without it the whole workspace is. Usable as a subquery.
    */
-  paidPerContactSql(orgId: string, only: Prisma.Sql = Prisma.sql`TRUE`): Prisma.Sql {
+  paidPerContactSql(orgId: string, only?: Prisma.Sql): Prisma.Sql {
     return Prisma.sql`
-      WITH t AS MATERIALIZED (${this.invoiceTotals(orgId, PAID_ONLY)})
-      SELECT pc."contactId" AS "contactId", SUM(t."paidCents") AS paid
-      FROM "project_contact" pc
-      JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
-      JOIN t ON t."projectId" = pc."projectId"
-      WHERE ${only}
-      GROUP BY pc."contactId"
+      ${this.linkedProjects(orgId, Prisma.sql`pc."contactId"`, only ?? Prisma.sql`TRUE`, only !== undefined)}
+      SELECT sel."contactId" AS "contactId", SUM(t."paidCents") AS paid
+      FROM sel JOIN t ON t."projectId" = sel."projectId"
+      GROUP BY sel."contactId"
     `;
   }
 
   /**
-   * A query yielding `("companyId", paid)` for each company with a paid invoice, limited by
-   * `only` (over `c`, the contact row); an invoice shared by several contacts counts once.
+   * A query yielding `("companyId", paid)` for each company with a paid invoice; an invoice
+   * shared by several of its contacts counts once. `only` is as in `paidPerContactSql`.
    */
-  paidPerCompanySql(orgId: string, only: Prisma.Sql = Prisma.sql`TRUE`): Prisma.Sql {
+  paidPerCompanySql(orgId: string, only?: Prisma.Sql): Prisma.Sql {
+    const companyOnly = only
+      ? Prisma.sql`c."companyId" IS NOT NULL AND ${only}`
+      : Prisma.sql`c."companyId" IS NOT NULL`;
     return Prisma.sql`
-      WITH t AS MATERIALIZED (${this.invoiceTotals(orgId, PAID_ONLY)})
+      ${this.linkedProjects(orgId, Prisma.sql`c."companyId"`, companyOnly, only !== undefined)}
       SELECT d."companyId" AS "companyId", SUM(d."paidCents") AS paid
       FROM (
-        SELECT DISTINCT c."companyId", t.id, t."paidCents"
-        FROM "project_contact" pc
-        JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
-        JOIN t ON t."projectId" = pc."projectId"
-        WHERE c."companyId" IS NOT NULL AND ${only}
+        SELECT DISTINCT sel."companyId", t.id, t."paidCents"
+        FROM sel JOIN t ON t."projectId" = sel."projectId"
       ) d
       GROUP BY d."companyId"
+    `;
+  }
+
+  /**
+   * `WITH sel(owner, "projectId"), t`: the project links matching `where`, and the paid invoices'
+   * totals, limited to those links' projects when `restrict` (a whole workspace skips that join).
+   */
+  private linkedProjects(orgId: string, owner: Prisma.Sql, where: Prisma.Sql, restrict: boolean): Prisma.Sql {
+    const linked = restrict ? Prisma.sql`AND i."projectId" IN (SELECT "projectId" FROM sel)` : Prisma.empty;
+    return Prisma.sql`
+      WITH sel AS (
+        SELECT DISTINCT ${owner}, pc."projectId"
+        FROM "project_contact" pc
+        JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
+        WHERE ${where}
+      ),
+      t AS MATERIALIZED (${this.invoiceTotals(orgId, Prisma.sql`${PAID_ONLY} ${linked}`)})
     `;
   }
 

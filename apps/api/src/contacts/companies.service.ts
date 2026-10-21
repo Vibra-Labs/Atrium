@@ -73,11 +73,12 @@ export class CompaniesService {
     limit: number,
   ): Promise<string[]> {
     if (ids.length === 0) return [];
-    const paid = this.revenue.paidPerCompanySql(orgId, Prisma.sql`c."companyId" = ANY(${ids}::text[])`);
+    const paid = this.revenue.paidPerCompanySql(orgId, Prisma.sql`c."companyId" IN (SELECT id FROM ids)`);
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      WITH ids AS (SELECT unnest(${ids}::text[]) AS id)
       SELECT co.id FROM "company" co
       LEFT JOIN (${paid}) p ON p."companyId" = co.id
-      WHERE co."organizationId" = ${orgId} AND co.id = ANY(${ids}::text[])
+      WHERE co."organizationId" = ${orgId} AND co.id IN (SELECT id FROM ids)
       ${rankOrderSql(Prisma.sql`COALESCE(p.paid, 0)`, dir, "co")}
       LIMIT ${limit} OFFSET ${(page - 1) * limit}
     `;

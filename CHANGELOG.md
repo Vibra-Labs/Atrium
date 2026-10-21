@@ -8,6 +8,10 @@ All notable changes to Atrium will be documented in this file.
 
 - **Contacts** — A light CRM for owners and admins at `/dashboard/contacts`: contacts and companies, lead sources, notes, linked projects and revenue per contact, follow-up reminders, and CSV import/export. Contacts are kept in step with invitations, project clients and invoice payments. Free on all plans. New MCP tools `list_contacts`, `get_contact` and `add_contact_note`.
 
+### Changed
+
+- **People is now Team; clients live in Contacts** — The sidebar's People page becomes Team (`/dashboard/team`, staff only). Portal clients are contacts with portal access: filter Contacts by "Portal access", and invite, view as client, send a password reset link or remove access from the contact page. A client's portal profile is their contact (company, phone, address, website and a new "About"), every client invitation gets a contact, and search lists clients once. `/dashboard/clients` redirects; the People CSV export and `/clients/:id/profile` are replaced by the Contacts export and contact page.
+
 ## [1.11.1] — 2026-10-19
 
 ### Added

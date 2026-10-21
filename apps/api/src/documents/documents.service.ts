@@ -78,6 +78,21 @@ const DOCUMENT_FULL_INCLUDE = {
   },
 } as const;
 
+/** Throws unless a new version may be uploaded to this document. */
+function assertCanTakeVersion<T extends { status: string; requiresSignature: boolean }>(
+  doc: T | null,
+  mimetype: string,
+): asserts doc is T {
+  if (!doc) throw new NotFoundException("Document not found");
+  if (doc.status === "voided" || doc.status === "expired") {
+    throw new BadRequestException(`Cannot upload new versions to ${doc.status} documents`);
+  }
+  // Enforce PDF-only for signature-required documents
+  if (doc.requiresSignature && mimetype !== "application/pdf") {
+    throw new BadRequestException("Signature documents require PDF files");
+  }
+}
+
 @Injectable()
 export class DocumentsService {
   constructor(
@@ -1149,6 +1164,18 @@ export class DocumentsService {
     // Collect orphaned storage keys for cleanup after transaction
     const keysToDelete: string[] = [];
 
+    // Upload before the transaction, so a large upload never holds the row lock
+    // or runs into the transaction timeout. Checked here so a doomed upload never
+    // reaches storage, and again under the lock below.
+    const existing = await this.prisma.document.findFirst({
+      where: { id, organizationId: orgId },
+      select: { projectId: true, status: true, requiresSignature: true },
+    });
+    assertCanTakeVersion(existing, file.mimetype);
+    // The version number is only known under the lock, so it isn't in the key.
+    const storageKey = `${orgId}/${existing.projectId}/documents/${id}-${Date.now()}-${randomBytes(4).toString("hex")}`;
+    await this.storage.upload(storageKey, createReadStream(file.path), file.size, file.mimetype);
+
     const result = await this.prisma.$transaction(async (tx) => {
       // Lock document row to prevent concurrent version uploads
       await tx.$queryRawUnsafe(
@@ -1160,22 +1187,9 @@ export class DocumentsService {
         where: { id, organizationId: orgId },
         include: { file: true, signedFile: true, responses: true },
       });
-      if (!doc) throw new NotFoundException("Document not found");
-
-      if (doc.status === "voided" || doc.status === "expired") {
-        throw new BadRequestException(`Cannot upload new versions to ${doc.status} documents`);
-      }
-
-      // Enforce PDF-only for signature-required documents
-      if (doc.requiresSignature && file.mimetype !== "application/pdf") {
-        throw new BadRequestException("Signature documents require PDF files");
-      }
+      assertCanTakeVersion(doc, file.mimetype);
 
       const newVersion = doc.currentVersion + 1;
-
-      // Upload new file to storage
-      const storageKey = `${orgId}/${doc.projectId}/documents/${id}-v${newVersion}-${Date.now()}`;
-      await this.storage.upload(storageKey, createReadStream(file.path), file.size, file.mimetype);
 
       // Save current file as a version entry
       await tx.documentVersion.create({
@@ -1231,7 +1245,13 @@ export class DocumentsService {
         },
         include: DOCUMENT_FULL_INCLUDE,
       });
-    }, { timeout: 30000 });
+    }, { timeout: 30000 }).catch(async (err: unknown) => {
+      // Nothing points at the new object; don't leave it in the bucket.
+      await this.storage.delete(storageKey).catch((deleteErr: unknown) =>
+        this.logger.error({ err: deleteErr, storageKey }, "Failed to delete an orphaned version upload"),
+      );
+      throw err;
+    });
 
     // Clean up orphaned storage blobs after successful transaction
     if (keysToDelete.length > 0) {

@@ -1805,6 +1805,55 @@ describe("DocumentsService", () => {
       expect(mockActivityService.create).toHaveBeenCalledWith(expect.objectContaining({ action: "version_uploaded" }));
     });
 
+    it("uploads to storage before opening the transaction, so a slow upload can't time it out", async () => {
+      setupUploadVersion();
+      const order: string[] = [];
+      const upload = mockStorage.upload as ReturnType<typeof mock>;
+      upload.mockClear();
+      upload.mockImplementation(() => {
+        order.push("upload");
+        return Promise.resolve();
+      });
+      mockPrisma.$transaction.mockImplementation((fn: (tx: typeof mockPrisma) => unknown) => {
+        order.push("transaction");
+        return fn(mockPrisma);
+      });
+
+      await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);
+
+      expect(order).toEqual(["upload", "transaction"]);
+      const storedKey = (upload.mock.calls[0] as unknown[])[0];
+      expect(mockPrisma.file.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ storageKey: storedKey }) }),
+      );
+    });
+
+    it("does not upload anything for a document that can't take a new version", async () => {
+      setupUploadVersion({ status: "voided" });
+      const upload = mockStorage.upload as ReturnType<typeof mock>;
+      upload.mockClear();
+
+      const err = await service.uploadVersion(DOC_ID, ORG, USER, pdfFile).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    it("deletes the uploaded object when the transaction fails", async () => {
+      setupUploadVersion();
+      const upload = mockStorage.upload as ReturnType<typeof mock>;
+      const del = mockStorage.delete as ReturnType<typeof mock>;
+      upload.mockClear();
+      del.mockClear();
+      mockPrisma.documentVersion.create.mockReturnValue(Promise.reject(new Error("db down")));
+
+      const err = await service.uploadVersion(DOC_ID, ORG, USER, pdfFile).catch((e: unknown) => e);
+
+      expect((err as Error).message).toBe("db down");
+      const storedKey = (upload.mock.calls[0] as unknown[])[0];
+      expect(del).toHaveBeenCalledWith(storedKey);
+    });
+
     it("does not notify or touch requestNote for contracts", async () => {
       setupUploadVersion({ type: "contract", status: "pending" });
       await service.uploadVersion(DOC_ID, ORG, USER, pdfFile);

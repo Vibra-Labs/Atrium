@@ -759,13 +759,20 @@ export class ContactsService {
    * blank = clear. Company is found or created by name; phone sets the first number.
    */
   async updatePortalProfile(id: string, dto: PortalProfileInput, orgId: string): Promise<PortalProfile> {
-    const contact = await this.getOrThrow(id, orgId);
-    const data: Prisma.ContactUncheckedUpdateInput = {
-      ...resolvePhones({ phone: dto.phone }, phonesOf(contact.phones, contact.phone)),
-    };
-    if (dto.company !== undefined) {
-      const name = dto.company.trim();
-      data.companyId = name ? (await this.findOrCreateCompany(name, orgId)).id : null;
+    const contact = await this.prisma.contact.findFirst({
+      where: { id, organizationId: orgId },
+      include: { company: { select: { name: true } } },
+    });
+    if (!contact) throw new NotFoundException("Contact not found");
+    // The form sends every field back; unchanged ones are left alone so a round trip is a no-op.
+    const phone = dto.phone?.trim();
+    const data: Prisma.ContactUncheckedUpdateInput =
+      phone === undefined || phone === (contact.phone ?? "")
+        ? {}
+        : resolvePhones({ phone }, phonesOf(contact.phones, contact.phone));
+    const companyName = dto.company?.trim();
+    if (companyName !== undefined && companyName.toLowerCase() !== (contact.company?.name ?? "").toLowerCase()) {
+      data.companyId = companyName ? (await this.findOrCreateCompany(companyName, orgId)).id : null;
     }
     if (dto.address !== undefined) data.address = dto.address.trim() || null;
     if (dto.website !== undefined) data.website = dto.website.trim() || null;

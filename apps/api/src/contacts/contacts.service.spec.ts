@@ -703,7 +703,7 @@ describe("ContactsService", () => {
     });
 
     it("a blank company unlinks it and fields left out are untouched", async () => {
-      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(contact));
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ ...contact, companyId: "co-1", company: { name: "Acme" } }));
       await service.updatePortalProfile("c-1", { company: "  " }, "org-1");
       expect(written()).toEqual({ companyId: null });
       expect(prisma.company.create).not.toHaveBeenCalled();
@@ -721,6 +721,15 @@ describe("ContactsService", () => {
       } as unknown as Parameters<ContactsService["updatePortalProfile"]>[1];
       await service.updatePortalProfile("c-1", input, "org-1");
       expect(Object.keys(written()).sort()).toEqual(["companyId"]);
+    });
+
+    it("sending the shown values back changes nothing", async () => {
+      prisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve({ ...contact, companyId: "co-1", company: { name: "Acme" } }),
+      );
+      await service.updatePortalProfile("c-1", { company: "acme", phone: "111" }, "org-1");
+      expect(written()).toEqual({});
+      expect(prisma.company.findFirst).not.toHaveBeenCalled();
     });
 
     it("404s for a contact outside the org", async () => {

@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 
+/** Stored on the client's contact in the workspace; null when not set. */
 interface ClientProfile {
-  company?: string;
-  phone?: string;
-  address?: string;
-  website?: string;
-  description?: string;
+  company?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  website?: string | null;
+  description?: string | null;
 }
 
 export default function PortalSettingsPage() {
@@ -112,9 +113,17 @@ export default function PortalSettingsPage() {
   const handleUpdateClientProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Only the five profile fields: the API rejects anything else.
+      const { company, phone, address, website, description } = profile;
       await apiFetch("/clients/me/profile", {
         method: "PUT",
-        body: JSON.stringify(profile),
+        body: JSON.stringify({
+          company: company ?? "",
+          phone: phone ?? "",
+          address: address ?? "",
+          website: website ?? "",
+          description: description ?? "",
+        }),
       });
       success("Profile updated");
     } catch (err) {

@@ -1292,7 +1292,14 @@ describe("ContactsService", () => {
       prisma.contact.createMany.mockImplementation(() => Promise.reject(new Error("batch failed")));
       prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) => {
         if (a.data.name === "Rea") return Promise.reject(new Error("boom"));
-        if (a.data.referredById) return Promise.reject(Object.assign(new Error("fk"), { code: "P2003" }));
+        if (a.data.referredById) {
+          return Promise.reject(
+            Object.assign(new Error("fk"), {
+              code: "P2003",
+              meta: { modelName: "Contact", constraint: "contact_referredById_fkey" },
+            }),
+          );
+        }
         return Promise.resolve({ id: "c-x", ...a.data });
       });
       const csv = "Name,Referred by\nRea,\nAnn,rea\n";
@@ -1306,6 +1313,65 @@ describe("ContactsService", () => {
         skipped: [{ row: 2, reason: "Invalid row" }],
         warnings: [{ row: 3, reason: 'Referred by "rea" matches no contact; left out' }],
       });
+    });
+
+    it("a company or lead source that can't be stored skips only the rows that need it", async () => {
+      prisma.company.createMany.mockImplementation(() => Promise.reject(new Error("db down")));
+      const csv = "Name,Company,Source\nAnn,Acme,\nBo,,\nCy,,Podcast\n";
+      const res = await service.importCsv(
+        { csv, mapping: { Name: "name", Company: "company", Source: "source" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({ created: 2, skipped: [{ row: 2, reason: "Invalid row" }], warnings: [] });
+      expect(createdRows().map((r) => r.name)).toEqual(["Bo", "Cy"]);
+
+      resetAll();
+      prisma.leadSource.createMany.mockImplementation(() => Promise.reject(new Error("db down")));
+      const res2 = await service.importCsv(
+        { csv, mapping: { Name: "name", Company: "company", Source: "source" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res2).toEqual({ created: 2, skipped: [{ row: 4, reason: "Invalid row" }], warnings: [] });
+    });
+
+    it("labels that can't be stored keep the contact and warn that its tags couldn't be saved", async () => {
+      prisma.label.createMany.mockImplementation(() => Promise.reject(new Error("db down")));
+      prisma.label.findMany.mockImplementation((args: unknown) => {
+        const name = (args as { where: { name: { mode?: string } } }).where.name;
+        return Promise.resolve(name.mode ? [{ id: "l-vip", name: "vip" }] : []);
+      });
+      const csv = "Name,Tags\nAnn,vip; new\nBo,\n";
+      const res = await service.importCsv({ csv, mapping: { Name: "name", Tags: "tags" } }, "org-1", "u-1");
+      expect(res).toEqual({ created: 2, skipped: [], warnings: [{ row: 2, reason: "Tags couldn't be saved" }] });
+      // The tag that already existed is still attached.
+      const [ann] = createdRows();
+      expect(prisma.contactLabel.createMany).toHaveBeenCalledWith({
+        data: [{ contactId: ann.id, labelId: "l-vip" }],
+        skipDuplicates: true,
+      });
+    });
+
+    it("a foreign-key failure on anything but the referrer skips the row as invalid", async () => {
+      prisma.contact.createMany.mockImplementation(() => Promise.reject(new Error("batch failed")));
+      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
+        a.data.name === "Ann" && a.data.referredById
+          ? Promise.reject(
+              Object.assign(new Error("fk"), {
+                code: "P2003",
+                meta: { modelName: "Contact", constraint: "contact_companyId_fkey" },
+              }),
+            )
+          : Promise.resolve({ id: "c-x", ...a.data }),
+      );
+      const csv = "Name,Referred by\nRea,\nAnn,rea\n";
+      const res = await service.importCsv(
+        { csv, mapping: { Name: "name", "Referred by": "referredBy" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({ created: 1, skipped: [{ row: 3, reason: "Invalid row" }], warnings: [] });
     });
 
     it("an unexpected failure on one row doesn't make a later row with the same email a duplicate", async () => {

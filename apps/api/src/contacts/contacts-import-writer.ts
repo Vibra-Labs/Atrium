@@ -50,10 +50,21 @@ function errorCode(e: unknown): string | undefined {
   return (e as { code?: string })?.code;
 }
 
+/** Whether a P2003 names the referrer column (Prisma reports `constraint`; older versions `field_name`). */
+function isReferrerFkError(e: unknown): boolean {
+  const meta = (e as { meta?: { constraint?: unknown; field_name?: unknown } })?.meta;
+  return String(meta?.constraint ?? meta?.field_name ?? "").includes("referredById");
+}
+
+function warnOnce(r: ImportRow, reason: string): void {
+  if (!r.warnings.includes(reason)) r.warnings.push(reason);
+}
+
 /** Companies, lead sources or labels by lowercased name; a name not stored yet gets a new id. */
 class NameIndex {
   private readonly ids = new Map<string, string>();
   private readonly moved = new Map<string, string>();
+  private readonly failed = new Set<string>();
   pending: Named[] = [];
 
   constructor(stored: Named[]) {
@@ -86,6 +97,19 @@ class NameIndex {
 
   stored(id: string): string {
     return this.moved.get(id) ?? id;
+  }
+
+  /** Names whose INSERT failed: rows already using them are told so; a later row tries again. */
+  fail(rows: Named[]): void {
+    for (const r of rows) {
+      this.failed.add(r.id);
+      const key = r.name.toLowerCase();
+      if (this.ids.get(key) === r.id) this.ids.delete(key);
+    }
+  }
+
+  isFailed(id: string): boolean {
+    return this.failed.has(id);
   }
 }
 
@@ -282,28 +306,38 @@ export class ContactImportWriter {
       select: { id: true, name: true },
     });
     const store = async (
+      what: string,
       index: NameIndex,
       create: (rows: Named[]) => Promise<{ count: number }>,
       stored: (names: string[]) => Promise<Named[]>,
     ): Promise<void> => {
       const rows = index.pending.splice(0);
       if (!rows.length) return;
-      // skipDuplicates: a name another request just created (same exact name) is used instead.
-      const { count } = await create(rows);
-      if (count < rows.length) index.settle(rows, await stored(rows.map((r) => r.name)));
+      try {
+        // skipDuplicates: a name another request just created (same exact name) is used instead.
+        const { count } = await create(rows);
+        if (count < rows.length) index.settle(rows, await stored(rows.map((r) => r.name)));
+      } catch (e) {
+        // Not fatal: writeChunk skips (or warns about) the rows that needed these.
+        this.logger.error(`Contact import: saving new ${what} failed`, e);
+        index.fail(rows);
+      }
     };
     const withOrg = (rows: Named[]) => rows.map((r) => ({ ...r, organizationId: orgId }));
     await store(
+      "companies",
       this.companies,
       (rows) => this.prisma.company.createMany({ data: withOrg(rows), skipDuplicates: true }),
       (names) => this.prisma.company.findMany(find(names)),
     );
     await store(
+      "lead sources",
       this.sources,
       (rows) => this.prisma.leadSource.createMany({ data: withOrg(rows), skipDuplicates: true }),
       (names) => this.prisma.leadSource.findMany(find(names)),
     );
     await store(
+      "labels",
       this.labels,
       (rows) =>
         this.prisma.label.createMany({
@@ -316,15 +350,26 @@ export class ContactImportWriter {
 
   private async writeChunk(chunk: ImportRow[]): Promise<void> {
     for (const r of chunk) {
-      if (r.data.companyId) r.data.companyId = this.companies.stored(r.data.companyId);
-      if (r.data.leadSourceId) r.data.leadSourceId = this.sources.stored(r.data.leadSourceId);
-      r.labelIds = r.labelIds.map((id) => this.labels.stored(id));
+      const { companyId, leadSourceId } = r.data;
+      if ((companyId && this.companies.isFailed(companyId)) || (leadSourceId && this.sources.isFailed(leadSourceId))) {
+        // As when the row's own find-or-create failed, one row at a time.
+        r.skip = "Invalid row";
+        continue;
+      }
+      if (companyId) r.data.companyId = this.companies.stored(companyId);
+      if (leadSourceId) r.data.leadSourceId = this.sources.stored(leadSourceId);
+      const labelIds = r.labelIds.filter((id) => !this.labels.isFailed(id));
+      if (labelIds.length < r.labelIds.length) warnOnce(r, "Tags couldn't be saved");
+      r.labelIds = labelIds.map((id) => this.labels.stored(id));
     }
-    try {
-      await this.prisma.contact.createMany({ data: chunk.map((r) => r.data) });
-    } catch (e) {
-      this.logger.error("Contact import: a batch insert failed; retrying its rows one by one", e);
-      for (const r of chunk) await this.writeOne(r);
+    const toWrite = chunk.filter((r) => !r.skip);
+    if (toWrite.length) {
+      try {
+        await this.prisma.contact.createMany({ data: toWrite.map((r) => r.data) });
+      } catch (e) {
+        this.logger.error("Contact import: a batch insert failed; retrying its rows one by one", e);
+        for (const r of toWrite) await this.writeOne(r);
+      }
     }
     const ok = chunk.filter((r) => !r.skip);
     const orgId = this.orgId;
@@ -356,7 +401,7 @@ export class ContactImportWriter {
       await this.prisma.contact.create({ data: r.data });
     } catch (e) {
       const code = errorCode(e);
-      if (code === "P2003" && r.data.referredById) {
+      if (code === "P2003" && r.data.referredById && isReferrerFkError(e)) {
         // The referrer was an earlier row of this file that couldn't be written.
         r.data.referredById = null;
         r.warnings.push(referrerWarning(r.draft.referredBy, "none"));
@@ -396,7 +441,7 @@ export class ContactImportWriter {
         await createMany(records);
       } catch (e) {
         this.logger.error(`Contact import row ${r.row}: ${(what ?? "event").toLowerCase()} failed`, e);
-        if (what) r.warnings.push(`${what} couldn't be saved`);
+        if (what) warnOnce(r, `${what} couldn't be saved`);
       }
     }
   }
@@ -453,8 +498,7 @@ export class ContactImportWriter {
         } catch (e) {
           this.logger.error("Contact import: filling company sizes failed", e);
           for (const r of ids.flatMap((id) => rowsOf.get(id) ?? [])) {
-            const reason = "The company size couldn't be saved";
-            if (!r.warnings.includes(reason)) r.warnings.push(reason);
+            warnOnce(r, "The company size couldn't be saved");
           }
         }
       }

@@ -9,10 +9,23 @@ import dns from "node:dns/promises";
 import { isValidTimeZone } from "../common/helpers/local-time";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
+const EMAIL_CONFIG_TTL_MS = 60_000;
+
+export interface EffectiveEmailConfig {
+  provider: string | null;
+  apiKey: string | null;
+  from: string;
+  isOrgConfigured: boolean;
+  smtp: { host: string | null; port: number; user: string | null; pass: string | null; secure: boolean } | null;
+}
 
 @Injectable()
 export class SettingsService {
   private encryptionKey: Buffer;
+  private emailConfigCache = new Map<
+    string,
+    { value: Promise<EffectiveEmailConfig>; expiresAt: number }
+  >();
 
   constructor(
     private prisma: PrismaService,
@@ -119,6 +132,7 @@ export class SettingsService {
       create: { organizationId, ...data },
       update: data,
     });
+    this.emailConfigCache.delete(organizationId);
 
     return {
       ...settings,
@@ -142,7 +156,24 @@ export class SettingsService {
     };
   }
 
-  async getEffectiveEmailConfig(organizationId: string) {
+  /**
+   * Cached per organization for EMAIL_CONFIG_TTL_MS (a project update to 30 clients would otherwise
+   * read and decrypt it 30 times). The cache is per process: saving settings clears it here, other
+   * instances pick the change up when their entry expires.
+   */
+  getEffectiveEmailConfig(organizationId: string): Promise<EffectiveEmailConfig> {
+    const cached = this.emailConfigCache.get(organizationId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    const value = this.loadEffectiveEmailConfig(organizationId);
+    this.emailConfigCache.set(organizationId, { value, expiresAt: Date.now() + EMAIL_CONFIG_TTL_MS });
+    // Never cache a failure.
+    value.catch(() => {
+      if (this.emailConfigCache.get(organizationId)?.value === value) this.emailConfigCache.delete(organizationId);
+    });
+    return value;
+  }
+
+  private async loadEffectiveEmailConfig(organizationId: string): Promise<EffectiveEmailConfig> {
     const settings = await this.prisma.systemSettings.findUnique({
       where: { organizationId },
     });

@@ -253,3 +253,53 @@ describe("ContactBackfillService.backfillDescriptions", () => {
     expect(contactFindMany).not.toHaveBeenCalled();
   });
 });
+
+describe("ContactBackfillService.run", () => {
+  type Steps = Record<string, unknown>;
+  function build(orgs: { id: string }[], failStep?: string) {
+    const db = {
+      organization: {
+        findMany: mock((_a: unknown) => Promise.resolve(orgs)),
+        update: mock((_a: unknown) => Promise.resolve({})),
+      },
+    };
+    const svc = new ContactBackfillService(db as unknown as PrismaService, {} as ContactSyncService);
+    const steps = ["backfillOrgSteps"];
+    const calls: string[] = [];
+    for (const name of steps) {
+      (svc as unknown as Steps)[name] = mock(async (orgId: string) => {
+        calls.push(`${name}:${orgId}`);
+        if (failStep) throw new Error("boom");
+      });
+    }
+    return { svc, db, calls };
+  }
+
+  it("only visits workspaces without a marker, and marks them when the pass succeeds", async () => {
+    const { svc, db, calls } = build([{ id: "org-1" }]);
+    await svc.run();
+    expect(db.organization.findMany.mock.calls[0][0]).toEqual({
+      where: { contactsBackfilledAt: null },
+      select: { id: true },
+    });
+    expect(calls).toEqual(["backfillOrgSteps:org-1"]);
+    const update = db.organization.update.mock.calls[0][0] as { where: unknown; data: { contactsBackfilledAt: Date } };
+    expect(update.where).toEqual({ id: "org-1" });
+    expect(update.data.contactsBackfilledAt).toBeInstanceOf(Date);
+  });
+
+  it("leaves the marker unset when a step throws, so the next boot retries", async () => {
+    const { svc, db } = build([{ id: "org-1" }], "backfillOrgSteps");
+    await svc.run();
+    expect(db.organization.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves the marker unset when a single row failed", async () => {
+    const { svc, db } = build([{ id: "org-1" }]);
+    (svc as unknown as Steps).backfillOrgSteps = mock(async () => {
+      (svc as unknown as { logFailure: (m: string, e: unknown) => void }).logFailure("row failed", new Error("x"));
+    });
+    await svc.run();
+    expect(db.organization.update).not.toHaveBeenCalled();
+  });
+});

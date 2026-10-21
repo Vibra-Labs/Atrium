@@ -100,6 +100,8 @@ model Organization {
   setupCompleted Boolean  @default(false)
   // Set once the contacts boot backfill gave pending client invitations a contact.
   inviteesBackfilledAt DateTime?
+  // Set once a boot pass of the contacts backfill finished without failures; later boots skip the workspace.
+  contactsBackfilledAt DateTime?
 
   members          Member[]
   invitations      Invitation[]

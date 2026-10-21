@@ -21,6 +21,8 @@ interface ProfileFill {
 @Injectable()
 export class ContactBackfillService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ContactBackfillService.name);
+  /** Row-level failures in the current workspace's pass (workspaces run one after another). */
+  private failures = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -35,7 +37,12 @@ export class ContactBackfillService implements OnApplicationBootstrap {
   }
 
   async run(): Promise<void> {
-    const orgs: { id: string }[] = await this.prisma.organization.findMany({ select: { id: true } });
+    // Workspaces that finished a pass are skipped: from then on the live hooks in ContactSyncService
+    // (invite accepted, role change, project clients, paid invoices, labels) keep their contacts in step.
+    const orgs: { id: string }[] = await this.prisma.organization.findMany({
+      where: { contactsBackfilledAt: null },
+      select: { id: true },
+    });
     for (const org of orgs) {
       try {
         await this.backfillOrg(org.id);
@@ -45,7 +52,15 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     }
   }
 
+  /** Sets the marker only when every step succeeded, so a failed pass is retried on the next boot. */
   private async backfillOrg(orgId: string): Promise<void> {
+    this.failures = 0;
+    await this.backfillOrgSteps(orgId);
+    if (this.failures > 0) return;
+    await this.prisma.organization.update({ where: { id: orgId }, data: { contactsBackfilledAt: new Date() } });
+  }
+
+  private async backfillOrgSteps(orgId: string): Promise<void> {
     // Only workspaces that predate lead sources; deleted or renamed defaults stay that way.
     if ((await this.prisma.leadSource.count({ where: { organizationId: orgId } })) === 0) {
       await this.prisma.leadSource.createMany({
@@ -61,6 +76,11 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     await this.backfillLabels(orgId);
     await this.backfillPaidInvoices(orgId);
     await this.backfillContactFields(orgId);
+  }
+
+  private logFailure(message: string, err: unknown): void {
+    this.failures++;
+    this.logger.error(message, err);
   }
 
   /**
@@ -83,7 +103,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
           data: { ...names, updatedAt: contact.updatedAt },
         });
       } catch (err) {
-        this.logger.error(`Failed to split the name of contact ${contact.id}`, err);
+        this.logFailure(`Failed to split the name of contact ${contact.id}`, err);
       }
     }
 
@@ -100,7 +120,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
           data: { phones: [{ label: LEGACY_PHONE_LABEL, number }], updatedAt: contact.updatedAt },
         });
       } catch (err) {
-        this.logger.error(`Failed to copy the phone of contact ${contact.id}`, err);
+        this.logFailure(`Failed to copy the phone of contact ${contact.id}`, err);
       }
     }
   }
@@ -127,7 +147,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
         await this.sync.ensureForInvitee(orgId, invitation.email);
       } catch (err) {
         failed = true;
-        this.logger.error(`Failed to backfill contact for invitation ${invitation.id}`, err);
+        this.logFailure(`Failed to backfill contact for invitation ${invitation.id}`, err);
       }
     }
     if (failed) return;
@@ -168,7 +188,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
           data: { description, updatedAt: contact.updatedAt },
         });
       } catch (err) {
-        this.logger.error(`Failed to copy the description of contact ${contact.id}`, err);
+        this.logFailure(`Failed to copy the description of contact ${contact.id}`, err);
       }
     }
   }
@@ -184,7 +204,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
         if (contact?.userId !== member.userId) continue;
         await this.copyProfile(orgId, member.userId, contact);
       } catch (err) {
-        this.logger.error(`Failed to backfill contact for member ${member.id}`, err);
+        this.logFailure(`Failed to backfill contact for member ${member.id}`, err);
       }
     }
   }
@@ -285,7 +305,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
           },
         });
       } catch (err) {
-        this.logger.error(`Failed to stamp paidAt on invoice ${invoice.id}`, err);
+        this.logFailure(`Failed to stamp paidAt on invoice ${invoice.id}`, err);
       }
     }
 
@@ -308,7 +328,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
       try {
         await this.sync.recordInvoicePaid(id);
       } catch (err) {
-        this.logger.error(`Failed to record paid invoice ${id} on contacts`, err);
+        this.logFailure(`Failed to record paid invoice ${id} on contacts`, err);
       }
     }
   }

@@ -79,6 +79,7 @@ import { Logger } from "nestjs-pino";
 import cookieParser from "cookie-parser";
 import compression from "compression";
 import helmet from "helmet";
+import { shouldCompress } from "./common/helpers/http-cache";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -93,7 +94,7 @@ async function bootstrap() {
   expressApp.set("trust proxy", true);
 
   app.use(cookieParser());
-  app.use(compression());
+  app.use(compression({ filter: shouldCompress }));
 
   app.use(
     helmet({

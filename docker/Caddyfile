@@ -20,7 +20,7 @@
 			# always passes, regardless of which custom domain the request came from.
 			header_up Origin "{$WEB_URL}"
 		}
-		header Cache-Control "no-store, no-cache, must-revalidate"
+		header ?Cache-Control "no-store, no-cache, must-revalidate"
 	}
 
 	# OAuth discovery for MCP clients is served by the API, not the web app

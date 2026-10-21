@@ -23,6 +23,7 @@ import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import { randomUUID } from "crypto";
 import { BillingService } from "../billing/billing.service";
+import { logoCacheControl } from "../common/helpers/http-cache";
 
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
@@ -150,6 +151,7 @@ export class BrandingController {
   @Get("logo/:orgId")
   async serveLogo(
     @Param("orgId") orgId: string,
+    @Query("k") key: string | undefined,
     @Res() res: Response,
   ) {
     const branding = await this.brandingService.findByOrgOrNull(orgId);
@@ -161,7 +163,7 @@ export class BrandingController {
 
     const { body, contentType } = await this.storage.download(branding.logoKey);
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "public, max-age=60");
+    res.setHeader("Cache-Control", logoCacheControl(key));
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     body.pipe(res);
   }

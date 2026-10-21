@@ -15,6 +15,7 @@ import type { UploadedFile } from "../files/files.service";
 import { randomUUID } from "crypto";
 import { extname } from "path";
 import type { Response } from "express";
+import { DOWNLOAD_CACHE } from "../common/helpers/http-cache";
 import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess, BLOCKED_EXTENSIONS } from "../common";
 
 
@@ -393,6 +394,7 @@ export class UpdatesService {
 
     const { body, contentType } = await this.storage.download(update.attachmentKey);
     res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", DOWNLOAD_CACHE);
     if (update.attachmentName) {
       res.setHeader("Content-Disposition", contentDisposition(update.attachmentName, "inline"));
     }

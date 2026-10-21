@@ -18,6 +18,7 @@ import type { Response } from "express";
 import type { File } from "@atrium/database";
 import { FilesService, UploadedFile as UploadedFileType } from "./files.service";
 import { CreateFileLinkDto, UpdateFileDto } from "./files.dto";
+import { DOWNLOAD_CACHE } from "../common/helpers/http-cache";
 import { AuthGuard, RolesGuard, Roles, PlanLimit, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto, contentDisposition } from "../common";
 
 @Controller("files")
@@ -99,6 +100,7 @@ export class FilesController {
     );
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", contentDisposition(filename));
+    res.setHeader("Cache-Control", DOWNLOAD_CACHE);
     body.pipe(res);
   }
 

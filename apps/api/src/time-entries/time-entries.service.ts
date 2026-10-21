@@ -153,10 +153,12 @@ export class TimeEntriesService {
     }
     for (const [userId, rate] of rateByUser) {
       const ids = idsByUser.get(userId) as string[];
-      await this.prisma.timeEntry.updateMany({
-        where: { id: { in: ids }, organizationId: orgId, projectId },
-        data: { hourlyRateCents: rate },
-      });
+      for (let i = 0; i < ids.length; i += LINK_CHUNK) {
+        await this.prisma.timeEntry.updateMany({
+          where: { id: { in: ids.slice(i, i + LINK_CHUNK) }, organizationId: orgId, projectId },
+          data: { hourlyRateCents: rate },
+        });
+      }
     }
     for (const e of unrated) {
       const rate = rateByUser.get(e.userId);
@@ -617,6 +619,23 @@ export class TimeEntriesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // The entries were read outside this transaction; another generate may
+      // have invoiced them since. Lock them, still uninvoiced, before billing
+      // (in id order, so two concurrent calls can't deadlock). A concurrent
+      // call waits here until the first commits, then finds them taken.
+      const entryIds = entries.map((e) => e.id).sort();
+      for (let i = 0; i < entryIds.length; i += LINK_CHUNK) {
+        const chunk = entryIds.slice(i, i + LINK_CHUNK);
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT "id" FROM "time_entry"
+          WHERE "id" = ANY(${chunk}::text[]) AND "invoiceLineItemId" IS NULL
+          ORDER BY "id"
+          FOR UPDATE`;
+        if (locked.length !== chunk.length) {
+          throw new ConflictException("Some of these time entries were just invoiced. Refresh and try again.");
+        }
+      }
+
       // Lex-safe ordering: createdAt is monotonic; invoiceNumber strings sort
       // wrong once they grow past 9999 (e.g. "INV-9999" > "INV-10000").
       const last = await tx.invoice.findFirst({

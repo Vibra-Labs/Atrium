@@ -645,6 +645,64 @@ describe("TimeEntriesService.generateInvoice with many entries", () => {
   });
 });
 
+describe("TimeEntriesService.generateInvoice run twice at once", () => {
+  /**
+   * Holds every transaction until `count` have been opened, so both calls read
+   * the same uninvoiced entries before either links them.
+   */
+  function barrierOnTransactions(count: number): () => void {
+    const target = prisma as unknown as { $transaction: (...args: unknown[]) => Promise<unknown> };
+    const original = target.$transaction;
+    let arrived = 0;
+    let release: () => void = () => undefined;
+    const allIn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    target.$transaction = async (...args: unknown[]): Promise<unknown> => {
+      if (++arrived === count) release();
+      await allIn;
+      return original.apply(prisma, args);
+    };
+    return () => {
+      target.$transaction = original;
+    };
+  }
+
+  for (const mergeEntries of [false, true]) {
+    it(`bills the entries once and answers the other call with 409 (mergeEntries=${mergeEntries})`, async () => {
+      for (let i = 0; i < 3; i++) {
+        await service.create(userId, orgId, {
+          projectId,
+          startedAt: `2026-04-0${i + 1}T09:00:00Z`,
+          endedAt: `2026-04-0${i + 1}T10:00:00Z`,
+        });
+      }
+      const restore = barrierOnTransactions(2);
+      let results: PromiseSettledResult<{ invoiceId: string }>[];
+      try {
+        results = await Promise.allSettled([
+          service.generateInvoice(userId, orgId, { projectId, mergeEntries }),
+          service.generateInvoice(userId, orgId, { projectId, mergeEntries }),
+        ]);
+      } finally {
+        restore();
+      }
+      const ok = results.filter((r) => r.status === "fulfilled");
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      expect(ok).toHaveLength(1);
+      expect(failed).toHaveLength(1);
+      expect((failed[0].reason as { status?: number }).status).toBe(409);
+
+      expect(await prisma.invoice.count({ where: { organizationId: orgId } })).toBe(1);
+      const entries = await prisma.timeEntry.findMany({ where: { organizationId: orgId } });
+      expect(entries.every((e) => e.invoiceLineItemId !== null)).toBe(true);
+      const lineIds = new Set(entries.map((e) => e.invoiceLineItemId));
+      const lines = await prisma.invoiceLineItem.findMany({ where: { id: { in: [...lineIds] as string[] } } });
+      expect(lines.every((l) => l.invoiceId === (ok[0] as PromiseFulfilledResult<{ invoiceId: string }>).value.invoiceId)).toBe(true);
+    });
+  }
+});
+
 describe("TimeEntriesService.listForExport", () => {
   it("returns more than the 200-row paginated cap", async () => {
     // Create 210 short entries spanning different start times.

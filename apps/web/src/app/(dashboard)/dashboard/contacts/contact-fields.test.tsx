@@ -36,7 +36,7 @@ describe("MoreFields", () => {
       </MoreFields>,
     );
     expect(closed).toContain('aria-expanded="false"');
-    expect(closed).toContain("More fields");
+    expect(closed).toContain("More info");
     expect(closed).not.toContain("Hidden field");
   });
 
@@ -47,7 +47,7 @@ describe("MoreFields", () => {
       </MoreFields>,
     );
     expect(open).toContain('aria-expanded="true"');
-    expect(open).toContain("Fewer fields");
+    expect(open).toContain("Less info");
     expect(open).toContain("Hidden field");
   });
 });

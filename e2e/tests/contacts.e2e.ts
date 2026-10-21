@@ -27,9 +27,9 @@ test.describe("Contacts list", () => {
 
     await page.getByLabel("First name").fill(first);
     await page.getByLabel("Last name").fill("Lee");
-    // Less-used fields sit behind "More fields".
+    // Less-used fields sit behind "More info".
     await expect(page.getByLabel("Job title")).toHaveCount(0);
-    await page.getByRole("button", { name: "More fields" }).click();
+    await page.getByRole("button", { name: "More info" }).click();
     await page.getByLabel("Job title").fill("CTO");
     await page.getByLabel("Department").fill("Engineering");
     await page.getByLabel("Phone label 1").fill("Mobile");

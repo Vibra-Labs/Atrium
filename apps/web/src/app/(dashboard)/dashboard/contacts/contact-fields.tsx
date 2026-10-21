@@ -284,7 +284,7 @@ export function MoreFields({ defaultOpen = false, children }: MoreFieldsProps) {
         className={`${addButtonClass} inline-flex items-center gap-1`}
       >
         <ChevronDown aria-hidden="true" className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
-        {open ? "Fewer fields" : "More fields"}
+        {open ? "Less info" : "More info"}
       </button>
       {open && <div className="space-y-4">{children}</div>}
     </>

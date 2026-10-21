@@ -86,7 +86,8 @@ beforeAll(async () => {
   const noop = new Proxy({}, { get: () => () => Promise.resolve() }) as never;
   const contacts = new ContactsService(prisma, new ContactRevenueService(prisma));
   clients = new ClientsService(prisma, {} as never, new ContactSyncService(prisma), contacts);
-  const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub, configStub);
+  const lastSeenStub = { touch: async (): Promise<void> => undefined } as never;
+  const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub, configStub, lastSeenStub, prisma);
   const mcp = new McpService(
     new ProjectsService(prisma, {} as never),
     new TasksService(prisma, noop, noop, noop),

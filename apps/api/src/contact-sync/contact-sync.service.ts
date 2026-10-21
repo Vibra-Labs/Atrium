@@ -4,6 +4,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { isPortalInviteRole } from "../clients/invitations";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { splitName } from "../contacts/contact-fields";
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
+import { addContactEvent } from "./contact-events";
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -21,18 +23,6 @@ export class ContactSyncService {
   private readonly logger = new Logger(ContactSyncService.name);
 
   constructor(private readonly prisma: PrismaService) {}
-
-  private async addEvent(
-    contactId: string,
-    organizationId: string,
-    type: string,
-    detail: string,
-    refId?: string,
-  ): Promise<void> {
-    await this.prisma.contactEvent.create({
-      data: { contactId, organizationId, type, detail, ...(refId ? { refId } : {}) },
-    });
-  }
 
   /**
    * Gives a portal client (role "member") a contact linked to their user. Staff and non-members
@@ -69,7 +59,7 @@ export class ContactSyncService {
         where: { id: byEmail.id },
         data: { userId, status: "client", ...named },
       });
-      await this.addEvent(byEmail.id, orgId, "portal_joined", "Joined the client portal");
+      await addContactEvent(this.prisma, byEmail.id, orgId, "portal_joined", "Joined the client portal");
       return updated;
     }
 
@@ -86,7 +76,7 @@ export class ContactSyncService {
         },
       });
     } catch (err) {
-      if ((err as { code?: string })?.code !== "P2002") throw err;
+      if (!isPrismaUniqueViolation(err)) throw err;
       // A concurrent call created it first; return what won.
       const winner =
         (await this.prisma.contact.findFirst({ where: { organizationId: orgId, userId } })) ??
@@ -94,7 +84,7 @@ export class ContactSyncService {
       if (winner?.userId && winner.userId !== userId) return this.refuseTaken(winner, userId);
       return winner;
     }
-    await this.addEvent(created.id, orgId, "contact_created", "Contact created");
+    await addContactEvent(this.prisma, created.id, orgId, "contact_created", "Contact created");
     return created;
   }
 
@@ -239,7 +229,7 @@ export class ContactSyncService {
   async recordInvited(orgId: string, email: string, role: string | null | undefined): Promise<void> {
     if (!isPortalInviteRole(role)) return;
     const contact = await this.ensureForInvitee(orgId, email);
-    await this.addEvent(contact.id, orgId, "portal_invited", "Invited to the client portal");
+    await addContactEvent(this.prisma, contact.id, orgId, "portal_invited", "Invited to the client portal");
   }
 
   /** Finds the contact for an invitee's email, creating a lead if there is none. Status is left alone. */
@@ -254,13 +244,13 @@ export class ContactSyncService {
         data: { organizationId: orgId, name: email, email, status: "lead" },
       });
     } catch (err) {
-      if ((err as { code?: string })?.code !== "P2002") throw err;
+      if (!isPrismaUniqueViolation(err)) throw err;
       // A concurrent call created it first.
       const winner = await this.prisma.contact.findFirst({ where: { organizationId: orgId, email } });
       if (!winner) throw err;
       return winner;
     }
-    await this.addEvent(created.id, orgId, "contact_created", "Contact created");
+    await addContactEvent(this.prisma, created.id, orgId, "contact_created", "Contact created");
     return created;
   }
 
@@ -295,7 +285,7 @@ export class ContactSyncService {
 
     for (const { contactId } of links) {
       if (skip.has(contactId)) continue;
-      await this.addEvent(contactId, invoice.organizationId, "invoice_paid", detail, invoice.id);
+      await addContactEvent(this.prisma, contactId, invoice.organizationId, "invoice_paid", detail, invoice.id);
     }
   }
 }

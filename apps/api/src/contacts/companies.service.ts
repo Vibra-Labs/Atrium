@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "./require-name";
 import { paginationArgs, paginatedResponse } from "../common";
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 import { ContactRevenueService } from "./contact-revenue.service";
 import { rankOrderSql } from "./contacts-sort";
 import { Prisma } from "@atrium/database";
@@ -174,6 +175,6 @@ export class CompaniesService {
   }
 
   private mapDuplicate(e: unknown): unknown {
-    return (e as { code?: string })?.code === "P2002" ? new ConflictException(DUPLICATE_MESSAGE) : e;
+    return isPrismaUniqueViolation(e) ? new ConflictException(DUPLICATE_MESSAGE) : e;
   }
 }

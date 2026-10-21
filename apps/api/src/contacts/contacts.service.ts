@@ -14,6 +14,8 @@ import { PORTAL_INVITATION_ROLE } from "../clients/invitations";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
+import { addContactEvent } from "../contact-sync/contact-events";
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 import { ContactRevenueService } from "./contact-revenue.service";
 import { contactSortValue, rankOrderSql, rankRows } from "./contacts-sort";
 import type { SortableContact } from "./contacts-sort";
@@ -583,7 +585,7 @@ export class ContactsService {
     } catch (e) {
       throw this.mapDuplicate(e);
     }
-    await this.addEvent(contact.id, orgId, "contact_created", "Contact created");
+    await addContactEvent(this.prisma, contact.id, orgId, "contact_created", "Contact created");
     return toResponse(contact);
   }
 
@@ -704,7 +706,7 @@ export class ContactsService {
     for (const mentionedId of ids) {
       if (mentionedId === id || !known.has(mentionedId)) continue;
       try {
-        await this.addEvent(mentionedId, orgId, "mentioned", `Mentioned in a note on ${contact.name}`, id);
+        await addContactEvent(this.prisma, mentionedId, orgId, "mentioned", `Mentioned in a note on ${contact.name}`, id);
       } catch (e) {
         // The note is saved; a missing back-reference shouldn't fail it.
         this.logger.error(`Mention event for contact ${mentionedId} failed`, e);
@@ -742,10 +744,10 @@ export class ContactsService {
       }
     } catch (e) {
       // A concurrent request linked it first; the link exists, which is the goal.
-      if ((e as { code?: string })?.code === "P2002") return;
+      if (isPrismaUniqueViolation(e)) return;
       throw e;
     }
-    await this.addEvent(
+    await addContactEvent(this.prisma, 
       id,
       orgId,
       "project_linked",
@@ -865,7 +867,7 @@ export class ContactsService {
   }
 
   private mapDuplicate(e: unknown): unknown {
-    if ((e as { code?: string })?.code === "P2002") {
+    if (isPrismaUniqueViolation(e)) {
       return new ConflictException("A contact with this email already exists");
     }
     return e;
@@ -950,23 +952,11 @@ export class ContactsService {
       return await create({ organizationId: orgId, name });
     } catch (e) {
       // Lost a race with a concurrent create of the same name.
-      if ((e as { code?: string })?.code === "P2002") {
+      if (isPrismaUniqueViolation(e)) {
         const winner = await find(where);
         if (winner) return winner;
       }
       throw e;
     }
-  }
-
-  private async addEvent(
-    contactId: string,
-    organizationId: string,
-    type: string,
-    detail: string,
-    refId?: string,
-  ): Promise<void> {
-    await this.prisma.contactEvent.create({
-      data: { contactId, organizationId, type, detail, ...(refId ? { refId } : {}) },
-    });
   }
 }

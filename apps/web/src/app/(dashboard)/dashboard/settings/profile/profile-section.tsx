@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
 import { EmailPreferencesSection } from "./email-preferences-section";
@@ -9,6 +10,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import type { DeletionInfo } from "@atrium/shared";
 
 export function ProfileSection(): React.ReactElement {
+  const router = useRouter();
   const { success, error: showError } = useToast();
   const confirm = useConfirm();
   const { userName } = useSession();
@@ -35,6 +37,7 @@ export function ProfileSection(): React.ReactElement {
         body: JSON.stringify({ name }),
       });
       success("Profile updated");
+      router.refresh();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to update profile");
     }
@@ -102,7 +105,6 @@ export function ProfileSection(): React.ReactElement {
       setDeleting(false);
     }
   };
-
 
   const isOwner = deletionInfo !== null && deletionInfo.ownedOrganizations.length > 0;
 

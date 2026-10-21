@@ -29,20 +29,23 @@ test.describe("Layouts seed the session on the client", () => {
       expect(res.ok()).toBe(true);
       const project: { id: string } = await res.json();
 
-      const seen: string[] = watchSessionRequests(page);
+      const projectPageRequests: string[] = watchSessionRequests(page);
 
       await page.goto(`${WEB}/dashboard/projects/${project.id}`, { waitUntil: "networkidle" });
-      // Owner-only control: proves the role reached the page.
       await expect(page.getByRole("heading", { name: "Session Context E2E" }).first()).toBeVisible({
         timeout: 15000,
       });
-      expect(seen).toEqual([]);
+      // Owner-only control: proves the role reached the page.
+      await expect(page.getByRole("button", { name: /delete/i }).first()).toBeVisible();
+      expect(projectPageRequests, "project page").toEqual([]);
+
+      const teamPageRequests: string[] = watchSessionRequests(page);
 
       await page.goto(`${WEB}/dashboard/settings/team`, { waitUntil: "networkidle" });
       await expect(page.getByRole("heading", { name: "Invite a Team Member" })).toBeVisible({
         timeout: 15000,
       });
-      expect(seen).toEqual([]);
+      expect(teamPageRequests, "team page").toEqual([]);
     } finally {
       await context.close();
     }
@@ -56,14 +59,14 @@ test.describe("Layouts seed the session on the client", () => {
       "Session Context Portal E2E",
     );
     try {
-      const seen: string[] = watchSessionRequests(portal.client);
+      const portalPageRequests: string[] = watchSessionRequests(portal.client);
       await portal.client.goto(`${WEB}/portal/projects/${portal.projectId}`, {
         waitUntil: "networkidle",
       });
       await expect(
         portal.client.getByRole("heading", { name: "Session Context Portal E2E" }).first(),
       ).toBeVisible({ timeout: 15000 });
-      expect(seen).toEqual([]);
+      expect(portalPageRequests, "portal project page").toEqual([]);
     } finally {
       await portal.close();
     }

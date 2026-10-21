@@ -253,7 +253,6 @@ export default function PortalProjectDetailPage() {
   const [postingRequest, setPostingRequest] = useState(false);
   const { userId } = useSession();
   const currentUserId: string | null = userId || null;
-  const sessionLoaded: boolean = true;
   const [showCompletedTasks, setShowCompletedTasks] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -862,7 +861,6 @@ export default function PortalProjectDetailPage() {
                   ? `${API_URL}/api/files/${entry.fileId}/download`
                   : entry.attachmentUrl || `${API_URL}/api/updates/${entry.id}/attachment`;
                 const isOwnUpdate =
-                  sessionLoaded &&
                   currentUserId !== null &&
                   entry.author?.id === currentUserId;
                 const isEditing = editingId === entry.id;
@@ -1128,7 +1126,7 @@ export default function PortalProjectDetailPage() {
                 }
 
                 // Checkbox / request task — clickable row opens detail modal
-                const isOwnRequest = sessionLoaded && currentUserId !== null && task.requestedById === currentUserId;
+                const isOwnRequest = currentUserId !== null && task.requestedById === currentUserId;
 
                 return (
                   <div

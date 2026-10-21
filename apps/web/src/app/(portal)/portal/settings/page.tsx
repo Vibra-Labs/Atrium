@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
 import { useToast } from "@/components/toast";
@@ -15,6 +16,7 @@ interface ClientProfile {
 }
 
 export default function PortalSettingsPage() {
+  const router = useRouter();
   const { success, error: showError } = useToast();
   const { userName } = useSession();
   const [name, setName] = useState(userName);
@@ -49,6 +51,7 @@ export default function PortalSettingsPage() {
         body: JSON.stringify({ name }),
       });
       success("Profile updated");
+      router.refresh();
     } catch (err) {
       showError(
         err instanceof Error ? err.message : "Failed to update profile",
@@ -121,13 +124,13 @@ export default function PortalSettingsPage() {
         }),
       });
       success("Profile updated");
+      router.refresh();
     } catch (err) {
       showError(
         err instanceof Error ? err.message : "Failed to update profile",
       );
     }
   };
-
 
   return (
     <div className="space-y-8">

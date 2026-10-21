@@ -25,6 +25,9 @@ function parsePaidAt(value: string): Date {
   return new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00.000Z` : value);
 }
 
+// Statuses a portal client must never see (list, detail, PDF).
+const CLIENT_HIDDEN_STATUSES: string[] = ["draft", "cancelled"];
+
 @Injectable()
 export class InvoicesService {
   private readonly logger = new Logger(InvoicesService.name);
@@ -210,7 +213,7 @@ export class InvoicesService {
     const where = {
       organizationId: orgId,
       projectId: { in: projectIds },
-      status: { notIn: ["draft", "cancelled"] },
+      status: { notIn: CLIENT_HIDDEN_STATUSES },
     };
 
     const [data, total] = await Promise.all([
@@ -227,7 +230,8 @@ export class InvoicesService {
 
   async findOneMine(id: string, userId: string, orgId: string) {
     const invoice = await this.prisma.invoice.findFirst({
-      where: { id, organizationId: orgId },
+      // Same visibility as findMine: clients never see drafts or cancelled invoices.
+      where: { id, organizationId: orgId, status: { notIn: CLIENT_HIDDEN_STATUSES } },
       include: {
         lineItems: true,
         uploadedFile: true,

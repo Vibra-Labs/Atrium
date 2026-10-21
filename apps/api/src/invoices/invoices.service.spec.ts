@@ -380,4 +380,30 @@ describe("InvoicesService", () => {
 
     expect(result).toBeDefined();
   });
+  // --- findOneMine ---
+
+  describe("findOneMine", () => {
+    // The mock honours the status filter the service puts in `where`.
+    function invoiceWithStatus(status: string) {
+      prisma.invoice.findFirst.mockImplementation(((args: PrismaArgs) => {
+        const notIn = (args.where?.status as { notIn?: string[] } | undefined)?.notIn ?? [];
+        if (notIn.includes(status)) return Promise.resolve(null);
+        return Promise.resolve({ id: "inv-1", status, projectId: "proj-1" });
+      }) as never);
+      prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve({ id: "pc-1" }) as never);
+    }
+
+    test("a sent invoice resolves", async () => {
+      invoiceWithStatus("sent");
+      const result = await service.findOneMine("inv-1", "user-1", orgId);
+      expect(result.id).toBe("inv-1");
+    });
+
+    for (const status of ["draft", "cancelled"]) {
+      test(`a ${status} invoice is not found`, async () => {
+        invoiceWithStatus(status);
+        await expect(service.findOneMine("inv-1", "user-1", orgId)).rejects.toBeInstanceOf(NotFoundException);
+      });
+    }
+  });
 });

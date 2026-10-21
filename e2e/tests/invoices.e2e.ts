@@ -486,5 +486,42 @@ test.describe("Invoices", () => {
         await portal.close();
       }
     });
+    test("GET /invoices/mine/:id/pdf is 404 for a draft or cancelled invoice and 200 once sent", async ({
+      browser,
+    }) => {
+      test.setTimeout(120000);
+      const portal: PortalClientProject = await createPortalClientProject(browser, "inv-draft", "Draft PDF Project");
+      try {
+        const invoiceRes = await portal.owner.request.post(`${API}/invoices`, {
+          data: {
+            projectId: portal.projectId,
+            lineItems: [{ description: "Draft PDF Item", quantity: 1, unitPrice: 5000 }],
+          },
+          headers: portal.ownerHeaders,
+        });
+        expect(invoiceRes.status()).toBe(201);
+        const invoice: { id: string; status: string } = await invoiceRes.json();
+        expect(invoice.status).toBe("draft");
+        const pdfUrl = `${API}/invoices/mine/${invoice.id}/pdf`;
+
+        expect((await portal.client.request.get(pdfUrl)).status()).toBe(404);
+
+        const setStatus = async (status: string): Promise<void> => {
+          const res = await portal.owner.request.put(`${API}/invoices/${invoice.id}`, {
+            data: { status },
+            headers: portal.ownerHeaders,
+          });
+          expect(res.ok()).toBeTruthy();
+        };
+
+        await setStatus("sent");
+        expect((await portal.client.request.get(pdfUrl)).status()).toBe(200);
+
+        await setStatus("cancelled");
+        expect((await portal.client.request.get(pdfUrl)).status()).toBe(404);
+      } finally {
+        await portal.close();
+      }
+    });
   });
 });

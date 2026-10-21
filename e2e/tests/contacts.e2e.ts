@@ -11,12 +11,52 @@ test.describe("Contacts list", () => {
     await expect(page.getByRole("heading", { name: "Contacts" })).toBeVisible();
 
     await page.getByRole("button", { name: /add contact/i }).click();
-    await page.getByLabel("Name", { exact: true }).fill(name);
+    await page.getByLabel("First name").fill(name);
     await page.getByRole("button", { name: /^add contact$/i }).last().click();
 
     const row = page.getByRole("row", { name: new RegExp(name) });
     await expect(row).toBeVisible();
     await expect(row.getByText("Lead", { exact: true })).toBeVisible();
+  });
+
+  test("add a contact with name parts, title, phones, links, rating and a note", async ({ page }) => {
+    const first = `Ann${Date.now()}`;
+    const name = `${first} Lee`;
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: /add contact/i }).click();
+
+    await page.getByLabel("First name").fill(first);
+    await page.getByLabel("Last name").fill("Lee");
+    await page.getByLabel("Job title").fill("CTO");
+    await page.getByLabel("Department").fill("Engineering");
+    await page.getByLabel("Phone label 1").fill("Mobile");
+    await page.getByLabel("Phone number 1").fill("+1 555 0100");
+    await page.getByRole("button", { name: "+ Add phone" }).click();
+    await page.getByLabel("Phone label 2").fill("Work");
+    await page.getByLabel("Phone number 2").fill("+1 555 0200");
+    await page.getByLabel("Social link 1").fill("https://www.linkedin.com/in/ann");
+    await page.getByRole("button", { name: "+ Add link" }).click();
+    await page.getByLabel("Social link 2").fill("https://ann.dev");
+    await page.getByLabel("Rating", { exact: true }).selectOption("hot");
+    await page.getByLabel(/^Note/).fill("Met at the expo");
+    await page.getByRole("button", { name: /^add contact$/i }).last().click();
+
+    await page.getByLabel("Filter by rating").selectOption("hot");
+    const row = page.getByRole("row", { name: new RegExp(name) });
+    await expect(row.getByTestId("contact-rating")).toHaveText("Hot");
+    await row.getByRole("link", { name }).click();
+
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+    await expect(page.getByTestId("contact-role")).toHaveText("CTO · Engineering");
+    await expect(page.getByTestId("contact-rating")).toHaveText("Hot");
+    await expect(page.getByRole("link", { name: "+1 555 0100" })).toHaveAttribute("href", "tel:+15550100");
+    await expect(page.getByRole("link", { name: "+1 555 0200" })).toHaveAttribute("href", "tel:+15550200");
+    const linkedin = page.getByRole("link", { name: "linkedin.com" });
+    await expect(linkedin).toHaveAttribute("href", "https://www.linkedin.com/in/ann");
+    await expect(linkedin).toHaveAttribute("target", "_blank");
+    await expect(linkedin).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(page.getByRole("link", { name: "ann.dev" })).toHaveAttribute("href", "https://ann.dev");
+    await expect(page.getByTestId("timeline-note")).toContainText("Met at the expo");
   });
 
   test("search finds by company", async ({ page, request }) => {
@@ -342,6 +382,34 @@ test.describe("Company page", () => {
     await expect(strip).not.toContainText("$2,400.00");
     await expect(page.getByRole("link", { name: `First ${stamp}` })).toBeVisible();
     await expect(page.getByRole("link", { name: `Second ${stamp}` })).toBeVisible();
+  });
+
+  test("annual revenue and employee count persist after reload, and empty clears", async ({ page, request }) => {
+    const stamp = Date.now();
+    const personId = await createContact(request, { name: `Size ${stamp}`, companyName: `Size Co ${stamp}` });
+    const id = (await (await request.get(`${API}/contacts/${personId}`)).json()).company.id;
+
+    await page.goto(`/dashboard/contacts/companies/${id}`);
+    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByLabel("Annual revenue").fill("1500000");
+    await page.getByLabel("No. of employees").fill("42");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Company updated")).toBeVisible();
+
+    await page.reload();
+    const size = page.getByTestId("company-size");
+    await expect(size).toContainText("1,500,000");
+    await expect(size).toContainText("42");
+
+    await page.getByRole("button", { name: "Edit" }).click();
+    await expect(page.getByLabel("Annual revenue")).toHaveValue("1500000");
+    await page.getByLabel("Annual revenue").fill("");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(size).not.toContainText("Annual revenue");
+    await expect(size).toContainText("42");
+    const company = await (await request.get(`${API}/companies/${id}`)).json();
+    expect(company.annualRevenue).toBeNull();
+    expect(company.employeeCount).toBe(42);
   });
 
   test("edit notes and delete a company", async ({ page, request }) => {

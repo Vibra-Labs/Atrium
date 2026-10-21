@@ -3,8 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { CompanyField, SourceField } from "../contact-fields";
-import { NEW_SOURCE, STATUS_LABELS, inputClass } from "../shared";
+import { splitFullName } from "@/lib/contact-fields";
+import {
+  CompanyField,
+  PhonesField,
+  RatingField,
+  SocialLinksField,
+  SourceField,
+  cleanLinks,
+  cleanPhones,
+} from "../contact-fields";
+import { NEW_SOURCE, PHONE_LABELS, STATUS_LABELS, inputClass, labelClass } from "../shared";
+import type { ContactPhone } from "../shared";
 import type { ContactDetail } from "./types";
 
 interface Option {
@@ -18,13 +28,22 @@ interface Props {
   onSaved: () => void;
 }
 
-const labelClass = "block text-sm text-[var(--muted-foreground)] mb-1";
+type Body = Record<string, string | null | string[] | ContactPhone[]>;
 
 export function EditContactModal({ contact, onClose, onSaved }: Props) {
   const { success, error: showError } = useToast();
-  const [name, setName] = useState(contact.name);
+  // Contacts created before first/last names existed are split until the backfill runs.
+  const fallback = splitFullName(contact.name);
+  const [firstName, setFirstName] = useState(contact.firstName ?? fallback.firstName);
+  const [lastName, setLastName] = useState(contact.firstName ? (contact.lastName ?? "") : fallback.lastName);
   const [email, setEmail] = useState(contact.email ?? "");
-  const [phone, setPhone] = useState(contact.phone ?? "");
+  const [jobTitle, setJobTitle] = useState(contact.jobTitle ?? "");
+  const [department, setDepartment] = useState(contact.department ?? "");
+  const [phones, setPhones] = useState<ContactPhone[]>(
+    contact.phones.length ? contact.phones : [{ label: PHONE_LABELS[0], number: "" }],
+  );
+  const [links, setLinks] = useState<string[]>(contact.socialLinks.length ? contact.socialLinks : [""]);
+  const [rating, setRating] = useState(contact.rating ?? "");
   const [website, setWebsite] = useState(contact.website ?? "");
   const [address, setAddress] = useState(contact.address ?? "");
   const [status, setStatus] = useState(contact.status);
@@ -78,12 +97,17 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
 
   async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!firstName.trim()) return;
     setSaving(true);
     setError("");
-    const body: Record<string, string | null> = {
-      name: name.trim(),
-      phone: phone.trim(),
+    const body: Body = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim() || null,
+      jobTitle: jobTitle.trim() || null,
+      department: department.trim() || null,
+      phones: cleanPhones(phones),
+      socialLinks: cleanLinks(links),
+      rating: rating || null,
       website: website.trim(),
       address: address.trim(),
       status,
@@ -122,12 +146,31 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
     >
       <form
         onSubmit={submit}
-        className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+        className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto"
       >
         <h3 className="text-lg font-semibold">Edit contact</h3>
-        <div>
-          <label htmlFor="edit-name" className={labelClass}>Name</label>
-          <input id="edit-name" value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="edit-first-name" className={labelClass}>First name</label>
+            <input
+              id="edit-first-name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              required
+              maxLength={100}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="edit-last-name" className={labelClass}>Last name</label>
+            <input
+              id="edit-last-name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              maxLength={100}
+              className={inputClass}
+            />
+          </div>
         </div>
         <div>
           <label htmlFor="edit-email" className={labelClass}>Email</label>
@@ -148,17 +191,25 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="edit-phone" className={labelClass}>Phone</label>
-            <input id="edit-phone" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
+            <label htmlFor="edit-job-title" className={labelClass}>Job title</label>
+            <input
+              id="edit-job-title"
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+              maxLength={200}
+              className={inputClass}
+            />
           </div>
           <div>
-            <label htmlFor="edit-website" className={labelClass}>Website</label>
-            <input id="edit-website" value={website} onChange={(e) => setWebsite(e.target.value)} className={inputClass} />
+            <label htmlFor="edit-department" className={labelClass}>Department</label>
+            <input
+              id="edit-department"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              maxLength={100}
+              className={inputClass}
+            />
           </div>
-        </div>
-        <div>
-          <label htmlFor="edit-address" className={labelClass}>Address</label>
-          <input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass} />
         </div>
         <CompanyField
           text={companyText}
@@ -167,6 +218,18 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
             setCompanyId(id);
           }}
         />
+        <PhonesField idPrefix="edit" phones={phones} onChange={setPhones} />
+        <SocialLinksField links={links} onChange={setLinks} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="edit-website" className={labelClass}>Website</label>
+            <input id="edit-website" value={website} onChange={(e) => setWebsite(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label htmlFor="edit-address" className={labelClass}>Address</label>
+            <input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass} />
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <SourceField
             sources={sources}
@@ -184,6 +247,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
             </select>
           </div>
         </div>
+        <RatingField id="edit-rating" value={rating} onChange={setRating} />
         {isReferral && (
           <div className="relative">
             <label htmlFor="edit-referrer" className={labelClass}>Referred by</label>
@@ -254,7 +318,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
           </button>
           <button
             type="submit"
-            disabled={saving || !sourcesLoaded || !name.trim() || (sourceChoice === NEW_SOURCE && !newSource.trim())}
+            disabled={saving || !sourcesLoaded || !firstName.trim() || (sourceChoice === NEW_SOURCE && !newSource.trim())}
             className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors disabled:opacity-40"
           >
             {saving ? "Saving..." : "Save"}

@@ -17,6 +17,8 @@ interface CompanyDetail {
   name: string;
   website: string | null;
   notes: string | null;
+  annualRevenue: number | null;
+  employeeCount: number | null;
   people: { id: string; name: string; email: string | null; status: string }[];
   revenue: Revenue;
 }
@@ -25,6 +27,18 @@ const LIST_URL = "/dashboard/contacts?tab=companies";
 const buttonClass =
   "px-3 py-2 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors";
 const fieldLabelClass = "block text-sm text-[var(--muted-foreground)] mb-1";
+
+// The workspace currency isn't known here, so revenue is shown as a plain number.
+const numberFormat = new Intl.NumberFormat();
+
+/** "" = clear (null); otherwise the whole number typed. */
+function wholeNumber(value: string): number | null {
+  return value.trim() === "" ? null : Math.trunc(Number(value));
+}
+
+function toInput(value: number | null): string {
+  return value == null ? "" : String(value);
+}
 
 function websiteHref(website: string): string {
   return /^https?:\/\//i.test(website) ? website : `https://${website}`;
@@ -43,6 +57,8 @@ export default function CompanyPage() {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
+  const [annualRevenue, setAnnualRevenue] = useState("");
+  const [employeeCount, setEmployeeCount] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -66,7 +82,7 @@ export default function CompanyPage() {
     load();
   }, [load]);
 
-  async function update(body: Record<string, string | null>, failure: string): Promise<boolean> {
+  async function update(body: Record<string, string | number | null>, failure: string): Promise<boolean> {
     try {
       await apiFetch(`/companies/${id}`, { method: "PUT", body: JSON.stringify(body) });
       await load();
@@ -82,6 +98,8 @@ export default function CompanyPage() {
     if (!company) return;
     setName(company.name);
     setWebsite(company.website ?? "");
+    setAnnualRevenue(toInput(company.annualRevenue));
+    setEmployeeCount(toInput(company.employeeCount));
     setEditing(true);
   }
 
@@ -90,7 +108,12 @@ export default function CompanyPage() {
     if (!name.trim()) return;
     setSaving(true);
     const ok = await update(
-      { name: name.trim(), website: website.trim() || null },
+      {
+        name: name.trim(),
+        website: website.trim() || null,
+        annualRevenue: wholeNumber(annualRevenue),
+        employeeCount: wholeNumber(employeeCount),
+      },
       "Failed to update company",
     );
     setSaving(false);
@@ -182,6 +205,36 @@ export default function CompanyPage() {
                 className={inputClass}
               />
             </div>
+            <div>
+              <label htmlFor="company-revenue" className={fieldLabelClass}>
+                Annual revenue
+              </label>
+              <input
+                id="company-revenue"
+                type="number"
+                min={0}
+                max={2000000000}
+                step={1}
+                value={annualRevenue}
+                onChange={(e) => setAnnualRevenue(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="company-employees" className={fieldLabelClass}>
+                No. of employees
+              </label>
+              <input
+                id="company-employees"
+                type="number"
+                min={0}
+                max={2000000000}
+                step={1}
+                value={employeeCount}
+                onChange={(e) => setEmployeeCount(e.target.value)}
+                className={inputClass}
+              />
+            </div>
             <button
               type="submit"
               disabled={saving || !name.trim()}
@@ -206,6 +259,22 @@ export default function CompanyPage() {
                 >
                   {company.website}
                 </a>
+              )}
+              {(company.annualRevenue != null || company.employeeCount != null) && (
+                <dl data-testid="company-size" className="flex gap-4 text-sm text-[var(--muted-foreground)] mt-1">
+                  {company.annualRevenue != null && (
+                    <div className="flex gap-1">
+                      <dt>Annual revenue:</dt>
+                      <dd className="text-[var(--foreground)]">{numberFormat.format(company.annualRevenue)}</dd>
+                    </div>
+                  )}
+                  {company.employeeCount != null && (
+                    <div className="flex gap-1">
+                      <dt>Employees:</dt>
+                      <dd className="text-[var(--foreground)]">{numberFormat.format(company.employeeCount)}</dd>
+                    </div>
+                  )}
+                </dl>
               )}
             </div>
             <div className="flex items-center gap-2">

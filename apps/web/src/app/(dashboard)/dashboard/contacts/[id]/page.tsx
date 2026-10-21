@@ -9,6 +9,7 @@ import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { STATUS_LABELS } from "../shared";
+import { RatingBadge } from "../rating-badge";
 import { RevenueStrip } from "./revenue-strip";
 import { Timeline } from "./timeline";
 import { ContactSidePanel } from "./contact-side-panel";
@@ -136,14 +137,20 @@ export default function ContactPage() {
               </span>
             )}
           </h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">
+          {(contact.jobTitle || contact.department) && (
+            <p data-testid="contact-role" className="text-sm text-[var(--muted-foreground)] mt-0.5">
+              {[contact.jobTitle, contact.department].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          <p className="text-sm text-[var(--muted-foreground)] mt-1 flex items-center gap-2 flex-wrap">
             <span
               data-testid="contact-status"
               className="inline-flex px-2 py-0.5 rounded-full bg-[var(--muted)] text-xs font-medium text-[var(--foreground)]"
             >
               {STATUS_LABELS[contact.status] ?? contact.status}
             </span>
-            {contact.hasLogin && <span className="ml-2">has portal login</span>}
+            <RatingBadge rating={contact.rating} />
+            {contact.hasLogin && <span>has portal login</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">

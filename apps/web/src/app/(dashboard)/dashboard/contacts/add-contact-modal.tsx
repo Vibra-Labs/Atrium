@@ -3,8 +3,17 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { CompanyField, SourceField } from "./contact-fields";
-import { NEW_SOURCE, inputClass } from "./shared";
+import {
+  CompanyField,
+  PhonesField,
+  RatingField,
+  SocialLinksField,
+  SourceField,
+  cleanLinks,
+  cleanPhones,
+} from "./contact-fields";
+import { NEW_SOURCE, PHONE_LABELS, STATUS_LABELS, inputClass, labelClass } from "./shared";
+import type { ContactPhone } from "./shared";
 
 interface LeadSource {
   id: string;
@@ -17,11 +26,20 @@ interface Props {
   onCreated: () => void;
 }
 
+type Body = Record<string, string | string[] | ContactPhone[]>;
+
 export function AddContactModal({ company, onClose, onCreated }: Props) {
   const { success, error: showError } = useToast();
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [department, setDepartment] = useState("");
+  const [phones, setPhones] = useState<ContactPhone[]>([{ label: PHONE_LABELS[0], number: "" }]);
+  const [links, setLinks] = useState<string[]>([""]);
   const [status, setStatus] = useState("lead");
+  const [rating, setRating] = useState("");
+  const [note, setNote] = useState("");
   const [companyText, setCompanyText] = useState(company?.name ?? "");
   const [companyId, setCompanyId] = useState<string | null>(company?.id ?? null);
   const [sourceChoice, setSourceChoice] = useState("");
@@ -36,11 +54,20 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
 
   async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!firstName.trim()) return;
     setSaving(true);
     setError("");
-    const body: Record<string, string> = { name: name.trim(), status };
+    const body: Body = {
+      firstName: firstName.trim(),
+      status,
+      phones: cleanPhones(phones),
+      socialLinks: cleanLinks(links),
+    };
+    if (lastName.trim()) body.lastName = lastName.trim();
     if (email.trim()) body.email = email.trim();
+    if (jobTitle.trim()) body.jobTitle = jobTitle.trim();
+    if (department.trim()) body.department = department.trim();
+    if (rating) body.rating = rating;
     if (companyId) body.companyId = companyId;
     else if (companyText.trim()) body.companyName = companyText.trim();
     if (sourceChoice === NEW_SOURCE) {
@@ -48,18 +75,33 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
     } else if (sourceChoice) {
       body.leadSourceId = sourceChoice;
     }
+    let contact: { id: string };
     try {
-      await apiFetch("/contacts", { method: "POST", body: JSON.stringify(body) });
-      success("Contact added");
-      onCreated();
+      contact = await apiFetch<{ id: string }>("/contacts", { method: "POST", body: JSON.stringify(body) });
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Failed to add contact";
       setError(message);
       showError(message);
-    } finally {
       setSaving(false);
+      return;
     }
+    // The contact exists either way; a failed note shouldn't lose it.
+    const content = note.trim();
+    if (content) {
+      try {
+        await apiFetch(`/contacts/${contact.id}/notes`, {
+          method: "POST",
+          body: JSON.stringify({ content }),
+        });
+      } catch (err) {
+        console.error(err);
+        showError("Contact added, but the note couldn't be saved");
+      }
+    }
+    success("Contact added");
+    setSaving(false);
+    onCreated();
   }
 
   return (
@@ -71,24 +113,39 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
     >
       <form
         onSubmit={submit}
-        className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-md mx-4 p-6 space-y-4"
+        className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto"
       >
         <h3 className="text-lg font-semibold">Add contact</h3>
-        <div>
-          <label htmlFor="contact-name" className="block text-sm text-[var(--muted-foreground)] mb-1">
-            Name
-          </label>
-          <input
-            id="contact-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-            required
-            className={inputClass}
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="contact-first-name" className={labelClass}>
+              First name
+            </label>
+            <input
+              id="contact-first-name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              autoFocus
+              required
+              maxLength={100}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="contact-last-name" className={labelClass}>
+              Last name
+            </label>
+            <input
+              id="contact-last-name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              maxLength={100}
+              className={inputClass}
+            />
+          </div>
         </div>
         <div>
-          <label htmlFor="contact-email" className="block text-sm text-[var(--muted-foreground)] mb-1">
+          <label htmlFor="contact-email" className={labelClass}>
             Email
           </label>
           <input
@@ -99,6 +156,32 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
             className={inputClass}
           />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="contact-job-title" className={labelClass}>
+              Job title
+            </label>
+            <input
+              id="contact-job-title"
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+              maxLength={200}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="contact-department" className={labelClass}>
+              Department
+            </label>
+            <input
+              id="contact-department"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              maxLength={100}
+              className={inputClass}
+            />
+          </div>
+        </div>
         <CompanyField
           text={companyText}
           onChange={(text, id) => {
@@ -106,6 +189,8 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
             setCompanyId(id);
           }}
         />
+        <PhonesField idPrefix="contact" phones={phones} onChange={setPhones} />
+        <SocialLinksField links={links} onChange={setLinks} />
         <div className="grid grid-cols-2 gap-3">
           <SourceField
             sources={sources}
@@ -115,7 +200,7 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
             onNewSource={setNewSource}
           />
           <div>
-            <label htmlFor="contact-status" className="block text-sm text-[var(--muted-foreground)] mb-1">
+            <label htmlFor="contact-status" className={labelClass}>
               Status
             </label>
             <select
@@ -124,11 +209,27 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
               onChange={(e) => setStatus(e.target.value)}
               className={inputClass}
             >
-              <option value="lead">Lead</option>
-              <option value="client">Client</option>
-              <option value="past_client">Past client</option>
+              {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </div>
+        </div>
+        <RatingField id="contact-rating" value={rating} onChange={setRating} />
+        <div>
+          <label htmlFor="contact-note" className={labelClass}>
+            Note <span className="text-xs">(optional)</span>
+          </label>
+          <textarea
+            id="contact-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            maxLength={5000}
+            className={inputClass}
+          />
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
@@ -141,7 +242,7 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
           </button>
           <button
             type="submit"
-            disabled={saving || !name.trim() || (sourceChoice === NEW_SOURCE && !newSource.trim())}
+            disabled={saving || !firstName.trim() || (sourceChoice === NEW_SOURCE && !newSource.trim())}
             className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 transition-colors disabled:opacity-40"
           >
             {saving ? "Adding..." : "Add contact"}

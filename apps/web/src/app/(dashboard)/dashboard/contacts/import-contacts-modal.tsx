@@ -3,31 +3,8 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-
-type ImportField =
-  | "name" | "email" | "phone" | "company" | "website"
-  | "address" | "source" | "tags" | "status" | "notes" | "skip";
-
-const FIELDS: { value: ImportField; label: string }[] = [
-  { value: "skip", label: "Skip" },
-  { value: "name", label: "Name" },
-  { value: "email", label: "Email" },
-  { value: "phone", label: "Phone" },
-  { value: "company", label: "Company" },
-  { value: "website", label: "Website" },
-  { value: "address", label: "Address" },
-  { value: "source", label: "Source" },
-  { value: "tags", label: "Tags" },
-  { value: "status", label: "Status" },
-  { value: "notes", label: "Notes" },
-];
-
-const ALIASES: Record<string, ImportField> = {
-  "company name": "company",
-  "e-mail": "email",
-  "lead source": "source",
-  labels: "tags",
-};
+import { IMPORT_FIELDS, autoMatch } from "@/lib/contact-fields";
+import type { ImportField } from "@/lib/contact-fields";
 
 interface Preview {
   headers: string[];
@@ -38,13 +15,6 @@ interface Preview {
 interface ImportResult {
   created: number;
   skipped: { row: number; reason: string }[];
-}
-
-export function autoMatch(header: string): ImportField {
-  const key = header.trim().toLowerCase();
-  if (ALIASES[key]) return ALIASES[key];
-  const field = FIELDS.find((f) => f.value === key && f.value !== "skip");
-  return field ? field.value : "skip";
 }
 
 interface Props {
@@ -96,7 +66,8 @@ export function ImportContactsModal({ onClose, onImported }: Props) {
     }
   }
 
-  const hasName = Object.values(mapping).includes("name");
+  // A row needs a name: a full Name column or a First name column (Last name is joined on).
+  const hasName = Object.values(mapping).some((f) => f === "name" || f === "firstName");
 
   return (
     <div
@@ -186,7 +157,7 @@ export function ImportContactsModal({ onClose, onImported }: Props) {
                         }
                         className="px-2 py-1 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                       >
-                        {FIELDS.map((f) => (
+                        {IMPORT_FIELDS.map((f) => (
                           <option key={f.value} value={f.value}>
                             {f.label}
                           </option>
@@ -198,7 +169,7 @@ export function ImportContactsModal({ onClose, onImported }: Props) {
               </tbody>
             </table>
             {!hasName && (
-              <p className="text-sm text-red-600">Map one column to Name to continue.</p>
+              <p className="text-sm text-red-600">Map one column to Name or First name to continue.</p>
             )}
             <div className="flex justify-end gap-2">
               <button

@@ -13,13 +13,15 @@ import { ClientItemSkeleton } from "@/components/skeletons";
 import { AddContactModal } from "./add-contact-modal";
 import { ImportContactsModal } from "./import-contacts-modal";
 import { followUpWhen, formatFollowUpDay } from "@/lib/follow-up-date";
-import { REPEAT_LABELS, STATUS_LABELS } from "./shared";
+import { RATING_LABELS, REPEAT_LABELS, STATUS_LABELS } from "./shared";
+import { RatingBadge } from "./rating-badge";
 
 interface ContactRow {
   id: string;
   name: string;
   email: string | null;
   status: string;
+  rating: string | null;
   company: { id: string; name: string } | null;
   followUpAt: string | null;
   followUpEveryDays: number | null;
@@ -81,6 +83,7 @@ export default function ContactsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [labelId, setLabelId] = useState("");
   const [leadSourceId, setLeadSourceId] = useState("");
+  const [rating, setRating] = useState("");
   const [page, setPage] = useState(1);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
@@ -112,8 +115,9 @@ export default function ContactsPage() {
     if (tab !== "all" && tab !== "companies") params.set("status", tab);
     if (labelId) params.set("labelId", labelId);
     if (leadSourceId) params.set("leadSourceId", leadSourceId);
+    if (rating) params.set("rating", rating);
     return params;
-  }, [debouncedSearch, tab, labelId, leadSourceId]);
+  }, [debouncedSearch, tab, labelId, leadSourceId, rating]);
 
   const requestId = useRef(0);
 
@@ -254,6 +258,22 @@ export default function ContactsPage() {
                 </option>
               ))}
             </select>
+            <select
+              aria-label="Filter by rating"
+              value={rating}
+              onChange={(e) => {
+                setRating(e.target.value);
+                setPage(1);
+              }}
+              className={selectClass}
+            >
+              <option value="">All ratings</option>
+              {Object.entries(RATING_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </>
         )}
       </div>
@@ -297,7 +317,7 @@ export default function ContactsPage() {
         )
       ) : contacts.length === 0 ? (
         <p className="text-sm text-[var(--muted-foreground)] py-8 text-center">
-          {debouncedSearch || labelId || leadSourceId || tab !== "all"
+          {debouncedSearch || labelId || leadSourceId || rating || tab !== "all"
             ? "No contacts match these filters."
             : "No contacts yet. Add one or import a CSV."}
         </p>
@@ -333,6 +353,11 @@ export default function ContactsPage() {
                     {STATUS_LABELS[c.status] ?? c.status}
                     {c.hasLogin && (
                       <span className="ml-1 text-xs text-[var(--muted-foreground)]">(portal)</span>
+                    )}
+                    {c.rating && (
+                      <span className="ml-2">
+                        <RatingBadge rating={c.rating} />
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">

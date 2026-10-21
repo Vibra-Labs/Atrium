@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Facebook, Instagram, Link as LinkIcon, Linkedin, Phone, Twitter, Youtube } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { socialSite, telHref } from "@/lib/contact-fields";
+import type { SocialSite } from "@/lib/contact-fields";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { LabelPicker } from "@/components/label-picker";
@@ -198,10 +202,68 @@ function TagsSection({ contact, onChanged }: Props) {
   );
 }
 
+// lucide-react 0.474 has no TikTok icon: TikTok shows the generic icon with its domain.
+const SITE_ICONS: Partial<Record<SocialSite, LucideIcon>> = {
+  linkedin: Linkedin,
+  instagram: Instagram,
+  x: Twitter,
+  facebook: Facebook,
+  youtube: Youtube,
+};
+
+function PhonesList({ phones }: { phones: ContactDetail["phones"] }) {
+  if (phones.length === 0) return null;
+  return (
+    <ul className="space-y-1" aria-label="Phone numbers">
+      {phones.map((p, i) => (
+        <li key={i} className="flex items-center gap-1.5">
+          <Phone size={13} className="shrink-0 text-[var(--muted-foreground)]" aria-hidden />
+          <a href={telHref(p.number)} className="hover:underline">
+            {p.number}
+          </a>
+          <span className="text-xs text-[var(--muted-foreground)]">{p.label}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SocialLinks({ links }: { links: string[] }) {
+  if (links.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap items-center gap-2" aria-label="Social links">
+      {links.map((url) => {
+        const { site, host } = socialSite(url);
+        const Icon = SITE_ICONS[site];
+        return (
+          <li key={url}>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={host}
+              title={url}
+              className="inline-flex items-center gap-1 p-1 rounded-md text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
+            >
+              {Icon ? (
+                <Icon size={16} aria-hidden />
+              ) : (
+                <>
+                  <LinkIcon size={14} aria-hidden />
+                  <span className="text-xs">{host}</span>
+                </>
+              )}
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function DetailsSection({ contact }: { contact: ContactDetail }) {
   const rows: [string, string | null | undefined][] = [
     ["Email", contact.email],
-    ["Phone", contact.phone],
     ["Website", contact.website],
     ["Address", contact.address],
     ["Source", contact.leadSource?.name],
@@ -218,6 +280,22 @@ function DetailsSection({ contact }: { contact: ContactDetail }) {
               <dd className="break-words">{value}</dd>
             </div>
           ))}
+        {contact.phones.length > 0 && (
+          <div>
+            <dt className="sr-only">Phone numbers</dt>
+            <dd>
+              <PhonesList phones={contact.phones} />
+            </dd>
+          </div>
+        )}
+        {contact.socialLinks.length > 0 && (
+          <div>
+            <dt className="sr-only">Social links</dt>
+            <dd>
+              <SocialLinks links={contact.socialLinks} />
+            </dd>
+          </div>
+        )}
         {contact.referredBy && (
           <div>
             <dt className="sr-only">Referred by</dt>

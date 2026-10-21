@@ -7,8 +7,15 @@ export interface Revenue {
 export interface ContactDetail {
   id: string;
   name: string;
+  firstName: string | null;
+  lastName: string | null;
+  jobTitle: string | null;
+  department: string | null;
   email: string | null;
   phone: string | null;
+  phones: { label: string; number: string }[];
+  socialLinks: string[];
+  rating: string | null;
   website: string | null;
   address: string | null;
   status: string;

@@ -25,7 +25,7 @@ function authRoute(pathname: string): string {
     decoded = decodeURIComponent(pathname);
   } catch (err) {
     // Malformed escapes: match on the raw path; Better Auth won't route it either.
-    Logger.warn(`Undecodable auth path ${pathname}: ${String(err)}`, "AuthController");
+    Logger.warn(`Undecodable auth path ${pathname}: ${String(err)}`, "StaffOnlyOrgRoutes");
   }
   return decoded
     .toLowerCase()

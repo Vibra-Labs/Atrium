@@ -24,6 +24,9 @@ interface ProfileFill {
  */
 export const CONTACTS_BACKFILL_VERSION = 1;
 
+/** How long a workspace's backfill claim holds before another instance may take it over. */
+const BACKFILL_LEASE_MS: number = 60 * 60 * 1000;
+
 /** Turns existing clients, project links, labels and paid invoices into contact data. Idempotent. */
 @Injectable()
 export class ContactBackfillService implements OnApplicationBootstrap {
@@ -59,15 +62,42 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     }
   }
 
-  /** Stamps the version only when every step succeeded, so a failed pass is retried on the next boot. */
+  /**
+   * Claims the workspace first, so instances booting together don't run the same pass at once.
+   * Stamps the version only when every step succeeded; otherwise releases the claim so the next
+   * boot retries.
+   */
   private async backfillOrg(orgId: string): Promise<void> {
+    if (!(await this.claim(orgId, new Date()))) return;
     this.failures = 0;
-    await this.backfillOrgSteps(orgId);
-    if (this.failures > 0) return;
-    await this.prisma.organization.update({
-      where: { id: orgId },
-      data: { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION },
+    let done: boolean = false;
+    try {
+      await this.backfillOrgSteps(orgId);
+      done = this.failures === 0;
+    } finally {
+      await this.prisma.organization.update({
+        where: { id: orgId },
+        data: done
+          ? { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION, contactsBackfillClaimedAt: null }
+          : { contactsBackfillClaimedAt: null },
+      });
+    }
+  }
+
+  /** True when this instance now holds the workspace's backfill claim. A claim older than the lease is taken over. */
+  private async claim(orgId: string, now: Date): Promise<boolean> {
+    const { count } = await this.prisma.organization.updateMany({
+      where: {
+        id: orgId,
+        contactsBackfillVersion: { lt: CONTACTS_BACKFILL_VERSION },
+        OR: [
+          { contactsBackfillClaimedAt: null },
+          { contactsBackfillClaimedAt: { lt: new Date(now.getTime() - BACKFILL_LEASE_MS) } },
+        ],
+      },
+      data: { contactsBackfillClaimedAt: now },
     });
+    return count === 1;
   }
 
   private async backfillOrgSteps(orgId: string): Promise<void> {

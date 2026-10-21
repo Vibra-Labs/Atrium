@@ -102,6 +102,8 @@ model Organization {
   inviteesBackfilledAt DateTime?
   // Version of the contacts boot backfill that last finished without failures; boots re-run it while this is below CONTACTS_BACKFILL_VERSION.
   contactsBackfillVersion Int @default(0)
+  // Set while an API instance runs the contacts backfill for this workspace, so a second instance booting at the same time skips it. Stale after an hour (a crashed run).
+  contactsBackfillClaimedAt DateTime?
 
   members          Member[]
   invitations      Invitation[]

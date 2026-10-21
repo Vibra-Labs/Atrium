@@ -256,11 +256,12 @@ describe("ContactBackfillService.backfillDescriptions", () => {
 
 describe("ContactBackfillService.run", () => {
   type Steps = Record<string, unknown>;
-  function build(orgs: { id: string }[], failStep?: string) {
+  function build(orgs: { id: string }[], failStep?: string, claimed: number = 1) {
     const db = {
       organization: {
         findMany: mock((_a: unknown) => Promise.resolve(orgs)),
         update: mock((_a: unknown) => Promise.resolve({})),
+        updateMany: mock((_a: unknown) => Promise.resolve({ count: claimed })),
       },
     };
     const svc = new ContactBackfillService(db as unknown as PrismaService, {} as ContactSyncService);
@@ -286,14 +287,36 @@ describe("ContactBackfillService.run", () => {
     expect(calls).toEqual(["backfillOrgSteps:org-1"]);
     expect(db.organization.update.mock.calls[0][0]).toEqual({
       where: { id: "org-1" },
-      data: { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION },
+      data: { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION, contactsBackfillClaimedAt: null },
     });
   });
 
-  it("leaves the version unchanged when a step throws, so the next boot retries", async () => {
+  it("claims a workspace before its pass, so instances booting together don't both run it", async () => {
+    const { svc, db } = build([{ id: "org-1" }]);
+    await svc.run();
+    const claim = db.organization.updateMany.mock.calls[0][0] as {
+      where: { id: string; contactsBackfillVersion: unknown; OR: unknown[] };
+      data: { contactsBackfillClaimedAt: Date };
+    };
+    expect(claim.where.id).toBe("org-1");
+    expect(claim.where.contactsBackfillVersion).toEqual({ lt: CONTACTS_BACKFILL_VERSION });
+    expect(claim.where.OR).toHaveLength(2);
+    expect(claim.data.contactsBackfillClaimedAt).toBeInstanceOf(Date);
+  });
+
+  it("skips a workspace another instance has claimed", async () => {
+    const { svc, db, calls } = build([{ id: "org-1" }], undefined, 0);
+    await svc.run();
+    expect(calls).toEqual([]);
+    expect(db.organization.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves the version unchanged and releases the claim when a step throws, so the next boot retries", async () => {
     const { svc, db } = build([{ id: "org-1" }], "backfillOrgSteps");
     await svc.run();
-    expect(db.organization.update).not.toHaveBeenCalled();
+    expect(db.organization.update.mock.calls).toEqual([
+      [{ where: { id: "org-1" }, data: { contactsBackfillClaimedAt: null } }],
+    ]);
   });
 
   it("leaves the version unchanged when a single row failed", async () => {
@@ -302,6 +325,8 @@ describe("ContactBackfillService.run", () => {
       (svc as unknown as { logFailure: (m: string, e: unknown) => void }).logFailure("row failed", new Error("x"));
     });
     await svc.run();
-    expect(db.organization.update).not.toHaveBeenCalled();
+    expect(db.organization.update.mock.calls).toEqual([
+      [{ where: { id: "org-1" }, data: { contactsBackfillClaimedAt: null } }],
+    ]);
   });
 });

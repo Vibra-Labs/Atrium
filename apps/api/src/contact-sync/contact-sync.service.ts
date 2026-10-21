@@ -122,8 +122,20 @@ export class ContactSyncService {
 
   async linkProjectClients(projectId: string, orgId: string, userIds: string[]): Promise<void> {
     if (userIds.length === 0) return;
-    const contacts: Contact[] = [];
-    for (const userId of userIds) {
+    // Two queries for the whole list; ensureForMember (3 queries each) only for clients with no contact yet.
+    const clients = await this.prisma.member.findMany({
+      where: { organizationId: orgId, userId: { in: userIds }, role: "member" },
+      select: { userId: true },
+    });
+    const clientIds = clients.map((m) => m.userId);
+    if (clientIds.length === 0) return;
+    const linked = await this.prisma.contact.findMany({
+      where: { organizationId: orgId, userId: { in: clientIds } },
+    });
+    const contacts: Contact[] = [...linked];
+    const haveContact = new Set(linked.map((c) => c.userId));
+    for (const userId of clientIds) {
+      if (haveContact.has(userId)) continue;
       const contact = await this.ensureForMember(orgId, userId);
       if (contact) contacts.push(contact);
     }
@@ -146,15 +158,15 @@ export class ContactSyncService {
       where: { id: projectId },
       select: { name: true },
     });
-    for (const contact of fresh) {
-      await this.addEvent(
-        contact.id,
-        orgId,
-        "project_linked",
-        `Linked to project "${project?.name ?? ""}"`,
-        projectId,
-      );
-    }
+    await this.prisma.contactEvent.createMany({
+      data: fresh.map((c) => ({
+        contactId: c.id,
+        organizationId: orgId,
+        type: "project_linked",
+        detail: `Linked to project "${project?.name ?? ""}"`,
+        refId: projectId,
+      })),
+    });
   }
 
   async detachMember(orgId: string, userId: string): Promise<void> {

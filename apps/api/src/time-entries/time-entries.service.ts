@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from "@nestjs/common";
+import { Prisma } from "@atrium/database";
 import type { TimeEntry } from "@atrium/database";
+import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   StartTimerDto,
@@ -14,6 +16,7 @@ import {
 // CSV export and exists to keep a malicious or buggy caller from
 // requesting a runaway result set.
 const EXPORT_MAX_ROWS = 50_000;
+const LINK_CHUNK = 5_000;
 
 function isP2002(err: unknown): boolean {
   return (
@@ -115,6 +118,50 @@ export class TimeEntriesService {
       select: { hourlyRateCents: true },
     });
     return member?.hourlyRateCents ?? null;
+  }
+
+  /**
+   * Applies the current rate to entries created before any rate was set.
+   * Precedence is unchanged: a project rate (even 0) wins, otherwise the
+   * member's rate; only positive rates are applied. The project rate and all
+   * member rates are read once, and each user's entries are updated together.
+   */
+  private async backfillRates(
+    orgId: string,
+    projectId: string,
+    projectRate: number | null,
+    entries: Array<{ id: string; userId: string; hourlyRateCents: number | null }>,
+  ): Promise<void> {
+    const unrated = entries.filter((e) => e.hourlyRateCents == null || e.hourlyRateCents <= 0);
+    if (unrated.length === 0) return;
+    const idsByUser = new Map<string, string[]>();
+    for (const e of unrated) idsByUser.set(e.userId, [...(idsByUser.get(e.userId) ?? []), e.id]);
+
+    let memberRates = new Map<string, number | null>();
+    if (projectRate == null) {
+      const members = await this.prisma.member.findMany({
+        where: { organizationId: orgId, userId: { in: [...idsByUser.keys()] } },
+        select: { userId: true, hourlyRateCents: true },
+      });
+      memberRates = new Map(members.map((m) => [m.userId, m.hourlyRateCents]));
+    }
+
+    const rateByUser = new Map<string, number>();
+    for (const userId of idsByUser.keys()) {
+      const resolved = projectRate ?? memberRates.get(userId) ?? null;
+      if (resolved != null && resolved > 0) rateByUser.set(userId, resolved);
+    }
+    for (const [userId, rate] of rateByUser) {
+      const ids = idsByUser.get(userId) as string[];
+      await this.prisma.timeEntry.updateMany({
+        where: { id: { in: ids }, organizationId: orgId, projectId },
+        data: { hourlyRateCents: rate },
+      });
+    }
+    for (const e of unrated) {
+      const rate = rateByUser.get(e.userId);
+      if (rate != null) e.hourlyRateCents = rate;
+    }
   }
 
   async start(userId: string, orgId: string, dto: StartTimerDto): Promise<TimeEntry> {
@@ -520,7 +567,7 @@ export class TimeEntriesService {
   async generateInvoice(userId: string, orgId: string, dto: GenerateInvoiceDto): Promise<GenerateInvoiceResult> {
     const project = await this.prisma.project.findFirst({
       where: { id: dto.projectId, organizationId: orgId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, hourlyRateCents: true },
     });
     if (!project) throw new NotFoundException("Project not found");
 
@@ -558,17 +605,7 @@ export class TimeEntriesService {
     // null means we have nothing to preserve, so applying the current
     // project/member rate is the most useful behavior and brings the entry
     // row in line with what will appear on the invoice.
-    for (const e of entries) {
-      if (e.hourlyRateCents != null && e.hourlyRateCents > 0) continue;
-      const resolved = await this.resolveRate(orgId, e.userId, e.projectId);
-      if (resolved != null && resolved > 0) {
-        e.hourlyRateCents = resolved;
-        await this.prisma.timeEntry.update({
-          where: { id: e.id },
-          data: { hourlyRateCents: resolved },
-        });
-      }
-    }
+    await this.backfillRates(orgId, dto.projectId, project.hourlyRateCents, entries);
 
     const missingRate = entries.find(
       (e) => e.hourlyRateCents === null || e.hourlyRateCents === 0,
@@ -642,7 +679,7 @@ export class TimeEntriesService {
           });
         }
       } else {
-        for (const e of entries) {
+        const lineItems = entries.map((e) => {
           const rate = e.hourlyRateCents as number;
           const hours = (e.durationSec ?? 0) / 3600;
           const total = Math.round(hours * rate);
@@ -650,22 +687,33 @@ export class TimeEntriesService {
           const label = e.description ?? e.task?.title ?? "Time entry";
           const rateStr = (rate / 100).toFixed(2);
           const hoursStr = hours.toFixed(2);
-          const lineItem = await tx.invoiceLineItem.create({
-            data: {
+          return {
+            id: randomUUID(),
+            entryId: e.id,
+            description: `${label} — ${dateStr} (${hoursStr}h @ $${rateStr}/hr)`,
+            unitPrice: total,
+          };
+        });
+        for (let i = 0; i < lineItems.length; i += LINK_CHUNK) {
+          const chunk = lineItems.slice(i, i + LINK_CHUNK);
+          await tx.invoiceLineItem.createMany({
+            data: chunk.map((l) => ({
+              id: l.id,
               invoiceId: invoice.id,
-              description: `${label} — ${dateStr} (${hoursStr}h @ $${rateStr}/hr)`,
+              description: l.description,
               quantity: 1,
-              unitPrice: total,
-            },
+              unitPrice: l.unitPrice,
+            })),
           });
-          await tx.timeEntry.update({
-            where: { id: e.id },
-            data: { invoiceLineItemId: lineItem.id },
-          });
+          await tx.$executeRaw`
+            UPDATE "time_entry" AS t
+            SET "invoiceLineItemId" = v.lid, "updatedAt" = now()
+            FROM (VALUES ${Prisma.join(chunk.map((l) => Prisma.sql`(${l.entryId}::text, ${l.id}::text)`))}) AS v(eid, lid)
+            WHERE t."id" = v.eid`;
         }
       }
 
       return { invoiceId: invoice.id };
-    });
+    }, { timeout: 15000 });
   }
 }

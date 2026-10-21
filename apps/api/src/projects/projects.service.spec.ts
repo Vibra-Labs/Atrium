@@ -35,9 +35,7 @@ const mockPrisma = {
   },
   task: {
     groupBy: mock(() => Promise.resolve([])),
-    create: mock((args: PrismaArgs) =>
-      Promise.resolve({ id: `task-${Math.random().toString(36).slice(2, 8)}`, ...args.data }),
-    ),
+    createMany: mock(() => Promise.resolve({ count: 0 })),
   },
   taskLabel: {
     createMany: mock(() => Promise.resolve({ count: 0 })),
@@ -79,7 +77,7 @@ describe("ProjectsService", () => {
     mockPrisma.projectClient.deleteMany.mockClear();
     mockPrisma.projectClient.createMany.mockClear();
     mockPrisma.projectLabel.createMany.mockClear();
-    mockPrisma.task.create.mockClear();
+    mockPrisma.task.createMany.mockClear();
     mockPrisma.taskLabel.createMany.mockClear();
     mockPrisma.decisionOption.createMany.mockClear();
     mockPrisma.$transaction.mockClear();
@@ -427,9 +425,10 @@ describe("ProjectsService", () => {
       expect(mockPrisma.projectClient.createMany).not.toHaveBeenCalled();
 
       // Tasks copied with status/assignment state reset
-      expect(mockPrisma.task.create).toHaveBeenCalledTimes(2);
-      const taskCalls = mockPrisma.task.create.mock.calls;
-      const firstTaskData = (taskCalls[0][0] as PrismaArgs).data as Record<string, unknown>;
+      expect(mockPrisma.task.createMany).toHaveBeenCalledTimes(1);
+      const taskRows = (mockPrisma.task.createMany.mock.calls[0][0] as PrismaArgs).data as Array<Record<string, unknown>>;
+      expect(taskRows.length).toBe(2);
+      const firstTaskData = taskRows[0];
       expect(firstTaskData.status).toBe("open");
       expect(firstTaskData.closedAt).toBe(null);
       expect(firstTaskData.dueDate).toBe(null);
@@ -439,11 +438,17 @@ describe("ProjectsService", () => {
       expect(firstTaskData.projectId).toBe("new-1");
       expect(firstTaskData.organizationId).toBe("org-1");
 
+      // Pre-generated ids tie options and labels to the right tasks
+      const secondId = taskRows[1].id as string;
+      const firstId = taskRows[0].id as string;
+      expect(firstId).not.toBe(secondId);
+
       // Decision options copied for the second task
       expect(mockPrisma.decisionOption.createMany).toHaveBeenCalledTimes(1);
       const optCall = mockPrisma.decisionOption.createMany.mock.calls[0][0] as PrismaArgs;
       const optData = optCall.data as Array<Record<string, unknown>>;
       expect(optData.map((o) => o.label)).toEqual(["Option A", "Option B"]);
+      expect(optData.every((o) => o.taskId === secondId)).toBe(true);
 
       // Task label copied for the first task only
       expect(mockPrisma.taskLabel.createMany).toHaveBeenCalledTimes(1);
@@ -462,7 +467,7 @@ describe("ProjectsService", () => {
 
       await service.duplicate("src-1", { name: "NoTasks", includeTasks: false }, "org-1");
 
-      expect(mockPrisma.task.create).not.toHaveBeenCalled();
+      expect(mockPrisma.task.createMany).not.toHaveBeenCalled();
       expect(mockPrisma.decisionOption.createMany).not.toHaveBeenCalled();
       expect(mockPrisma.taskLabel.createMany).not.toHaveBeenCalled();
       // Labels on the project are still copied

@@ -5,6 +5,7 @@ import {
   NotFoundException,
   OnApplicationBootstrap,
 } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import * as Sentry from "@sentry/nestjs";
 import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -401,46 +402,36 @@ export class ProjectsService implements OnApplicationBootstrap {
       }
 
       if (includeTasks && source.tasks.length) {
-        for (const task of source.tasks) {
-          // Template-clone semantics: shape is copied, state is not.
-          // Status is reset, dueDate is dropped (source dates don't apply to new work),
-          // and assignees/requesters are cleared so the new project starts unowned.
-          const newTask = await tx.task.create({
-            data: {
-              title: task.title,
-              description: task.description,
-              dueDate: null,
-              status: "open",
-              closedAt: null,
-              requestedById: null,
-              assigneeId: null,
-              order: task.order,
-              type: task.type,
-              question: task.question,
-              projectId: newProject.id,
-              organizationId,
-            },
-          });
-
-          if (task.options.length) {
-            await tx.decisionOption.createMany({
-              data: task.options.map((o) => ({
-                taskId: newTask.id,
-                label: o.label,
-                order: o.order,
-              })),
-            });
-          }
-
-          if (task.labels.length) {
-            await tx.taskLabel.createMany({
-              data: task.labels.map((l) => ({
-                taskId: newTask.id,
-                labelId: l.labelId,
-              })),
-            });
-          }
-        }
+        // Template-clone semantics: shape is copied, state is not.
+        // Status is reset, dueDate is dropped (source dates don't apply to new work),
+        // and assignees/requesters are cleared so the new project starts unowned.
+        // Ids are generated up front so tasks, options and labels are bulk inserts.
+        const copies = source.tasks.map((task) => ({ task, id: randomUUID() }));
+        await tx.task.createMany({
+          data: copies.map(({ task, id }) => ({
+            id,
+            title: task.title,
+            description: task.description,
+            dueDate: null,
+            status: "open",
+            closedAt: null,
+            requestedById: null,
+            assigneeId: null,
+            order: task.order,
+            type: task.type,
+            question: task.question,
+            projectId: newProject.id,
+            organizationId,
+          })),
+        });
+        const options = copies.flatMap(({ task, id }) =>
+          task.options.map((o) => ({ taskId: id, label: o.label, order: o.order })),
+        );
+        if (options.length) await tx.decisionOption.createMany({ data: options });
+        const labels = copies.flatMap(({ task, id }) =>
+          task.labels.map((l) => ({ taskId: id, labelId: l.labelId })),
+        );
+        if (labels.length) await tx.taskLabel.createMany({ data: labels });
       }
 
       return tx.project.findUnique({
@@ -448,8 +439,7 @@ export class ProjectsService implements OnApplicationBootstrap {
         include: { clients: { select: { userId: true } } },
       });
     }, {
-      // Raise above Prisma's 5s default: cloning a project with many tasks
-      // + options + labels is sequential and can exceed 5s on larger templates.
+      // Headroom over Prisma's 5s default for very large templates.
       timeout: 15000,
     });
 

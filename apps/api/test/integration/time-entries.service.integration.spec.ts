@@ -556,6 +556,95 @@ describe("TimeEntriesService.list/report/generateInvoice", () => {
   });
 });
 
+describe("TimeEntriesService.generateInvoice with many entries", () => {
+  const stamp = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  type Line = { description: string; unitPrice: number };
+
+  async function addUser(rate: number | null): Promise<string> {
+    const s = stamp();
+    const u = await prisma.user.create({ data: { id: `te-u-${s}`, name: "U", email: `u-${s}@x.com`, emailVerified: true } });
+    await prisma.member.create({ data: { id: `te-m-${s}`, organizationId: orgId, userId: u.id, role: "member", hourlyRateCents: rate } });
+    return u.id;
+  }
+
+  // 300 entries across users A (member rate 4000), B (8000) and C (no member rate).
+  // Every 5th entry has a frozen rate of 2222, and all of C's entries have a
+  // frozen 1234, so only A/B entries without a frozen rate are backfilled.
+  async function seed(): Promise<{ expected: Line[]; ids: string[] }> {
+    const a = await addUser(4000);
+    const b = await addUser(8000);
+    const c = await addUser(null);
+    const users = [a, b, c];
+    const base = new Date("2026-03-01T00:00:00Z").getTime();
+    const rows = [];
+    const expected: Line[] = [];
+    for (let i = 0; i < 300; i++) {
+      const uid = users[i % 3];
+      const startedAt = new Date(base + i * 3600_000);
+      const durationSec = 600 + (i % 7) * 300;
+      const frozen = i % 5 === 0 ? 2222 : uid === c ? 1234 : null;
+      rows.push({
+        id: `te-e-${stamp()}-${i}`,
+        organizationId: orgId,
+        projectId,
+        userId: uid,
+        startedAt,
+        endedAt: new Date(startedAt.getTime() + durationSec * 1000),
+        durationSec,
+        billable: true,
+        hourlyRateCents: frozen,
+        description: i % 4 === 0 ? `work ${i}` : null,
+      });
+      const rate = frozen ?? (uid === a ? 4000 : 8000);
+      const hours = durationSec / 3600;
+      expected.push({
+        description: `${i % 4 === 0 ? `work ${i}` : "Time entry"} — ${startedAt.toISOString().slice(0, 10)} (${hours.toFixed(2)}h @ $${(rate / 100).toFixed(2)}/hr)`,
+        unitPrice: Math.round(hours * rate),
+      });
+    }
+    await prisma.timeEntry.createMany({ data: rows });
+    return { expected, ids: rows.map((r) => r.id) };
+  }
+
+  const byDesc = (x: Line, y: Line): number => x.description.localeCompare(y.description) || x.unitPrice - y.unitPrice;
+
+  it("300 mixed-user entries: same line items, totals and backfilled rates", async () => {
+    const { expected, ids } = await seed();
+    const { invoiceId } = await service.generateInvoice(userId, orgId, { projectId });
+    const items = await prisma.invoiceLineItem.findMany({ where: { invoiceId } });
+    expect(items.length).toBe(300);
+    expect(items.every((i) => i.quantity === 1)).toBe(true);
+    const got = items.map((i) => ({ description: i.description, unitPrice: i.unitPrice })).sort(byDesc);
+    expect(got).toEqual([...expected].sort(byDesc));
+    const entries = await prisma.timeEntry.findMany({ where: { id: { in: ids } } });
+    expect(entries.every((e) => e.invoiceLineItemId !== null && (e.hourlyRateCents ?? 0) > 0)).toBe(true);
+    expect(new Set(entries.map((e) => e.invoiceLineItemId)).size).toBe(300);
+  });
+
+  it("project rate wins over member rate when backfilling", async () => {
+    await prisma.project.update({ where: { id: projectId }, data: { hourlyRateCents: 6000 } });
+    const u = await addUser(9000);
+    const t = new Date("2026-03-01T00:00:00Z");
+    const id = `te-e-${stamp()}`;
+    await prisma.timeEntry.create({
+      data: { id, organizationId: orgId, projectId, userId: u, startedAt: t, endedAt: new Date(t.getTime() + 3600_000), durationSec: 3600, hourlyRateCents: null },
+    });
+    await service.generateInvoice(userId, orgId, { projectId });
+    const e = await prisma.timeEntry.findUnique({ where: { id } });
+    expect(e?.hourlyRateCents).toBe(6000);
+  });
+
+  it("rejects when an entry has no resolvable rate and creates no invoice", async () => {
+    const c = await addUser(null);
+    const t = new Date("2026-03-01T00:00:00Z");
+    await prisma.timeEntry.create({
+      data: { id: `te-e-${stamp()}`, organizationId: orgId, projectId, userId: c, startedAt: t, endedAt: new Date(t.getTime() + 3600_000), durationSec: 3600, hourlyRateCents: null },
+    });
+    await expect(service.generateInvoice(userId, orgId, { projectId })).rejects.toThrow(/no hourly rate/);
+    expect(await prisma.invoiceLineItem.count({ where: { invoice: { organizationId: orgId } } })).toBe(0);
+  });
+});
+
 describe("TimeEntriesService.listForExport", () => {
   it("returns more than the 200-row paginated cap", async () => {
     // Create 210 short entries spanning different start times.

@@ -74,6 +74,25 @@ test.describe("Contacts list", () => {
     await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
   });
 
+  test("clicking anywhere on a contact row opens the contact", async ({ page, request }) => {
+    const stamp = Date.now();
+    const company = `Rowco${stamp}`;
+    const name = `Rowclick ${stamp}`;
+    const res = await request.post(`${API}/contacts`, {
+      data: { name, companyName: company },
+      headers: { "x-csrf-token": getCsrfToken() },
+    });
+    expect(res.ok()).toBeTruthy();
+    const { id } = await res.json();
+
+    await page.goto("/dashboard/contacts");
+    await page.getByPlaceholder(/search name, company, email/i).fill(company);
+    // Click the company cell, not the name link.
+    await page.getByTestId("contact-row").filter({ hasText: name }).getByText(company).click();
+    await expect(page).toHaveURL(new RegExp(`/dashboard/contacts/${id}$`));
+    await expect(page.getByRole("heading", { name: new RegExp(name) })).toBeVisible();
+  });
+
   test("export downloads a CSV with header row", async ({ page }) => {
     await page.goto("/dashboard/contacts");
     await expect(page.getByRole("heading", { name: "Contacts" })).toBeVisible();
@@ -209,6 +228,27 @@ test.describe("Contact page", () => {
     await expect(page.getByTestId("timeline-event").first()).toContainText("(auto)");
   });
 
+  test("Cmd/Ctrl+Enter in the note box adds the note", async ({ page, request }) => {
+    const id = await createContact(request, { name: `Keyed ${Date.now()}` });
+    await page.goto(`/dashboard/contacts/${id}`);
+
+    const box = page.getByLabel("Add a note");
+    await box.fill("Sent the proposal");
+    await box.press("ControlOrMeta+Enter");
+
+    await expect(page.getByTestId("timeline-note")).toContainText("Sent the proposal");
+    await expect(box).toHaveValue("");
+  });
+
+  test("details show labelled values", async ({ page, request }) => {
+    const id = await createContact(request, { name: `Detailed ${Date.now()}`, email: `d${Date.now()}@test.local` });
+    await page.goto(`/dashboard/contacts/${id}`);
+
+    const details = page.getByTestId("contact-details");
+    await expect(details.getByText("Email", { exact: true })).toBeVisible();
+    await expect(details.getByRole("link", { name: /@test\.local$/ })).toHaveAttribute("href", /^mailto:/);
+  });
+
   test("repeating follow-up: set 3 months, Done moves date", async ({ page, request }) => {
     const id = await createContact(request, { name: `Repeat ${Date.now()}` });
     await page.goto(`/dashboard/contacts/${id}`);
@@ -317,7 +357,11 @@ test.describe("Contact page", () => {
     await page.goto(`/dashboard/contacts/${id}`);
     await expect(page.getByTestId("contact-status")).toHaveText("Lead");
     await page.getByRole("button", { name: "Invite to portal" }).click();
-    await expect(page.getByText("Invitation sent")).toBeVisible();
+    await expect(page.getByText("Invitation created")).toBeVisible();
+    // Email may not be delivered in test environments; the link is always offered.
+    await expect(page.getByTestId("pending-invite")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy invite link" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resend invite" })).toBeVisible();
 
     const invitations = await (await page.request.get(`${API}/clients/invitations`)).json();
     const invite = invitations.find((i: { email: string }) => i.email === email);

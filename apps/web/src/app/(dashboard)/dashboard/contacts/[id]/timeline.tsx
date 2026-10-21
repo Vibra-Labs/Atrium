@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
@@ -22,6 +22,8 @@ interface TimelinePage {
 }
 
 const LIMIT = 20;
+/** The note box grows with its text up to this many lines, then scrolls. */
+const MAX_NOTE_ROWS = 6;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -36,6 +38,23 @@ export function Timeline({ contactId, refreshKey }: { contactId: string; refresh
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow: fit the textarea to its content, capped at MAX_NOTE_ROWS lines.
+  useLayoutEffect(() => {
+    const el = noteRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const style = window.getComputedStyle(el);
+    // Tailwind uses border-box, so height = content + padding (scrollHeight) + borders.
+    const borders: number = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const padding: number = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const lineHeight: number = parseFloat(style.lineHeight) || 20;
+    const max: number = lineHeight * MAX_NOTE_ROWS + padding + borders;
+    const wanted: number = el.scrollHeight + borders;
+    el.style.height = `${Math.min(wanted, max)}px`;
+    el.style.overflowY = wanted > max ? "auto" : "hidden";
+  }, [note]);
 
   // Always reloads from page 1; "Show more" appends further pages.
   const load = useCallback(async (): Promise<void> => {
@@ -71,8 +90,9 @@ export function Timeline({ contactId, refreshKey }: { contactId: string; refresh
     }
   }
 
-  async function addNote(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
+  async function addNote(e?: React.FormEvent): Promise<void> {
+    e?.preventDefault();
+    if (saving) return;
     const content = note.trim();
     if (!content) return;
     setSaving(true);
@@ -113,21 +133,32 @@ export function Timeline({ contactId, refreshKey }: { contactId: string; refresh
       <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-2">
         Timeline
       </h2>
-      <form onSubmit={addNote} className="flex gap-2 mb-3">
-        <input
+      <form onSubmit={addNote} className="mb-3 space-y-2">
+        <textarea
+          ref={noteRef}
+          rows={1}
           aria-label="Add a note"
           placeholder="Add a note…"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          className={inputClass}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              addNote();
+            }
+          }}
+          className={`${inputClass} resize-none block`}
         />
-        <button
-          type="submit"
-          disabled={saving || !note.trim()}
-          className="px-3 py-2 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-40"
-        >
-          Add note
-        </button>
+        <div className="flex items-center justify-end gap-3">
+          <span className="text-xs text-[var(--muted-foreground)] hidden sm:inline">⌘/Ctrl + Enter to save</span>
+          <button
+            type="submit"
+            disabled={saving || !note.trim()}
+            className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm whitespace-nowrap shrink-0 hover:opacity-90 disabled:bg-[var(--muted)] disabled:text-[var(--muted-foreground)] disabled:hover:opacity-100 disabled:cursor-not-allowed"
+          >
+            {saving ? "Saving…" : "Add note"}
+          </button>
+        </div>
       </form>
 
       {loading ? (

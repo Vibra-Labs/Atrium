@@ -261,53 +261,65 @@ function SocialLinks({ links }: { links: string[] }) {
   );
 }
 
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_1fr] gap-x-3 items-baseline">
+      <dt className="text-xs text-[var(--muted-foreground)]">{label}</dt>
+      <dd className="min-w-0 break-words">{children}</dd>
+    </div>
+  );
+}
+
 function DetailsSection({ contact }: { contact: ContactDetail }) {
-  const rows: [string, string | null | undefined][] = [
-    ["Email", contact.email],
-    ["Website", contact.website],
-    ["Address", contact.address],
-    ["Source", contact.leadSource?.name],
-  ];
+  const hasAny: boolean = Boolean(
+    contact.email ||
+      contact.phones.length > 0 ||
+      contact.website ||
+      contact.address ||
+      contact.leadSource ||
+      contact.referredBy ||
+      contact.socialLinks.length > 0,
+  );
   return (
     <section>
       <h2 className={headingClass}>Details</h2>
-      <dl className="space-y-1 text-sm">
-        {rows
-          .filter(([, value]) => value)
-          .map(([label, value]) => (
-            <div key={label}>
-              <dt className="sr-only">{label}</dt>
-              <dd className="break-words">{value}</dd>
-            </div>
-          ))}
-        {contact.phones.length > 0 && (
-          <div>
-            <dt className="sr-only">Phone numbers</dt>
-            <dd>
+      {!hasAny ? (
+        <p className="text-sm text-[var(--muted-foreground)]">No details yet.</p>
+      ) : (
+        <dl data-testid="contact-details" className="space-y-2 text-sm">
+          {contact.email && (
+            <DetailRow label="Email">
+              <a href={`mailto:${contact.email}`} className="hover:underline">
+                {contact.email}
+              </a>
+            </DetailRow>
+          )}
+          {contact.phones.length > 0 && (
+            <DetailRow label={contact.phones.length > 1 ? "Phones" : "Phone"}>
               <PhonesList phones={contact.phones} />
-            </dd>
-          </div>
-        )}
-        {contact.socialLinks.length > 0 && (
-          <div>
-            <dt className="sr-only">Social links</dt>
-            <dd>
-              <SocialLinks links={contact.socialLinks} />
-            </dd>
-          </div>
-        )}
-        {contact.referredBy && (
-          <div>
-            <dt className="sr-only">Referred by</dt>
-            <dd>
-              Referred by{" "}
+            </DetailRow>
+          )}
+          {contact.website && <DetailRow label="Website">{contact.website}</DetailRow>}
+          {contact.address && (
+            <DetailRow label="Address">
+              <span className="whitespace-pre-line">{contact.address}</span>
+            </DetailRow>
+          )}
+          {contact.leadSource && <DetailRow label="Source">{contact.leadSource.name}</DetailRow>}
+          {contact.referredBy && (
+            <DetailRow label="Referred by">
               <Link href={`/dashboard/contacts/${contact.referredBy.id}`} className="hover:underline">
                 {contact.referredBy.name}
               </Link>
-            </dd>
-          </div>
-        )}
-      </dl>
+            </DetailRow>
+          )}
+          {contact.socialLinks.length > 0 && (
+            <DetailRow label="Social">
+              <SocialLinks links={contact.socialLinks} />
+            </DetailRow>
+          )}
+        </dl>
+      )}
     </section>
   );
 }

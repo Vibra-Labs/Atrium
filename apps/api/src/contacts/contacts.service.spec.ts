@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { ConflictException, NotFoundException, BadRequestException } from "@nestjs/common";
+import { Prisma } from "@atrium/database";
 import type { PrismaService } from "../prisma/prisma.service";
 import { ContactsService } from "./contacts.service";
 import { ContactsController } from "./contacts.controller";
@@ -72,7 +73,11 @@ const prisma = {
 const revenue = {
   forContact: mock(() => Promise.resolve({ paidCents: 0, outstandingCents: 0, monthly: [] })),
   paidTotals: mock(() => Promise.resolve(new Map<string, number>())),
+  paidPerContactSql: mock(() => Prisma.sql`SELECT 1`),
 };
+
+/** The SQL ranking's result: one page of ids (the ordering itself is covered by integration tests). */
+const queryRaw = mock((..._args: unknown[]) => Promise.resolve([] as Array<{ id: string }>));
 
 function resetAll(): void {
   for (const model of Object.values(prisma)) {
@@ -107,8 +112,9 @@ describe("ContactsService", () => {
 
   beforeEach(() => {
     resetAll();
+    queryRaw.mockClear();
     service = new ContactsService(
-      prisma as unknown as PrismaService,
+      { ...prisma, $queryRaw: queryRaw } as unknown as PrismaService,
       revenue as unknown as ContactRevenueService,
     );
   });
@@ -731,24 +737,38 @@ describe("ContactsService", () => {
       expect(orderByOf()).toEqual([{ name: "asc" }, { id: "asc" }]);
     });
 
-    it("sorts by status in pipeline order and by company with blanks last, across pages", async () => {
-      const rows = [
-        { id: "p", name: "Pat", status: "past_client", followUpAt: null, company: { name: "Zeta" } },
-        { id: "c", name: "Cy", status: "client", followUpAt: null, company: null },
-        { id: "l", name: "Lu", status: "lead", followUpAt: null, company: { name: "acme" } },
-      ];
+    it("ranks status, company and paid in SQL and loads only that page, in its order", async () => {
       prisma.contact.findMany.mockImplementation((args: unknown) => {
         const a = args as { select?: unknown; where: { id?: { in: string[] } } };
-        if (a.select) return Promise.resolve(rows);
-        return Promise.resolve((a.where.id?.in ?? []).map((id) => row(id, id)));
+        if (a.select) return Promise.resolve(["a", "b", "c", "d"].map((id) => ({ id })));
+        // Out of order on purpose: the page must follow the SQL ranking.
+        return Promise.resolve((a.where.id?.in ?? []).toReversed().map((id) => row(id, id)));
       });
-      const ids = async (query: ListContactsQueryDto): Promise<string[]> =>
-        (await service.findAll("org-1", query)).data.map((c) => c.id);
-      expect(await ids({ sort: "status" })).toEqual(["l", "c", "p"]);
-      expect(await ids({ sort: "status", dir: "desc" })).toEqual(["p", "c", "l"]);
-      expect(await ids({ sort: "company" })).toEqual(["l", "p", "c"]);
-      expect(await ids({ sort: "company", dir: "desc" })).toEqual(["p", "l", "c"]);
+      queryRaw.mockImplementation(() => Promise.resolve([{ id: "c" }, { id: "a" }]));
+      revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map([["c", 900]])));
+
+      for (const sort of ["status", "company", "paid"] as const) {
+        prisma.contact.findMany.mockClear();
+        const res = await service.findAll("org-1", { sort, limit: 2, page: 2 });
+        // Only ids are loaded for the whole match.
+        expect((prisma.contact.findMany.mock.calls[0][0] as { select: unknown }).select).toEqual({ id: true });
+        expect(res.data.map((c) => [c.id, c.paidCents])).toEqual([
+          ["c", 900],
+          ["a", 0],
+        ]);
+        expect(res.meta.total).toBe(4);
+        expect(revenue.paidTotals).toHaveBeenLastCalledWith(["c", "a"], "org-1");
+        // LIMIT 2 OFFSET 2 are the query's last two values.
+        expect(queryRaw.mock.calls.at(-1)?.slice(-2)).toEqual([2, 2]);
+      }
+
+      queryRaw.mockClear();
       prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+      const empty = await service.findAll("org-1", { sort: "paid" });
+      expect(empty.data).toEqual([]);
+      expect(queryRaw).not.toHaveBeenCalled();
+      queryRaw.mockImplementation(() => Promise.resolve([]));
+      revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map<string, number>()));
     });
 
     it("sorts by name and follow-up in the database", async () => {
@@ -765,47 +785,6 @@ describe("ContactsService", () => {
         await service.findAll("org-1", query);
         expect(orderByOf()).toEqual(expected);
       }
-    });
-
-    it("sorts by paid total across every page, highest first, ties by name", async () => {
-      prisma.contact.findMany.mockImplementation((args: unknown) => {
-        const a = args as { select?: unknown; where: { id?: { in: string[] } } };
-        if (a.select) {
-          return Promise.resolve([
-            { id: "a", name: "Ann" },
-            { id: "b", name: "Bo" },
-            { id: "c", name: "Cy" },
-            { id: "d", name: "Al" },
-          ]);
-        }
-        const ids = a.where.id?.in ?? [];
-        return Promise.resolve(ids.map((id) => row(id, id)));
-      });
-      revenue.paidTotals.mockImplementation(() =>
-        Promise.resolve(
-          new Map([
-            ["b", 500],
-            ["c", 900],
-          ]),
-        ),
-      );
-      prisma.contact.count.mockImplementation(() => Promise.resolve(4));
-
-      const first = await service.findAll("org-1", { sort: "paid", dir: "desc", limit: 3 });
-      // Whole workspace in one query rather than a huge id list.
-      expect(revenue.paidTotals).toHaveBeenCalledWith(null, "org-1");
-      expect(first.data.map((c) => c.id)).toEqual(["c", "b", "d"]);
-      expect(first.data.map((c) => c.paidCents)).toEqual([900, 500, 0]);
-      expect(first.meta.total).toBe(4);
-
-      const second = await service.findAll("org-1", { sort: "paid", dir: "desc", limit: 3, page: 2 });
-      expect(second.data.map((c) => c.id)).toEqual(["a"]);
-
-      const asc = await service.findAll("org-1", { sort: "paid", dir: "asc", limit: 3 });
-      expect(asc.data.map((c) => c.id)).toEqual(["d", "a", "b"]);
-      prisma.contact.count.mockImplementation(() => Promise.resolve(0));
-      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
-      revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map<string, number>()));
     });
 
     it("ListContactsQueryDto accepts only known sorts and directions", async () => {

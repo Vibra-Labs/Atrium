@@ -1,3 +1,4 @@
+import { Prisma } from "@atrium/database";
 import { CONTACT_STATUSES } from "@atrium/shared";
 import type { ContactSort, SortDirection } from "./contacts.dto";
 
@@ -51,4 +52,15 @@ export function contactSortValue(sort: ContactSort, row: SortableContact, paid: 
     case "paid":
       return paid.get(row.id) ?? 0;
   }
+}
+
+/**
+ * SQL ORDER BY matching `rankRows`: empty (NULL) keys last in both directions, ties by name,
+ * then id. The ICU root collation sorts like `localeCompare`; `table` is the row's alias.
+ */
+export function rankOrderSql(key: Prisma.Sql, dir: SortDirection, table: "c" | "co"): Prisma.Sql {
+  const t = Prisma.raw(table);
+  const direction = Prisma.raw(dir === "desc" ? "DESC" : "ASC");
+  return Prisma.sql`ORDER BY (${key}) IS NULL, ${key} ${direction},
+    ${t}.name COLLATE "und-x-icu", ${t}.id COLLATE "und-x-icu"`;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@atrium/database";
 import type { PrismaService } from "../prisma/prisma.service";
 import { CompaniesService } from "./companies.service";
 import type { ContactRevenueService } from "./contact-revenue.service";
@@ -22,7 +23,9 @@ const prisma = {
 const revenue = {
   forCompany: mock(() => Promise.resolve({ paidCents: 0, outstandingCents: 0, monthly: [] })),
   paidTotalsForCompanies: mock(() => Promise.resolve(new Map<string, number>([["co-1", 1234]]))),
+  paidPerCompanySql: mock(() => Prisma.sql`SELECT 1`),
 };
+const queryRaw = mock((..._args: unknown[]) => Promise.resolve([] as Array<{ id: string }>));
 
 describe("CompaniesService", () => {
   let service: CompaniesService;
@@ -34,7 +37,7 @@ describe("CompaniesService", () => {
     prisma.company.update.mockClear();
     prisma.contact.updateMany.mockClear();
     service = new CompaniesService(
-      prisma as unknown as PrismaService,
+      { ...prisma, $queryRaw: queryRaw } as unknown as PrismaService,
       revenue as unknown as ContactRevenueService,
     );
   });
@@ -66,23 +69,22 @@ describe("CompaniesService", () => {
   it("findAll sorts by paid total across every page", async () => {
     prisma.company.findMany.mockImplementation((args: unknown) => {
       const a = args as { select?: unknown; where: { id?: { in: string[] } } };
-      if (a.select) {
-        return Promise.resolve([
-          { id: "co-1", name: "Acme" },
-          { id: "co-2", name: "Beta" },
-          { id: "co-3", name: "Cove" },
-        ]);
-      }
+      if (a.select) return Promise.resolve(["co-1", "co-2", "co-3"].map((id) => ({ id })));
+      // Out of order on purpose: the page must follow the SQL ranking.
       const ids = a.where.id?.in ?? [];
-      return Promise.resolve(ids.map((id) => ({ id, name: id, _count: { contacts: 0 } })));
+      return Promise.resolve(ids.toReversed().map((id) => ({ id, name: id, _count: { contacts: 0 } })));
     });
+    queryRaw.mockImplementation(() => Promise.resolve([{ id: "co-3" }, { id: "co-1" }]));
     revenue.paidTotalsForCompanies.mockImplementation(() =>
       Promise.resolve(new Map([["co-3", 99], ["co-1", 10]])),
     );
-    const res = await service.findAll("org-1", 1, 2, undefined, "paid", "desc");
-    expect(revenue.paidTotalsForCompanies).toHaveBeenLastCalledWith(null, "org-1");
+    const res = await service.findAll("org-1", 2, 2, undefined, "paid", "desc");
+    expect(revenue.paidTotalsForCompanies).toHaveBeenLastCalledWith(["co-3", "co-1"], "org-1");
     expect(res.data.map((c: { id: string }) => c.id)).toEqual(["co-3", "co-1"]);
     expect(res.data.map((c: { paidCents: number }) => c.paidCents)).toEqual([99, 10]);
+    expect(res.meta.total).toBe(3);
+    // LIMIT 2 OFFSET 2 are the query's last two values.
+    expect(queryRaw.mock.calls.at(-1)?.slice(-2)).toEqual([2, 2]);
     prisma.company.findMany.mockImplementation(() => Promise.resolve([]));
     revenue.paidTotalsForCompanies.mockImplementation(() => Promise.resolve(new Map([["co-1", 1234]])));
   });

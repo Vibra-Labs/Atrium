@@ -3,8 +3,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "./require-name";
 import { paginationArgs, paginatedResponse } from "../common";
 import { ContactRevenueService } from "./contact-revenue.service";
-import { rankRows } from "./contacts-sort";
-import type { Prisma } from "@atrium/database";
+import { rankOrderSql } from "./contacts-sort";
+import { Prisma } from "@atrium/database";
 import type { CompanySort, CreateCompanyDto, SortDirection, UpdateCompanyDto } from "./contacts.dto";
 
 const DUPLICATE_MESSAGE = "A company with this name already exists";
@@ -35,17 +35,17 @@ export class CompaniesService {
     let total: number;
     let paid: Map<string, number>;
     if (sort === "paid") {
-      // Paid totals come from invoices, so rank every match here and fetch only this page.
-      const [matches, allPaid] = await Promise.all([
-        this.prisma.company.findMany({ where, select: { id: true, name: true } }),
-        this.revenue.paidTotalsForCompanies(null, orgId),
+      // Paid totals come from invoices, so SQL ranks the matching ids and returns just this page.
+      const matchIds = (await this.prisma.company.findMany({ where, select: { id: true } })).map((c) => c.id);
+      const pageIds = await this.rankedByPaid(orgId, matchIds, dir, page, limit);
+      const [rows, pagePaid] = await Promise.all([
+        this.prisma.company.findMany({ where: { id: { in: pageIds } }, include }),
+        this.revenue.paidTotalsForCompanies(pageIds, orgId),
       ]);
-      const pageIds = rankRows(matches, dir, (c) => allPaid.get(c.id) ?? 0).slice((page - 1) * limit, page * limit);
-      const rows = await this.prisma.company.findMany({ where: { id: { in: pageIds } }, include });
       const byId = new Map(rows.map((r) => [r.id, r]));
       companies = pageIds.flatMap((id) => byId.get(id) ?? []);
-      total = matches.length;
-      paid = allPaid;
+      total = matchIds.length;
+      paid = pagePaid;
     } else {
       const orderBy: Prisma.CompanyOrderByWithRelationInput[] =
         sort === "people"
@@ -62,6 +62,26 @@ export class CompaniesService {
     }
     const data = companies.map((c) => ({ ...c, paidCents: paid.get(c.id) ?? 0 }));
     return paginatedResponse(data, total, page, limit);
+  }
+
+  /** One page of `ids` by paid total (none counts as 0), ties by name then id. */
+  private async rankedByPaid(
+    orgId: string,
+    ids: string[],
+    dir: SortDirection,
+    page: number,
+    limit: number,
+  ): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const paid = this.revenue.paidPerCompanySql(orgId, Prisma.sql`c."companyId" = ANY(${ids}::text[])`);
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT co.id FROM "company" co
+      LEFT JOIN (${paid}) p ON p."companyId" = co.id
+      WHERE co."organizationId" = ${orgId} AND co.id = ANY(${ids}::text[])
+      ${rankOrderSql(Prisma.sql`COALESCE(p.paid, 0)`, dir, "co")}
+      LIMIT ${limit} OFFSET ${(page - 1) * limit}
+    `;
+    return rows.map((r) => r.id);
   }
 
   async findOne(id: string, orgId: string) {

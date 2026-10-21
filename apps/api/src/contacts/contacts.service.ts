@@ -7,14 +7,14 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@atrium/database";
 import type { Contact } from "@atrium/database";
-import { DEFAULT_LABEL_COLOR, keepMentions, mentionedContactIds } from "@atrium/shared";
+import { CONTACT_STATUSES, DEFAULT_LABEL_COLOR, keepMentions, mentionedContactIds } from "@atrium/shared";
 import type { ContactPhone, ContactRating, ContactStatus } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { ContactRevenueService } from "./contact-revenue.service";
-import { contactSortValue, rankRows } from "./contacts-sort";
+import { contactSortValue, rankOrderSql, rankRows } from "./contacts-sort";
 import type { SortableContact } from "./contacts-sort";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
 import type { ImportMapping } from "./contacts-csv";
@@ -212,15 +212,7 @@ function contactOrderBy(sort: "name" | "followUp", dir: SortDirection): Prisma.C
   return [{ followUpAt: { sort: dir, nulls: "last" } }, { name: "asc" }, { id: "asc" }];
 }
 
-/** Just what ranking a contact by a list column needs. */
-const SORTABLE_SELECT = {
-  id: true,
-  name: true,
-  status: true,
-  followUpAt: true,
-  company: { select: { name: true } },
-} as const;
-
+/** Just what ranking a contact by a list column in memory (the CSV export) needs. */
 function sortableOf(c: {
   id: string;
   name: string;
@@ -260,22 +252,19 @@ export class ContactsService {
     let total: number;
     let paid: Map<string, number>;
     if (sort === "paid" || sort === "status" || sort === "company") {
-      // The database can't order these the way the list shows them (paid comes from invoices,
-      // status follows the pipeline, blank companies go last), so rank every match here.
-      const [matches, allPaid] = await Promise.all([
-        this.prisma.contact.findMany({ where, select: SORTABLE_SELECT }),
-        sort === "paid" ? this.revenue.paidTotals(null, orgId) : Promise.resolve(new Map<string, number>()),
-      ]);
+      // Prisma can't express these orders (paid comes from invoices, status follows the pipeline,
+      // blank companies go last), so SQL ranks the matching ids and returns just this page.
+      const matchIds = (await this.prisma.contact.findMany({ where, select: { id: true } })).map((c) => c.id);
       const dir = query.dir ?? (sort === "paid" ? "desc" : "asc");
-      const pageIds = rankRows(matches.map(sortableOf), dir, (r) => contactSortValue(sort, r, allPaid)).slice(
-        (page - 1) * limit,
-        page * limit,
-      );
-      const rows = await this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include });
+      const pageIds = await this.rankedPage(orgId, matchIds, sort, dir, page, limit);
+      const [rows, pagePaid] = await Promise.all([
+        this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include }),
+        this.revenue.paidTotals(pageIds, orgId),
+      ]);
       const byId = new Map(rows.map((r) => [r.id, r]));
       contacts = pageIds.flatMap((id) => byId.get(id) ?? []);
-      total = matches.length;
-      paid = sort === "paid" ? allPaid : await this.revenue.paidTotals(pageIds, orgId);
+      total = matchIds.length;
+      paid = pagePaid;
     } else {
       [contacts, total] = await Promise.all([
         this.prisma.contact.findMany({
@@ -317,6 +306,39 @@ export class ContactsService {
       portalAccess: portalAccessOf(c, pendingSet),
     }));
     return paginatedResponse(data, total, page, limit);
+  }
+
+  /** One page of `ids` ranked like `rankRows` would rank them for this list column. */
+  private async rankedPage(
+    orgId: string,
+    ids: string[],
+    sort: "paid" | "status" | "company",
+    dir: SortDirection,
+    page: number,
+    limit: number,
+  ): Promise<string[]> {
+    if (ids.length === 0) return [];
+    let join: Prisma.Sql = Prisma.empty;
+    let key: Prisma.Sql;
+    if (sort === "status") {
+      const whens = CONTACT_STATUSES.map((s, i) => Prisma.sql`WHEN ${s} THEN ${Prisma.raw(String(i))}`);
+      key = Prisma.sql`CASE c.status ${Prisma.join(whens, " ")} END`;
+    } else if (sort === "company") {
+      join = Prisma.sql`LEFT JOIN "company" co ON co.id = c."companyId"`;
+      // Case-insensitive like rankRows' localeCompare(base); accents still count here.
+      key = Prisma.sql`lower(co.name COLLATE "und-x-icu")`;
+    } else {
+      const paid = this.revenue.paidPerContactSql(orgId, Prisma.sql`pc."contactId" = ANY(${ids}::text[])`);
+      join = Prisma.sql`LEFT JOIN (${paid}) p ON p."contactId" = c.id`;
+      key = Prisma.sql`COALESCE(p.paid, 0)`;
+    }
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT c.id FROM "contact" c ${join}
+      WHERE c."organizationId" = ${orgId} AND c.id = ANY(${ids}::text[])
+      ${rankOrderSql(key, dir, "c")}
+      LIMIT ${limit} OFFSET ${(page - 1) * limit}
+    `;
+    return rows.map((r) => r.id);
   }
 
   /**

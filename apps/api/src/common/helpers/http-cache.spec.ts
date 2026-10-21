@@ -2,13 +2,21 @@ import { describe, expect, it } from "bun:test";
 import { DOWNLOAD_CACHE, logoCacheControl, shouldCompress } from "./http-cache";
 
 describe("logoCacheControl", () => {
-  it("is immutable when the URL carries the storage key", () => {
-    expect(logoCacheControl("branding/o/logo-1.png")).toBe("public, max-age=31536000, immutable");
+  const stored = "branding/o/logo-1.png";
+
+  it("is immutable when the URL carries the current storage key", () => {
+    expect(logoCacheControl(stored, stored)).toBe("public, max-age=31536000, immutable");
   });
 
   it("is short-lived without a key", () => {
-    expect(logoCacheControl(undefined)).toBe("public, max-age=60");
-    expect(logoCacheControl("")).toBe("public, max-age=60");
+    expect(logoCacheControl(undefined, stored)).toBe("public, max-age=60");
+    expect(logoCacheControl("", stored)).toBe("public, max-age=60");
+  });
+
+  it("is short-lived when the key is stale or made up", () => {
+    // Otherwise any ?k= value would pin whatever logo is current forever.
+    expect(logoCacheControl("branding/o/logo-0.png", stored)).toBe("public, max-age=60");
+    expect(logoCacheControl("anything", stored)).toBe("public, max-age=60");
   });
 
   it("downloads are private for an hour", () => {

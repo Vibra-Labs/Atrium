@@ -164,7 +164,7 @@ export class BrandingController {
 
     const { body, contentType } = await this.storage.download(branding.logoKey);
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", logoCacheControl(key));
+    res.setHeader("Cache-Control", logoCacheControl(key, branding.logoKey));
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     body.pipe(res);
   }

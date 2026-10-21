@@ -6,11 +6,12 @@ export const DOWNLOAD_CACHE = "private, max-age=3600";
 
 /**
  * A logo URL with `?k=<storageKey>` changes whenever the logo does (every
- * upload gets a fresh key), so it can be cached forever. Without the key the
- * URL is not content-addressed.
+ * upload gets a fresh key), so it can be cached forever, but only when the
+ * key is the one stored now: a stale or made-up `k` gets the current bytes,
+ * which must not be pinned under that URL.
  */
-export function logoCacheControl(key: string | undefined): string {
-  return key ? "public, max-age=31536000, immutable" : "public, max-age=60";
+export function logoCacheControl(key: string | undefined, storedKey: string): string {
+  return key && key === storedKey ? "public, max-age=31536000, immutable" : "public, max-age=60";
 }
 
 const DOWNLOAD_PATH = /^\/api\/(files\/[^/]+\/download|updates\/[^/]+\/attachment)$/;

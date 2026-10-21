@@ -31,15 +31,20 @@ const prisma = {
     update: mock(() => Promise.resolve({ id: "c-1" })),
     updateMany: mock(() => Promise.resolve({ count: 1 })),
     delete: mock(() => Promise.resolve({})),
+    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
   },
   company: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
+    findMany: mock((_a: unknown) => Promise.resolve([] as unknown[])),
     create: mock(() => Promise.resolve({ id: "co-new" })),
+    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
     updateMany: mock(() => Promise.resolve({ count: 1 })),
   },
   leadSource: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
+    findMany: mock((_a: unknown) => Promise.resolve([] as unknown[])),
     create: mock(() => Promise.resolve({ id: "ls-new" })),
+    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
   },
   project: { findFirst: mock(() => Promise.resolve(null as unknown)) },
   projectClient: { findFirst: mock(() => Promise.resolve(null as unknown)) },
@@ -52,6 +57,7 @@ const prisma = {
     findMany: mock(() => Promise.resolve([] as unknown[])),
     count: mock(() => Promise.resolve(0)),
     create: mock(() => Promise.resolve({ id: "n-1" })),
+    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
     findFirst: mock(() => Promise.resolve(null as unknown)),
     delete: mock(() => Promise.resolve({})),
   },
@@ -59,12 +65,15 @@ const prisma = {
     findMany: mock(() => Promise.resolve([] as unknown[])),
     count: mock(() => Promise.resolve(0)),
     create: mock(() => Promise.resolve({})),
+    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
   },
   label: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
+    findMany: mock((_a: unknown) => Promise.resolve([] as unknown[])),
     create: mock((a: { data: { name: string } }) => Promise.resolve({ id: `l-${a.data.name}` })),
+    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
   },
-  contactLabel: { createMany: mock(() => Promise.resolve({ count: 0 })) },
+  contactLabel: { createMany: mock((_a: unknown) => Promise.resolve({ count: 0 })) },
   user: { findMany: mock(() => Promise.resolve([] as unknown[])) },
   invitation: { findMany: mock(() => Promise.resolve([] as unknown[])) },
   member: { findFirst: mock(() => Promise.resolve(null as unknown)) },
@@ -75,6 +84,19 @@ const revenue = {
   paidTotals: mock(() => Promise.resolve(new Map<string, number>())),
   paidPerContactSql: mock(() => Prisma.sql`SELECT 1`),
 };
+
+/** The company-size UPDATEs of an import (a tagged template call). */
+const executeRaw = mock((..._args: unknown[]) => Promise.resolve(1));
+
+function sqlOf(call: unknown[]): { text: string; values: unknown[] } {
+  const [strings, ...values] = call as [TemplateStringsArray, ...Prisma.Sql[]];
+  return Prisma.sql(strings, ...values);
+}
+
+/** Every contact row the import's createMany calls were given, in order. */
+function createdRows(): Record<string, unknown>[] {
+  return prisma.contact.createMany.mock.calls.flatMap((c) => (c[0] as { data: Record<string, unknown>[] }).data);
+}
 
 /** The SQL ranking's result: one page of ids (the ordering itself is covered by integration tests). */
 const queryRaw = mock((..._args: unknown[]) => Promise.resolve([] as Array<{ id: string }>));
@@ -96,6 +118,18 @@ function resetAll(): void {
   prisma.contactEvent.count.mockImplementation(() => Promise.resolve(0));
   prisma.invitation.findMany.mockImplementation(() => Promise.resolve([]));
   prisma.member.findFirst.mockImplementation(() => Promise.resolve(null));
+  prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) => Promise.resolve({ id: "c-1", ...a.data }));
+  const counted = (a: { data: unknown[] }) => Promise.resolve({ count: a.data.length });
+  for (const m of [prisma.contact, prisma.company, prisma.leadSource, prisma.contactNote, prisma.contactEvent, prisma.label]) {
+    m.createMany.mockImplementation(counted);
+  }
+  prisma.company.findMany.mockImplementation(() => Promise.resolve([]));
+  prisma.leadSource.findMany.mockImplementation(() => Promise.resolve([]));
+  prisma.label.findMany.mockImplementation(() => Promise.resolve([]));
+  prisma.contactLabel.createMany.mockImplementation(() => Promise.resolve({ count: 0 }));
+  prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+  executeRaw.mockClear();
+  executeRaw.mockImplementation(() => Promise.resolve(1));
 }
 
 async function rejects(p: Promise<unknown>): Promise<unknown> {
@@ -114,7 +148,7 @@ describe("ContactsService", () => {
     resetAll();
     queryRaw.mockClear();
     service = new ContactsService(
-      { ...prisma, $queryRaw: queryRaw } as unknown as PrismaService,
+      { ...prisma, $queryRaw: queryRaw, $executeRaw: executeRaw } as unknown as PrismaService,
       revenue as unknown as ContactRevenueService,
     );
   });
@@ -1053,15 +1087,17 @@ describe("ContactsService", () => {
     } as const;
 
     it("import skips existing email case-insensitively and duplicates within the file", async () => {
-      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "x" }));
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([{ id: "x", email: "ann@example.com" }]));
       const csv = "Name,Email\nAnn,ANN@Example.com\n";
       const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
       expect(res).toEqual({ created: 0, skipped: [{ row: 2, reason: "Email already exists" }], warnings: [] });
-      expect(prisma.contact.findFirst).toHaveBeenCalledWith({
-        where: { organizationId: "org-1", email: "ann@example.com" },
+      expect(prisma.contact.findMany).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", email: { in: ["ann@example.com"] } },
+        select: { id: true, email: true },
       });
+      expect(prisma.contact.createMany).not.toHaveBeenCalled();
 
-      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(null));
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
       const dup = "Name,Email\nAnn,a@x.com\nAnn2,A@X.com\n";
       const res2 = await service.importCsv({ csv: dup, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
       expect(res2).toEqual({ created: 1, skipped: [{ row: 3, reason: "Email already exists" }], warnings: [] });
@@ -1071,53 +1107,75 @@ describe("ContactsService", () => {
       const csv = "Name,Email\n,a@x.com\nBob,b@x.com\n";
       const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
       expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Missing name" }], warnings: [] });
-      expect(prisma.contactEvent.create).toHaveBeenCalledTimes(1);
+      const [contact] = createdRows();
+      expect(prisma.contactEvent.createMany).toHaveBeenCalledWith({
+        data: [{ contactId: contact.id, organizationId: "org-1", type: "contact_created", detail: "Contact created" }],
+      });
     });
 
-    it("import find-or-creates company, source and tags, and stores notes", async () => {
-      const csv = "Name,Email,Company,Source,Tags,Notes\nAnn,a@x.com,Acme,Podcast,vip; hot,Met at expo\n";
+    it("import find-or-creates company, source and tags (case-insensitively), and stores notes", async () => {
+      prisma.company.findMany.mockImplementation(() => Promise.resolve([{ id: "co-1", name: "ACME" }]));
+      const csv = [
+        "Name,Email,Company,Source,Tags,Notes",
+        "Ann,a@x.com,Acme,Podcast,vip; hot,Met at expo",
+        "Bo,b@x.com,acme,podcast,VIP,",
+      ].join("\n");
       const res = await service.importCsv({ csv, mapping }, "org-1", "u-1");
-      expect(res.created).toBe(1);
-      expect(prisma.company.create).toHaveBeenCalledTimes(1);
-      expect(prisma.leadSource.create).toHaveBeenCalledTimes(1);
-      expect(prisma.label.create).toHaveBeenCalledTimes(2);
+      expect(res.created).toBe(2);
+      expect(prisma.company.createMany).not.toHaveBeenCalled();
+      expect(prisma.leadSource.createMany).toHaveBeenCalledTimes(1);
+      const sources = (prisma.leadSource.createMany.mock.calls[0][0] as { data: { name: string }[] }).data;
+      expect(sources.map((s) => s.name)).toEqual(["Podcast"]);
+      const labels = (prisma.label.createMany.mock.calls[0][0] as { data: { id: string; name: string }[] }).data;
+      expect(labels.map((l) => l.name)).toEqual(["vip", "hot"]);
+      const [ann, bo] = createdRows();
+      expect([ann.companyId, bo.companyId]).toEqual(["co-1", "co-1"]);
+      expect(bo.leadSourceId).toBe(ann.leadSourceId);
+      const [vip, hot] = labels.map((l) => l.id);
       expect(prisma.contactLabel.createMany).toHaveBeenCalledWith({
         data: [
-          { contactId: "c-1", labelId: "l-vip" },
-          { contactId: "c-1", labelId: "l-hot" },
+          { contactId: ann.id, labelId: vip },
+          { contactId: ann.id, labelId: hot },
+          { contactId: bo.id, labelId: vip },
         ],
         skipDuplicates: true,
       });
-      expect(prisma.contactNote.create).toHaveBeenCalledWith({
-        data: { contactId: "c-1", organizationId: "org-1", authorId: "u-1", content: "Met at expo" },
+      expect(prisma.contactNote.createMany).toHaveBeenCalledWith({
+        data: [{ contactId: ann.id, organizationId: "org-1", authorId: "u-1", content: "Met at expo" }],
       });
+    });
+
+    it("import uses the company another request created first under the same name", async () => {
+      prisma.company.createMany.mockImplementation(() => Promise.resolve({ count: 0 }));
+      prisma.company.findMany.mockImplementation((args: unknown) => {
+        const name = (args as { where: { name: { mode?: string } } }).where.name;
+        return Promise.resolve(name.mode ? [] : [{ id: "co-winner", name: "Acme" }]);
+      });
+      const res = await service.importCsv({ csv: "Name,Company\nAnn,Acme\n", mapping }, "org-1", "u-1");
+      expect(res.created).toBe(1);
+      expect(createdRows()[0].companyId).toBe("co-winner");
     });
 
     it("import truncates the source name to the lead source limit (100)", async () => {
       const csv = `Name,Source\nAnn,${"s".repeat(150)}\n`;
       await service.importCsv({ csv, mapping: { Name: "name", Source: "source" } }, "org-1", "u-1");
-      expect(prisma.leadSource.create).toHaveBeenCalledWith({
-        data: { organizationId: "org-1", name: "s".repeat(100) },
+      expect(prisma.leadSource.createMany).toHaveBeenCalledWith({
+        data: [{ id: expect.any(String), organizationId: "org-1", name: "s".repeat(100) }],
+        skipDuplicates: true,
       });
     });
 
     it("import parses status case-insensitively, defaulting to lead", async () => {
       const csv = "Name,Status\nA,CLIENT\nB,Past Client\nC,\n";
       await service.importCsv({ csv, mapping: { Name: "name", Status: "status" } }, "org-1", "u-1");
-      const statuses = prisma.contact.create.mock.calls.map(
-        (c) => (c[0] as { data: { status: string } }).data.status,
-      );
-      expect(statuses).toEqual(["client", "past_client", "lead"]);
+      expect(createdRows().map((r) => r.status)).toEqual(["client", "past_client", "lead"]);
     });
 
     it("import stores every phone column, the follow-up, the referrer and fills an empty company size", async () => {
-      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-bo", name: "Bo" }));
-      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
-        Promise.resolve({ id: "c-1", ...a.data }),
-      );
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([{ id: "c-bo", email: "bo@x.com" }]));
       const csv = [
-        "Name,Mobile,Work Phone,Company,Referred by,Follow up,Revenue,Employees",
-        "Ann,+1 555 0100,+1 555 0200,Acme,bo@x.com,2026-11-05,1000,12",
+        "Name,Mobile,Work Phone,Company,Referred by,Follow up,Repeat,Revenue,Employees",
+        "Ann,+1 555 0100,+1 555 0200,Acme,bo@x.com,2099-11-05,30,1000,12",
       ].join("\n");
       const res = await service.importCsv(
         {
@@ -1129,6 +1187,7 @@ describe("ContactsService", () => {
             Company: "company",
             "Referred by": "referredBy",
             "Follow up": "followUpAt",
+            Repeat: "followUpEveryDays",
             Revenue: "companyRevenue",
             Employees: "companyEmployees",
           },
@@ -1137,11 +1196,7 @@ describe("ContactsService", () => {
         "u-1",
       );
       expect(res).toEqual({ created: 1, skipped: [], warnings: [] });
-      expect(prisma.contact.findFirst).toHaveBeenCalledWith({
-        where: { organizationId: "org-1", email: "bo@x.com" },
-        select: { id: true },
-      });
-      const data = (prisma.contact.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      const [data] = createdRows();
       expect(data).toMatchObject({
         referredById: "c-bo",
         phone: "+1 555 0100",
@@ -1149,69 +1204,116 @@ describe("ContactsService", () => {
           { label: "Mobile", number: "+1 555 0100" },
           { label: "Work", number: "+1 555 0200" },
         ],
+        followUpAt: new Date("2099-11-05T12:00:00.000Z"),
+        followUpEveryDays: 30,
+        followUpOwnerId: "u-1",
+        followUpNotifiedAt: null,
       });
-      expect(prisma.contact.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            followUpAt: new Date("2026-11-05T12:00:00.000Z"),
-            followUpOwnerId: "u-1",
-          }),
-        }),
-      );
-      expect(prisma.company.updateMany).toHaveBeenCalledWith({
-        where: { id: "co-new", organizationId: "org-1", annualRevenue: null },
-        data: { annualRevenue: 1000 },
-      });
-      expect(prisma.company.updateMany).toHaveBeenCalledWith({
-        where: { id: "co-new", organizationId: "org-1", employeeCount: null },
-        data: { employeeCount: 12 },
-      });
+      // One UPDATE per size column, filling only where the company has no value yet.
+      expect(executeRaw).toHaveBeenCalledTimes(2);
+      const [revenueSql, employeesSql] = executeRaw.mock.calls.map((c) => sqlOf(c));
+      expect(revenueSql.text).toContain(`SET "annualRevenue" = v.value`);
+      expect(revenueSql.text).toContain(`c."annualRevenue" IS NULL`);
+      expect(revenueSql.values).toEqual([data.companyId, 1000, "org-1"]);
+      expect(employeesSql.text).toContain(`c."employeeCount" IS NULL`);
+      expect(employeesSql.values).toEqual([data.companyId, 12, "org-1"]);
     });
 
-    it("import saves each extra on its own: a failed tag save warns but the follow-up and company size still land", async () => {
-      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
-        Promise.resolve({ id: "c-1", ...a.data }),
+    it("import fills a company's size from the first row that has it", async () => {
+      const csv = "Name,Company,Revenue\nA,Acme,\nB,acme,500\nC,ACME,900\n";
+      await service.importCsv(
+        { csv, mapping: { Name: "name", Company: "company", Revenue: "companyRevenue" } },
+        "org-1",
+        "u-1",
       );
-      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
-      prisma.label.findFirst.mockImplementation(() => Promise.reject(new Error("db down")));
-      const csv = "Name,Company,Tags,Follow up,Employees\nAnn,Acme,vip,2099-01-02,12\n";
+      expect(executeRaw).toHaveBeenCalledTimes(1);
+      expect(sqlOf(executeRaw.mock.calls[0]).values).toEqual([createdRows()[0].companyId, 500, "org-1"]);
+    });
+
+    it("import saves each extra on its own: a failed tag save warns but the note and company size still land", async () => {
+      prisma.contactLabel.createMany.mockImplementation(() => Promise.reject(new Error("db down")));
+      const csv = "Name,Company,Tags,Notes,Employees\nAnn,Acme,vip,Hi,12\nBo,,,,\n";
       const res = await service.importCsv(
         {
           csv,
-          mapping: { Name: "name", Company: "company", Tags: "tags", "Follow up": "followUpAt", Employees: "companyEmployees" },
+          mapping: { Name: "name", Company: "company", Tags: "tags", Notes: "notes", Employees: "companyEmployees" },
         },
         "org-1",
         "u-1",
       );
-      expect(res.created).toBe(1);
+      expect(res.created).toBe(2);
       expect(res.warnings).toEqual([{ row: 2, reason: "Tags couldn't be saved" }]);
-      expect(prisma.contact.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ followUpAt: new Date("2099-01-02T12:00:00.000Z") }) }),
+      // The bulk insert and then Ann's own retry.
+      expect(prisma.contactLabel.createMany).toHaveBeenCalledTimes(2);
+      expect(prisma.contactNote.createMany).toHaveBeenCalledTimes(1);
+      expect(executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it("import warns about a company size that couldn't be saved, once per row", async () => {
+      executeRaw.mockImplementation(() => Promise.reject(new Error("db down")));
+      const csv = "Name,Company,Revenue,Employees\nAnn,Acme,5,12\n";
+      const res = await service.importCsv(
+        {
+          csv,
+          mapping: { Name: "name", Company: "company", Revenue: "companyRevenue", Employees: "companyEmployees" },
+        },
+        "org-1",
+        "u-1",
       );
-      expect(prisma.company.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { employeeCount: 12 } }),
-      );
-      prisma.label.findFirst.mockImplementation(() => Promise.resolve(null));
+      expect(res).toEqual({ created: 1, skipped: [], warnings: [{ row: 2, reason: "The company size couldn't be saved" }] });
     });
 
     it("import keeps a past follow-up as overdue without sending a reminder for it", async () => {
-      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
-        Promise.resolve({ id: "c-1", ...a.data }),
-      );
-      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
       const csv = "Name,Follow up\nAnn,2020-01-02\n";
       await service.importCsv({ csv, mapping: { Name: "name", "Follow up": "followUpAt" } }, "org-1", "u-1");
-      expect(prisma.contact.updateMany).toHaveBeenCalledWith({
-        where: { id: "c-1", organizationId: "org-1" },
-        data: { followUpNotifiedAt: expect.any(Date) },
+      expect(createdRows()[0]).toMatchObject({
+        followUpAt: new Date("2020-01-02T12:00:00.000Z"),
+        followUpEveryDays: null,
+        followUpOwnerId: "u-1",
+        followUpNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it("a failed batch is retried row by row, and only the bad row is skipped", async () => {
+      prisma.contact.createMany.mockImplementation(() => Promise.reject(new Error("batch failed")));
+      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
+        a.data.name === "Bad" ? Promise.reject(new Error("boom")) : Promise.resolve({ id: "c-x", ...a.data }),
+      );
+      const csv = "Name,Notes\nAnn,hi\nBad,x\nCy,\n";
+      const res = await service.importCsv({ csv, mapping: { Name: "name", Notes: "notes" } }, "org-1", "u-1");
+      expect(res).toEqual({ created: 2, skipped: [{ row: 3, reason: "Invalid row" }], warnings: [] });
+      const events = (prisma.contactEvent.createMany.mock.calls[0][0] as { data: unknown[] }).data;
+      expect(events).toHaveLength(2);
+      const notes = (prisma.contactNote.createMany.mock.calls[0][0] as { data: { content: string }[] }).data;
+      expect(notes.map((n) => n.content)).toEqual(["hi"]);
+    });
+
+    it("a row whose referrer row couldn't be written is kept without the referrer", async () => {
+      prisma.contact.createMany.mockImplementation(() => Promise.reject(new Error("batch failed")));
+      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) => {
+        if (a.data.name === "Rea") return Promise.reject(new Error("boom"));
+        if (a.data.referredById) return Promise.reject(Object.assign(new Error("fk"), { code: "P2003" }));
+        return Promise.resolve({ id: "c-x", ...a.data });
+      });
+      const csv = "Name,Referred by\nRea,\nAnn,rea\n";
+      const res = await service.importCsv(
+        { csv, mapping: { Name: "name", "Referred by": "referredBy" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({
+        created: 1,
+        skipped: [{ row: 2, reason: "Invalid row" }],
+        warnings: [{ row: 3, reason: 'Referred by "rea" matches no contact; left out' }],
       });
     });
 
     it("an unexpected failure on one row doesn't make a later row with the same email a duplicate", async () => {
+      prisma.contact.createMany.mockImplementation(() => Promise.reject(new Error("batch failed")));
       let calls = 0;
       prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) => {
         calls++;
-        return calls === 1 ? Promise.reject(new Error("boom")) : Promise.resolve({ id: "c-2", ...a.data });
+        return calls === 1 ? Promise.reject(new Error("boom")) : Promise.resolve({ id: "c-x", ...a.data });
       });
       const csv = "Name,Email\nAnn,a@x.com\nAnn again,a@x.com\nAnn third,A@x.com\n";
       const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
@@ -1220,9 +1322,41 @@ describe("ContactsService", () => {
         { row: 2, reason: "Invalid row" },
         { row: 4, reason: "Email already exists" },
       ]);
-      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
-        Promise.resolve({ id: "c-1", ...a.data }),
+      expect(prisma.contact.create.mock.calls.map((c) => (c[0] as { data: { name: string } }).data.name)).toEqual([
+        "Ann",
+        "Ann again",
+      ]);
+    });
+
+    it("an email another request took meanwhile is skipped as existing", async () => {
+      prisma.contact.createMany.mockImplementation(() =>
+        Promise.reject(Object.assign(new Error("unique"), { code: "P2002" })),
       );
+      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
+        a.data.email === "a@x.com"
+          ? Promise.reject(Object.assign(new Error("unique"), { code: "P2002" }))
+          : Promise.resolve({ id: "c-x", ...a.data }),
+      );
+      const csv = "Name,Email\nAnn,a@x.com\nAnn again,a@x.com\nBo,b@x.com\n";
+      const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
+      expect(res).toEqual({
+        created: 1,
+        skipped: [
+          { row: 2, reason: "Email already exists" },
+          { row: 3, reason: "Email already exists" },
+        ],
+        warnings: [],
+      });
+    });
+
+    it("import writes contacts in chunks of 500", async () => {
+      const csv = "Name\n" + Array.from({ length: 1200 }, (_, i) => `n${i}`).join("\n");
+      const res = await service.importCsv({ csv, mapping: { Name: "name" } }, "org-1", "u-1");
+      expect(res.created).toBe(1200);
+      expect(
+        prisma.contact.createMany.mock.calls.map((c) => (c[0] as { data: unknown[] }).data.length),
+      ).toEqual([500, 500, 200]);
+      expect(prisma.contact.create).not.toHaveBeenCalled();
     });
 
     it("check skips a repeated email in the file, like the import", async () => {
@@ -1234,26 +1368,37 @@ describe("ContactsService", () => {
 
     it("import leaves out a referrer it can't find or that matches several contacts", async () => {
       prisma.contact.findMany.mockImplementation((args: unknown) => {
-        const name = (args as { where: { name?: { equals: string } } }).where.name?.equals;
-        return Promise.resolve(name === "Sam" ? [{ id: "s1" }, { id: "s2" }] : []);
+        const name = (args as { where: { name?: { in: string[] } } }).where.name;
+        return Promise.resolve(
+          name
+            ? [
+                { id: "s1", name: "Sam" },
+                { id: "s2", name: "SAM" },
+              ]
+            : [],
+        );
       });
-      const csv = "Name,Referred by\nAnn,Nobody\nBo,Sam\n";
+      const csv = "Name,Referred by\nAnn,Nobody\nBo,Sam\nCy,ann\nDi,bo\nBo,\nEd,BO\n";
       const res = await service.importCsv(
         { csv, mapping: { Name: "name", "Referred by": "referredBy" } },
         "org-1",
         "u-1",
       );
-      expect(res.created).toBe(2);
+      expect(res.created).toBe(6);
+      // Di names the Bo from row 3; by row 7 there are two Bos.
       expect(res.warnings).toEqual([
         { row: 2, reason: 'Referred by "Nobody" matches no contact; left out' },
         { row: 3, reason: 'Referred by "Sam" matches several contacts; left out' },
+        { row: 7, reason: 'Referred by "BO" matches several contacts; left out' },
       ]);
       expect(prisma.contact.findMany).toHaveBeenCalledWith({
-        where: { organizationId: "org-1", name: { equals: "Sam", mode: "insensitive" } },
-        select: { id: true },
-        take: 2,
+        where: { organizationId: "org-1", name: { in: ["Nobody", "Sam", "ann", "bo", "BO"], mode: "insensitive" } },
+        select: { id: true, name: true },
+        orderBy: { createdAt: "asc" },
       });
-      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+      const rows = createdRows();
+      expect(rows[2].referredById).toBe(rows[0].id);
+      expect(rows[3].referredById).toBe(rows[1].id);
     });
 
     it("check previews the import without writing, including existing emails and unknown referrers", async () => {
@@ -1464,7 +1609,7 @@ describe("ContactsService", () => {
         "u-1",
       );
       expect(res).toEqual({ created: 2, skipped: [{ row: 4, reason: "Missing name" }], warnings: [] });
-      const rows = prisma.contact.create.mock.calls.map((c) => (c[0] as { data: Record<string, unknown> }).data);
+      const rows = createdRows();
       expect(rows[0]).toMatchObject({ name: "Ann Lee", firstName: "Ann", lastName: "Lee" });
       expect(rows[1]).toMatchObject({ name: "Cher", firstName: "Cher", lastName: null });
     });
@@ -1489,7 +1634,7 @@ describe("ContactsService", () => {
         "org-1",
         "u-1",
       );
-      expect((prisma.contact.create.mock.calls[0][0] as { data: Record<string, unknown> }).data).toMatchObject({
+      expect(createdRows()[0]).toMatchObject({
         jobTitle: "CTO",
         department: "Eng",
         rating: "hot",
@@ -1509,9 +1654,7 @@ describe("ContactsService", () => {
         skipped: [{ row: 2, reason: "Invalid rating" }],
         warnings: [{ row: 3, reason: `Social link "notaurl" isn't a web address; left out` }],
       });
-      const links = prisma.contact.create.mock.calls.map(
-        (c) => (c[0] as { data: { socialLinks: string[] } }).data.socialLinks,
-      );
+      const links = createdRows().map((r) => r.socialLinks);
       expect(links).toEqual([[], ["https://c.dev"]]);
     });
 
@@ -1531,9 +1674,7 @@ describe("ContactsService", () => {
         "u-1",
       );
       expect(res).toEqual({ created: 2, skipped: [], warnings: [] });
-      const links = prisma.contact.create.mock.calls.map(
-        (c) => (c[0] as { data: { socialLinks: string[] } }).data.socialLinks,
-      );
+      const links = createdRows().map((r) => r.socialLinks);
       expect(links).toEqual([["https://x.com/acme", "https://linkedin.com/in/ann"], ["https://x.com/bo_d"]]);
     });
 
@@ -1546,9 +1687,7 @@ describe("ContactsService", () => {
         "u-1",
       );
       expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Invalid email" }], warnings: [] });
-      const data = (prisma.contact.create.mock.calls[0][0] as {
-        data: { name: string; address: string };
-      }).data;
+      const data = createdRows()[0] as { name: string; address: string };
       expect(data.name).toHaveLength(200);
       expect(data.address).toHaveLength(500);
     });

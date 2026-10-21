@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@atrium/database";
 import type { Contact } from "@atrium/database";
-import { CONTACT_STATUSES, DEFAULT_LABEL_COLOR, keepMentions, mentionedContactIds } from "@atrium/shared";
+import { CONTACT_STATUSES, keepMentions, mentionedContactIds } from "@atrium/shared";
 import type { ContactPhone, ContactRating, ContactStatus } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
@@ -18,8 +18,10 @@ import { contactSortValue, rankOrderSql, rankRows } from "./contacts-sort";
 import type { SortableContact } from "./contacts-sort";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
 import type { ImportMapping } from "./contacts-csv";
-import { planImport } from "./contacts-import";
-import type { ImportDraft, PlannedRow } from "./contacts-import";
+import { planImport, referrerWarning } from "./contacts-import";
+import type { PlannedRow, RowNote } from "./contacts-import";
+import { ContactImportWriter } from "./contacts-import-writer";
+import type { ImportResult } from "./contacts-import-writer";
 import { TIMELINE_MAX_PAGE } from "./contacts.dto";
 import type {
   ContactSort,
@@ -31,6 +33,8 @@ import type {
 } from "./contacts.dto";
 import { requireName } from "./require-name";
 import {
+  aboutText,
+  contactCreateFields,
   createNames,
   normalizeSocialLinks,
   optionalText,
@@ -42,11 +46,6 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOO_MANY_ROWS = "CSV has more than 5,000 rows";
 const IMPORT_SAMPLE_SIZE = 5;
-
-export interface RowNote {
-  row: number;
-  reason: string;
-}
 
 /** One contact as the import preview shows it. */
 export interface ImportSample {
@@ -63,11 +62,6 @@ export interface ImportSample {
   referredBy: string | null;
   companyRevenue: number | null;
   companyEmployees: number | null;
-}
-
-function referrerWarning(value: string, problem: "none" | "several"): string {
-  const what = problem === "none" ? "matches no contact" : "matches several contacts";
-  return `Referred by "${value.slice(0, 100)}" ${what}; left out`;
 }
 
 const STATUS_LABELS: Record<ContactStatus, string> = {
@@ -90,15 +84,6 @@ function formatPhones(phones: ContactPhone[]): string {
 
 function readLinks(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-/**
- * "About" text to store: blank or null becomes "" (cleared), never null, because null marks a
- * contact the legacy client-profile import may still fill in.
- */
-function aboutText(value: string | null | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  return value?.trim() ?? "";
 }
 
 function portalAccessOf(
@@ -398,96 +383,9 @@ export class ContactsService {
     dto: { csv: string; mapping: ImportMapping },
     orgId: string,
     userId: string,
-  ): Promise<{ created: number; skipped: RowNote[]; warnings: RowNote[] }> {
+  ): Promise<ImportResult> {
     const planned = this.planCsv(dto.csv, dto.mapping);
-    const skipped: RowNote[] = [];
-    // Non-fatal: the contact was imported, but something in the row was left out.
-    const warnings: RowNote[] = [];
-    let created = 0;
-    // Only emails this import actually wrote make a later row a duplicate.
-    const createdEmails = new Set<string>();
-
-    for (const planRow of planned) {
-      if ("skip" in planRow) {
-        skipped.push({ row: planRow.row, reason: planRow.skip });
-        continue;
-      }
-      const { row, draft } = planRow;
-      const email = draft.contact.email;
-      if (email && createdEmails.has(email)) {
-        skipped.push({ row, reason: "Email already exists" });
-        continue;
-      }
-      // Rows are written in order, so a referrer added earlier in the file is found here.
-      const referrer = draft.referredBy ? await this.findReferrer(draft.referredBy, orgId) : null;
-      let contact: ContactRecord;
-      try {
-        contact = await this.create(
-          { ...draft.contact, referredById: typeof referrer === "string" ? referrer : undefined },
-          orgId,
-        );
-      } catch (e) {
-        if (e instanceof ConflictException) {
-          skipped.push({ row, reason: "Email already exists" });
-        } else {
-          this.logger.error(`Contact import row ${row} failed`, e);
-          skipped.push({ row, reason: "Invalid row" });
-        }
-        continue;
-      }
-      created++;
-      if (email) createdEmails.add(email);
-      for (const reason of planRow.warnings) warnings.push({ row, reason });
-      if (referrer && typeof referrer !== "string") {
-        warnings.push({ row, reason: referrerWarning(draft.referredBy, referrer.problem) });
-      }
-      // The contact exists; each extra is saved on its own so one failure doesn't drop the rest.
-      const extras: [string, () => Promise<unknown>][] = [
-        ["Tags", () => this.attachTags(contact.id, draft.tags, orgId)],
-        [
-          "The note",
-          async () => {
-            if (!draft.notes) return;
-            await this.prisma.contactNote.create({
-              data: { contactId: contact.id, organizationId: orgId, authorId: userId, content: draft.notes },
-            });
-          },
-        ],
-        ["The follow-up", () => this.importFollowUp(contact.id, draft, orgId, userId)],
-        [
-          "The company size",
-          async () => {
-            if (contact.companyId) await this.fillCompanySize(contact.companyId, draft.company, orgId);
-          },
-        ],
-      ];
-      for (const [what, save] of extras) {
-        try {
-          await save();
-        } catch (e) {
-          this.logger.error(`Contact import row ${row}: ${what.toLowerCase()} failed`, e);
-          warnings.push({ row, reason: `${what} couldn't be saved` });
-        }
-      }
-    }
-    return { created, skipped, warnings };
-  }
-
-  /** A past date stays overdue on the list but doesn't send a reminder for every imported row. */
-  private async importFollowUp(contactId: string, draft: ImportDraft, orgId: string, userId: string): Promise<void> {
-    if (!draft.followUpAt) return;
-    await this.setFollowUp(
-      contactId,
-      { followUpAt: draft.followUpAt, everyDays: draft.followUpEveryDays ?? undefined },
-      orgId,
-      userId,
-    );
-    if (draft.followUpAt < new Date().toISOString().slice(0, 10)) {
-      await this.prisma.contact.updateMany({
-        where: { id: contactId, organizationId: orgId },
-        data: { followUpNotifiedAt: new Date() },
-      });
-    }
+    return new ContactImportWriter(this.prisma, this.logger, orgId, userId).run(planned);
   }
 
   /** Dry run of importCsv: what would be created, skipped and left out, with nothing written. */
@@ -580,40 +478,6 @@ export class ContactsService {
     return planImport(headers, data, mapping);
   }
 
-  /** A contact id, or why none was used: an email must match one contact, a name exactly one. */
-  private async findReferrer(value: string, orgId: string): Promise<string | { problem: "none" | "several" }> {
-    if (value.includes("@")) {
-      const byEmail = await this.prisma.contact.findFirst({
-        where: { organizationId: orgId, email: normalizeEmail(value) },
-        select: { id: true },
-      });
-      return byEmail ? byEmail.id : { problem: "none" };
-    }
-    const byName = await this.prisma.contact.findMany({
-      where: { organizationId: orgId, name: { equals: value, mode: "insensitive" } },
-      select: { id: true },
-      take: 2,
-    });
-    if (byName.length === 1) return byName[0].id;
-    return { problem: byName.length ? "several" : "none" };
-  }
-
-  /** Imported size only fills a company's empty fields; values typed in the app win. */
-  private async fillCompanySize(companyId: string, size: ImportDraft["company"], orgId: string): Promise<void> {
-    if (size.annualRevenue !== undefined) {
-      await this.prisma.company.updateMany({
-        where: { id: companyId, organizationId: orgId, annualRevenue: null },
-        data: { annualRevenue: size.annualRevenue },
-      });
-    }
-    if (size.employeeCount !== undefined) {
-      await this.prisma.company.updateMany({
-        where: { id: companyId, organizationId: orgId, employeeCount: null },
-        data: { employeeCount: size.employeeCount },
-      });
-    }
-  }
-
   async exportCsv(orgId: string, query: ListContactsQueryDto): Promise<string> {
     const pending = await this.pendingInviteEmails(orgId);
     const found = await this.prisma.contact.findMany({
@@ -668,30 +532,6 @@ export class ContactsService {
     return toCsv(columns, contacts);
   }
 
-  private async attachTags(contactId: string, names: string[], orgId: string): Promise<void> {
-    if (names.length === 0) return;
-    const labelIds: string[] = [];
-    for (const name of names) {
-      const where = { organizationId: orgId, name: { equals: name, mode: "insensitive" as const } };
-      let label = await this.prisma.label.findFirst({ where });
-      if (!label) {
-        try {
-          label = await this.prisma.label.create({
-            data: { organizationId: orgId, name, color: DEFAULT_LABEL_COLOR },
-          });
-        } catch (e) {
-          if ((e as { code?: string })?.code !== "P2002") throw e;
-          label = await this.prisma.label.findFirst({ where });
-        }
-      }
-      if (label && !labelIds.includes(label.id)) labelIds.push(label.id);
-    }
-    await this.prisma.contactLabel.createMany({
-      data: labelIds.map((labelId) => ({ contactId, labelId })),
-      skipDuplicates: true,
-    });
-  }
-
   async findOne(id: string, orgId: string) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, organizationId: orgId },
@@ -730,9 +570,7 @@ export class ContactsService {
   }
 
   async create(dto: CreateContactDto, orgId: string): Promise<ContactRecord> {
-    const names = createNames(dto);
-    const socialLinks = dto.socialLinks === undefined ? undefined : normalizeSocialLinks(dto.socialLinks);
-    const phones = resolvePhones(dto, []);
+    const fields = contactCreateFields(dto);
     const email = dto.email ? normalizeEmail(dto.email) : undefined;
     if (email) await this.assertEmailFree(email, orgId);
     const links = await this.resolveLinks(dto, orgId);
@@ -740,21 +578,7 @@ export class ContactsService {
     let contact;
     try {
       contact = await this.prisma.contact.create({
-        data: {
-          organizationId: orgId,
-          ...names,
-          email,
-          ...phones,
-          socialLinks,
-          jobTitle: optionalText(dto.jobTitle),
-          department: optionalText(dto.department),
-          rating: dto.rating,
-          website: dto.website,
-          address: dto.address,
-          description: aboutText(dto.description),
-          status: dto.status,
-          ...links,
-        },
+        data: { organizationId: orgId, ...fields, email, ...links },
       });
     } catch (e) {
       throw this.mapDuplicate(e);

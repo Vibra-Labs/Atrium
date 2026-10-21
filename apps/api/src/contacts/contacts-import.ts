@@ -30,6 +30,16 @@ export interface ImportDraft {
   company: { annualRevenue?: number; employeeCount?: number };
 }
 
+export interface RowNote {
+  row: number;
+  reason: string;
+}
+
+export function referrerWarning(value: string, problem: "none" | "several"): string {
+  const what = problem === "none" ? "matches no contact" : "matches several contacts";
+  return `Referred by "${value.slice(0, 100)}" ${what}; left out`;
+}
+
 /** `row` is the 1-based line in the file (the header is row 1). */
 export type PlannedRow =
   | { row: number; draft: ImportDraft; warnings: string[] }

@@ -206,3 +206,52 @@ export function optionalText(value: string | null | undefined): string | null | 
   if (value === undefined) return undefined;
   return value?.trim() || null;
 }
+
+/**
+ * "About" text to store: blank or null becomes "" (cleared), never null, because null marks a
+ * contact the legacy client-profile import may still fill in.
+ */
+export function aboutText(value: string | null | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value?.trim() ?? "";
+}
+
+interface CreateFieldsInput extends NameInput, PhoneInput {
+  socialLinks?: string[] | null;
+  jobTitle?: string | null;
+  department?: string | null;
+  rating?: ContactRating | null;
+  website?: string;
+  address?: string;
+  description?: string | null;
+  status?: string;
+}
+
+export interface ContactCreateFields extends ContactNames {
+  phones?: ContactPhone[];
+  phone?: string | null;
+  socialLinks?: string[];
+  jobTitle?: string | null;
+  department?: string | null;
+  rating?: ContactRating | null;
+  website?: string;
+  address?: string;
+  description?: string;
+  status?: string;
+}
+
+/** A new contact's own columns (not email or links); throws BadRequest for a bad name or link. */
+export function contactCreateFields(dto: CreateFieldsInput): ContactCreateFields {
+  return {
+    ...createNames(dto),
+    ...resolvePhones(dto, []),
+    socialLinks: dto.socialLinks === undefined ? undefined : normalizeSocialLinks(dto.socialLinks),
+    jobTitle: optionalText(dto.jobTitle),
+    department: optionalText(dto.department),
+    rating: dto.rating,
+    website: dto.website,
+    address: dto.address,
+    description: aboutText(dto.description),
+    status: dto.status,
+  };
+}

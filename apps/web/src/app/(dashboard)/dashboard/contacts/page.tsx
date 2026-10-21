@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, Plus, Upload } from "lucide-react";
+import { Download, ExternalLink, Plus, Sparkles, Upload } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useAppConfig } from "@/lib/app-config";
 import { downloadCsv } from "@/lib/download";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
@@ -29,6 +30,7 @@ interface ContactRow {
   paidCents: number;
   labels: { id: string; name: string; color: string }[];
   hasLogin: boolean;
+  portalAccess: "portal" | "pending" | null;
 }
 
 interface CompanyRow {
@@ -60,6 +62,52 @@ const TABS: { id: TabId; label: string }[] = [
 
 const LIMIT = 20;
 
+const ACCESS_FILTERS: Record<string, string> = {
+  portal: "Has access",
+  pending: "Invite pending",
+  none: "No access",
+};
+
+interface ClientLimit {
+  max: number;
+  used: number;
+}
+
+/** Portal clients used / allowed on the plan (pending invites hold a seat), when billing applies. */
+function ClientLimitNotice({ limit }: { limit: ClientLimit }) {
+  if (limit.used < limit.max) {
+    return (
+      <span
+        data-testid="client-limit"
+        className="text-xs px-2 py-0.5 rounded-full font-medium bg-[var(--muted)] text-[var(--muted-foreground)]"
+      >
+        {limit.used}/{limit.max} portal clients
+      </span>
+    );
+  }
+  return (
+    <div
+      data-testid="client-limit"
+      className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] px-4 py-3"
+    >
+      <Sparkles size={15} className="text-amber-500 shrink-0" aria-hidden />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold">Client limit reached</p>
+        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+          {limit.used}/{limit.max} portal clients. Upgrade to Pro for unlimited clients. Contacts stay unlimited.
+        </p>
+      </div>
+      <Link
+        href="/dashboard/settings/billing?reason=clients"
+        className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs font-semibold hover:opacity-90 whitespace-nowrap"
+      >
+        Upgrade
+        <ExternalLink size={11} aria-hidden />
+      </Link>
+    </div>
+  );
+}
+
 function FollowUp({ at, everyDays }: { at: string | null; everyDays: number | null }) {
   if (!at) return <span className="text-[var(--muted-foreground)]">—</span>;
   const day = formatFollowUpDay(at);
@@ -79,6 +127,9 @@ function FollowUp({ at, everyDays }: { at: string | null; everyDays: number | nu
 
 export default function ContactsPage() {
   const { error: showError } = useToast();
+  const config = useAppConfig();
+  const [clientLimit, setClientLimit] = useState<ClientLimit | null>(null);
+  const [access, setAccess] = useState("");
   const rowLink = useRowLink();
   const [tab, setTab] = useState<TabId>("all");
   const [search, setSearch] = useState("");
@@ -96,10 +147,25 @@ export default function ContactsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  // Deep link from a company page back to the Companies tab.
+  // Deep links: a company page back to the Companies tab; /dashboard/clients to ?access=portal.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "companies") setTab("companies");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "companies") setTab("companies");
+    const deepAccess = params.get("access") ?? "";
+    if (deepAccess in ACCESS_FILTERS) setAccess(deepAccess);
   }, []);
+
+  useEffect(() => {
+    if (!config?.billingEnabled) return;
+    apiFetch<{ subscription: { plan: { maxClients: number } } | null; usage: { clients: number } }>(
+      "/billing/subscription",
+    )
+      .then(({ subscription, usage }) => {
+        const max = subscription?.plan.maxClients;
+        if (max !== undefined && max !== -1) setClientLimit({ max, used: usage.clients });
+      })
+      .catch((err: unknown) => console.error(err));
+  }, [config?.billingEnabled]);
 
   useEffect(() => {
     apiFetch<Option[]>("/labels").then(setLabels).catch(console.error);
@@ -118,8 +184,9 @@ export default function ContactsPage() {
     if (labelId) params.set("labelId", labelId);
     if (leadSourceId) params.set("leadSourceId", leadSourceId);
     if (rating) params.set("rating", rating);
+    if (access) params.set("access", access);
     return params;
-  }, [debouncedSearch, tab, labelId, leadSourceId, rating]);
+  }, [debouncedSearch, tab, labelId, leadSourceId, rating, access]);
 
   const requestId = useRef(0);
 
@@ -171,7 +238,10 @@ export default function ContactsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold">Contacts</h1>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-2xl font-bold">Contacts</h1>
+          {clientLimit && clientLimit.used < clientLimit.max && <ClientLimitNotice limit={clientLimit} />}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={exportCsv}
@@ -194,6 +264,8 @@ export default function ContactsPage() {
           </button>
         </div>
       </div>
+
+      {clientLimit && clientLimit.used >= clientLimit.max && <ClientLimitNotice limit={clientLimit} />}
 
       <div className="flex gap-1 border-b border-[var(--border)] overflow-x-auto">
         {TABS.map((t) => (
@@ -276,6 +348,22 @@ export default function ContactsPage() {
                 </option>
               ))}
             </select>
+            <select
+              aria-label="Filter by portal access"
+              value={access}
+              onChange={(e) => {
+                setAccess(e.target.value);
+                setPage(1);
+              }}
+              className={selectClass}
+            >
+              <option value="">Portal access: all</option>
+              {Object.entries(ACCESS_FILTERS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </>
         )}
       </div>
@@ -324,7 +412,7 @@ export default function ContactsPage() {
         )
       ) : contacts.length === 0 ? (
         <p className="text-sm text-[var(--muted-foreground)] py-8 text-center">
-          {debouncedSearch || labelId || leadSourceId || rating || tab !== "all"
+          {debouncedSearch || labelId || leadSourceId || rating || access || tab !== "all"
             ? "No contacts match these filters."
             : "No contacts yet. Add one or import a CSV."}
         </p>
@@ -363,8 +451,17 @@ export default function ContactsPage() {
                   <td className="px-4 py-3">{c.company?.name ?? "—"}</td>
                   <td className="px-4 py-3">
                     {STATUS_LABELS[c.status] ?? c.status}
-                    {c.hasLogin && (
-                      <span className="ml-1 text-xs text-[var(--muted-foreground)]">(portal)</span>
+                    {c.portalAccess && (
+                      <span
+                        data-testid="portal-badge"
+                        className={`ml-2 inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
+                          c.portalAccess === "portal"
+                            ? "bg-[var(--primary)]/10 text-[var(--primary)]"
+                            : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                        }`}
+                      >
+                        {c.portalAccess === "portal" ? "Portal" : "Invite pending"}
+                      </span>
                     )}
                     {c.rating && (
                       <span className="ml-2">

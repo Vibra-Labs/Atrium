@@ -2,29 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, Copy } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useAppConfig } from "@/lib/app-config";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
-import { copyToClipboard } from "@/lib/clipboard";
 import { STATUS_LABELS } from "../shared";
 import { RatingBadge } from "../rating-badge";
 import { RevenueStrip } from "./revenue-strip";
 import { Timeline } from "./timeline";
 import { ContactSidePanel } from "./contact-side-panel";
 import { EditContactModal } from "./edit-contact-modal";
+import { PortalAccess } from "./portal-access";
+import type { PendingInvite } from "./portal-access";
 import type { ContactDetail } from "./types";
-
-interface PendingInvite {
-  email: string;
-  role: string | null;
-  expiresAt: string;
-  inviteLink: string;
-  expired: boolean;
-}
 
 export default function ContactPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,7 +31,6 @@ export default function ContactPage() {
   const [timelineKey, setTimelineKey] = useState(0);
   const [atClientLimit, setAtClientLimit] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
-  const [copied, setCopied] = useState(false);
   const config = useAppConfig();
 
   const load = useCallback(async (): Promise<void> => {
@@ -90,15 +81,6 @@ export default function ContactPage() {
     if (inviteEmail) loadPendingInvite(inviteEmail);
     else setPendingInvite(null);
   }, [inviteEmail, loadPendingInvite]);
-
-  async function copyInviteLink(link: string): Promise<void> {
-    if (!(await copyToClipboard(link))) {
-      showError("Could not copy link");
-      return;
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
 
   // Any change on the page may have added an automatic timeline event.
   const refresh = useCallback((): void => {
@@ -193,7 +175,6 @@ export default function ContactPage() {
               {STATUS_LABELS[contact.status] ?? contact.status}
             </span>
             <RatingBadge rating={contact.rating} />
-            {contact.hasLogin && <span>has portal login</span>}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -224,23 +205,7 @@ export default function ContactPage() {
         </div>
       </div>
 
-      {pendingInvite && (
-        <div
-          data-testid="pending-invite"
-          className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 border border-[var(--border)] rounded-lg text-sm"
-        >
-          <span className="text-[var(--muted-foreground)]">
-            Portal invitation pending · expires {new Date(pendingInvite.expiresAt).toLocaleDateString()}
-          </span>
-          <button
-            onClick={() => copyInviteLink(pendingInvite.inviteLink)}
-            className="flex items-center gap-1 text-sm text-[var(--primary)] hover:underline whitespace-nowrap"
-          >
-            {copied ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
-            {copied ? "Copied!" : "Copy invite link"}
-          </button>
-        </div>
-      )}
+      <PortalAccess contact={contact} pendingInvite={pendingInvite} onChanged={refresh} />
 
       <RevenueStrip revenue={contact.revenue} />
 

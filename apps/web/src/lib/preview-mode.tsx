@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { previewReturnPath } from "./legacy-routes";
 
 const STORAGE_KEY = "atrium:previewAs";
 const HANDOFF_PREFIX = "atrium:previewPending:";
@@ -19,24 +20,31 @@ export interface PreviewModeState {
   clientId: string;
   clientName: string;
   clientEmail: string;
+  /** Dashboard page to go back to when the preview tab can't close itself. */
+  returnPath?: string;
 }
 
 interface PreviewHandoff {
   name: string;
   email: string;
+  returnPath?: string;
   ts: number;
 }
+
+const DEFAULT_RETURN_PATH = "/dashboard/contacts";
 
 export function startPreview(
   clientUserId: string,
   clientName: string,
   clientEmail: string,
+  returnPath?: string,
 ): void {
   if (typeof window === "undefined") return;
   try {
     const handoff: PreviewHandoff = {
       name: clientName,
       email: clientEmail,
+      returnPath,
       ts: Date.now(),
     };
     window.localStorage.setItem(
@@ -114,6 +122,7 @@ export function PreviewModeProvider({ children }: { children: ReactNode }) {
       clientId: requestedId,
       clientName: handoff?.name || "Client",
       clientEmail: handoff?.email || "",
+      returnPath: previewReturnPath(handoff?.returnPath),
     };
     writeStored(state);
     setPreview(state);
@@ -124,15 +133,16 @@ export function PreviewModeProvider({ children }: { children: ReactNode }) {
   }, [searchParams]);
 
   const exitPreview = useCallback(() => {
+    const returnPath: string = preview?.returnPath ?? DEFAULT_RETURN_PATH;
     writeStored(null);
     setPreview(null);
     if (typeof window === "undefined") return;
     // Opened via window.open from dashboard; close if allowed, else navigate back.
     window.close();
     setTimeout(() => {
-      if (!window.closed) router.push("/dashboard/clients");
+      if (!window.closed) router.push(returnPath);
     }, 100);
-  }, [router]);
+  }, [router, preview]);
 
   const value = useMemo(
     () => ({ preview, exitPreview }),

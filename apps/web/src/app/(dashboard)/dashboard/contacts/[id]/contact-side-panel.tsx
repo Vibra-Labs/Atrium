@@ -278,6 +278,7 @@ function DetailsSection({ contact }: { contact: ContactDetail }) {
       contact.address ||
       contact.leadSource ||
       contact.referredBy ||
+      contact.description ||
       contact.socialLinks.length > 0,
   );
   return (
@@ -316,6 +317,13 @@ function DetailsSection({ contact }: { contact: ContactDetail }) {
           {contact.socialLinks.length > 0 && (
             <DetailRow label="Social">
               <SocialLinks links={contact.socialLinks} />
+            </DetailRow>
+          )}
+          {contact.description && (
+            <DetailRow label="About">
+              <span data-testid="contact-about" className="whitespace-pre-line">
+                {contact.description}
+              </span>
             </DetailRow>
           )}
         </dl>

@@ -18,6 +18,8 @@ export interface ContactDetail {
   rating: string | null;
   website: string | null;
   address: string | null;
+  /** "About"; "" when cleared. */
+  description: string | null;
   status: string;
   company: { id: string; name: string } | null;
   leadSource: { id: string; name: string } | null;
@@ -29,4 +31,6 @@ export interface ContactDetail {
   revenue: Revenue;
   hasLogin: boolean;
   userId: string | null;
+  /** The client membership behind the portal login, if any. */
+  portal: { memberId: string; joinedAt: string; lastSeenAt: string | null } | null;
 }

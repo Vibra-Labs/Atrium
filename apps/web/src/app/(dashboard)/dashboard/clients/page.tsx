@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { clientsRedirectTarget } from "@/lib/legacy-routes";
 
 /** The old People page: team moved to /dashboard/team, clients are contacts with portal access. */
 export default async function ClientsRedirect({
@@ -7,5 +8,5 @@ export default async function ClientsRedirect({
   searchParams: Promise<{ tab?: string | string[] }>;
 }): Promise<never> {
   const { tab } = await searchParams;
-  redirect(tab === "team" ? "/dashboard/team" : "/dashboard/contacts?access=portal");
+  redirect(clientsRedirectTarget(tab));
 }

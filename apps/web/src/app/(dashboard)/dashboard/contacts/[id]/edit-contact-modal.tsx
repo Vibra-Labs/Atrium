@@ -46,6 +46,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   const [rating, setRating] = useState(contact.rating ?? "");
   const [website, setWebsite] = useState(contact.website ?? "");
   const [address, setAddress] = useState(contact.address ?? "");
+  const [description, setDescription] = useState(contact.description ?? "");
   const [status, setStatus] = useState(contact.status);
   const [companyText, setCompanyText] = useState(contact.company?.name ?? "");
   const [companyId, setCompanyId] = useState<string | null>(contact.company?.id ?? null);
@@ -110,6 +111,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
       rating: rating || null,
       website: website.trim(),
       address: address.trim(),
+      description: description.trim(),
       status,
       referredById: isReferral ? (referrer?.id ?? null) : null,
     };
@@ -229,6 +231,17 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
             <label htmlFor="edit-address" className={labelClass}>Address</label>
             <input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass} />
           </div>
+        </div>
+        <div>
+          <label htmlFor="edit-description" className={labelClass}>About</label>
+          <textarea
+            id="edit-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={2000}
+            rows={3}
+            className={`${inputClass} resize-y`}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <SourceField

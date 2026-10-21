@@ -1,6 +1,6 @@
 const DAY_MS: number = 24 * 60 * 60 * 1000;
 
-/** Short label for when a member last used the app, for the Clients page. */
+/** Short label for when a member last used the app, shown on a client contact's portal access. */
 export function formatLastSeen(lastSeenAt: string | null | undefined, now: Date = new Date()): string {
   // Visits are recorded from this release on, so a missing value is not proof of "never".
   if (!lastSeenAt) return "No visits recorded yet";

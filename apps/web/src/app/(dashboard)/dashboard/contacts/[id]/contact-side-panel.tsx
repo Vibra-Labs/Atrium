@@ -52,7 +52,7 @@ function ProjectsSection({ contact, onChanged }: Props) {
   const linkedIds = new Set(contact.projects.map((p) => p.id));
   const available = options.filter((p) => !linkedIds.has(p.id)).slice(0, TYPEAHEAD_LIMIT);
   const pickerId: string = useId();
-  const keys = useListboxKeys(available.length, searching, setSearching, (i) => void pick(available[i].id));
+  const keys = useListboxKeys(available.length, searching, setSearching, (i) => void pick(available[i].id), `${search}|${available.map((p) => p.id).join(",")}`);
 
   async function pick(projectId: string): Promise<void> {
     if (await link(projectId)) {
@@ -129,7 +129,7 @@ function ProjectsSection({ contact, onChanged }: Props) {
           role="combobox"
           aria-label="Link a project"
           aria-expanded={searching}
-          aria-controls={`${pickerId}-list`}
+          aria-controls={searching ? `${pickerId}-list` : undefined}
           aria-autocomplete="list"
           aria-activedescendant={searching && keys.active >= 0 ? `${pickerId}-${keys.active}` : undefined}
           placeholder="Link existing project…"

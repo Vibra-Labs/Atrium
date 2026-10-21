@@ -170,7 +170,7 @@ export function CompanyField({ text, onChange }: CompanyFieldProps) {
     onChange(c.name, c.id);
     setOpen(false);
   }
-  const keys = useListboxKeys(matches.length, showList, setOpen, (i) => pick(matches[i]));
+  const keys = useListboxKeys(matches.length, showList, setOpen, (i) => pick(matches[i]), `${text}|${matches.map((c) => c.id).join(",")}`);
 
   return (
     <div className="relative">
@@ -181,7 +181,7 @@ export function CompanyField({ text, onChange }: CompanyFieldProps) {
         id="contact-company"
         role="combobox"
         aria-expanded={showList}
-        aria-controls={`${listId}-list`}
+        aria-controls={showList ? `${listId}-list` : undefined}
         aria-autocomplete="list"
         aria-activedescendant={showList && keys.active >= 0 ? `${listId}-${keys.active}` : undefined}
         value={text}

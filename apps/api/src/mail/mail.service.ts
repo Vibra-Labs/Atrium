@@ -84,7 +84,10 @@ export class MailService {
     return this.limitSend(() => this.deliverWithTimeout(to, subject, html, organizationId));
   }
 
-  /** A hung provider call must not hold a send slot forever: give up on it and free the slot. */
+  /**
+   * A hung provider call must not hold a send slot forever: give up on it and free the slot.
+   * The abandoned send may still complete, so a timeout means "unknown"; callers must not retry on it.
+   */
   private async deliverWithTimeout(
     to: string,
     subject: string,

@@ -55,8 +55,12 @@ export function useListboxKeys(
   open: boolean,
   setOpen: (open: boolean) => void,
   onPick: (index: number) => void,
+  /** Changes whenever the typed text or the listed options change; the highlight is cleared then. */
+  resetKey: string,
 ): { active: number; onKeyDown: (e: KeyboardEvent) => void; reset: () => void } {
   const [active, setActive] = useState<number>(-1);
+
+  useEffect(() => setActive(-1), [resetKey]);
 
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {

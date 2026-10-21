@@ -863,8 +863,8 @@ test.describe("Project picker", () => {
       "href",
       `/dashboard/projects/${project.id}`,
     );
-    // Escape closes an open list without picking.
-    await picker.focus();
+    // Escape closes an open list without picking. The input is still focused, so ArrowDown reopens it.
+    await picker.press("ArrowDown");
     await expect(page.getByRole("listbox", { name: "Projects" })).toBeVisible();
     await picker.press("Escape");
     await expect(page.getByRole("listbox", { name: "Projects" })).toHaveCount(0);

@@ -7,14 +7,15 @@ import {
 } from "@nestjs/common";
 import { isEmail } from "class-validator";
 import { Prisma } from "@atrium/database";
+import type { Contact } from "@atrium/database";
 import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
-import type { ContactStatus } from "@atrium/shared";
+import type { ContactPhone, ContactRating, ContactStatus } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { ContactRevenueService } from "./contact-revenue.service";
-import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
+import { MAX_IMPORT_ROWS, parseCsv, splitLinks } from "./contacts-csv";
 import type { ImportField, ImportMapping } from "./contacts-csv";
 import { LEAD_SOURCE_NAME_MAX, TIMELINE_MAX_PAGE } from "./contacts.dto";
 import type {
@@ -24,6 +25,16 @@ import type {
   UpdateContactDto,
 } from "./contacts.dto";
 import { requireName } from "./require-name";
+import {
+  MAX_SOCIAL_LINKS,
+  createNames,
+  normalizeSocialLinks,
+  optionalText,
+  parseRating,
+  readPhones,
+  resolvePhones,
+  updateNames,
+} from "./contact-fields";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOO_MANY_ROWS = "CSV has more than 5,000 rows";
@@ -33,6 +44,16 @@ const STATUS_LABELS: Record<ContactStatus, string> = {
   client: "Client",
   past_client: "Past client",
 };
+
+const RATING_LABELS: Record<ContactRating, string> = { hot: "Hot", warm: "Warm", cold: "Cold" };
+
+function formatPhones(phones: ContactPhone[]): string {
+  return phones.map((p) => `${p.label}: ${p.number}`).join("; ");
+}
+
+function readLinks(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
 
 function parseStatus(value: string): ContactStatus {
   const v = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
@@ -99,11 +120,26 @@ interface ResolvedLinks {
   referredById?: string | null;
 }
 
-function omitImportMarker<T extends { profileImportedAt?: Date | null }>(
-  contact: T,
-): Omit<T, "profileImportedAt"> {
-  const { profileImportedAt: _imported, ...rest } = contact;
-  return rest;
+interface StoredContact {
+  profileImportedAt?: Date | null;
+  phones?: unknown;
+  socialLinks?: unknown;
+}
+
+type ContactResponse<T> = Omit<T, "profileImportedAt" | "phones" | "socialLinks"> & {
+  phones: ContactPhone[];
+  socialLinks: string[];
+};
+
+/**
+ * Drops the import marker and narrows the Json columns: Prisma's JsonValue can't be named
+ * across packages, so it would make the controllers' inferred return types unportable.
+ */
+export type ContactRecord = ContactResponse<Contact>;
+
+function toResponse<T extends StoredContact>(contact: T): ContactResponse<T> {
+  const { profileImportedAt: _imported, phones, socialLinks, ...rest } = contact;
+  return { ...rest, phones: readPhones(phones), socialLinks: readLinks(socialLinks) };
 }
 
 type LinkFields = Pick<
@@ -145,7 +181,14 @@ export class ContactsService {
     const data = contacts.map((c) => ({
       id: c.id,
       name: c.name,
+      firstName: c.firstName,
+      lastName: c.lastName,
+      jobTitle: c.jobTitle,
+      department: c.department,
       email: c.email,
+      phones: readPhones(c.phones),
+      socialLinks: readLinks(c.socialLinks),
+      rating: c.rating,
       status: c.status,
       company: c.company,
       followUpAt: c.followUpAt,
@@ -164,6 +207,7 @@ export class ContactsService {
   private buildWhere(orgId: string, query: ListContactsQueryDto): Prisma.ContactWhereInput {
     const where: Prisma.ContactWhereInput = { organizationId: orgId };
     if (query.status) where.status = query.status;
+    if (query.rating) where.rating = query.rating;
     if (query.leadSourceId) where.leadSourceId = query.leadSourceId;
     if (query.companyId) where.companyId = query.companyId;
     if (query.labelId) where.labels = { some: { labelId: query.labelId } };
@@ -193,10 +237,13 @@ export class ContactsService {
     if (data.length > MAX_IMPORT_ROWS) throw new BadRequestException(TOO_MANY_ROWS);
 
     const columns = new Map<ImportField, number>();
+    // Exports often split links over several columns (LinkedIn, Twitter...), so all are read.
+    const linkColumns: number[] = [];
     headers.forEach((h, i) => {
       if (!Object.hasOwn(dto.mapping, h)) return;
       const field = dto.mapping[h];
-      if (field !== "skip" && !columns.has(field)) columns.set(field, i);
+      if (field === "socialLinks") linkColumns.push(i);
+      else if (field !== "skip" && !columns.has(field)) columns.set(field, i);
     });
     const cell = (row: string[], field: ImportField): string => {
       const i = columns.get(field);
@@ -210,8 +257,23 @@ export class ContactsService {
     for (const [i, row] of data.entries()) {
       const rowNumber = i + 2; // 1-based, header is row 1
       const name = cell(row, "name");
-      if (!name) {
+      const firstName = cell(row, "firstName");
+      if (!name && !firstName) {
         skipped.push({ row: rowNumber, reason: "Missing name" });
+        continue;
+      }
+      const rating = parseRating(cell(row, "rating"));
+      if (rating === null) {
+        skipped.push({ row: rowNumber, reason: "Invalid rating" });
+        continue;
+      }
+      let socialLinks: string[];
+      try {
+        // Extra links are dropped, like over-long text fields.
+        const raw = [...new Set(linkColumns.flatMap((i) => splitLinks(row[i] ?? "")))];
+        socialLinks = normalizeSocialLinks(raw.slice(0, MAX_SOCIAL_LINKS));
+      } catch {
+        skipped.push({ row: rowNumber, reason: "Invalid social link" });
         continue;
       }
       const rawEmail = cell(row, "email");
@@ -228,7 +290,13 @@ export class ContactsService {
       try {
         contact = await this.create(
           {
-            name: name.slice(0, 200),
+            name: name.slice(0, 200) || undefined,
+            firstName: firstName.slice(0, 100) || undefined,
+            lastName: cell(row, "lastName").slice(0, 100) || undefined,
+            jobTitle: cell(row, "jobTitle").slice(0, 200) || undefined,
+            department: cell(row, "department").slice(0, 100) || undefined,
+            socialLinks,
+            rating,
             email,
             phone: cell(row, "phone").slice(0, 50) || undefined,
             website: cell(row, "website").slice(0, 500) || undefined,
@@ -282,14 +350,21 @@ export class ContactsService {
     );
     const columns: CsvColumn<(typeof contacts)[number]>[] = [
       { header: "Name", value: (c) => c.name },
+      { header: "First name", value: (c) => c.firstName },
+      { header: "Last name", value: (c) => c.lastName },
       { header: "Email", value: (c) => c.email },
       { header: "Phone", value: (c) => c.phone },
+      { header: "All phones", value: (c) => formatPhones(readPhones(c.phones)) },
       { header: "Company", value: (c) => c.company?.name },
+      { header: "Job title", value: (c) => c.jobTitle },
+      { header: "Department", value: (c) => c.department },
       { header: "Website", value: (c) => c.website },
       { header: "Address", value: (c) => c.address },
       { header: "Status", value: (c) => STATUS_LABELS[c.status as ContactStatus] ?? c.status },
+      { header: "Rating", value: (c) => (c.rating ? (RATING_LABELS[c.rating as ContactRating] ?? c.rating) : null) },
       { header: "Source", value: (c) => c.leadSource?.name },
       { header: "Tags", value: (c) => c.labels.map((l) => l.label.name).join("; ") },
+      { header: "Social links", value: (c) => readLinks(c.socialLinks).join(" ") },
       { header: "Next follow-up", value: (c) => c.followUpAt?.toISOString().slice(0, 10) },
       { header: "Paid all time", value: (c) => ((paid.get(c.id) ?? 0) / 100).toFixed(2) },
     ];
@@ -335,9 +410,9 @@ export class ContactsService {
     });
     if (!contact) throw new NotFoundException("Contact not found");
 
-    const { projects, labels, profileImportedAt: _imported, ...rest } = contact;
+    const { projects, labels, ...rest } = contact;
     return {
-      ...rest,
+      ...toResponse(rest),
       hasLogin: contact.userId != null,
       labels: labels.map((l) => ({
         id: l.label.id,
@@ -349,7 +424,10 @@ export class ContactsService {
     };
   }
 
-  async create(dto: CreateContactDto, orgId: string) {
+  async create(dto: CreateContactDto, orgId: string): Promise<ContactRecord> {
+    const names = createNames(dto);
+    const socialLinks = dto.socialLinks === undefined ? undefined : normalizeSocialLinks(dto.socialLinks);
+    const phones = resolvePhones(dto, []);
     const email = dto.email ? normalizeEmail(dto.email) : undefined;
     if (email) await this.assertEmailFree(email, orgId);
     const links = await this.resolveLinks(dto, orgId);
@@ -359,9 +437,13 @@ export class ContactsService {
       contact = await this.prisma.contact.create({
         data: {
           organizationId: orgId,
-          name: dto.name,
+          ...names,
           email,
-          phone: dto.phone,
+          ...phones,
+          socialLinks,
+          jobTitle: optionalText(dto.jobTitle),
+          department: optionalText(dto.department),
+          rating: dto.rating,
           website: dto.website,
           address: dto.address,
           status: dto.status,
@@ -372,10 +454,10 @@ export class ContactsService {
       throw this.mapDuplicate(e);
     }
     await this.addEvent(contact.id, orgId, "contact_created", "Contact created");
-    return omitImportMarker(contact);
+    return toResponse(contact);
   }
 
-  async update(id: string, dto: UpdateContactDto, orgId: string) {
+  async update(id: string, dto: UpdateContactDto, orgId: string): Promise<ContactRecord> {
     const contact = await this.getOrThrow(id, orgId);
     // undefined = leave alone, null = clear.
     const email = dto.email == null ? dto.email : normalizeEmail(dto.email);
@@ -386,22 +468,29 @@ export class ContactsService {
     if (dto.referredById === id) {
       throw new BadRequestException("A contact cannot refer themselves");
     }
+    const names = updateNames(dto, contact);
+    const phones = resolvePhones(dto, readPhones(contact.phones));
+    const socialLinks = dto.socialLinks === undefined ? undefined : normalizeSocialLinks(dto.socialLinks);
     const links = await this.resolveLinks(dto, orgId);
 
     try {
       const updated = await this.prisma.contact.update({
         where: { id },
         data: {
-          name: dto.name,
+          ...names,
           email,
-          phone: dto.phone,
+          ...phones,
+          socialLinks,
+          jobTitle: optionalText(dto.jobTitle),
+          department: optionalText(dto.department),
+          rating: dto.rating,
           website: dto.website,
           address: dto.address,
           status: dto.status,
           ...links,
         },
       });
-      return omitImportMarker(updated);
+      return toResponse(updated);
     } catch (e) {
       throw this.mapDuplicate(e);
     }
@@ -517,10 +606,10 @@ export class ContactsService {
     });
   }
 
-  async setFollowUp(id: string, dto: SetFollowUpDto, orgId: string, userId: string) {
+  async setFollowUp(id: string, dto: SetFollowUpDto, orgId: string, userId: string): Promise<ContactRecord> {
     await this.getOrThrow(id, orgId);
     const followUpAt = dto.followUpAt ? parseFollowUpAt(dto.followUpAt) : null;
-    return this.prisma.contact.update({
+    const updated = await this.prisma.contact.update({
       where: { id },
       data: {
         followUpAt,
@@ -529,12 +618,13 @@ export class ContactsService {
         followUpNotifiedAt: null,
       },
     });
+    return toResponse(updated);
   }
 
-  async completeFollowUp(id: string, orgId: string, now: Date = new Date()) {
+  async completeFollowUp(id: string, orgId: string, now: Date = new Date()): Promise<ContactRecord> {
     const contact = await this.getOrThrow(id, orgId);
     const every = contact.followUpEveryDays;
-    return this.prisma.contact.update({
+    const updated = await this.prisma.contact.update({
       where: { id },
       data: {
         followUpAt: every ? nextRepeat(contact.followUpAt, every, now) : null,
@@ -542,14 +632,16 @@ export class ContactsService {
         followUpNotifiedAt: null,
       },
     });
+    return toResponse(updated);
   }
 
-  async snoozeFollowUp(id: string, days: number, orgId: string, now: Date = new Date()) {
+  async snoozeFollowUp(id: string, days: number, orgId: string, now: Date = new Date()): Promise<ContactRecord> {
     await this.getOrThrow(id, orgId);
-    return this.prisma.contact.update({
+    const updated = await this.prisma.contact.update({
       where: { id },
       data: { followUpAt: noonUtcInDays(now, days), followUpNotifiedAt: null },
     });
+    return toResponse(updated);
   }
 
   private async getOrThrow(id: string, orgId: string) {

@@ -89,7 +89,7 @@ describe("ContactSyncService", () => {
 
     it("creates a client contact when none exists", async () => {
       mockPrisma.user.findUnique.mockImplementation(() =>
-        Promise.resolve({ ...bob, email: "Bob@X.com" }),
+        Promise.resolve({ ...bob, name: " Bob Van Dyke ", email: "Bob@X.com" }),
       );
 
       await service.ensureForMember("org-1", "u-1");
@@ -97,7 +97,9 @@ describe("ContactSyncService", () => {
       expect(mockPrisma.contact.create).toHaveBeenCalledWith({
         data: {
           organizationId: "org-1",
-          name: "Bob",
+          name: "Bob Van Dyke",
+          firstName: "Bob",
+          lastName: "Van Dyke",
           email: "bob@x.com",
           userId: "u-1",
           status: "client",

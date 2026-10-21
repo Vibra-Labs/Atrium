@@ -23,6 +23,30 @@ describe("contact tools", () => {
     expect(contacts.findAll).toHaveBeenCalledWith("org1", { search: "ann", status: "lead", page: 1, limit: 20 });
   });
 
+  it("list_contacts passes a rating filter and rejects an unknown one", async () => {
+    const { contacts, get } = build();
+    const schema = get("list_contacts").inputSchema;
+    expect(schema.safeParse({ rating: "lukewarm" }).success).toBe(false);
+    await runTool(get("list_contacts"), schema.parse({ rating: "hot" }), admin);
+    expect(contacts.findAll).toHaveBeenCalledWith("org1", { rating: "hot", page: 1, limit: 20 });
+  });
+
+  it("get_contact returns the contact fields from the service", async () => {
+    const { contacts, get } = build();
+    const contact = {
+      id: "c1",
+      firstName: "Ann",
+      lastName: "Lee",
+      jobTitle: "CTO",
+      department: "Eng",
+      phones: [{ label: "Mobile", number: "555" }],
+      socialLinks: ["https://x.com/ann"],
+      rating: "hot",
+    };
+    contacts.findOne.mockImplementationOnce(() => Promise.resolve(contact));
+    expect(await get("get_contact").handler({ contactId: "c1" }, admin)).toEqual(contact);
+  });
+
   it("list_contacts rejects an unknown status", () => {
     const schema = build().get("list_contacts").inputSchema;
     expect(schema.safeParse({ status: "customer" }).success).toBe(false);

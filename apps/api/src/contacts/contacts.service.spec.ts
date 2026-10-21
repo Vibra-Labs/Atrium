@@ -11,6 +11,7 @@ import { validate } from "class-validator";
 import { plainToInstance } from "class-transformer";
 import {
   CreateContactDto,
+  ListContactsQueryDto,
   TimelineQueryDto,
   UpdateContactDto,
   SetFollowUpDto,
@@ -329,6 +330,174 @@ describe("ContactsService", () => {
     });
   });
 
+  describe("contact fields", () => {
+    const createData = (): Record<string, unknown> =>
+      (prisma.contact.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    const updateData = (): Record<string, unknown> =>
+      (prisma.contact.update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    const stored = {
+      id: "c-1",
+      name: "Ann Lee",
+      firstName: "Ann",
+      lastName: "Lee",
+      phone: "111",
+      phones: [
+        { label: "Mobile", number: "111" },
+        { label: "Work", number: "222" },
+      ],
+    };
+
+    it("create stores first/last, title, department, phones, links and rating", async () => {
+      await service.create(
+        {
+          firstName: "Ann",
+          lastName: "Lee",
+          jobTitle: " CTO ",
+          department: "Engineering",
+          phones: [
+            { label: "Mobile", number: "+1 555" },
+            { label: "Work", number: "+1 777" },
+          ],
+          socialLinks: ["https://linkedin.com/in/ann", " https://linkedin.com/in/ann "],
+          rating: "hot",
+        },
+        "org-1",
+      );
+      expect(createData()).toMatchObject({
+        name: "Ann Lee",
+        firstName: "Ann",
+        lastName: "Lee",
+        jobTitle: "CTO",
+        department: "Engineering",
+        phone: "+1 555",
+        phones: [
+          { label: "Mobile", number: "+1 555" },
+          { label: "Work", number: "+1 777" },
+        ],
+        socialLinks: ["https://linkedin.com/in/ann"],
+        rating: "hot",
+      });
+    });
+
+    it("create with only a name splits it; with neither name nor first name is a 400", async () => {
+      await service.create({ name: "Ann Marie Lee" }, "org-1");
+      expect(createData()).toMatchObject({ name: "Ann Marie Lee", firstName: "Ann", lastName: "Marie Lee" });
+
+      const e = await rejects(service.create({ lastName: "Lee" }, "org-1"));
+      expect(e).toBeInstanceOf(BadRequestException);
+      expect((e as Error).message).toBe("Name is required");
+    });
+
+    it("create with a legacy phone fills phones", async () => {
+      await service.create({ name: "Ann", phone: "555" }, "org-1");
+      expect(createData()).toMatchObject({ phone: "555", phones: [{ label: "Phone", number: "555" }] });
+    });
+
+    it("create rejects a non-http(s) social link before writing", async () => {
+      const e = await rejects(service.create({ name: "Ann", socialLinks: ["javascript:alert(1)"] }, "org-1"));
+      expect(e).toBeInstanceOf(BadRequestException);
+      expect(prisma.contact.create).not.toHaveBeenCalled();
+    });
+
+    it("update merges a new last name with the stored first name", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(stored));
+      await service.update("c-1", { lastName: "Park" }, "org-1");
+      expect(updateData()).toMatchObject({ name: "Ann Park", firstName: "Ann", lastName: "Park" });
+    });
+
+    it("update can clear the last name but not the first", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(stored));
+      await service.update("c-1", { lastName: null }, "org-1");
+      expect(updateData()).toMatchObject({ name: "Ann", firstName: "Ann", lastName: null });
+
+      const e = await rejects(service.update("c-1", { firstName: "" }, "org-1"));
+      expect(e).toBeInstanceOf(BadRequestException);
+    });
+
+    it("update with only a name re-splits it", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(stored));
+      await service.update("c-1", { name: "Bo Diddley" }, "org-1");
+      expect(updateData()).toMatchObject({ name: "Bo Diddley", firstName: "Bo", lastName: "Diddley" });
+    });
+
+    it("update with a legacy phone replaces the first number and keeps the mirror", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(stored));
+      await service.update("c-1", { phone: "999" }, "org-1");
+      expect(updateData()).toMatchObject({
+        phone: "999",
+        phones: [
+          { label: "Mobile", number: "999" },
+          { label: "Work", number: "222" },
+        ],
+      });
+    });
+
+    it("update with phones mirrors the first number; leaving both out leaves phones alone", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(stored));
+      await service.update("c-1", { phones: [] }, "org-1");
+      expect(updateData()).toMatchObject({ phone: null, phones: [] });
+
+      prisma.contact.update.mockClear();
+      await service.update("c-1", { status: "client" }, "org-1");
+      expect(updateData().phones).toBeUndefined();
+      expect(updateData().phone).toBeUndefined();
+      expect(updateData().name).toBeUndefined();
+    });
+
+    it("update clears rating, job title and social links with null", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(stored));
+      await service.update("c-1", { rating: null, jobTitle: null, socialLinks: null }, "org-1");
+      expect(updateData()).toMatchObject({ rating: null, jobTitle: null, socialLinks: [] });
+    });
+
+    it("DTOs: create needs no name; rating must be hot/warm/cold; phones are objects", async () => {
+      expect(await validate(plainToInstance(CreateContactDto, { firstName: "Ann" }))).toHaveLength(0);
+      expect(await validate(plainToInstance(UpdateContactDto, { rating: "hot" }))).toHaveLength(0);
+      expect(await validate(plainToInstance(UpdateContactDto, { rating: null }))).toHaveLength(0);
+      expect(await validate(plainToInstance(UpdateContactDto, { rating: "lukewarm" }))).not.toHaveLength(0);
+      expect(
+        await validate(plainToInstance(UpdateContactDto, { phones: [{ label: "Work", number: "1" }] })),
+      ).toHaveLength(0);
+      expect(await validate(plainToInstance(UpdateContactDto, { phones: ["555"] }))).not.toHaveLength(0);
+      expect(await validate(plainToInstance(UpdateContactDto, { socialLinks: [1] }))).not.toHaveLength(0);
+      expect(await validate(plainToInstance(ListContactsQueryDto, { rating: "cold" }))).toHaveLength(0);
+      expect(await validate(plainToInstance(ListContactsQueryDto, { rating: "x" }))).not.toHaveLength(0);
+    });
+
+    it("list filters by rating and returns the new fields", async () => {
+      prisma.contact.findMany.mockImplementation(() =>
+        Promise.resolve([
+          {
+            ...stored,
+            email: null,
+            status: "lead",
+            jobTitle: "CTO",
+            department: "Eng",
+            socialLinks: ["https://x.com/ann"],
+            rating: "hot",
+            company: null,
+            followUpAt: null,
+            followUpEveryDays: null,
+            userId: null,
+            labels: [],
+          },
+        ]),
+      );
+      const res = await service.findAll("org-1", { rating: "hot" });
+      const arg = prisma.contact.findMany.mock.calls[0][0] as { where: Record<string, unknown> };
+      expect(arg.where).toMatchObject({ organizationId: "org-1", rating: "hot" });
+      expect(res.data[0]).toMatchObject({
+        firstName: "Ann",
+        lastName: "Lee",
+        jobTitle: "CTO",
+        department: "Eng",
+        phones: stored.phones,
+        socialLinks: ["https://x.com/ann"],
+        rating: "hot",
+      });
+    });
+  });
+
   it("unlinkProject refuses while the contact's user is a client on the project", async () => {
     prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", userId: "u-1" }));
     prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve({ projectId: "p-1", userId: "u-1" }));
@@ -559,8 +728,18 @@ describe("ContactsService", () => {
           {
             id: "c-1",
             name: '=HYPERLINK("x")',
+            firstName: "Ann",
+            lastName: "Lee",
+            jobTitle: "CTO",
+            department: "Eng",
             email: "a@x.com",
-            phone: null,
+            phone: "+1 555",
+            phones: [
+              { label: "Mobile", number: "+1 555" },
+              { label: "Work", number: "+1 777" },
+            ],
+            socialLinks: ["https://linkedin.com/in/ann", "https://x.com/ann"],
+            rating: "warm",
             website: null,
             address: null,
             status: "lead",
@@ -575,10 +754,71 @@ describe("ContactsService", () => {
       const csv = await service.exportCsv("org-1", {});
       const [header, line] = csv.split("\r\n");
       expect(header).toBe(
-        "Name,Email,Phone,Company,Website,Address,Status,Source,Tags,Next follow-up,Paid all time",
+        "Name,First name,Last name,Email,Phone,All phones,Company,Job title,Department,Website,Address,Status,Rating,Source,Tags,Social links,Next follow-up,Paid all time",
       );
       expect(line.startsWith(`"'=HYPERLINK(""x"")"`)).toBe(true);
-      expect(line).toContain(",Lead,Web,vip; hot,2026-11-01,1234.56");
+      // A leading "+" is neutralised like any formula character.
+      expect(line).toContain(",Ann,Lee,a@x.com,'+1 555,Mobile: +1 555; Work: +1 777,Acme,CTO,Eng,");
+      expect(line).toContain(
+        ",Lead,Warm,Web,vip; hot,https://linkedin.com/in/ann https://x.com/ann,2026-11-01,1234.56",
+      );
+    });
+
+    it("import joins first + last names and accepts a row with only a first name", async () => {
+      const csv = "First Name,Last Name\nAnn,Lee\nCher,\n,Nobody\n";
+      const res = await service.importCsv(
+        { csv, mapping: { "First Name": "firstName", "Last Name": "lastName" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({ created: 2, skipped: [{ row: 4, reason: "Missing name" }] });
+      const rows = prisma.contact.create.mock.calls.map((c) => (c[0] as { data: Record<string, unknown> }).data);
+      expect(rows[0]).toMatchObject({ name: "Ann Lee", firstName: "Ann", lastName: "Lee" });
+      expect(rows[1]).toMatchObject({ name: "Cher", firstName: "Cher", lastName: null });
+    });
+
+    it("import splits social links from every mapped column and stores title, department, rating", async () => {
+      const csv = [
+        "Name,Title,Department,Rating,LinkedIn,Twitter",
+        "Ann,CTO,Eng,HOT,https://linkedin.com/in/ann; https://a.dev,https://x.com/ann",
+      ].join("\n");
+      await service.importCsv(
+        {
+          csv,
+          mapping: {
+            Name: "name",
+            Title: "jobTitle",
+            Department: "department",
+            Rating: "rating",
+            LinkedIn: "socialLinks",
+            Twitter: "socialLinks",
+          },
+        },
+        "org-1",
+        "u-1",
+      );
+      expect((prisma.contact.create.mock.calls[0][0] as { data: Record<string, unknown> }).data).toMatchObject({
+        jobTitle: "CTO",
+        department: "Eng",
+        rating: "hot",
+        socialLinks: ["https://linkedin.com/in/ann", "https://a.dev", "https://x.com/ann"],
+      });
+    });
+
+    it("import skips rows with an invalid rating or social link", async () => {
+      const csv = "Name,Rating,Social\nA,lukewarm,\nB,,notaurl\nC,cold,https://c.dev\n";
+      const res = await service.importCsv(
+        { csv, mapping: { Name: "name", Rating: "rating", Social: "socialLinks" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({
+        created: 1,
+        skipped: [
+          { row: 2, reason: "Invalid rating" },
+          { row: 3, reason: "Invalid social link" },
+        ],
+      });
     });
 
     it("import skips rows with an invalid email and truncates long fields", async () => {

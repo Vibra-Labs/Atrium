@@ -4,6 +4,7 @@ import { DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { ContactSyncService } from "./contact-sync.service";
+import { LEGACY_PHONE_LABEL, splitName } from "../contacts/contact-fields";
 
 interface ProfileFill {
   phone?: string;
@@ -54,6 +55,47 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     await this.backfillProjectLinks(orgId);
     await this.backfillLabels(orgId);
     await this.backfillPaidInvoices(orgId);
+    await this.backfillContactFields(orgId);
+  }
+
+  /**
+   * Splits names into first/last and seeds phones from the legacy phone column. Idempotent:
+   * only contacts with no first name / no phones are touched. updatedAt is kept as it was.
+   */
+  async backfillContactFields(orgId: string): Promise<void> {
+    const unsplit = await this.prisma.contact.findMany({
+      where: { organizationId: orgId, firstName: null },
+      select: { id: true, name: true, updatedAt: true },
+    });
+    for (const contact of unsplit) {
+      const names = splitName(contact.name);
+      if (!names.firstName) continue;
+      try {
+        await this.prisma.contact.update({
+          where: { id: contact.id },
+          data: { ...names, updatedAt: contact.updatedAt },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to split the name of contact ${contact.id}`, err);
+      }
+    }
+
+    const phoneOnly = await this.prisma.contact.findMany({
+      where: { organizationId: orgId, phone: { not: null }, NOT: { phone: "" }, phones: { equals: [] } },
+      select: { id: true, phone: true, updatedAt: true },
+    });
+    for (const contact of phoneOnly) {
+      const number = contact.phone?.trim();
+      if (!number) continue;
+      try {
+        await this.prisma.contact.update({
+          where: { id: contact.id },
+          data: { phones: [{ label: LEGACY_PHONE_LABEL, number }], updatedAt: contact.updatedAt },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to copy the phone of contact ${contact.id}`, err);
+      }
+    }
   }
 
   private async backfillMembers(orgId: string): Promise<void> {

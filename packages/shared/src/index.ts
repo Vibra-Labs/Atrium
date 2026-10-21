@@ -59,6 +59,15 @@ export const DEFAULT_LEAD_SOURCES: string[] = ["Referral", "Website", "Event", "
 export const CONTACT_STATUSES = ["lead", "client", "past_client"] as const;
 export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 
+export const CONTACT_RATINGS = ["hot", "warm", "cold"] as const;
+export type ContactRating = (typeof CONTACT_RATINGS)[number];
+
+// A type alias (not an interface) so it is assignable to Prisma's Json input.
+export type ContactPhone = {
+  label: string;
+  number: string;
+};
+
 export const FOLLOW_UP_REPEAT_DAYS: readonly number[] = [14, 30, 90, 180, 365];
 export const FOLLOW_UP_SNOOZE_DAYS: readonly number[] = [1, 3, 7];
 

@@ -1,5 +1,8 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   ValidateIf,
+  ValidateNested,
   IsDateString,
   IsEmail,
   IsInt,
@@ -13,32 +16,92 @@ import {
   MinLength,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { CONTACT_STATUSES, FOLLOW_UP_REPEAT_DAYS, FOLLOW_UP_SNOOZE_DAYS } from "@atrium/shared";
-import type { ContactStatus } from "@atrium/shared";
+import {
+  CONTACT_RATINGS,
+  CONTACT_STATUSES,
+  FOLLOW_UP_REPEAT_DAYS,
+  FOLLOW_UP_SNOOZE_DAYS,
+} from "@atrium/shared";
+import type { ContactRating, ContactStatus } from "@atrium/shared";
 import { PaginationQueryDto } from "../common";
 
-export { CONTACT_STATUSES };
+export { CONTACT_RATINGS, CONTACT_STATUSES };
 
 export const LEAD_SOURCE_NAME_MAX = 100;
 export const TIMELINE_MAX_PAGE = 50;
-export type { ContactStatus };
+export const COMPANY_NUMBER_MAX = 2_000_000_000;
+export type { ContactRating, ContactStatus };
 
+/** Lengths are checked after trimming, in contact-fields.ts. */
+export class ContactPhoneDto {
+  @IsString()
+  label!: string;
+
+  @IsString()
+  number!: string;
+}
+
+/** `name` is optional on both create and update; the service requires firstName or name. */
 export class UpdateContactDto {
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(200)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  firstName?: string;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  @MaxLength(100)
+  lastName?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  @MaxLength(200)
+  jobTitle?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  @MaxLength(100)
+  department?: string | null;
+
+  /** Replaces the whole list; `phone` mirrors the first number. */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => ContactPhoneDto)
+  phones?: ContactPhoneDto[] | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsArray()
+  @IsString({ each: true })
+  socialLinks?: string[] | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsIn(CONTACT_RATINGS)
+  rating?: ContactRating | null;
 
   @IsOptional()
   @ValidateIf((_, v) => v !== null)
   @IsEmail()
   email?: string | null;
 
+  /** Legacy single number: sets (or, blank, removes) the first entry of `phones`. */
   @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsString()
   @MaxLength(50)
-  phone?: string;
+  phone?: string | null;
 
   @IsOptional()
   @IsString()
@@ -82,12 +145,7 @@ export class UpdateContactDto {
   referredById?: string | null;
 }
 
-export class CreateContactDto extends UpdateContactDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  declare name: string;
-}
+export class CreateContactDto extends UpdateContactDto {}
 
 export class ListCompaniesQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -105,6 +163,10 @@ export class ListContactsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(CONTACT_STATUSES)
   status?: ContactStatus;
+
+  @IsOptional()
+  @IsIn(CONTACT_RATINGS)
+  rating?: ContactRating;
 
   @IsOptional()
   @IsString()
@@ -144,6 +206,21 @@ export class UpdateCompanyDto {
   @IsString()
   @MaxLength(5000)
   notes?: string | null;
+
+  /** Whole units of currency. */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsInt()
+  @Min(0)
+  @Max(COMPANY_NUMBER_MAX)
+  annualRevenue?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsInt()
+  @Min(0)
+  @Max(COMPANY_NUMBER_MAX)
+  employeeCount?: number | null;
 }
 
 export class CreateCompanyDto extends UpdateCompanyDto {

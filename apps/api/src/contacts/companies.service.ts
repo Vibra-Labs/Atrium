@@ -61,7 +61,14 @@ export class CompaniesService {
     await this.assertNameFree(name, orgId);
     try {
       return await this.prisma.company.create({
-        data: { organizationId: orgId, name, website: dto.website, notes: dto.notes },
+        data: {
+          organizationId: orgId,
+          name,
+          website: dto.website,
+          notes: dto.notes,
+          annualRevenue: dto.annualRevenue,
+          employeeCount: dto.employeeCount,
+        },
       });
     } catch (e) {
       throw this.mapDuplicate(e);
@@ -75,7 +82,13 @@ export class CompaniesService {
     try {
       return await this.prisma.company.update({
         where: { id },
-        data: { name, website: dto.website, notes: dto.notes },
+        data: {
+          name,
+          website: dto.website,
+          notes: dto.notes,
+          annualRevenue: dto.annualRevenue,
+          employeeCount: dto.employeeCount,
+        },
       });
     } catch (e) {
       throw this.mapDuplicate(e);

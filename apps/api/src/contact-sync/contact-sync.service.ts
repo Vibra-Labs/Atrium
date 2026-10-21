@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
+import { splitName } from "../contacts/contact-fields";
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -69,7 +70,14 @@ export class ContactSyncService {
     let created: Contact;
     try {
       created = await this.prisma.contact.create({
-        data: { organizationId: orgId, name: user.name, email, userId, status: "client" },
+        data: {
+          organizationId: orgId,
+          name: user.name.trim(),
+          ...splitName(user.name),
+          email,
+          userId,
+          status: "client",
+        },
       });
     } catch (err) {
       if ((err as { code?: string })?.code !== "P2002") throw err;

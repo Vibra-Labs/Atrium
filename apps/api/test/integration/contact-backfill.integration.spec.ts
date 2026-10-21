@@ -73,6 +73,8 @@ describe("ContactBackfillService.run", () => {
     expect(contacts).toHaveLength(1);
     expect(contacts[0].status).toBe("client");
     expect(contacts[0].phone).toBe("555");
+    expect(contacts[0].phones).toEqual([{ label: "Phone", number: "555" }]);
+    expect([contacts[0].firstName, contacts[0].lastName]).toEqual(["Cleo", null]);
     expect(contacts[0].company?.name).toBe("northwind");
     expect(contacts[0].notes).toHaveLength(1);
     expect(contacts[0].notes[0].content).toBe("Likes email");
@@ -92,6 +94,42 @@ describe("ContactBackfillService.run", () => {
 
     await backfill.run();
     expect(await counts()).toEqual(first);
+  });
+
+  it("splits names and seeds phones from the legacy phone, once, keeping updatedAt", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb8-org-${s}`, name: `cb8-${s}`, slug: `cb8-${s}` } })).id;
+    orgIds.push(orgId);
+    const legacy = await prisma.contact.create({ data: { organizationId: orgId, name: "Ann Marie Lee", phone: "555" } });
+    const mono = await prisma.contact.create({ data: { organizationId: orgId, name: "Cher" } });
+    const modern = await prisma.contact.create({
+      data: {
+        organizationId: orgId,
+        name: "Bo Diddley",
+        firstName: "Bo",
+        lastName: "Diddley",
+        phone: "111",
+        phones: [{ label: "Work", number: "111" }],
+      },
+    });
+
+    await backfill.run();
+
+    const a = await prisma.contact.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect([a.firstName, a.lastName]).toEqual(["Ann", "Marie Lee"]);
+    expect(a.phones).toEqual([{ label: "Phone", number: "555" }]);
+    expect(a.updatedAt.getTime()).toBe(legacy.updatedAt.getTime());
+    const c = await prisma.contact.findUniqueOrThrow({ where: { id: mono.id } });
+    expect([c.firstName, c.lastName]).toEqual(["Cher", null]);
+    expect(c.phones).toEqual([]);
+    const b = await prisma.contact.findUniqueOrThrow({ where: { id: modern.id } });
+    expect(b.phones).toEqual([{ label: "Work", number: "111" }]);
+
+    await prisma.contact.update({ where: { id: legacy.id }, data: { lastName: null, name: "Ann" } });
+    await backfill.run();
+    const again = await prisma.contact.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect([again.name, again.firstName, again.lastName]).toEqual(["Ann", "Ann", null]);
+    expect(again.phones).toEqual([{ label: "Phone", number: "555" }]);
   });
 
   it("does not re-seed deleted or renamed lead sources", async () => {

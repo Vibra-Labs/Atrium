@@ -944,6 +944,8 @@ model Company {
   name           String
   website        String?
   notes          String?
+  annualRevenue  Int? // whole units of currency
+  employeeCount  Int?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -972,9 +974,16 @@ model LeadSource {
 model Contact {
   id                 String    @id @default(cuid())
   organizationId     String
-  name               String
+  name               String // display name: "firstName lastName"
+  firstName          String?
+  lastName           String?
+  jobTitle           String?
+  department         String?
   email              String? // stored lowercased and trimmed
-  phone              String?
+  phone              String? // mirror of phones[0].number, kept by the service
+  phones             Json      @default("[]") // [{ label, number }]
+  socialLinks        Json      @default("[]") // [url]
+  rating             String? // "hot" | "warm" | "cold"
   website            String?
   address            String?
   status             String    @default("lead") // "lead" | "client" | "past_client"

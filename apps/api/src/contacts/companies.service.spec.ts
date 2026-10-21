@@ -3,6 +3,9 @@ import { BadRequestException, ConflictException, NotFoundException } from "@nest
 import type { PrismaService } from "../prisma/prisma.service";
 import { CompaniesService } from "./companies.service";
 import type { ContactRevenueService } from "./contact-revenue.service";
+import { validate } from "class-validator";
+import { plainToInstance } from "class-transformer";
+import { UpdateCompanyDto } from "./contacts.dto";
 
 const prisma = {
   company: {
@@ -96,13 +99,49 @@ describe("CompaniesService", () => {
     await service.update("co-1", { website: null, notes: null }, "org-1");
     expect(prisma.company.update).toHaveBeenLastCalledWith({
       where: { id: "co-1" },
-      data: { name: undefined, website: null, notes: null },
+      data: { name: undefined, website: null, notes: null, annualRevenue: undefined, employeeCount: undefined },
     });
     prisma.company.findFirst.mockImplementationOnce(() => Promise.resolve({ id: "co-1" }));
     await service.update("co-1", { notes: "x" }, "org-1");
     const data = (prisma.company.update.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data;
     expect(data.website).toBeUndefined();
     expect(data.notes).toBe("x");
+  });
+
+  it("update sets and clears annual revenue and employee count", async () => {
+    prisma.company.findFirst.mockImplementation(() => Promise.resolve({ id: "co-1" }));
+    await service.update("co-1", { annualRevenue: 1_500_000, employeeCount: 12 }, "org-1");
+    let data = (prisma.company.update.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(data).toMatchObject({ annualRevenue: 1_500_000, employeeCount: 12 });
+
+    await service.update("co-1", { annualRevenue: null, employeeCount: null }, "org-1");
+    data = (prisma.company.update.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(data).toMatchObject({ annualRevenue: null, employeeCount: null });
+  });
+
+  it("create stores annual revenue and employee count", async () => {
+    await service.create({ name: "Acme", annualRevenue: 10, employeeCount: 0 }, "org-1");
+    expect(prisma.company.create).toHaveBeenCalledWith({
+      data: {
+        organizationId: "org-1",
+        name: "Acme",
+        website: undefined,
+        notes: undefined,
+        annualRevenue: 10,
+        employeeCount: 0,
+      },
+    });
+  });
+
+  it("UpdateCompanyDto: whole numbers 0..2,000,000,000 or null", async () => {
+    const ok = (body: object): Promise<number> =>
+      validate(plainToInstance(UpdateCompanyDto, body)).then((errors) => errors.length);
+    expect(await ok({ annualRevenue: 0, employeeCount: 2_000_000_000 })).toBe(0);
+    expect(await ok({ annualRevenue: null, employeeCount: null })).toBe(0);
+    expect(await ok({ annualRevenue: -1 })).toBe(1);
+    expect(await ok({ employeeCount: 1.5 })).toBe(1);
+    expect(await ok({ annualRevenue: 2_000_000_001 })).toBe(1);
+    expect(await ok({ employeeCount: "12" })).toBe(1);
   });
 
   it("companies.remove unsets companyId on contacts", async () => {

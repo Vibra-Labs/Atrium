@@ -10,7 +10,7 @@ All notable changes to Atrium will be documented in this file.
 
 ### Changed
 
-- **People is now Team; clients live in Contacts** — The sidebar's People page becomes Team (`/dashboard/team`, staff only). Portal clients are contacts with portal access: filter Contacts by "Portal access", and invite, view as client, send a password reset link or remove access from the contact page. A client's portal profile is their contact (company, phone, address, website and a new "About"), every client invitation gets a contact, and search lists clients once. `/dashboard/clients` redirects; the People CSV export and `/clients/:id/profile` are replaced by the Contacts export and contact page.
+- **People splits into Contacts and Settings → Team** — The sidebar's People page is gone: your staff are managed under Settings → Team (`/dashboard/settings/team`; `/dashboard/team` redirects), and everyone outside your company is in Contacts. Portal clients are contacts with portal access: filter Contacts by "Portal access", and invite, view as client, send a password reset link or remove access from the contact page. A client's portal profile is their contact (company, phone, address, website and a new "About"), every client invitation gets a contact, and search lists clients once. `/dashboard/clients` redirects; the People CSV export and `/clients/:id/profile` are replaced by the Contacts export and contact page.
 
 ## [1.11.1] — 2026-10-19
 

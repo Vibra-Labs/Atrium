@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { clientsRedirectTarget, previewReturnPath } from "./legacy-routes";
+import { TEAM_PATH, clientsRedirectTarget, previewReturnPath } from "./legacy-routes";
 
 describe("clientsRedirectTarget", () => {
-  it("sends the Team tab to the Team page", () => {
-    expect(clientsRedirectTarget("team")).toBe("/dashboard/team");
+  it("sends the Team tab to Settings → Team", () => {
+    expect(clientsRedirectTarget("team")).toBe(TEAM_PATH);
+    expect(TEAM_PATH).toBe("/dashboard/settings/team");
   });
 
   it("sends the Clients tab, no tab or anything else to contacts with portal access", () => {

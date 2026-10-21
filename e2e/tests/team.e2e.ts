@@ -3,29 +3,44 @@ import { createOwner, getCsrfToken } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
-// Team = your staff (owners and admins). Clients are contacts with portal access.
+// Settings → Team = your staff (owners and admins). Clients are contacts with portal access.
+const TEAM = "/dashboard/settings/team";
+
 test.describe("Team", () => {
   // ── Navigation and redirects ────────────────────────────────────────────────
 
   test.describe("Navigation", () => {
-    test("team page loads with heading and no tabs", async ({ page }) => {
-      await page.goto("/dashboard/team");
-      await expect(page.locator("h1", { hasText: /^team$/i })).toBeVisible();
+    test("Settings → Team loads with its tab selected and no client tools", async ({ page }) => {
+      await page.goto(TEAM);
+      await expect(page.getByRole("link", { name: "Team", exact: true })).toHaveAttribute("aria-current", "page");
       await expect(page.getByRole("button", { name: /^clients/i })).toHaveCount(0);
       await expect(page.getByPlaceholder("client@example.com")).toHaveCount(0);
     });
 
-    test("sidebar has Team and Contacts, and no People", async ({ page }) => {
+    test("sidebar lists Contacts and Settings, with no Team or People", async ({ page }) => {
       await page.goto("/dashboard");
-      await expect(page.getByRole("link", { name: /^team$/i }).first()).toBeVisible();
       await expect(page.getByRole("link", { name: /^contacts$/i }).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: /^settings$/i }).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: /^team$/i })).toHaveCount(0);
       await expect(page.getByRole("link", { name: /^people$/i })).toHaveCount(0);
     });
 
-    test("/dashboard/clients?tab=team redirects to /dashboard/team", async ({ page }) => {
+    test("Settings has a Team tab that opens the staff list", async ({ page }) => {
+      await page.goto("/dashboard/settings/account");
+      await page.getByRole("link", { name: "Team", exact: true }).click();
+      await page.waitForURL(`**${TEAM}`);
+      await expect(page.getByText("(you)")).toBeVisible();
+    });
+
+    test("/dashboard/team redirects to Settings → Team", async ({ page }) => {
+      await page.goto("/dashboard/team");
+      await page.waitForURL(`**${TEAM}`);
+    });
+
+    test("/dashboard/clients?tab=team redirects to Settings → Team", async ({ page }) => {
       await page.goto("/dashboard/clients?tab=team");
-      await page.waitForURL("**/dashboard/team");
-      await expect(page.locator("h1", { hasText: /^team$/i })).toBeVisible();
+      await page.waitForURL(`**${TEAM}`);
+      await expect(page.getByRole("link", { name: "Team", exact: true })).toHaveAttribute("aria-current", "page");
     });
 
     test("/dashboard/clients redirects to contacts with portal access", async ({ page }) => {
@@ -40,7 +55,7 @@ test.describe("Team", () => {
     });
 
     test("the subtitle points clients to Contacts", async ({ page }) => {
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       await expect(page.getByRole("link", { name: "Contacts", exact: true }).last()).toHaveAttribute(
         "href",
         "/dashboard/contacts?access=portal",
@@ -52,7 +67,7 @@ test.describe("Team", () => {
 
   test.describe("Staff", () => {
     test("current user appears in the list with (you) label", async ({ page }) => {
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       await expect(page.getByText("(you)")).toBeVisible();
     });
 
@@ -60,7 +75,7 @@ test.describe("Team", () => {
       const res = await request.get(`${API}/clients?page=1&limit=100`);
       const body: { data: { role: string }[] } = await res.json();
       const staff = body.data.filter((m) => m.role !== "member").length;
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       await expect(page.getByTestId("team-member-row")).toHaveCount(staff);
     });
 
@@ -73,7 +88,7 @@ test.describe("Team", () => {
       expect(created.ok()).toBeTruthy();
       const label = (await created.json()) as { id: string };
 
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       const row = page.getByTestId("team-member-row").filter({ hasText: "(you)" });
       await row.getByRole("button", { name: "Edit labels" }).click();
       await row.getByRole("option", { name }).click();
@@ -91,13 +106,13 @@ test.describe("Team", () => {
     });
 
     test("team invite form is visible for owner", async ({ page }) => {
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       await expect(page.getByPlaceholder("team@example.com")).toBeVisible();
       await expect(page.getByRole("button", { name: /^invite$/i })).toBeVisible();
     });
 
     test("team invite role selector has admin and owner, defaulting to admin", async ({ page }) => {
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       const roleSelect = page.getByLabel("Role", { exact: true });
       await expect(roleSelect).toHaveValue("admin");
       await expect(roleSelect.locator("option[value='admin']")).toHaveCount(1);
@@ -106,13 +121,13 @@ test.describe("Team", () => {
     });
 
     test("current user row shows their role badge", async ({ page }) => {
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       const memberRow = page.getByTestId("team-member-row").filter({ hasText: "(you)" });
       await expect(memberRow.locator("span.rounded-full")).toBeVisible();
     });
 
     test("members section heading is visible", async ({ page }) => {
-      await page.goto("/dashboard/team");
+      await page.goto(TEAM);
       await expect(page.getByText(/^members/i)).toBeVisible();
     });
 
@@ -133,7 +148,7 @@ test.describe("Team", () => {
         expect(res.ok()).toBeTruthy();
       }
 
-      await page.goto("http://localhost:3000/dashboard/team");
+      await page.goto(`http://localhost:3000${TEAM}`);
       const row = page.getByTestId("pending-invitation").filter({ hasText: staffEmail });
       await expect(row).toBeVisible();
       await expect(row.getByRole("button", { name: /copy link/i })).toBeVisible();

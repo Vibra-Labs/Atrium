@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { clientsRedirectTarget } from "@/lib/legacy-routes";
 
-/** The old People page: team moved to /dashboard/team, clients are contacts with portal access. */
+/** The old People page: team moved to Settings → Team, clients are contacts with portal access. */
 export default async function ClientsRedirect({
   searchParams,
 }: {

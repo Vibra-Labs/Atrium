@@ -1,9 +1,12 @@
+/** Staff management lives in Settings; /dashboard/team and the old People page redirect here. */
+export const TEAM_PATH = "/dashboard/settings/team";
+
 /**
  * Where the old People page (/dashboard/clients) sends you now: its Team tab became
- * /dashboard/team; clients are contacts with portal access.
+ * Settings → Team; clients are contacts with portal access.
  */
 export function clientsRedirectTarget(tab: string | string[] | undefined): string {
-  return tab === "team" ? "/dashboard/team" : "/dashboard/contacts?access=portal";
+  return tab === "team" ? TEAM_PATH : "/dashboard/contacts?access=portal";
 }
 
 /** A preview's return path, kept only when it is a dashboard page on this site. */

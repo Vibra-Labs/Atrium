@@ -11,6 +11,7 @@ interface Section {
 const SECTIONS: Section[] = [
   { href: "/dashboard/settings/account", label: "Account" },
   { href: "/dashboard/settings/workspace", label: "Workspace" },
+  { href: "/dashboard/settings/team", label: "Team" },
   { href: "/dashboard/settings/organizations", label: "Organizations" },
   { href: "/dashboard/settings/billing", label: "Billing" },
   { href: "/dashboard/settings/payments", label: "Payments" },
@@ -29,6 +30,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             <Link
               key={s.href}
               href={s.href}
+              aria-current={isActive ? "page" : undefined}
               className={`px-4 py-2 text-sm font-medium transition-colors relative ${
                 isActive
                   ? "text-[var(--foreground)]"

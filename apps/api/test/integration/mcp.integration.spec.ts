@@ -21,6 +21,7 @@ import { UpdatesService } from "../../src/updates/updates.service";
 import { ClientsService } from "../../src/clients/clients.service";
 import { ContactsService } from "../../src/contacts/contacts.service";
 import { ContactRevenueService } from "../../src/contacts/contact-revenue.service";
+import { ContactSyncService } from "../../src/contact-sync/contact-sync.service";
 import { DocumentsService } from "../../src/documents/documents.service";
 import type { AuthService } from "../../src/auth/auth.service";
 import type { BillingService } from "../../src/billing/billing.service";
@@ -83,14 +84,15 @@ beforeAll(async () => {
   // Notifications, activity logging, storage and the logger are side effects
   // the tools do not depend on; every method is a resolved no-op.
   const noop = new Proxy({}, { get: () => () => Promise.resolve() }) as never;
-  clients = new ClientsService(prisma, {} as never, {} as never);
+  const contacts = new ContactsService(prisma, new ContactRevenueService(prisma));
+  clients = new ClientsService(prisma, {} as never, new ContactSyncService(prisma), contacts);
   const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub, configStub);
   const mcp = new McpService(
     new ProjectsService(prisma, {} as never),
     new TasksService(prisma, noop, noop, noop),
     new UpdatesService(prisma, noop, noop, noop),
     new NotesService(prisma),
-    new ContactsService(prisma, new ContactRevenueService(prisma)),
+    contacts,
     clients,
     billingStub,
     new DocumentsService(prisma, noop, noop, noop, noop, noop, billingStub),

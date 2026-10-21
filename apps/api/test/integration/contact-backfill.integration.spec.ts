@@ -292,4 +292,70 @@ describe("ContactBackfillService.run", () => {
     expect(retried.notes).toHaveLength(1);
     expect(retried.profileImportedAt).not.toBeNull();
   });
+
+  it("gives pending portal invitations a contact once, and leaves staff invitations alone", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb9-org-${s}`, name: `cb9-${s}`, slug: `cb9-${s}` } })).id;
+    orgIds.push(orgId);
+    const inFuture = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const known = await prisma.contact.create({
+      data: { organizationId: orgId, name: "Known", email: `known-${s}@x.com`, status: "client" },
+    });
+    await prisma.invitation.createMany({
+      data: [
+        { id: `cb9-i1-${s}`, organizationId: orgId, email: `New-${s}@X.com`, role: "member", status: "pending", expiresAt: inFuture, inviterId: "x" },
+        { id: `cb9-i2-${s}`, organizationId: orgId, email: `KNOWN-${s}@x.com`, role: "member", status: "pending", expiresAt: inFuture, inviterId: "x" },
+        { id: `cb9-i3-${s}`, organizationId: orgId, email: `old-${s}@x.com`, role: "member", status: "pending", expiresAt: new Date(Date.now() - 1000), inviterId: "x" },
+        { id: `cb9-i4-${s}`, organizationId: orgId, email: `staff-${s}@x.com`, role: "admin", status: "pending", expiresAt: inFuture, inviterId: "x" },
+        { id: `cb9-i5-${s}`, organizationId: orgId, email: `gone-${s}@x.com`, role: "member", status: "canceled", expiresAt: inFuture, inviterId: "x" },
+      ],
+    });
+
+    await backfill.run();
+
+    const contacts = await prisma.contact.findMany({ where: { organizationId: orgId }, orderBy: { email: "asc" } });
+    expect(contacts.map((c) => [c.email, c.status])).toEqual([
+      [`known-${s}@x.com`, "client"],
+      [`new-${s}@x.com`, "lead"],
+      [`old-${s}@x.com`, "lead"],
+    ]);
+    expect((await prisma.contact.findUniqueOrThrow({ where: { id: known.id } })).name).toBe("Known");
+
+    await backfill.run();
+    expect(await prisma.contact.count({ where: { organizationId: orgId } })).toBe(3);
+  });
+
+  it("copies the old profile description into About once, also for contacts imported earlier", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb10-org-${s}`, name: `cb10-${s}`, slug: `cb10-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb10-a-${s}`, `cb10-b-${s}`);
+    const fresh = await prisma.user.create({ data: { id: `cb10-a-${s}`, name: "Fay", email: `fay-${s}@x.com`, emailVerified: true } });
+    const earlier = await prisma.user.create({ data: { id: `cb10-b-${s}`, name: "Gus", email: `gus-${s}@x.com`, emailVerified: true } });
+    await prisma.member.create({ data: { id: `cb10-m-a-${s}`, organizationId: orgId, userId: fresh.id, role: "member" } });
+    await prisma.member.create({ data: { id: `cb10-m-b-${s}`, organizationId: orgId, userId: earlier.id, role: "member" } });
+    await prisma.clientProfile.createMany({
+      data: [
+        { userId: fresh.id, organizationId: orgId, description: "Fay's shop" },
+        { userId: earlier.id, organizationId: orgId, description: "Gus's studio" },
+      ],
+    });
+    // Imported by an earlier version, before Contact.description existed.
+    const gus = await prisma.contact.create({
+      data: { organizationId: orgId, name: "Gus", email: earlier.email, userId: earlier.id, status: "client", profileImportedAt: new Date() },
+    });
+
+    await backfill.run();
+
+    const fay = await prisma.contact.findFirstOrThrow({ where: { organizationId: orgId, userId: fresh.id } });
+    expect(fay.description).toBe("Fay's shop");
+    const gusAfter = await prisma.contact.findUniqueOrThrow({ where: { id: gus.id } });
+    expect(gusAfter.description).toBe("Gus's studio");
+    expect(gusAfter.updatedAt.getTime()).toBe(gus.updatedAt.getTime());
+
+    // Cleared in the app (stored as ""): later boots leave it cleared.
+    await prisma.contact.update({ where: { id: gus.id }, data: { description: "" } });
+    await backfill.run();
+    expect((await prisma.contact.findUniqueOrThrow({ where: { id: gus.id } })).description).toBe("");
+  });
 });

@@ -60,6 +60,8 @@ const prisma = {
   },
   contactLabel: { createMany: mock(() => Promise.resolve({ count: 0 })) },
   user: { findMany: mock(() => Promise.resolve([] as unknown[])) },
+  invitation: { findMany: mock(() => Promise.resolve([] as unknown[])) },
+  member: { findFirst: mock(() => Promise.resolve(null as unknown)) },
 };
 
 const revenue = {
@@ -82,6 +84,8 @@ function resetAll(): void {
   prisma.contactEvent.findMany.mockImplementation(() => Promise.resolve([]));
   prisma.contactNote.count.mockImplementation(() => Promise.resolve(0));
   prisma.contactEvent.count.mockImplementation(() => Promise.resolve(0));
+  prisma.invitation.findMany.mockImplementation(() => Promise.resolve([]));
+  prisma.member.findFirst.mockImplementation(() => Promise.resolve(null));
 }
 
 async function rejects(p: Promise<unknown>): Promise<unknown> {
@@ -526,6 +530,205 @@ describe("ContactsService", () => {
     });
   });
 
+  describe("portal access", () => {
+    const now = new Date();
+    const row = (over: Record<string, unknown>): Record<string, unknown> => ({
+      id: "c",
+      name: "N",
+      email: null,
+      status: "lead",
+      phones: [],
+      socialLinks: [],
+      company: null,
+      labels: [],
+      userId: null,
+      ...over,
+    });
+
+    function whereOf(): Record<string, unknown> {
+      return (prisma.contact.findMany.mock.calls[0][0] as { where: Record<string, unknown> }).where;
+    }
+
+    it("pending invite emails come from open, unexpired client invitations, lowercased", async () => {
+      prisma.invitation.findMany.mockImplementation(() =>
+        Promise.resolve([{ email: "Ann@X.com" }, { email: "ann@x.com " }, { email: "bo@x.com" }]),
+      );
+      expect(await service.pendingInviteEmails("org-1", now)).toEqual(["ann@x.com", "bo@x.com"]);
+      expect(prisma.invitation.findMany).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", role: "member", status: "pending", expiresAt: { gt: now } },
+        select: { email: true },
+      });
+    });
+
+    it("access=portal lists contacts with a portal login", async () => {
+      await service.findAll("org-1", { access: "portal" });
+      expect(whereOf()).toEqual({ organizationId: "org-1", userId: { not: null } });
+    });
+
+    it("access=pending lists contacts without a login whose email has an open invite", async () => {
+      prisma.invitation.findMany.mockImplementation(() => Promise.resolve([{ email: "Ann@X.com" }]));
+      await service.findAll("org-1", { access: "pending" });
+      expect(whereOf()).toEqual({ organizationId: "org-1", userId: null, email: { in: ["ann@x.com"] } });
+    });
+
+    it("access=none excludes logins and pending invites but keeps contacts without an email", async () => {
+      prisma.invitation.findMany.mockImplementation(() => Promise.resolve([{ email: "ann@x.com" }]));
+      await service.findAll("org-1", { access: "none" });
+      expect(whereOf()).toEqual({
+        organizationId: "org-1",
+        userId: null,
+        AND: [{ OR: [{ email: null }, { email: { notIn: ["ann@x.com"] } }] }],
+      });
+    });
+
+    it("access=none with no open invites is just 'no login'", async () => {
+      await service.findAll("org-1", { access: "none" });
+      expect(whereOf()).toEqual({ organizationId: "org-1", userId: null });
+    });
+
+    it("rows carry a portal / pending badge", async () => {
+      prisma.invitation.findMany.mockImplementation(() => Promise.resolve([{ email: "BO@x.com" }]));
+      prisma.contact.findMany.mockImplementation(() =>
+        Promise.resolve([
+          row({ id: "a", userId: "u-1", email: "a@x.com" }),
+          row({ id: "b", email: "bo@x.com" }),
+          row({ id: "c", email: "cy@x.com" }),
+          row({ id: "d" }),
+        ]),
+      );
+      const res = await service.findAll("org-1", {});
+      expect(res.data.map((c) => c.portalAccess)).toEqual(["portal", "pending", null, null]);
+    });
+
+    it("ListContactsQueryDto accepts only portal / pending / none", async () => {
+      for (const access of ["portal", "pending", "none"]) {
+        expect(await validate(plainToInstance(ListContactsQueryDto, { access }))).toHaveLength(0);
+      }
+      expect(await validate(plainToInstance(ListContactsQueryDto, { access: "all" }))).not.toHaveLength(0);
+    });
+
+    it("findOne exposes the client membership for a contact with a login", async () => {
+      const joinedAt = new Date("2026-01-02T00:00:00Z");
+      prisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve(row({ userId: "u-1", projects: [], labels: [] })),
+      );
+      prisma.member.findFirst.mockImplementation(() =>
+        Promise.resolve({ id: "m-1", createdAt: joinedAt, lastSeenAt: null }),
+      );
+      const res = await service.findOne("c", "org-1");
+      expect(prisma.member.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", userId: "u-1", role: "member" },
+        select: { id: true, createdAt: true, lastSeenAt: true },
+      });
+      expect(res.portal).toEqual({ memberId: "m-1", joinedAt, lastSeenAt: null });
+    });
+
+    it("findOne has no portal info for a contact without a login", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(row({ projects: [], labels: [] })));
+      const res = await service.findOne("c", "org-1");
+      expect(res.portal).toBeNull();
+      expect(prisma.member.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("About (description)", () => {
+    it("is stored trimmed; blank or null clears it to an empty string", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", phones: [] }));
+      await service.update("c-1", { description: "  Bakery  " }, "org-1");
+      await service.update("c-1", { description: null }, "org-1");
+      await service.update("c-1", { description: "   " }, "org-1");
+      await service.update("c-1", { jobTitle: "CTO" }, "org-1");
+      const data = prisma.contact.update.mock.calls.map(
+        (c) => (c as unknown as [{ data: { description?: string } }])[0].data.description,
+      );
+      expect(data).toEqual(["Bakery", "", "", undefined]);
+    });
+
+    it("DTO caps it at 2000 characters", async () => {
+      const errors = (description: string): Promise<number> =>
+        validate(plainToInstance(UpdateContactDto, { description })).then((e) => e.length);
+      expect(await errors("a".repeat(2000))).toBe(0);
+      expect(await errors("a".repeat(2001))).toBe(1);
+    });
+  });
+
+  describe("portal self-service profile", () => {
+    const contact = {
+      id: "c-1",
+      organizationId: "org-1",
+      phone: "111",
+      phones: [{ label: "Work", number: "111" }, { label: "Home", number: "222" }],
+      address: "Old St",
+      website: "",
+      description: null,
+      companyId: null,
+      company: null,
+    };
+
+    function written(): Record<string, unknown> {
+      return (prisma.contact.update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    }
+
+    it("reads the contact as the old profile shape", async () => {
+      prisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve({ ...contact, company: { name: "Acme" }, description: "" }),
+      );
+      expect(await service.portalProfile("c-1", "org-1")).toEqual({
+        company: "Acme",
+        phone: "111",
+        address: "Old St",
+        website: null,
+        description: null,
+      });
+    });
+
+    it("maps company (find-or-create), phone (first number), address, website and description", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(contact));
+      await service.updatePortalProfile(
+        "c-1",
+        { company: " Acme ", phone: " 999 ", address: " New St ", website: "", description: " Bakery " },
+        "org-1",
+      );
+      expect(prisma.company.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", name: { equals: "Acme", mode: "insensitive" } },
+      });
+      expect(written()).toEqual({
+        companyId: "co-new",
+        phone: "999",
+        phones: [{ label: "Work", number: "999" }, { label: "Home", number: "222" }],
+        address: "New St",
+        website: null,
+        description: "Bakery",
+      });
+    });
+
+    it("a blank company unlinks it and fields left out are untouched", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(contact));
+      await service.updatePortalProfile("c-1", { company: "  " }, "org-1");
+      expect(written()).toEqual({ companyId: null });
+      expect(prisma.company.create).not.toHaveBeenCalled();
+    });
+
+    it("never writes CRM-only fields, whatever the input carries", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve(contact));
+      const input = {
+        company: "Acme",
+        status: "past_client",
+        rating: "cold",
+        leadSourceId: "ls-1",
+        followUpAt: "2026-01-01",
+        email: "x@y.com",
+      } as unknown as Parameters<ContactsService["updatePortalProfile"]>[1];
+      await service.updatePortalProfile("c-1", input, "org-1");
+      expect(Object.keys(written()).sort()).toEqual(["companyId"]);
+    });
+
+    it("404s for a contact outside the org", async () => {
+      const e = await rejects(service.updatePortalProfile("c-x", { company: "A" }, "org-1"));
+      expect(e).toBeInstanceOf(NotFoundException);
+    });
+  });
+
   it("unlinkProject refuses while the contact's user is a client on the project", async () => {
     prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", userId: "u-1" }));
     prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve({ projectId: "p-1", userId: "u-1" }));
@@ -770,6 +973,8 @@ describe("ContactsService", () => {
             rating: "warm",
             website: null,
             address: null,
+            description: "Bakery",
+            userId: "u-1",
             status: "lead",
             followUpAt: new Date("2026-11-01T00:00:00Z"),
             company: { name: "Acme" },
@@ -782,13 +987,13 @@ describe("ContactsService", () => {
       const csv = await service.exportCsv("org-1", {});
       const [header, line] = csv.split("\r\n");
       expect(header).toBe(
-        "Name,First name,Last name,Email,Phone,All phones,Company,Job title,Department,Website,Address,Status,Rating,Source,Tags,Social links,Next follow-up,Paid all time",
+        "Name,First name,Last name,Email,Phone,All phones,Company,Job title,Department,Website,Address,Status,Rating,Source,Tags,Social links,Next follow-up,Paid all time,About,Portal access",
       );
       expect(line.startsWith(`"'=HYPERLINK(""x"")"`)).toBe(true);
       // A leading "+" is neutralised like any formula character.
       expect(line).toContain(",Ann,Lee,a@x.com,'+1 555,Mobile: +1 555; Work: +1 777,Acme,CTO,Eng,");
       expect(line).toContain(
-        ",Lead,Warm,Web,vip; hot,https://linkedin.com/in/ann https://x.com/ann,2026-11-01,1234.56",
+        ",Lead,Warm,Web,vip; hot,https://linkedin.com/in/ann https://x.com/ann,2026-11-01,1234.56,Bakery,Yes",
       );
     });
 

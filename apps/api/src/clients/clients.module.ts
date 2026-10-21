@@ -5,9 +5,10 @@ import { InvitationReminderTask } from "./invitation-reminder.task";
 import { ContactSyncModule } from "../contact-sync/contact-sync.module";
 import { AuthModule } from "../auth/auth.module";
 import { MailModule } from "../mail/mail.module";
+import { ContactsModule } from "../contacts/contacts.module";
 
 @Module({
-  imports: [ContactSyncModule, AuthModule, MailModule],
+  imports: [ContactSyncModule, ContactsModule, AuthModule, MailModule],
   controllers: [ClientsController],
   providers: [ClientsService, InvitationReminderTask],
   exports: [ClientsService],

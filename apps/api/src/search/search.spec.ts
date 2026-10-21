@@ -34,9 +34,6 @@ const mockPrisma = {
   member: {
     findMany: mock(() => Promise.resolve([])),
   },
-  clientProfile: {
-    findMany: mock(() => Promise.resolve([])),
-  },
   contact: {
     findMany: mock(() => Promise.resolve([])),
   },
@@ -80,23 +77,6 @@ function makeFile(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeMember(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "member-1",
-    userId: "user-1",
-    user: { id: "user-1", name: "Alice Alpha", email: "alice@example.com" },
-    ...overrides,
-  };
-}
-
-function makeClientProfile(overrides: Record<string, unknown> = {}) {
-  return {
-    userId: "user-1",
-    company: "Alpha Corp",
-    ...overrides,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Helper: clear all mocks between tests
 // ---------------------------------------------------------------------------
@@ -106,7 +86,6 @@ function clearAllMocks() {
   mockPrisma.task.findMany.mockClear();
   mockPrisma.file.findMany.mockClear();
   mockPrisma.member.findMany.mockClear();
-  mockPrisma.clientProfile.findMany.mockClear();
   mockPrisma.contact.findMany.mockClear();
   mockPrisma.company.findMany.mockClear();
 }
@@ -116,7 +95,6 @@ function resetAllMocksToEmpty() {
   mockPrisma.task.findMany.mockReturnValue(Promise.resolve([]));
   mockPrisma.file.findMany.mockReturnValue(Promise.resolve([]));
   mockPrisma.member.findMany.mockReturnValue(Promise.resolve([]));
-  mockPrisma.clientProfile.findMany.mockReturnValue(Promise.resolve([]));
   mockPrisma.contact.findMany.mockReturnValue(Promise.resolve([]));
   mockPrisma.company.findMany.mockReturnValue(Promise.resolve([]));
 }
@@ -139,54 +117,46 @@ describe("SearchService", () => {
   // =========================================================================
 
   describe("return shape", () => {
-    it("returns an object with projects, tasks, files, and clients keys", async () => {
+    it("returns projects, tasks, files, contacts and companies, and no clients group", async () => {
       const result = await service.search(ORG, QUERY);
 
-      expect(result).toHaveProperty("projects");
-      expect(result).toHaveProperty("tasks");
-      expect(result).toHaveProperty("files");
-      expect(result).toHaveProperty("clients");
+      expect(Object.keys(result).sort()).toEqual(["companies", "contacts", "files", "projects", "tasks"]);
+      expect(result).not.toHaveProperty("clients");
     });
 
-    it("returns arrays for all four keys when there are no matches", async () => {
-      const result = await service.search(ORG, QUERY);
-
-      expect(Array.isArray(result.projects)).toBe(true);
-      expect(Array.isArray(result.tasks)).toBe(true);
-      expect(Array.isArray(result.files)).toBe(true);
-      expect(Array.isArray(result.clients)).toBe(true);
-    });
-
-    it("returns empty arrays for all four keys when nothing matches", async () => {
+    it("returns empty arrays when nothing matches", async () => {
       const result = await service.search(ORG, QUERY);
 
       expect(result.projects).toHaveLength(0);
       expect(result.tasks).toHaveLength(0);
       expect(result.files).toHaveLength(0);
-      expect(result.clients).toHaveLength(0);
+      expect(result.contacts).toHaveLength(0);
+      expect(result.companies).toHaveLength(0);
     });
 
-    it("returns matching data in all four result arrays when matches exist", async () => {
-      const project = makeProject();
-      const task = makeTask();
-      const file = makeFile();
-      const member = makeMember();
-      const profile = makeClientProfile();
-
-      mockPrisma.project.findMany.mockReturnValue(Promise.resolve([project]));
-      mockPrisma.task.findMany.mockReturnValue(Promise.resolve([task]));
-      mockPrisma.file.findMany.mockReturnValue(Promise.resolve([file]));
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve([member]));
-      mockPrisma.clientProfile.findMany.mockReturnValue(
-        Promise.resolve([profile]),
-      );
+    it("returns matching data in each result array when matches exist", async () => {
+      mockPrisma.project.findMany.mockReturnValue(Promise.resolve([makeProject()]));
+      mockPrisma.task.findMany.mockReturnValue(Promise.resolve([makeTask()]));
+      mockPrisma.file.findMany.mockReturnValue(Promise.resolve([makeFile()]));
 
       const result = await service.search(ORG, QUERY);
 
       expect(result.projects).toHaveLength(1);
       expect(result.tasks).toHaveLength(1);
       expect(result.files).toHaveLength(1);
-      expect(result.clients).toHaveLength(1);
+    });
+
+    it("finds a portal client once, as a contact, without querying members", async () => {
+      mockPrisma.contact.findMany.mockReturnValue(
+        Promise.resolve([{ id: "c-1", name: "Alice Alpha", email: "alice@example.com", company: { name: "Alpha Corp" } }]),
+      );
+
+      const result = await service.search(ORG, QUERY);
+
+      expect(mockPrisma.member.findMany).not.toHaveBeenCalled();
+      expect(result.contacts).toEqual([
+        { id: "c-1", name: "Alice Alpha", email: "alice@example.com", company: "Alpha Corp" },
+      ]);
     });
   });
 
@@ -418,234 +388,18 @@ describe("SearchService", () => {
   });
 
   // =========================================================================
-  // Member / client queries
-  // =========================================================================
-
-  describe("member search", () => {
-    it("queries members scoped to the provided organizationId", async () => {
-      await service.search(ORG, QUERY);
-
-      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ organizationId: ORG }),
-        }),
-      );
-    });
-
-    it("restricts member search to role 'member' (excludes owners and admins)", async () => {
-      await service.search(ORG, QUERY);
-
-      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ role: "member" }),
-        }),
-      );
-    });
-
-    it("searches members by user name using case-insensitive contains", async () => {
-      await service.search(ORG, QUERY);
-
-      const call = (
-        mockPrisma.member.findMany as ReturnType<typeof mock>
-      ).mock.calls[0][0] as PrismaArgs;
-      const userFilter = call.where?.user as Record<string, unknown>;
-      const or = (userFilter?.OR as Record<string, unknown>[]) ?? [];
-      expect(
-        or.some(
-          (clause) =>
-            JSON.stringify(clause).includes("name") &&
-            JSON.stringify(clause).includes("insensitive"),
-        ),
-      ).toBe(true);
-    });
-
-    it("searches members by user email using case-insensitive contains", async () => {
-      await service.search(ORG, QUERY);
-
-      const call = (
-        mockPrisma.member.findMany as ReturnType<typeof mock>
-      ).mock.calls[0][0] as PrismaArgs;
-      const userFilter = call.where?.user as Record<string, unknown>;
-      const or = (userFilter?.OR as Record<string, unknown>[]) ?? [];
-      expect(
-        or.some(
-          (clause) =>
-            JSON.stringify(clause).includes("email") &&
-            JSON.stringify(clause).includes("insensitive"),
-        ),
-      ).toBe(true);
-    });
-
-    it("caps member results at 5", async () => {
-      await service.search(ORG, QUERY);
-
-      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 5 }),
-      );
-    });
-
-    it("includes user id, name, and email in member select", async () => {
-      await service.search(ORG, QUERY);
-
-      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          select: expect.objectContaining({
-            user: { select: { id: true, name: true, email: true } },
-          }),
-        }),
-      );
-    });
-  });
-
-  // =========================================================================
-  // clientProfile enrichment
-  // =========================================================================
-
-  describe("clientProfile enrichment", () => {
-    it("skips the clientProfile query entirely when no members are found", async () => {
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve([]));
-
-      await service.search(ORG, QUERY);
-
-      expect(mockPrisma.clientProfile.findMany).not.toHaveBeenCalled();
-    });
-
-    it("queries clientProfile when at least one member is found", async () => {
-      const member = makeMember({ userId: "user-1" });
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve([member]));
-
-      await service.search(ORG, QUERY);
-
-      expect(mockPrisma.clientProfile.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { userId: { in: ["user-1"] } },
-        }),
-      );
-    });
-
-    it("passes all member userIds to the clientProfile query", async () => {
-      const members = [
-        makeMember({ id: "m-1", userId: "user-1" }),
-        makeMember({ id: "m-2", userId: "user-2" }),
-        makeMember({ id: "m-3", userId: "user-3" }),
-      ];
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve(members));
-
-      await service.search(ORG, QUERY);
-
-      const call = (
-        mockPrisma.clientProfile.findMany as ReturnType<typeof mock>
-      ).mock.calls[0][0] as PrismaArgs;
-      const inIds = (call.where?.userId as { in: string[] }).in;
-      expect(inIds).toEqual(expect.arrayContaining(["user-1", "user-2", "user-3"]));
-      expect(inIds).toHaveLength(3);
-    });
-
-    it("attaches the company from clientProfile to the corresponding client entry", async () => {
-      const member = makeMember({ userId: "user-1" });
-      const profile = makeClientProfile({ userId: "user-1", company: "Alpha Corp" });
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve([member]));
-      mockPrisma.clientProfile.findMany.mockReturnValue(
-        Promise.resolve([profile]),
-      );
-
-      const result = await service.search(ORG, QUERY);
-
-      expect(result.clients[0].company).toBe("Alpha Corp");
-    });
-
-    it("sets company to null when a member has no matching clientProfile", async () => {
-      const member = makeMember({ userId: "user-no-profile" });
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve([member]));
-      mockPrisma.clientProfile.findMany.mockReturnValue(Promise.resolve([]));
-
-      const result = await service.search(ORG, QUERY);
-
-      expect(result.clients[0].company).toBeNull();
-    });
-
-    it("correctly maps company to each client when multiple members have profiles", async () => {
-      const members = [
-        makeMember({ id: "m-1", userId: "user-1", user: { id: "user-1", name: "Alice", email: "alice@example.com" } }),
-        makeMember({ id: "m-2", userId: "user-2", user: { id: "user-2", name: "Bob", email: "bob@example.com" } }),
-      ];
-      const profiles = [
-        { userId: "user-1", company: "Alpha Corp" },
-        { userId: "user-2", company: "Beta Ltd" },
-      ];
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve(members));
-      mockPrisma.clientProfile.findMany.mockReturnValue(
-        Promise.resolve(profiles),
-      );
-
-      const result = await service.search(ORG, QUERY);
-
-      const alice = result.clients.find((c) => c.userId === "user-1");
-      const bob = result.clients.find((c) => c.userId === "user-2");
-      expect(alice?.company).toBe("Alpha Corp");
-      expect(bob?.company).toBe("Beta Ltd");
-    });
-
-    it("correctly sets company to null for a member with no profile while others have profiles", async () => {
-      const members = [
-        makeMember({ id: "m-1", userId: "user-has-profile" }),
-        makeMember({ id: "m-2", userId: "user-no-profile" }),
-      ];
-      const profiles = [{ userId: "user-has-profile", company: "Gamma Inc" }];
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve(members));
-      mockPrisma.clientProfile.findMany.mockReturnValue(
-        Promise.resolve(profiles),
-      );
-
-      const result = await service.search(ORG, QUERY);
-
-      const withProfile = result.clients.find(
-        (c) => c.userId === "user-has-profile",
-      );
-      const withoutProfile = result.clients.find(
-        (c) => c.userId === "user-no-profile",
-      );
-      expect(withProfile?.company).toBe("Gamma Inc");
-      expect(withoutProfile?.company).toBeNull();
-    });
-
-    it("preserves all original member fields in the enriched client record", async () => {
-      const member = makeMember({
-        id: "m-1",
-        userId: "user-1",
-        user: { id: "user-1", name: "Alice Alpha", email: "alice@example.com" },
-      });
-      const profile = makeClientProfile({ userId: "user-1", company: "Alpha Corp" });
-      mockPrisma.member.findMany.mockReturnValue(Promise.resolve([member]));
-      mockPrisma.clientProfile.findMany.mockReturnValue(
-        Promise.resolve([profile]),
-      );
-
-      const result = await service.search(ORG, QUERY);
-
-      expect(result.clients[0].id).toBe("m-1");
-      expect(result.clients[0].userId).toBe("user-1");
-      expect(result.clients[0].user).toEqual({
-        id: "user-1",
-        name: "Alice Alpha",
-        email: "alice@example.com",
-      });
-      expect(result.clients[0].company).toBe("Alpha Corp");
-    });
-  });
-
-  // =========================================================================
-  // Parallel execution — all four primary queries are always fired
+  // Parallel execution — every primary query is always fired
   // =========================================================================
 
   describe("parallel query execution", () => {
-    it("always calls all four primary Prisma queries regardless of results", async () => {
+    it("always calls every primary Prisma query regardless of results", async () => {
       await service.search(ORG, QUERY);
 
       expect(mockPrisma.project.findMany).toHaveBeenCalledTimes(1);
       expect(mockPrisma.task.findMany).toHaveBeenCalledTimes(1);
       expect(mockPrisma.file.findMany).toHaveBeenCalledTimes(1);
-      expect(mockPrisma.member.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.contact.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.company.findMany).toHaveBeenCalledTimes(1);
     });
 
     it("always passes the search term to every primary query", async () => {

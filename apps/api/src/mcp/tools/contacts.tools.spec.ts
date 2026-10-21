@@ -47,6 +47,14 @@ describe("contact tools", () => {
     expect(await get("get_contact").handler({ contactId: "c1" }, admin)).toEqual(contact);
   });
 
+  it("list_contacts passes a portal access filter and rejects an unknown one", async () => {
+    const { contacts, get } = build();
+    const schema = get("list_contacts").inputSchema;
+    expect(schema.safeParse({ access: "everyone" }).success).toBe(false);
+    await runTool(get("list_contacts"), schema.parse({ access: "pending" }), admin);
+    expect(contacts.findAll).toHaveBeenCalledWith("org1", { access: "pending", page: 1, limit: 20 });
+  });
+
   it("list_contacts rejects an unknown status", () => {
     const schema = build().get("list_contacts").inputSchema;
     expect(schema.safeParse({ status: "customer" }).success).toBe(false);

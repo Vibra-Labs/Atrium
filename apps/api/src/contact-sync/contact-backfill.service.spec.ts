@@ -106,4 +106,113 @@ describe("ContactBackfillService.backfillContactFields", () => {
 
     expect(prisma.contact.update).toHaveBeenCalledTimes(2);
   });
+
+  it("copying a client profile also copies its description into About", async () => {
+    const txUpdate = mock((_args: { data: Record<string, unknown> }) => Promise.resolve({}));
+    const withProfile = {
+      ...prisma,
+      clientProfile: {
+        findUnique: mock(() => Promise.resolve({ phone: null, company: null, description: " Likes email " })),
+      },
+      $transaction: mock((fn: (tx: unknown) => Promise<void>) =>
+        fn({
+          contact: { update: txUpdate },
+          contactNote: { count: mock(() => Promise.resolve(1)) },
+        }),
+      ),
+    };
+    const svc = new ContactBackfillService(withProfile as unknown as PrismaService, {} as ContactSyncService);
+    const copyProfile = (
+      svc as unknown as { copyProfile: (o: string, u: string, c: unknown) => Promise<void> }
+    ).copyProfile.bind(svc);
+
+    await copyProfile("org-1", "u-1", {
+      id: "c-1",
+      phone: null,
+      phones: [],
+      address: null,
+      website: null,
+      description: null,
+      companyId: null,
+      profileImportedAt: null,
+    });
+
+    expect(txUpdate.mock.calls[0][0].data).toMatchObject({ description: "Likes email" });
+  });
+});
+
+describe("ContactBackfillService.backfillInvitees", () => {
+  it("finds or creates a contact for every pending portal invitation, logging failures", async () => {
+    const ensureForInvitee = mock((_o: string, email: string) =>
+      email === "bad@x.com" ? Promise.reject(new Error("db down")) : Promise.resolve({ id: "c" }),
+    );
+    const findMany = mock((_args: unknown) =>
+      Promise.resolve([
+        { id: "i-1", email: "Ann@X.com" },
+        { id: "i-2", email: "bad@x.com" },
+        { id: "i-3", email: "cy@x.com" },
+      ]),
+    );
+    const svc = new ContactBackfillService(
+      { invitation: { findMany } } as unknown as PrismaService,
+      { ensureForInvitee } as unknown as ContactSyncService,
+    );
+
+    await svc.backfillInvitees("org-1");
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { organizationId: "org-1", role: "member", status: "pending" },
+      select: { id: true, email: true },
+    });
+    expect(ensureForInvitee.mock.calls.map((c) => c[1])).toEqual(["Ann@X.com", "bad@x.com", "cy@x.com"]);
+  });
+});
+
+describe("ContactBackfillService.backfillDescriptions", () => {
+  it("copies a profile description only into imported contacts whose About is still null", async () => {
+    const contactFindMany = mock((_args: { where: Record<string, unknown> }) =>
+      Promise.resolve([{ id: "c-1", userId: "u-1", updatedAt }]),
+    );
+    const update = mock((_args: unknown) => Promise.resolve({}));
+    const svc = new ContactBackfillService(
+      {
+        clientProfile: {
+          findMany: mock(() =>
+            Promise.resolve([
+              { userId: "u-1", description: " About Ann " },
+              { userId: "u-2", description: "   " },
+            ]),
+          ),
+        },
+        contact: { findMany: contactFindMany, update },
+      } as unknown as PrismaService,
+      {} as ContactSyncService,
+    );
+
+    await svc.backfillDescriptions("org-1");
+
+    expect(contactFindMany.mock.calls[0][0].where).toEqual({
+      organizationId: "org-1",
+      userId: { in: ["u-1"] },
+      profileImportedAt: { not: null },
+      description: null,
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "c-1" },
+      data: { description: "About Ann", updatedAt },
+    });
+  });
+
+  it("skips the contact query when no profile has a description", async () => {
+    const contactFindMany = mock(() => Promise.resolve([]));
+    const svc = new ContactBackfillService(
+      {
+        clientProfile: { findMany: mock(() => Promise.resolve([])) },
+        contact: { findMany: contactFindMany },
+      } as unknown as PrismaService,
+      {} as ContactSyncService,
+    );
+    await svc.backfillDescriptions("org-1");
+    expect(contactFindMany).not.toHaveBeenCalled();
+  });
 });

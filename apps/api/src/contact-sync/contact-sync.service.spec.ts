@@ -349,11 +349,13 @@ describe("ContactSyncService", () => {
 
   describe("recordInvited", () => {
     it("adds a portal_invited event when the contact exists", async () => {
-      mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
-      await service.recordInvited("org-1", " Bob@X.com");
+      mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", status: "client" }));
+      await service.recordInvited("org-1", " Bob@X.com", "member");
       expect(mockPrisma.contact.findFirst).toHaveBeenCalledWith({
         where: { organizationId: "org-1", email: "bob@x.com" },
       });
+      expect(mockPrisma.contact.create).not.toHaveBeenCalled();
+      expect(mockPrisma.contact.update).not.toHaveBeenCalled();
       expect(mockPrisma.contactEvent.create).toHaveBeenCalledWith({
         data: {
           contactId: "c-1",
@@ -364,9 +366,75 @@ describe("ContactSyncService", () => {
       });
     });
 
-    it("does nothing when no contact matches", async () => {
-      await service.recordInvited("org-1", "nobody@x.com");
+    it("creates a lead named after the email when no contact matches", async () => {
+      await service.recordInvited("org-1", " New@X.com ", "member");
+      expect(mockPrisma.contact.create).toHaveBeenCalledWith({
+        data: {
+          organizationId: "org-1",
+          name: "new@x.com",
+          firstName: "new@x.com",
+          email: "new@x.com",
+          status: "lead",
+        },
+      });
+      const types = mockPrisma.contactEvent.create.mock.calls.map(
+        (c) => (c as unknown as [{ data: { type: string; contactId: string } }])[0].data,
+      );
+      expect(types).toEqual([
+        expect.objectContaining({ contactId: "c-new", type: "contact_created" }),
+        expect.objectContaining({ contactId: "c-new", type: "portal_invited" }),
+      ]);
+    });
+
+    it("returns the concurrent winner when the create races", async () => {
+      let calls = 0;
+      mockPrisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve(calls++ === 0 ? null : { id: "c-won" }),
+      );
+      mockPrisma.contact.create.mockImplementation(() => Promise.reject({ code: "P2002" }));
+      await service.recordInvited("org-1", "race@x.com", "member");
+      expect(mockPrisma.contactEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ contactId: "c-won", type: "portal_invited" }),
+      });
+    });
+
+    it("ignores staff invitations", async () => {
+      await service.recordInvited("org-1", "staff@x.com", "admin");
+      expect(mockPrisma.contact.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.contact.create).not.toHaveBeenCalled();
       expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("ensureForMember after an invitation", () => {
+    it("renames a contact still named after its email to the user's name", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() =>
+        Promise.resolve({ id: "u-1", name: "Bob Stone", email: "bob@x.com" }),
+      );
+      let calls = 0;
+      mockPrisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve(calls++ === 0 ? null : { id: "c-1", name: "bob@x.com", userId: null }),
+      );
+      await service.ensureForMember("org-1", "u-1");
+      expect(mockPrisma.contact.update).toHaveBeenCalledWith({
+        where: { id: "c-1" },
+        data: { userId: "u-1", status: "client", name: "Bob Stone", firstName: "Bob", lastName: "Stone" },
+      });
+    });
+
+    it("keeps a contact's own name", async () => {
+      mockPrisma.user.findUnique.mockImplementation(() =>
+        Promise.resolve({ id: "u-1", name: "Bob Stone", email: "bob@x.com" }),
+      );
+      let calls = 0;
+      mockPrisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve(calls++ === 0 ? null : { id: "c-1", name: "Robert", userId: null }),
+      );
+      await service.ensureForMember("org-1", "u-1");
+      expect(mockPrisma.contact.update).toHaveBeenCalledWith({
+        where: { id: "c-1" },
+        data: { userId: "u-1", status: "client" },
+      });
     });
   });
 

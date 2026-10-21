@@ -8,6 +8,8 @@ import {
 import * as Sentry from "@sentry/nestjs";
 import type { Member } from "@atrium/database";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
+import { ContactsService } from "../contacts/contacts.service";
+import type { PortalProfile } from "../contacts/contacts.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { UpdateClientProfileDto } from "./client-profile.dto";
@@ -21,6 +23,7 @@ export class ClientsService {
     private prisma: PrismaService,
     private authService: AuthService,
     private contactSync: ContactSyncService,
+    private contacts: ContactsService,
   ) {}
 
   async generateResetLink(
@@ -204,28 +207,40 @@ export class ClientsService {
       this.prisma.member.count({ where }),
     ]);
 
-    const userIds: string[] = data.map((m) => m.userId);
-    const profiles = await this.prisma.clientProfile.findMany({
-      where: { userId: { in: userIds }, organizationId: orgId },
-    });
-    const profileMap = new Map(profiles.map((p) => [p.userId, p]));
-
-    // Client tags live on the client's contact; same `labels: { label }[]` shape as staff.
+    // A client's tags and profile live on their contact; tags keep the staff `labels: { label }[]` shape.
     const clientUserIds: string[] = data.filter((m) => m.role === "member").map((m) => m.userId);
     const contacts = await this.prisma.contact.findMany({
       where: { organizationId: orgId, userId: { in: clientUserIds } },
       select: {
+        id: true,
         userId: true,
+        phone: true,
+        address: true,
+        website: true,
+        description: true,
+        company: { select: { name: true } },
         labels: { select: { label: { select: { id: true, name: true, color: true } } } },
       },
     });
-    const labelsByUser = new Map(contacts.map((c) => [c.userId, c.labels]));
+    const byUser = new Map(contacts.map((c) => [c.userId, c]));
 
-    const enriched = data.map((m) => ({
-      ...m,
-      labels: m.role === "member" ? (labelsByUser.get(m.userId) ?? []) : m.labels,
-      profile: profileMap.get(m.userId) || null,
-    }));
+    const enriched = data.map((m) => {
+      const contact = m.role === "member" ? byUser.get(m.userId) : undefined;
+      return {
+        ...m,
+        labels: m.role === "member" ? (contact?.labels ?? []) : m.labels,
+        contactId: contact?.id ?? null,
+        profile: contact
+          ? {
+              company: contact.company?.name ?? null,
+              phone: contact.phone ?? null,
+              address: contact.address || null,
+              website: contact.website || null,
+              description: contact.description || null,
+            }
+          : null,
+      };
+    });
     return paginatedResponse(enriched, total, page, limit);
   }
 
@@ -241,32 +256,19 @@ export class ClientsService {
     return member;
   }
 
-  async getProfile(userId: string, orgId: string) {
-    const profile = await this.prisma.clientProfile.findUnique({
-      where: { userId_organizationId: { userId, organizationId: orgId } },
-    });
-    return (
-      profile || {
-        userId,
-        organizationId: orgId,
-        company: null,
-        phone: null,
-        address: null,
-        website: null,
-        description: null,
-      }
-    );
+  /**
+   * A portal client's profile is their contact (created if missing). Staff have no contact, so
+   * they get an empty profile.
+   */
+  async getProfile(userId: string, orgId: string): Promise<PortalProfile> {
+    const contact = await this.contactSync.ensureForMember(orgId, userId);
+    if (!contact) return { company: null, phone: null, address: null, website: null, description: null };
+    return this.contacts.portalProfile(contact.id, orgId);
   }
 
-  async updateProfile(
-    userId: string,
-    orgId: string,
-    dto: UpdateClientProfileDto,
-  ) {
-    return this.prisma.clientProfile.upsert({
-      where: { userId_organizationId: { userId, organizationId: orgId } },
-      create: { userId, organizationId: orgId, ...dto },
-      update: dto,
-    });
+  async updateProfile(userId: string, orgId: string, dto: UpdateClientProfileDto): Promise<PortalProfile> {
+    const contact = await this.contactSync.ensureForMember(orgId, userId);
+    if (!contact) throw new ForbiddenException("Only portal clients have a profile");
+    return this.contacts.updatePortalProfile(contact.id, dto, orgId);
   }
 }

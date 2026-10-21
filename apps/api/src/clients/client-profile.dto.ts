@@ -1,5 +1,6 @@
 import { IsString, IsOptional, MaxLength } from "class-validator";
 
+/** A portal client's self-service profile; stored on their contact. */
 export class UpdateClientProfileDto {
   @IsString()
   @IsOptional()
@@ -23,6 +24,6 @@ export class UpdateClientProfileDto {
 
   @IsString()
   @IsOptional()
-  @MaxLength(1000)
+  @MaxLength(2000)
   description?: string;
 }

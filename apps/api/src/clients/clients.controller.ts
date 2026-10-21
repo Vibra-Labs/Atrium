@@ -7,10 +7,8 @@ import {
   Body,
   Param,
   Query,
-  Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -21,10 +19,7 @@ import {
   CurrentUser,
   CurrentMember,
   PaginationQueryDto,
-  contentDisposition,
-  toCsv,
 } from "../common";
-import type { CsvColumn } from "../common";
 import { ClientsService } from "./clients.service";
 import { presentInvitations } from "./invitations";
 import { ChangeRoleDto, SetRateDto } from "./clients.dto";
@@ -48,51 +43,6 @@ export class ClientsController {
     return this.clientsService.list(orgId, query.page, query.limit);
   }
 
-  @Get("export")
-  @Roles("owner", "admin")
-  async exportCsv(@CurrentOrg("id") orgId: string, @Res() res: Response) {
-    const members = await this.prisma.member.findMany({
-      where: { organizationId: orgId },
-      select: {
-        userId: true,
-        role: true,
-        createdAt: true,
-        user: { select: { name: true, email: true } },
-      },
-      orderBy: { createdAt: "asc" },
-    });
-    const profiles = await this.prisma.clientProfile.findMany({
-      where: { organizationId: orgId },
-    });
-    const profileMap = new Map(profiles.map((p) => [p.userId, p]));
-
-    type Row = { name: string; email: string; role: string; company?: string; phone?: string; address?: string; website?: string; joinedAt: Date };
-    const rows: Row[] = members.map((m) => {
-      const p = profileMap.get(m.userId);
-      return {
-        name: m.user.name, email: m.user.email, role: m.role,
-        company: p?.company ?? undefined, phone: p?.phone ?? undefined,
-        address: p?.address ?? undefined, website: p?.website ?? undefined,
-        joinedAt: m.createdAt,
-      };
-    });
-
-    const columns: CsvColumn<Row>[] = [
-      { header: "Name", value: (r) => r.name },
-      { header: "Email", value: (r) => r.email },
-      { header: "Role", value: (r) => r.role },
-      { header: "Company", value: (r) => r.company },
-      { header: "Phone", value: (r) => r.phone },
-      { header: "Address", value: (r) => r.address },
-      { header: "Website", value: (r) => r.website },
-      { header: "Joined At", value: (r) => r.joinedAt.toISOString().split("T")[0] },
-    ];
-    const csv = toCsv(columns, rows);
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", contentDisposition("people.csv"));
-    res.send(csv);
-  }
-
   @Get("invitations")
   @Roles("owner", "admin")
   async invitations(@CurrentOrg("id") orgId: string) {
@@ -104,6 +54,7 @@ export class ClientsController {
     return presentInvitations(invitations, webUrl, new Date());
   }
 
+  // The caller's own profile (portal settings). Stored on their contact; only these five fields.
   @Get("me/profile")
   async getMyProfile(
     @CurrentUser("id") userId: string,
@@ -115,25 +66,6 @@ export class ClientsController {
   @Put("me/profile")
   async updateMyProfile(
     @CurrentUser("id") userId: string,
-    @CurrentOrg("id") orgId: string,
-    @Body() dto: UpdateClientProfileDto,
-  ) {
-    return this.clientsService.updateProfile(userId, orgId, dto);
-  }
-
-  @Get(":id/profile")
-  @Roles("owner", "admin")
-  async getClientProfile(
-    @Param("id") userId: string,
-    @CurrentOrg("id") orgId: string,
-  ) {
-    return this.clientsService.getProfile(userId, orgId);
-  }
-
-  @Put(":id/profile")
-  @Roles("owner", "admin")
-  async updateClientProfile(
-    @Param("id") userId: string,
     @CurrentOrg("id") orgId: string,
     @Body() dto: UpdateClientProfileDto,
   ) {

@@ -9,23 +9,40 @@ function buildPrisma(members: unknown[], total: number) {
       count: mock(() => Promise.resolve(total)),
       findFirst: mock(() => Promise.resolve(members[0] ?? null)),
     },
-    clientProfile: { findMany: mock(() => Promise.resolve([{ userId: "u2", company: "Globex" }])) },
     contact: {
       findMany: mock(() =>
-        Promise.resolve([{ userId: "u2", labels: [{ label: { id: "l1", name: "VIP", color: "#fff" } }] }]),
+        Promise.resolve([
+          {
+            id: "c2",
+            userId: "u2",
+            phone: "555",
+            address: "",
+            website: null,
+            description: "Bakery",
+            company: { name: "Globex" },
+            labels: [{ label: { id: "l1", name: "VIP", color: "#fff" } }],
+          },
+        ]),
       ),
     },
   };
 }
 
 describe("ClientsService.list", () => {
-  it("returns members enriched with profiles, scoped to the org", async () => {
+  it("returns members enriched with the profile from their contact, scoped to the org", async () => {
     const prisma = buildPrisma([{ id: "m2", userId: "u2", role: "member" }], 1);
     const service = new ClientsService(prisma as never, {} as never, {} as never);
 
     const result = await service.list("org1", 1, 20);
 
-    expect(result.data[0].profile).toEqual({ userId: "u2", company: "Globex" });
+    expect(result.data[0].profile).toEqual({
+      company: "Globex",
+      phone: "555",
+      address: null,
+      website: null,
+      description: "Bakery",
+    });
+    expect(result.data[0].contactId).toBe("c2");
     expect(result.meta.total).toBe(1);
     expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({ organizationId: "org1" });
   });

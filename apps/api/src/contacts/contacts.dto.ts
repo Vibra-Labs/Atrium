@@ -31,6 +31,9 @@ export { CONTACT_RATINGS, CONTACT_STATUSES };
 export const LEAD_SOURCE_NAME_MAX = 100;
 export const TIMELINE_MAX_PAGE = 50;
 export const COMPANY_NUMBER_MAX = 2_000_000_000;
+export const CONTACT_DESCRIPTION_MAX = 2000;
+export const PORTAL_ACCESS_FILTERS = ["portal", "pending", "none"] as const;
+export type PortalAccessFilter = (typeof PORTAL_ACCESS_FILTERS)[number];
 export type { ContactRating, ContactStatus };
 
 /** Lengths are checked after trimming, in contact-fields.ts. */
@@ -115,6 +118,13 @@ export class UpdateContactDto {
   @MaxLength(500)
   address?: string;
 
+  /** "About" text; null or blank clears it. */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  @MaxLength(CONTACT_DESCRIPTION_MAX)
+  description?: string | null;
+
   @IsOptional()
   @IsIn(CONTACT_STATUSES)
   status?: ContactStatus;
@@ -181,6 +191,11 @@ export class ListContactsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   companyId?: string;
+
+  /** portal = has a portal login; pending = open client invitation; none = neither. */
+  @IsOptional()
+  @IsIn(PORTAL_ACCESS_FILTERS)
+  access?: PortalAccessFilter;
 }
 
 export class CreateContactNoteDto {

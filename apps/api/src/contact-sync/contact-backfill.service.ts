@@ -12,6 +12,7 @@ interface ProfileFill {
   phones?: ContactPhone[];
   address?: string;
   website?: string;
+  description?: string;
   companyId?: string;
   profileImportedAt: Date;
 }
@@ -54,6 +55,8 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     }
 
     await this.backfillMembers(orgId);
+    await this.backfillInvitees(orgId);
+    await this.backfillDescriptions(orgId);
     await this.backfillProjectLinks(orgId);
     await this.backfillLabels(orgId);
     await this.backfillPaidInvoices(orgId);
@@ -100,6 +103,63 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * Gives every pending portal invitation (expired ones too: they can still be re-sent) a
+   * contact, as new invitations get one. Idempotent: an existing contact is found by email.
+   */
+  async backfillInvitees(orgId: string): Promise<void> {
+    const invitations = await this.prisma.invitation.findMany({
+      where: { organizationId: orgId, role: "member", status: "pending" },
+      select: { id: true, email: true },
+    });
+    for (const invitation of invitations) {
+      try {
+        await this.sync.ensureForInvitee(orgId, invitation.email);
+      } catch (err) {
+        this.logger.error(`Failed to backfill contact for invitation ${invitation.id}`, err);
+      }
+    }
+  }
+
+  /**
+   * One-time copy of the old client profile's description into Contact.description for contacts
+   * imported before that column existed. Only-if-null: clearing it stores "", so it never returns.
+   */
+  async backfillDescriptions(orgId: string): Promise<void> {
+    const profiles = await this.prisma.clientProfile.findMany({
+      where: { organizationId: orgId, description: { not: null } },
+      select: { userId: true, description: true },
+    });
+    const byUser = new Map(
+      profiles.flatMap((p) => {
+        const text = p.description?.trim();
+        return text ? [[p.userId, text] as const] : [];
+      }),
+    );
+    if (byUser.size === 0) return;
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        organizationId: orgId,
+        userId: { in: [...byUser.keys()] },
+        profileImportedAt: { not: null },
+        description: null,
+      },
+      select: { id: true, userId: true, updatedAt: true },
+    });
+    for (const contact of contacts) {
+      const description = contact.userId ? byUser.get(contact.userId) : undefined;
+      if (!description) continue;
+      try {
+        await this.prisma.contact.update({
+          where: { id: contact.id },
+          data: { description, updatedAt: contact.updatedAt },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to copy the description of contact ${contact.id}`, err);
+      }
+    }
+  }
+
   private async backfillMembers(orgId: string): Promise<void> {
     const members = await this.prisma.member.findMany({
       where: { organizationId: orgId, role: "member" },
@@ -136,6 +196,8 @@ export class ContactBackfillService implements OnApplicationBootstrap {
       }
       if (contact.address == null && profile.address) data.address = profile.address;
       if (contact.website == null && profile.website) data.website = profile.website;
+      const about = profile.description?.trim();
+      if (contact.description == null && about) data.description = about;
       const companyName = profile.company?.trim();
       if (contact.companyId == null && companyName) {
         const existing = await tx.company.findFirst({

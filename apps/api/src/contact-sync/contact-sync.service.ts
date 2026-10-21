@@ -59,9 +59,14 @@ export class ContactSyncService {
     if (byEmail) {
       // Email is unique per workspace, so a new contact can't be created; leave it alone.
       if (byEmail.userId) return this.refuseTaken(byEmail, userId);
+      // A contact made from an invitation is named after the email until the person joins.
+      const named =
+        byEmail.name === email && user.name.trim()
+          ? { name: user.name.trim(), ...splitName(user.name) }
+          : {};
       const updated = await this.prisma.contact.update({
         where: { id: byEmail.id },
-        data: { userId, status: "client" },
+        data: { userId, status: "client", ...named },
       });
       await this.addEvent(byEmail.id, orgId, "portal_joined", "Joined the client portal");
       return updated;
@@ -181,12 +186,36 @@ export class ContactSyncService {
     });
   }
 
-  async recordInvited(orgId: string, email: string): Promise<void> {
-    const contact = await this.prisma.contact.findFirst({
-      where: { organizationId: orgId, email: normalizeEmail(email) },
-    });
-    if (!contact) return;
+  /**
+   * Every portal (role "member") invitation has a contact: the one with the invitee's email, or a
+   * new lead named after the email until they accept. Staff invitations are not contacts.
+   */
+  async recordInvited(orgId: string, email: string, role: string | null | undefined): Promise<void> {
+    // Better Auth's default invitation role is "member".
+    if ((role ?? "member") !== "member") return;
+    const contact = await this.ensureForInvitee(orgId, email);
     await this.addEvent(contact.id, orgId, "portal_invited", "Invited to the client portal");
+  }
+
+  /** Finds the contact for an invitee's email, creating a lead if there is none. Status is left alone. */
+  async ensureForInvitee(orgId: string, rawEmail: string): Promise<Contact> {
+    const email = normalizeEmail(rawEmail);
+    const existing = await this.prisma.contact.findFirst({ where: { organizationId: orgId, email } });
+    if (existing) return existing;
+    let created: Contact;
+    try {
+      created = await this.prisma.contact.create({
+        data: { organizationId: orgId, name: email, firstName: email, email, status: "lead" },
+      });
+    } catch (err) {
+      if ((err as { code?: string })?.code !== "P2002") throw err;
+      // A concurrent call created it first.
+      const winner = await this.prisma.contact.findFirst({ where: { organizationId: orgId, email } });
+      if (!winner) throw err;
+      return winner;
+    }
+    await this.addEvent(created.id, orgId, "contact_created", "Contact created");
+    return created;
   }
 
   async recordInvoicePaid(invoiceId: string): Promise<void> {

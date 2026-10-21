@@ -986,6 +986,7 @@ model Contact {
   rating             String? // "hot" | "warm" | "cold"
   website            String?
   address            String?
+  description        String? // "About"; null = never set (legacy profile import may fill it), "" = cleared
   status             String    @default("lead") // "lead" | "client" | "past_client"
   companyId          String?
   userId             String? // portal login in this org; plain string, no FK to User

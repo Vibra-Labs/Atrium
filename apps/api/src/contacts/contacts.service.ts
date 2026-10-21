@@ -46,6 +46,12 @@ const STATUS_LABELS: Record<ContactStatus, string> = {
   past_client: "Past client",
 };
 
+const PORTAL_ACCESS_LABELS: Record<PortalAccess | "none", string> = {
+  portal: "Yes",
+  pending: "Invite pending",
+  none: "",
+};
+
 const RATING_LABELS: Record<ContactRating, string> = { hot: "Hot", warm: "Warm", cold: "Cold" };
 
 function formatPhones(phones: ContactPhone[]): string {
@@ -67,6 +73,23 @@ function splitTags(value: string): string[] {
     .map((t) => t.trim())
     .filter(Boolean);
   return names.filter((n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i);
+}
+
+/**
+ * "About" text to store: blank or null becomes "" (cleared), never null, because null marks a
+ * contact the legacy client-profile import may still fill in.
+ */
+function aboutText(value: string | null | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value?.trim() ?? "";
+}
+
+function portalAccessOf(
+  contact: { userId: string | null; email: string | null },
+  pendingEmails: Set<string>,
+): PortalAccess | null {
+  if (contact.userId) return "portal";
+  return contact.email && pendingEmails.has(contact.email) ? "pending" : null;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -98,6 +121,25 @@ function nextRepeat(previous: Date | null, everyDays: number, now: Date): Date {
   if (!previous) return noonUtcInDays(now, everyDays);
   const behind = Math.max(0, now.getTime() - previous.getTime());
   return new Date(previous.getTime() + (Math.floor(behind / step) + 1) * step);
+}
+
+export type PortalAccess = "portal" | "pending";
+
+/** What a portal client sees and edits about themselves (the old ClientProfile shape). */
+export interface PortalProfile {
+  company: string | null;
+  phone: string | null;
+  address: string | null;
+  website: string | null;
+  description: string | null;
+}
+
+export interface PortalProfileInput {
+  company?: string;
+  phone?: string;
+  address?: string;
+  website?: string;
+  description?: string;
 }
 
 export interface TimelineItem {
@@ -162,7 +204,8 @@ export class ContactsService {
   async findAll(orgId: string, query: ListContactsQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where = this.buildWhere(orgId, query);
+    const pending = await this.pendingInviteEmails(orgId);
+    const where = this.buildWhere(orgId, query, pending);
 
     const [contacts, total] = await Promise.all([
       this.prisma.contact.findMany({
@@ -181,6 +224,7 @@ export class ContactsService {
       contacts.map((c) => c.id),
       orgId,
     );
+    const pendingSet = new Set(pending);
     const data = contacts.map((c) => ({
       id: c.id,
       name: c.name,
@@ -203,12 +247,41 @@ export class ContactsService {
         color: l.label.color,
       })),
       hasLogin: c.userId != null,
+      portalAccess: portalAccessOf(c, pendingSet),
     }));
     return paginatedResponse(data, total, page, limit);
   }
 
-  private buildWhere(orgId: string, query: ListContactsQueryDto): Prisma.ContactWhereInput {
+  /**
+   * Lowercased emails with an open portal invitation (role "member", pending, unexpired) in this
+   * workspace. Contact emails are stored lowercased, so matching them is case-insensitive.
+   */
+  async pendingInviteEmails(orgId: string, now: Date = new Date()): Promise<string[]> {
+    const rows = await this.prisma.invitation.findMany({
+      where: { organizationId: orgId, role: "member", status: "pending", expiresAt: { gt: now } },
+      select: { email: true },
+    });
+    return [...new Set(rows.map((r) => normalizeEmail(r.email)))];
+  }
+
+  private buildWhere(
+    orgId: string,
+    query: ListContactsQueryDto,
+    pendingEmails: string[],
+  ): Prisma.ContactWhereInput {
     const where: Prisma.ContactWhereInput = { organizationId: orgId };
+    if (query.access === "portal") where.userId = { not: null };
+    if (query.access === "pending") {
+      where.userId = null;
+      where.email = { in: pendingEmails };
+    }
+    if (query.access === "none") {
+      where.userId = null;
+      // NOT IN drops null emails in SQL, so contacts without an email are let through explicitly.
+      if (pendingEmails.length > 0) {
+        where.AND = [{ OR: [{ email: null }, { email: { notIn: pendingEmails } }] }];
+      }
+    }
     if (query.status) where.status = query.status;
     if (query.rating) where.rating = query.rating;
     if (query.leadSourceId) where.leadSourceId = query.leadSourceId;
@@ -342,8 +415,9 @@ export class ContactsService {
   }
 
   async exportCsv(orgId: string, query: ListContactsQueryDto): Promise<string> {
+    const pending = await this.pendingInviteEmails(orgId);
     const contacts = await this.prisma.contact.findMany({
-      where: this.buildWhere(orgId, query),
+      where: this.buildWhere(orgId, query, pending),
       orderBy: { name: "asc" },
       include: {
         company: { select: { name: true } },
@@ -355,6 +429,7 @@ export class ContactsService {
       contacts.map((c) => c.id),
       orgId,
     );
+    const pendingSet = new Set(pending);
     const columns: CsvColumn<(typeof contacts)[number]>[] = [
       { header: "Name", value: (c) => c.name },
       { header: "First name", value: (c) => c.firstName },
@@ -374,6 +449,8 @@ export class ContactsService {
       { header: "Social links", value: (c) => readLinks(c.socialLinks).join(" ") },
       { header: "Next follow-up", value: (c) => c.followUpAt?.toISOString().slice(0, 10) },
       { header: "Paid all time", value: (c) => ((paid.get(c.id) ?? 0) / 100).toFixed(2) },
+      { header: "About", value: (c) => c.description },
+      { header: "Portal access", value: (c) => PORTAL_ACCESS_LABELS[portalAccessOf(c, pendingSet) ?? "none"] },
     ];
     return toCsv(columns, contacts);
   }
@@ -417,10 +494,18 @@ export class ContactsService {
     });
     if (!contact) throw new NotFoundException("Contact not found");
 
+    const member = contact.userId
+      ? await this.prisma.member.findFirst({
+          where: { organizationId: orgId, userId: contact.userId, role: "member" },
+          select: { id: true, createdAt: true, lastSeenAt: true },
+        })
+      : null;
+
     const { projects, labels, ...rest } = contact;
     return {
       ...toResponse(rest),
       hasLogin: contact.userId != null,
+      portal: member ? { memberId: member.id, joinedAt: member.createdAt, lastSeenAt: member.lastSeenAt } : null,
       labels: labels.map((l) => ({
         id: l.label.id,
         name: l.label.name,
@@ -453,6 +538,7 @@ export class ContactsService {
           rating: dto.rating,
           website: dto.website,
           address: dto.address,
+          description: aboutText(dto.description),
           status: dto.status,
           ...links,
         },
@@ -493,6 +579,7 @@ export class ContactsService {
           rating: dto.rating,
           website: dto.website,
           address: dto.address,
+          description: aboutText(dto.description),
           status: dto.status,
           ...links,
         },
@@ -649,6 +736,42 @@ export class ContactsService {
       data: { followUpAt: noonUtcInDays(now, days), followUpNotifiedAt: null },
     });
     return toResponse(updated);
+  }
+
+  async portalProfile(id: string, orgId: string): Promise<PortalProfile> {
+    const contact = await this.prisma.contact.findFirst({
+      where: { id, organizationId: orgId },
+      include: { company: { select: { name: true } } },
+    });
+    if (!contact) throw new NotFoundException("Contact not found");
+    return {
+      company: contact.company?.name ?? null,
+      phone: contact.phone ?? null,
+      address: contact.address || null,
+      website: contact.website || null,
+      description: contact.description || null,
+    };
+  }
+
+  /**
+   * A portal client's self-service edit. Only these five fields are writable: status, notes,
+   * tags, rating, follow-ups and the lead source stay the workspace's. undefined = leave alone,
+   * blank = clear. Company is found or created by name; phone sets the first number.
+   */
+  async updatePortalProfile(id: string, dto: PortalProfileInput, orgId: string): Promise<PortalProfile> {
+    const contact = await this.getOrThrow(id, orgId);
+    const data: Prisma.ContactUncheckedUpdateInput = {
+      ...resolvePhones({ phone: dto.phone }, phonesOf(contact.phones, contact.phone)),
+    };
+    if (dto.company !== undefined) {
+      const name = dto.company.trim();
+      data.companyId = name ? (await this.findOrCreateCompany(name, orgId)).id : null;
+    }
+    if (dto.address !== undefined) data.address = dto.address.trim() || null;
+    if (dto.website !== undefined) data.website = dto.website.trim() || null;
+    if (dto.description !== undefined) data.description = aboutText(dto.description);
+    await this.prisma.contact.update({ where: { id }, data });
+    return this.portalProfile(id, orgId);
   }
 
   private async getOrThrow(id: string, orgId: string) {

@@ -328,7 +328,7 @@ export class AuthService {
             },
             afterCreateInvitation: async ({ invitation }) => {
               try {
-                await this.contactSync.recordInvited(invitation.organizationId, invitation.email);
+                await this.contactSync.recordInvited(invitation.organizationId, invitation.email, invitation.role);
               } catch (err) {
                 Sentry.captureException(err);
                 this.logger.error("Failed to record invitation on contact", err);

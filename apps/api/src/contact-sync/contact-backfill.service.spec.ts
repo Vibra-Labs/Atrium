@@ -1,7 +1,7 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { ContactSyncService } from "./contact-sync.service";
-import { ContactBackfillService } from "./contact-backfill.service";
+import { CONTACTS_BACKFILL_VERSION, ContactBackfillService } from "./contact-backfill.service";
 
 const updatedAt = new Date("2026-01-01T00:00:00Z");
 const prisma = {
@@ -275,26 +275,28 @@ describe("ContactBackfillService.run", () => {
     return { svc, db, calls };
   }
 
-  it("only visits workspaces without a marker, and marks them when the pass succeeds", async () => {
+  it("only visits workspaces below the current backfill version, and stamps the version when the pass succeeds", async () => {
     const { svc, db, calls } = build([{ id: "org-1" }]);
     await svc.run();
+    expect(CONTACTS_BACKFILL_VERSION).toBe(1);
     expect(db.organization.findMany.mock.calls[0][0]).toEqual({
-      where: { contactsBackfilledAt: null },
+      where: { contactsBackfillVersion: { lt: CONTACTS_BACKFILL_VERSION } },
       select: { id: true },
     });
     expect(calls).toEqual(["backfillOrgSteps:org-1"]);
-    const update = db.organization.update.mock.calls[0][0] as { where: unknown; data: { contactsBackfilledAt: Date } };
-    expect(update.where).toEqual({ id: "org-1" });
-    expect(update.data.contactsBackfilledAt).toBeInstanceOf(Date);
+    expect(db.organization.update.mock.calls[0][0]).toEqual({
+      where: { id: "org-1" },
+      data: { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION },
+    });
   });
 
-  it("leaves the marker unset when a step throws, so the next boot retries", async () => {
+  it("leaves the version unchanged when a step throws, so the next boot retries", async () => {
     const { svc, db } = build([{ id: "org-1" }], "backfillOrgSteps");
     await svc.run();
     expect(db.organization.update).not.toHaveBeenCalled();
   });
 
-  it("leaves the marker unset when a single row failed", async () => {
+  it("leaves the version unchanged when a single row failed", async () => {
     const { svc, db } = build([{ id: "org-1" }]);
     (svc as unknown as Steps).backfillOrgSteps = mock(async () => {
       (svc as unknown as { logFailure: (m: string, e: unknown) => void }).logFailure("row failed", new Error("x"));

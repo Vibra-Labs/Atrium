@@ -60,6 +60,12 @@ async function main() {
 
   console.log("Syncing database schema...");
   try {
+    // pg_trgm must exist before the push: the schema's search indexes use gin_trgm_ops.
+    await $`bun run ./scripts/ensure-extensions.ts`.cwd(dbDir);
+  } catch {
+    console.warn("Warning: Could not create the pg_trgm extension — the schema push will fail");
+  }
+  try {
     await $`bunx prisma db push --skip-generate`.cwd(dbDir).quiet();
   } catch {
     console.warn("Warning: Could not push database schema — the API may fail to start");
@@ -69,12 +75,6 @@ async function main() {
     await $`bun run ./scripts/migrate-time-entry-running-unique.ts`.cwd(dbDir).quiet();
   } catch (err) {
     console.warn("Warning: Could not apply time_entry running unique index:", err);
-  }
-
-  try {
-    await $`bun run ./scripts/add-trigram-indexes.ts`.cwd(dbDir).quiet();
-  } catch (err) {
-    console.warn("Warning: Could not apply trigram indexes:", err);
   }
 
   // Run turbo dev

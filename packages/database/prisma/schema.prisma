@@ -100,8 +100,8 @@ model Organization {
   setupCompleted Boolean  @default(false)
   // Set once the contacts boot backfill gave pending client invitations a contact.
   inviteesBackfilledAt DateTime?
-  // Set once a boot pass of the contacts backfill finished without failures; later boots skip the workspace.
-  contactsBackfilledAt DateTime?
+  // Version of the contacts boot backfill that last finished without failures; boots re-run it while this is below CONTACTS_BACKFILL_VERSION.
+  contactsBackfillVersion Int @default(0)
 
   members          Member[]
   invitations      Invitation[]
@@ -327,6 +327,7 @@ model Project {
   contacts    ProjectContact[]
 
   @@index([organizationId])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "project_name_trgm_idx")
   @@map("project")
 }
 
@@ -437,6 +438,7 @@ model Task {
   @@index([requestedById])
   @@index([assigneeId])
   @@index([organizationId, dueDate])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "task_title_trgm_idx")
   @@map("task")
 }
 
@@ -977,6 +979,7 @@ model Company {
 
   @@unique([organizationId, name])
   @@index([organizationId])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "company_name_trgm_idx")
   @@map("company")
 }
 
@@ -1042,6 +1045,8 @@ model Contact {
   @@index([organizationId, name])
   @@index([followUpAt])
   @@index([userId])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "contact_name_trgm_idx")
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "contact_email_trgm_idx")
   @@map("contact")
 }
 

@@ -276,7 +276,7 @@ describe("ContactBackfillService.run", () => {
     expect(contact.notes).toHaveLength(0);
 
     expect(contact.profileImportedAt).not.toBeNull();
-    expect((await prisma.organization.findUniqueOrThrow({ where: { id: orgId } })).contactsBackfilledAt).not.toBeNull();
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: orgId } })).contactsBackfillVersion).toBe(1);
 
     // A user clears the website and About: later boots must not refill them.
     await prisma.contact.update({ where: { id: contact.id }, data: { website: null, description: "" } });
@@ -285,8 +285,8 @@ describe("ContactBackfillService.run", () => {
     expect(cleared.website).toBeNull();
     expect(cleared.description).toBe("");
 
-    // A failed/partial pass leaves profileImportedAt and the workspace marker null, and is retried.
-    await prisma.organization.update({ where: { id: orgId }, data: { contactsBackfilledAt: null } });
+    // A failed/partial pass leaves profileImportedAt null and the workspace version behind, and is retried.
+    await prisma.organization.update({ where: { id: orgId }, data: { contactsBackfillVersion: 0 } });
     await prisma.contact.update({
       where: { id: contact.id },
       data: { profileImportedAt: null, website: null, description: null },

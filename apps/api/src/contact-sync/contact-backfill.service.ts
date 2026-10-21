@@ -17,6 +17,12 @@ interface ProfileFill {
   profileImportedAt: Date;
 }
 
+/**
+ * Bump when a new backfill step must run for workspaces that already finished an earlier pass.
+ * Steps must stay idempotent: a bump re-runs every step for every workspace.
+ */
+export const CONTACTS_BACKFILL_VERSION = 1;
+
 /** Turns existing clients, project links, labels and paid invoices into contact data. Idempotent. */
 @Injectable()
 export class ContactBackfillService implements OnApplicationBootstrap {
@@ -37,10 +43,10 @@ export class ContactBackfillService implements OnApplicationBootstrap {
   }
 
   async run(): Promise<void> {
-    // Workspaces that finished a pass are skipped: from then on the live hooks in ContactSyncService
+    // Workspaces that finished a pass at the current version are skipped: from then on the live hooks in ContactSyncService
     // (invite accepted, role change, project clients, paid invoices, labels) keep their contacts in step.
     const orgs: { id: string }[] = await this.prisma.organization.findMany({
-      where: { contactsBackfilledAt: null },
+      where: { contactsBackfillVersion: { lt: CONTACTS_BACKFILL_VERSION } },
       select: { id: true },
     });
     for (const org of orgs) {
@@ -52,12 +58,15 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     }
   }
 
-  /** Sets the marker only when every step succeeded, so a failed pass is retried on the next boot. */
+  /** Stamps the version only when every step succeeded, so a failed pass is retried on the next boot. */
   private async backfillOrg(orgId: string): Promise<void> {
     this.failures = 0;
     await this.backfillOrgSteps(orgId);
     if (this.failures > 0) return;
-    await this.prisma.organization.update({ where: { id: orgId }, data: { contactsBackfilledAt: new Date() } });
+    await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION },
+    });
   }
 
   private async backfillOrgSteps(orgId: string): Promise<void> {

@@ -56,6 +56,13 @@ async function main(): Promise<void> {
   await waitForPostgres();
 
   console.log("Pushing schema...");
+  await $`bun run ./scripts/ensure-extensions.ts`
+    .cwd(join(root, "packages/database"))
+    .env({
+      ...process.env,
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+    });
   await $`bunx prisma db push --skip-generate`
     .cwd(join(root, "packages/database"))
     .env({

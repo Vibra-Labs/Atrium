@@ -6,7 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "db:generate": "bunx prisma generate",
-    "db:push": "bunx prisma db push",
+    "db:push": "bun run scripts/ensure-extensions.ts && bunx prisma db push",
     "db:migrate": "bunx prisma migrate dev",
     "db:migrate:deploy": "bunx prisma migrate deploy",
     "db:seed": "bun run src/seed.ts",

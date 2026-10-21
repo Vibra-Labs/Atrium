@@ -82,10 +82,12 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   const sourceName =
     sourceChoice === NEW_SOURCE ? newSource : (sources.find((s) => s.id === sourceChoice)?.name ?? "");
   const isReferral = sourceName.trim().toLowerCase() === "referral";
+  // Imports set a referrer whatever the source is, so one that exists is always shown and kept.
+  const showReferrer: boolean = isReferral || contact.referredBy !== null;
 
   useEffect(() => {
     const term = referrerSearch.trim();
-    if (!isReferral || !term) {
+    if (!showReferrer || !term) {
       setReferrerResults([]);
       return;
     }
@@ -95,7 +97,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
         .catch(console.error);
     }, 250);
     return () => clearTimeout(t);
-  }, [referrerSearch, isReferral, contact.id]);
+  }, [referrerSearch, showReferrer, contact.id]);
 
   async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -114,8 +116,10 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
       address: address.trim(),
       description: description.trim(),
       status,
-      referredById: isReferral ? (referrer?.id ?? null) : null,
     };
+    // Only sent when changed here, so saving never drops a referrer by accident.
+    const referrerId: string | null = referrer?.id ?? null;
+    if (referrerId !== (contact.referredBy?.id ?? null)) body.referredById = referrerId;
     // A portal client's email comes from their account and can't be changed here.
     if (!contact.hasLogin) body.email = email.trim() || null;
     if (companyId) body.companyId = companyId;
@@ -210,7 +214,13 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
           </div>
         </div>
         <PhonesField idPrefix="edit" phones={phones} onChange={setPhones} />
-        <MoreFields>
+        <MoreFields
+          filled={
+            [jobTitle, department, website, address, description, sourceChoice, rating].filter((v) => v.trim()).length +
+            (cleanLinks(links).length > 0 ? 1 : 0) +
+            (referrer ? 1 : 0)
+          }
+        >
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="edit-job-title" className={labelClass}>Job title</label>
@@ -265,7 +275,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
             />
             <RatingField id="edit-rating" value={rating} onChange={setRating} />
           </div>
-          {isReferral && (
+          {showReferrer && (
             <div className="relative">
               <label htmlFor="edit-referrer" className={labelClass}>Referred by</label>
               {referrer ? (

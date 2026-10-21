@@ -40,6 +40,16 @@ describe("MoreFields", () => {
     expect(closed).not.toContain("Hidden field");
   });
 
+  it("says how many hidden fields have a value", () => {
+    const html: string = renderToStaticMarkup(
+      <MoreFields filled={3}>
+        <input aria-label="Hidden field" />
+      </MoreFields>,
+    );
+    expect(html).toContain("More info · 3 filled");
+    expect(renderToStaticMarkup(<MoreFields filled={0}>x</MoreFields>)).not.toContain("filled");
+  });
+
   it("shows its fields when open by default", () => {
     const open: string = renderToStaticMarkup(
       <MoreFields defaultOpen>

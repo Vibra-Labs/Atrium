@@ -184,7 +184,12 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
           </div>
         </div>
         <PhonesField idPrefix="contact" phones={phones} onChange={setPhones} />
-        <MoreFields>
+        <MoreFields
+          filled={
+            [jobTitle, department, sourceChoice, rating, note].filter((v) => v.trim()).length +
+            (cleanLinks(links).length > 0 ? 1 : 0)
+          }
+        >
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="contact-job-title" className={labelClass}>

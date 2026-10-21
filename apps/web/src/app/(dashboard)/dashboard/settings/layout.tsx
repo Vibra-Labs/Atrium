@@ -23,7 +23,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-1 border-b border-[var(--border)]">
+      {/* Scrolls sideways on a phone instead of pushing the page wider. */}
+      <nav aria-label="Settings" className="flex gap-1 border-b border-[var(--border)] overflow-x-auto">
         {SECTIONS.map((s) => {
           const isActive = pathname === s.href;
           return (
@@ -31,7 +32,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
               key={s.href}
               href={s.href}
               aria-current={isActive ? "page" : undefined}
-              className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+              ref={isActive ? (el) => el?.scrollIntoView({ block: "nearest", inline: "nearest" }) : undefined}
+              className={`px-4 py-2 text-sm font-medium whitespace-nowrap shrink-0 transition-colors relative ${
                 isActive
                   ? "text-[var(--foreground)]"
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
@@ -44,7 +46,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             </Link>
           );
         })}
-      </div>
+      </nav>
       {children}
     </div>
   );

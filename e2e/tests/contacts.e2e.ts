@@ -143,7 +143,9 @@ test.describe("Contacts list", () => {
     const path = await download.path();
     if (path) {
       const fs = await import("fs");
-      expect(fs.readFileSync(path, "utf-8")).toContain("Name,Email");
+      const header = fs.readFileSync(path, "utf-8").split("\r\n")[0];
+      expect(header.startsWith("Name,First name,Last name,Email,Phone,All phones,")).toBe(true);
+      expect(header).toContain("Referred by,Company annual revenue,Company employees");
     }
   });
 
@@ -325,6 +327,105 @@ test.describe("Contacts list", () => {
     await page.getByPlaceholder("Search companies").fill(company);
     await expect(page.getByRole("link", { name: company })).toBeVisible();
   });
+
+  test("companies tab sorts by People, most first, and flips on a second click", async ({ page, request }) => {
+    const stamp = Date.now();
+    await createContact(request, { name: `Big one ${stamp}`, companyName: `Big${stamp}` });
+    await createContact(request, { name: `Big two ${stamp}`, companyName: `Big${stamp}` });
+    await createContact(request, { name: `Small one ${stamp}`, companyName: `Small${stamp}` });
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: "Companies" }).click();
+    await page.getByPlaceholder("Search companies").fill(String(stamp));
+    const rows = page.getByTestId("company-row");
+    await expect(rows).toHaveCount(2);
+
+    await page.getByRole("button", { name: "People", exact: true }).click();
+    await expect(page.getByRole("columnheader", { name: "People" })).toHaveAttribute("aria-sort", "descending");
+    await expect(rows.first()).toContainText(`Big${stamp}`);
+    await page.getByRole("button", { name: "People", exact: true }).click();
+    await expect(page.getByRole("columnheader", { name: "People" })).toHaveAttribute("aria-sort", "ascending");
+    await expect(rows.first()).toContainText(`Small${stamp}`);
+  });
+
+  test("Back from a contact returns to the same sort, filter and search", async ({ page, request }) => {
+    const stamp = Date.now();
+    const name = `Backnav ${stamp}`;
+    await createContact(request, { name, rating: "hot" });
+    await page.goto("/dashboard/contacts");
+    await page.getByPlaceholder("Search name, company, email").fill(String(stamp));
+    await applyContactFilter(page, "Rating", "Hot");
+    await page.getByRole("button", { name: "Paid, all time", exact: true }).click();
+    await expect(page).toHaveURL(/sort=paid/);
+    await expect(page).toHaveURL(/rating=hot/);
+
+    await page.getByTestId("contact-row").filter({ hasText: name }).click();
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+    await page.goBack();
+
+    await expect(page.getByTestId("filter-chip")).toHaveText(/Rating is\s*Hot/);
+    await expect(page.getByRole("columnheader", { name: "Paid, all time" })).toHaveAttribute("aria-sort", "descending");
+    await expect(page.getByPlaceholder("Search name, company, email")).toHaveValue(String(stamp));
+    await expect(page.getByTestId("contact-row").filter({ hasText: name })).toBeVisible();
+  });
+
+  test("the Filter menu works from the keyboard", async ({ page, request }) => {
+    const stamp = Date.now();
+    await createContact(request, { name: `Keyboard ${stamp}`, rating: "hot" });
+    await page.goto("/dashboard/contacts");
+    const filter = page.getByRole("button", { name: "Filter", exact: true });
+    await filter.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Tag" })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("menuitem", { name: "Rating" })).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("menuitemradio", { name: "Hot" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("filter-chip")).toHaveText(/Rating is\s*Hot/);
+    await expect(filter).toBeFocused();
+
+    // Escape closes and hands focus back to the button.
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Tag" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(filter).toBeFocused();
+  });
+});
+
+test.describe("Contacts on a phone", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  async function expectOnScreen(locator: import("@playwright/test").Locator): Promise<void> {
+    const box = await locator.boundingBox();
+    expect(box).not.toBeNull();
+    if (!box) return;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(375);
+  }
+
+  test("the Order by and Filter menus open fully on screen", async ({ page }) => {
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: /^Order by/ }).click();
+    await expectOnScreen(page.getByRole("menu", { name: "Order by" }));
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await expectOnScreen(page.getByRole("menu", { name: "Filter by" }));
+    await page.getByRole("menuitem", { name: "Rating" }).click();
+    await expectOnScreen(page.getByRole("menu", { name: "Rating" }));
+  });
+
+  test("the page never scrolls sideways, and Settings → Team is reachable", async ({ page }) => {
+    for (const path of ["/dashboard/contacts", "/dashboard/settings/team"]) {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(overflow).toBeLessThanOrEqual(0);
+    }
+    await expect(page.getByRole("link", { name: "Team", exact: true })).toBeVisible();
+  });
 });
 
 async function createContact(
@@ -346,6 +447,33 @@ function localDate(d: Date): string {
 }
 
 test.describe("Contact page", () => {
+  test("Edit keeps a referrer the contact already has, and saves fields under More info", async ({
+    page,
+    request,
+  }) => {
+    const stamp = Date.now();
+    const refName = `Referrer ${stamp}`;
+    const refId = await createContact(request, { name: refName });
+    // As an import does: a referrer, but no "Referral" source.
+    const id = await createContact(request, { name: `Referred ${stamp}`, referredById: refId });
+
+    await page.goto(`/dashboard/contacts/${id}`);
+    await page.getByRole("button", { name: "Edit" }).click();
+    const more = page.getByRole("button", { name: /^More info · 1 filled/ });
+    await expect(more).toBeVisible();
+    await more.click();
+    await expect(page.getByText(refName)).toBeVisible();
+    await page.getByLabel("About").fill(`About ${stamp}`);
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Contact updated")).toBeVisible();
+
+    const contact = await (await request.get(`${API}/contacts/${id}`)).json();
+    expect(contact.referredBy?.id).toBe(refId);
+    expect(contact.description).toBe(`About ${stamp}`);
+    await page.reload();
+    await expect(page.getByText(`About ${stamp}`)).toBeVisible();
+  });
+
   test("add note shows in timeline", async ({ page, request }) => {
     const id = await createContact(request, { name: `Noted ${Date.now()}` });
     await page.goto(`/dashboard/contacts/${id}`);

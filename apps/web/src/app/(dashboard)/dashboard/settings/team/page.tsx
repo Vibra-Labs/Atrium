@@ -267,6 +267,7 @@ export default function TeamPage(): React.ReactElement {
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Team</h1>
       <p className="text-sm text-[var(--muted-foreground)]">
         People who work in this workspace. Clients are managed on{" "}
         <Link href="/dashboard/contacts?access=portal" className="text-[var(--primary)] hover:underline">

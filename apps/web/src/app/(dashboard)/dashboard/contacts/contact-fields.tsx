@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { ChevronDown, X } from "lucide-react";
 import { NEW_SOURCE, PHONE_LABELS, RATING_LABELS, inputClass, labelClass } from "./shared";
@@ -269,24 +269,32 @@ export function SourceField({ sources, choice, newSource, onChoice, onNewSource 
 
 interface MoreFieldsProps {
   defaultOpen?: boolean;
+  /** How many of the hidden fields have a value, so nothing filled in is out of sight unnoticed. */
+  filled?: number;
   children: React.ReactNode;
 }
 
 /** Keeps the less-used fields of a form out of the way until asked for. */
-export function MoreFields({ defaultOpen = false, children }: MoreFieldsProps) {
+export function MoreFields({ defaultOpen = false, filled = 0, children }: MoreFieldsProps) {
   const [open, setOpen] = useState<boolean>(defaultOpen);
+  const id = useId();
   return (
     <>
       <button
         type="button"
         aria-expanded={open}
+        aria-controls={id}
         onClick={() => setOpen((o) => !o)}
         className={`${addButtonClass} inline-flex items-center gap-1`}
       >
         <ChevronDown aria-hidden="true" className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
-        {open ? "Less info" : "More info"}
+        {open ? "Less info" : `More info${filled > 0 ? ` · ${filled} filled` : ""}`}
       </button>
-      {open && <div className="space-y-4">{children}</div>}
+      {open && (
+        <div id={id} className="space-y-4">
+          {children}
+        </div>
+      )}
     </>
   );
 }

@@ -7,7 +7,7 @@ import { McpAuthService } from "../mcp-auth/mcp-auth.service";
 import { LastSeenTracker } from "./last-seen.tracker";
 import { isStaffOnlyOrgRoute, parseOriginalUrl } from "./staff-only-org-routes";
 import { PrismaService } from "../prisma/prisma.service";
-import { bearerToken, isMcpPath, RateLimiter } from "../common";
+import { bearerToken, isMcpPath, ORG_MEMBER_FIELDS, RateLimiter } from "../common";
 import type {
   Actor, AuthenticatedRequest, AuthUser, AuthSession, BearerKind, FullOrganization, OrgMember,
 } from "../common";
@@ -251,7 +251,10 @@ export class SessionMiddleware implements NestMiddleware {
         // loads every member (capped at 100, so anyone past that lost their role).
         const [organization, member] = await Promise.all([
           this.prisma.organization.findUnique({ where: { id: activeOrgId }, select: ORGANIZATION_FIELDS }),
-          this.prisma.member.findFirst({ where: { organizationId: activeOrgId, userId: session.user.id } }),
+          this.prisma.member.findFirst({
+            where: { organizationId: activeOrgId, userId: session.user.id },
+            select: ORG_MEMBER_FIELDS,
+          }),
         ]);
         // Organization only alongside a membership, as before: AuthGuard reads
         // req.organization as "a member of the active workspace".

@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ApiKeysService, hashApiKey, API_KEY_PREFIX } from "./api-keys.service";
+import { ORG_MEMBER_FIELDS } from "../common";
 
 const user = {
   id: "u1", name: "Ada", email: "ada@test.com", emailVerified: true,
@@ -90,6 +91,7 @@ describe("ApiKeysService", () => {
 
     expect(prisma.member.findFirst).toHaveBeenCalledWith({
       where: { id: "m1", userId: "u1", organizationId: "org1" },
+      select: ORG_MEMBER_FIELDS,
     });
   });
 

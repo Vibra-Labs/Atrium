@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { MCP_ACTOR_ROLES } from "../common";
+import { MCP_ACTOR_ROLES, ORG_MEMBER_FIELDS } from "../common";
 import type { Actor } from "../common";
 
 export type ResolvedOAuthToken = Actor & { oauthClientId: string };
@@ -98,6 +98,7 @@ export class McpAuthService {
 
     const member = await this.prisma.member.findFirst({
       where: { id: grant.memberId, userId: row.userId, organizationId: grant.organizationId },
+      select: ORG_MEMBER_FIELDS,
     });
     if (!member || !MCP_ACTOR_ROLES.includes(member.role)) return null;
 

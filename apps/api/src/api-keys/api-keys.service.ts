@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
-import { MCP_ACTOR_ROLES } from "../common";
+import { MCP_ACTOR_ROLES, ORG_MEMBER_FIELDS } from "../common";
 import type { Actor } from "../common";
 
 export const API_KEY_PREFIX = "atr_";
@@ -84,6 +84,7 @@ export class ApiKeysService {
 
     const member = await this.prisma.member.findFirst({
       where: { id: key.memberId, userId: key.userId, organizationId: key.organizationId },
+      select: ORG_MEMBER_FIELDS,
     });
     if (!member || !MCP_ACTOR_ROLES.includes(member.role)) return null;
 

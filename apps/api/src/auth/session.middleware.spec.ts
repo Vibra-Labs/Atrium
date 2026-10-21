@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { NextFunction, Request, Response } from "express";
 import { SessionMiddleware } from "./session.middleware";
 import { hashApiKey } from "../api-keys/api-keys.service";
-import { RateLimiter } from "../common";
+import { ORG_MEMBER_FIELDS, RateLimiter } from "../common";
 
 const resolved = {
   apiKeyId: "k1",
@@ -447,7 +447,10 @@ describe("SessionMiddleware cookie session", () => {
     expect(r.organization.id).toBe("org1");
     expect(r.member.role).toBe("member");
     expect(prisma.organization.findUnique).toHaveBeenCalledTimes(1);
-    expect(prisma.member.findFirst).toHaveBeenCalledWith({ where: { organizationId: "org1", userId: "u1" } });
+    expect(prisma.member.findFirst).toHaveBeenCalledWith({
+      where: { organizationId: "org1", userId: "u1" },
+      select: ORG_MEMBER_FIELDS,
+    });
     expect(getFullOrganization).not.toHaveBeenCalled();
   });
 

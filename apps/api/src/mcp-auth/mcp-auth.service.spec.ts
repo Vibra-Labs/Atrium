@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { McpAuthService } from "./mcp-auth.service";
+import { ORG_MEMBER_FIELDS } from "../common";
 
 const future = new Date(Date.now() + 60_000);
 const past = new Date(Date.now() - 60_000);
@@ -74,6 +75,7 @@ describe("McpAuthService.resolve", () => {
     await service.resolve("tok");
     expect(prisma.member.findFirst).toHaveBeenCalledWith({
       where: { id: "m1", userId: "u1", organizationId: "org1" },
+      select: ORG_MEMBER_FIELDS,
     });
   });
 

@@ -258,3 +258,10 @@ export async function signIn(
   await page.waitForURL(/\/(portal|dashboard)/, { timeout: 20000 });
   return { context, page };
 }
+
+/** Contacts list: Filter → category → value, as a user picks it. */
+export async function applyContactFilter(page: Page, category: string, value: string): Promise<void> {
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByRole("menuitem", { name: category }).click();
+  await page.getByRole("menuitemradio", { name: value }).click();
+}

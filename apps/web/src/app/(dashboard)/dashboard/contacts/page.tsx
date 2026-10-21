@@ -17,6 +17,8 @@ import { followUpWhen, formatFollowUpDay } from "@/lib/follow-up-date";
 import { RATING_LABELS, REPEAT_LABELS, STATUS_LABELS } from "./shared";
 import { RatingBadge } from "./rating-badge";
 import { useRowLink } from "@/lib/use-row-link";
+import { FilterChips, FilterMenu, SortHeader, SortMenu, nextSort } from "./list-controls";
+import type { FilterGroup, SortDir, SortOption } from "./list-controls";
 
 interface ContactRow {
   id: string;
@@ -73,6 +75,24 @@ const ACCESS_FILTERS: Record<AccessFilter, string> = {
 function isAccessFilter(value: string): value is AccessFilter {
   return Object.hasOwn(ACCESS_FILTERS, value);
 }
+
+const CONTACT_SORTS: SortOption[] = [
+  { value: "name", label: "Name", defaultDir: "asc" },
+  { value: "company", label: "Company", defaultDir: "asc" },
+  { value: "status", label: "Status", defaultDir: "asc" },
+  { value: "followUp", label: "Next follow-up", defaultDir: "asc" },
+  { value: "paid", label: "Paid, all time", defaultDir: "desc" },
+];
+
+const COMPANY_SORTS: SortOption[] = [
+  { value: "name", label: "Company", defaultDir: "asc" },
+  { value: "people", label: "People", defaultDir: "desc" },
+  { value: "paid", label: "Paid, all time", defaultDir: "desc" },
+];
+
+type Filters = { labelId: string; leadSourceId: string; rating: string; access: string };
+
+const NO_FILTERS: Filters = { labelId: "", leadSourceId: "", rating: "", access: "" };
 
 interface ClientLimit {
   max: number;
@@ -135,14 +155,12 @@ export default function ContactsPage() {
   const { error: showError } = useToast();
   const config = useAppConfig();
   const [clientLimit, setClientLimit] = useState<ClientLimit | null>(null);
-  const [access, setAccess] = useState<AccessFilter | "">("");
   const rowLink = useRowLink();
   const [tab, setTab] = useState<TabId>("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [labelId, setLabelId] = useState("");
-  const [leadSourceId, setLeadSourceId] = useState("");
-  const [rating, setRating] = useState("");
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [order, setOrder] = useState<{ sort: string; dir: SortDir }>({ sort: "name", dir: "asc" });
   const [page, setPage] = useState(1);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
@@ -158,7 +176,7 @@ export default function ContactsPage() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("tab") === "companies") setTab("companies");
     const deepAccess: string = params.get("access") ?? "";
-    if (isAccessFilter(deepAccess)) setAccess(deepAccess);
+    if (isAccessFilter(deepAccess)) setFilters((f) => ({ ...f, access: deepAccess }));
   }, []);
 
   useEffect(() => {
@@ -187,12 +205,9 @@ export default function ContactsPage() {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (tab !== "all" && tab !== "companies") params.set("status", tab);
-    if (labelId) params.set("labelId", labelId);
-    if (leadSourceId) params.set("leadSourceId", leadSourceId);
-    if (rating) params.set("rating", rating);
-    if (access) params.set("access", access);
+    for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
     return params;
-  }, [debouncedSearch, tab, labelId, leadSourceId, rating, access]);
+  }, [debouncedSearch, tab, filters]);
 
   const requestId = useRef(0);
 
@@ -203,6 +218,8 @@ export default function ContactsPage() {
       if (tab === "companies") {
         const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
         if (debouncedSearch) params.set("search", debouncedSearch);
+        params.set("sort", order.sort);
+        params.set("dir", order.dir);
         const res = await apiFetch<Paginated<CompanyRow>>(`/companies?${params}`);
         if (id !== requestId.current) return;
         setCompanies(res.data);
@@ -211,6 +228,8 @@ export default function ContactsPage() {
         const params = filterParams();
         params.set("page", String(page));
         params.set("limit", String(LIMIT));
+        params.set("sort", order.sort);
+        params.set("dir", order.dir);
         const res = await apiFetch<Paginated<ContactRow>>(`/contacts?${params}`);
         if (id !== requestId.current) return;
         setContacts(res.data);
@@ -222,7 +241,7 @@ export default function ContactsPage() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [tab, page, debouncedSearch, filterParams, showError]);
+  }, [tab, page, debouncedSearch, filterParams, order, showError]);
 
   useEffect(() => {
     load();
@@ -237,6 +256,34 @@ export default function ContactsPage() {
       showError("Export failed");
     }
   }
+
+  const sortOptions: SortOption[] = tab === "companies" ? COMPANY_SORTS : CONTACT_SORTS;
+
+  function sortBy(option: SortOption): void {
+    setOrder((o) => nextSort(o, option));
+    setPage(1);
+  }
+
+  function setFilter(key: string, value: string): void {
+    setFilters((f) => ({ ...f, [key]: value }));
+    setPage(1);
+  }
+
+  const filterGroups: FilterGroup[] = [
+    { key: "labelId", label: "Tag", options: labels.map((l) => ({ value: l.id, label: l.name })) },
+    { key: "leadSourceId", label: "Source", options: sources.map((s) => ({ value: s.id, label: s.name })) },
+    {
+      key: "rating",
+      label: "Rating",
+      options: Object.entries(RATING_LABELS).map(([value, label]) => ({ value, label })),
+    },
+    {
+      key: "access",
+      label: "Portal access",
+      options: Object.entries(ACCESS_FILTERS).map(([value, label]) => ({ value, label })),
+    },
+  ];
+  const anyFilter: boolean = Object.values(filters).some(Boolean);
 
   const selectClass =
     "px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:ring-1 focus:ring-[var(--primary)]";
@@ -279,7 +326,11 @@ export default function ContactsPage() {
             key={t.id}
             onClick={() => {
               // Contact and company searches mean different things; don't carry one over.
-              if ((t.id === "companies") !== (tab === "companies")) setSearch("");
+              if ((t.id === "companies") !== (tab === "companies")) {
+                setSearch("");
+                // Companies and contacts sort by different columns.
+                setOrder({ sort: "name", dir: "asc" });
+              }
               setTab(t.id);
               setPage(1);
             }}
@@ -304,75 +355,19 @@ export default function ContactsPage() {
           placeholder={tab === "companies" ? "Search companies" : "Search name, company, email"}
           className={`${selectClass} flex-1 min-w-[12rem]`}
         />
-        {tab !== "companies" && (
-          <>
-            <select
-              aria-label="Filter by tag"
-              value={labelId}
-              onChange={(e) => {
-                setLabelId(e.target.value);
-                setPage(1);
-              }}
-              className={selectClass}
-            >
-              <option value="">All tags</option>
-              {labels.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by source"
-              value={leadSourceId}
-              onChange={(e) => {
-                setLeadSourceId(e.target.value);
-                setPage(1);
-              }}
-              className={selectClass}
-            >
-              <option value="">All sources</option>
-              {sources.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by rating"
-              value={rating}
-              onChange={(e) => {
-                setRating(e.target.value);
-                setPage(1);
-              }}
-              className={selectClass}
-            >
-              <option value="">All ratings</option>
-              {Object.entries(RATING_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by portal access"
-              value={access}
-              onChange={(e) => {
-                setAccess(isAccessFilter(e.target.value) ? e.target.value : "");
-                setPage(1);
-              }}
-              className={selectClass}
-            >
-              <option value="">Portal access: all</option>
-              {Object.entries(ACCESS_FILTERS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
+        {tab !== "companies" && <FilterMenu groups={filterGroups} values={filters} onChange={setFilter} />}
+        <SortMenu
+          options={sortOptions}
+          sort={order.sort}
+          dir={order.dir}
+          onChange={(sort, dir) => {
+            setOrder({ sort, dir });
+            setPage(1);
+          }}
+        />
       </div>
+
+      {tab !== "companies" && <FilterChips groups={filterGroups} values={filters} onChange={setFilter} />}
 
       {loading ? (
         <div className="space-y-2">
@@ -388,9 +383,16 @@ export default function ContactsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[var(--muted-foreground)] border-b border-[var(--border)]">
-                  <th className="px-4 py-2.5 font-medium">Company</th>
-                  <th className="px-4 py-2.5 font-medium">People</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Paid, all time</th>
+                  {COMPANY_SORTS.map((o) => (
+                    <SortHeader
+                      key={o.value}
+                      option={o}
+                      sort={order.sort}
+                      dir={order.dir}
+                      onSort={sortBy}
+                      align={o.value === "paid" ? "right" : "left"}
+                    />
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -418,7 +420,7 @@ export default function ContactsPage() {
         )
       ) : contacts.length === 0 ? (
         <p className="text-sm text-[var(--muted-foreground)] py-8 text-center">
-          {debouncedSearch || labelId || leadSourceId || rating || access || tab !== "all"
+          {debouncedSearch || anyFilter || tab !== "all"
             ? "No contacts match these filters."
             : "No contacts yet. Add one or import a CSV."}
         </p>
@@ -427,11 +429,16 @@ export default function ContactsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[var(--muted-foreground)] border-b border-[var(--border)]">
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Company</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Next follow-up</th>
-                <th className="px-4 py-2.5 font-medium text-right">Paid, all time</th>
+                {CONTACT_SORTS.map((o) => (
+                  <SortHeader
+                    key={o.value}
+                    option={o}
+                    sort={order.sort}
+                    dir={order.dir}
+                    onSort={sortBy}
+                    align={o.value === "paid" ? "right" : "left"}
+                  />
+                ))}
               </tr>
             </thead>
             <tbody>

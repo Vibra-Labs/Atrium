@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
-import { createOwner, getCsrfToken, openSearchPalette } from "./helpers";
+import { applyContactFilter, createOwner, getCsrfToken, openSearchPalette } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -44,7 +44,8 @@ test.describe("Contacts list", () => {
     await page.getByLabel(/^Note/).fill("Met at the expo");
     await page.getByRole("button", { name: /^add contact$/i }).last().click();
 
-    await page.getByLabel("Filter by rating").selectOption("hot");
+    await applyContactFilter(page, "Rating", "Hot");
+    await expect(page.getByTestId("filter-chip")).toHaveText(/Rating is\s*Hot/);
     const row = page.getByRole("row", { name: new RegExp(name) });
     await expect(row.getByTestId("contact-rating")).toHaveText("Hot");
     await row.getByRole("link", { name }).click();
@@ -60,6 +61,40 @@ test.describe("Contacts list", () => {
     await expect(linkedin).toHaveAttribute("rel", "noopener noreferrer");
     await expect(page.getByRole("link", { name: "ann.dev" })).toHaveAttribute("href", "https://ann.dev");
     await expect(page.getByTestId("timeline-note")).toContainText("Met at the expo");
+  });
+
+  test("sort by a column header or the Order by menu, and clear filter chips", async ({ page, request }) => {
+    const stamp = Date.now();
+    await createContact(request, { name: `Sorta ${stamp}`, rating: "hot" });
+    await createContact(request, { name: `Sortb ${stamp}`, rating: "hot" });
+    await page.goto("/dashboard/contacts");
+    await page.getByPlaceholder("Search name, company, email").fill(String(stamp));
+    const rows = page.getByTestId("contact-row");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText(`Sorta ${stamp}`);
+
+    // Clicking the sorted column flips it.
+    await page.getByRole("button", { name: "Name", exact: true }).click();
+    await expect(page.getByRole("columnheader", { name: "Name" })).toHaveAttribute("aria-sort", "descending");
+    await expect(rows.first()).toContainText(`Sortb ${stamp}`);
+
+    // The menu offers the same columns; money starts high to low.
+    await page.getByRole("button", { name: /^Order by/ }).click();
+    await page.getByRole("menuitemradio", { name: "Paid, all time" }).click();
+    await expect(page.getByRole("columnheader", { name: "Paid, all time" })).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    await page.keyboard.press("Escape");
+
+    await applyContactFilter(page, "Rating", "Hot");
+    await expect(rows).toHaveCount(2);
+    await applyContactFilter(page, "Rating", "Cold");
+    await expect(page.getByTestId("filter-chip")).toHaveText(/Rating is\s*Cold/);
+    await expect(rows).toHaveCount(0);
+    await page.getByRole("button", { name: "Remove Rating filter" }).click();
+    await expect(page.getByTestId("filter-chip")).toHaveCount(0);
+    await expect(rows).toHaveCount(2);
   });
 
   test("search finds by company", async ({ page, request }) => {

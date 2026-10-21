@@ -58,7 +58,7 @@ test.describe("Client invite follow-through", () => {
     await invite(page, email);
 
     await page.goto(`${WEB}/dashboard/contacts?access=pending`);
-    await expect(page.getByLabel("Filter by portal access")).toHaveValue("pending");
+    await expect(page.getByTestId("filter-chip")).toHaveText(/Portal access is\s*Invite pending/);
     const row = page.getByTestId("contact-row").filter({ hasText: email });
     await expect(row).toBeVisible();
     await expect(row.getByTestId("portal-badge")).toHaveText("Invite pending");

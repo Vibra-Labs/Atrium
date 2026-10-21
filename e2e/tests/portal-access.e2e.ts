@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createOwner, inviteAndAcceptClient, openClientContact } from "./helpers";
+import { applyContactFilter, createOwner, inviteAndAcceptClient, openClientContact } from "./helpers";
 
 const WEB = "http://localhost:3000";
 
@@ -12,19 +12,19 @@ test.describe("Portal access on contacts", () => {
     const { clientEmail } = await inviteAndAcceptClient(browser, page, "access-client");
 
     await page.goto(`${WEB}/dashboard/contacts`);
-    const filter = page.getByLabel("Filter by portal access");
-    await filter.selectOption("portal");
+    await applyContactFilter(page, "Portal access", "Has access");
     const row = page.getByTestId("contact-row").filter({ hasText: "Test Client VAC" });
     await expect(row).toBeVisible();
     await expect(row.getByTestId("portal-badge")).toHaveText("Portal");
 
-    await filter.selectOption("none");
+    await applyContactFilter(page, "Portal access", "No access");
+    await expect(page.getByTestId("filter-chip")).toHaveText(/Portal access is\s*No access/);
     await expect(page.getByTestId("contact-row").filter({ hasText: "Test Client VAC" })).toHaveCount(0);
 
     // The old People page lands on the same filtered list.
     await page.goto(`${WEB}/dashboard/clients`);
     await page.waitForURL("**/dashboard/contacts?access=portal");
-    await expect(page.getByLabel("Filter by portal access")).toHaveValue("portal");
+    await expect(page.getByTestId("filter-chip")).toHaveText(/Portal access is\s*Has access/);
     await expect(page.getByTestId("contact-row").filter({ hasText: "Test Client VAC" })).toBeVisible();
 
     await openClientContact(page, clientEmail);

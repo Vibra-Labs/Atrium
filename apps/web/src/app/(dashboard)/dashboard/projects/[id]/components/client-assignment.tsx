@@ -174,12 +174,12 @@ export function ClientAssignment({
         </div>
       ) : (
         <p className="text-sm text-[var(--muted-foreground)] pb-4">
-          No clients yet. Invite clients from the{" "}
+          No clients yet. Invite a contact to the portal from the{" "}
           <a
-            href="/dashboard/clients"
+            href="/dashboard/contacts"
             className="text-[var(--primary)] hover:underline"
           >
-            Clients page
+            Contacts page
           </a>
           .
         </p>

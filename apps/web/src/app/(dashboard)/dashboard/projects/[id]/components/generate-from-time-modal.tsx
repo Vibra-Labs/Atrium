@@ -141,7 +141,7 @@ export function GenerateFromTimeModal({
                 Set project rate
               </button>
               <Link
-                href="/dashboard/clients"
+                href="/dashboard/team"
                 onClick={onClose}
                 className="text-amber-900 dark:text-amber-200 underline hover:no-underline"
               >

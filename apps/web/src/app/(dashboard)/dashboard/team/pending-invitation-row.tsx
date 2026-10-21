@@ -21,7 +21,7 @@ interface PendingInvitationRowProps {
   onResend: () => void;
 }
 
-/** One pending invite on the People page: its expiry, and Resend / Copy Link actions. */
+/** One pending staff invite on the Team page: its expiry, and Resend / Copy Link actions. */
 export function PendingInvitationRow({
   invitation,
   roleBadge,

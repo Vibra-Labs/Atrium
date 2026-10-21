@@ -295,6 +295,17 @@ describe("SearchService", () => {
       ).toBe(true);
     });
 
+    it("skips task descriptions for queries shorter than 3 characters", async () => {
+      await service.search(ORG, "ab");
+
+      const call = (
+        mockPrisma.task.findMany as ReturnType<typeof mock>
+      ).mock.calls[0][0] as PrismaArgs;
+      const or = (call.where?.OR as Record<string, unknown>[]) ?? [];
+      expect(or).toHaveLength(1);
+      expect(JSON.stringify(or)).not.toContain("description");
+    });
+
     it("caps task results at 5", async () => {
       await service.search(ORG, QUERY);
 

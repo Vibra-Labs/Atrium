@@ -9,12 +9,13 @@ import { ContactSyncModule } from "../contact-sync/contact-sync.module";
 import { MailModule } from "../mail/mail.module";
 import { BillingModule } from "../billing/billing.module";
 import { ApiKeysModule } from "../api-keys/api-keys.module";
+import { AuthCleanupTask } from "./auth-cleanup.task";
 import { McpAuthModule } from "../mcp-auth/mcp-auth.module";
 
 @Module({
   imports: [ContactSyncModule, MailModule, BillingModule, ApiKeysModule, McpAuthModule],
   controllers: [AuthController, WellKnownController],
-  providers: [AuthService, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker],
+  providers: [AuthService, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker, AuthCleanupTask],
   exports: [AuthService, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker],
 })
 export class AuthModule {}

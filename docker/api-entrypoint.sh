@@ -19,6 +19,9 @@ echo "Database ready."
 # Apply partial unique index on time_entry (one running entry per user)
 DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/migrate-time-entry-running-unique.ts || true
 
+# Trigram indexes for ILIKE search (skipped if pg_trgm can't be created)
+DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/add-trigram-indexes.ts || true
+
 if [ "${SUPABASE}" = "true" ]; then
   echo "Applying Row Level Security..."
   DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/apply-rls.ts

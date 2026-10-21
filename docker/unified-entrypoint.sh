@@ -83,6 +83,9 @@ else
   # Apply partial unique index on time_entry (one running entry per user)
   DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/migrate-time-entry-running-unique.ts || true
 
+  # Trigram indexes for ILIKE search (skipped if pg_trgm can't be created)
+  DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/add-trigram-indexes.ts || true
+
   # Apply Row Level Security (locks out Supabase anon/authenticated roles)
   # Only needed when using Supabase — set SUPABASE=true to activate
   if [ "${SUPABASE}" = "true" ]; then

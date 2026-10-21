@@ -71,6 +71,12 @@ async function main() {
     console.warn("Warning: Could not apply time_entry running unique index:", err);
   }
 
+  try {
+    await $`bun run ./scripts/add-trigram-indexes.ts`.cwd(dbDir).quiet();
+  } catch (err) {
+    console.warn("Warning: Could not apply trigram indexes:", err);
+  }
+
   // Run turbo dev
   const turbo = Bun.spawn(["bunx", "turbo", "run", "dev"], {
     cwd: root,

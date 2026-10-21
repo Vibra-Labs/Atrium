@@ -29,9 +29,10 @@ export class SearchService {
       this.prisma.task.findMany({
         where: {
           organizationId: orgId,
+          // Descriptions have no trigram index; searching them for 1-2 char queries scans every task.
           OR: [
             { title: { contains: q, mode: "insensitive" } },
-            { description: { contains: q, mode: "insensitive" } },
+            ...(q.length >= 3 ? [{ description: { contains: q, mode: "insensitive" as const } }] : []),
           ],
         },
         select: {

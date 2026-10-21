@@ -51,6 +51,7 @@ model Session {
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganizationId String?
 
+  @@index([userId])
   @@map("session")
 }
 
@@ -71,6 +72,7 @@ model Account {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("account")
 }
 
@@ -82,6 +84,7 @@ model Verification {
   createdAt  DateTime? @default(now())
   updatedAt  DateTime? @updatedAt
 
+  @@index([identifier])
   @@map("verification")
 }
 
@@ -162,6 +165,8 @@ model Invitation {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId, status])
+  @@index([email])
   @@map("invitation")
 }
 
@@ -394,6 +399,7 @@ model ProjectUpdate {
 
   @@index([projectId])
   @@index([organizationId])
+  @@index([fileId])
   @@map("project_update")
 }
 
@@ -428,6 +434,7 @@ model Task {
   @@index([projectId, status])
   @@index([requestedById])
   @@index([assigneeId])
+  @@index([organizationId, dueDate])
   @@map("task")
 }
 
@@ -504,6 +511,10 @@ model Invoice {
   @@unique([organizationId, invoiceNumber])
   @@index([organizationId])
   @@index([projectId])
+  @@index([organizationId, status])
+  @@index([status, dueDate])
+  @@index([organizationId, createdAt])
+  @@index([uploadedFileId])
   @@map("invoice")
 }
 
@@ -668,6 +679,9 @@ model Document {
 
   @@index([projectId])
   @@index([organizationId])
+  @@index([status])
+  @@index([fileId])
+  @@index([signedFileId])
   @@map("document")
 }
 
@@ -685,6 +699,7 @@ model DocumentVersion {
   uploadedBy User     @relation(fields: [uploadedById], references: [id])
 
   @@index([documentId])
+  @@index([fileId])
   @@map("document_version")
 }
 
@@ -707,6 +722,7 @@ model DocumentResponse {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, userId, fieldId])
+  @@index([userId])
   @@map("document_response")
 }
 
@@ -827,6 +843,7 @@ model Notification {
 
   @@index([userId, organizationId, read])
   @@index([userId, createdAt])
+  @@index([userId, organizationId, createdAt])
   @@map("notification")
 }
 
@@ -1020,6 +1037,9 @@ model Contact {
   @@index([companyId])
   @@index([leadSourceId])
   @@index([referredById])
+  @@index([organizationId, name])
+  @@index([followUpAt])
+  @@index([userId])
   @@map("contact")
 }
 
@@ -1109,6 +1129,7 @@ model TimeEntry {
   @@index([projectId, startedAt])
   @@index([taskId])
   @@index([invoiceLineItemId])
+  @@index([organizationId, startedAt])
   @@map("time_entry")
   // Partial unique index "time_entry_one_running_per_user" on
   // ("organizationId", "userId") WHERE "endedAt" IS NULL is applied

@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import {
   CompanyField,
+  MoreFields,
   PhonesField,
   RatingField,
   SocialLinksField,
@@ -157,47 +158,12 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="contact-job-title" className={labelClass}>
-              Job title
-            </label>
-            <input
-              id="contact-job-title"
-              value={jobTitle}
-              onChange={(e) => setJobTitle(e.target.value)}
-              maxLength={200}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="contact-department" className={labelClass}>
-              Department
-            </label>
-            <input
-              id="contact-department"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              maxLength={100}
-              className={inputClass}
-            />
-          </div>
-        </div>
-        <CompanyField
-          text={companyText}
-          onChange={(text, id) => {
-            setCompanyText(text);
-            setCompanyId(id);
-          }}
-        />
-        <PhonesField idPrefix="contact" phones={phones} onChange={setPhones} />
-        <SocialLinksField links={links} onChange={setLinks} />
-        <div className="grid grid-cols-2 gap-3">
-          <SourceField
-            sources={sources}
-            choice={sourceChoice}
-            newSource={newSource}
-            onChoice={setSourceChoice}
-            onNewSource={setNewSource}
+          <CompanyField
+            text={companyText}
+            onChange={(text, id) => {
+              setCompanyText(text);
+              setCompanyId(id);
+            }}
           />
           <div>
             <label htmlFor="contact-status" className={labelClass}>
@@ -217,20 +183,59 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
             </select>
           </div>
         </div>
-        <RatingField id="contact-rating" value={rating} onChange={setRating} />
-        <div>
-          <label htmlFor="contact-note" className={labelClass}>
-            Note <span className="text-xs">(optional)</span>
-          </label>
-          <textarea
-            id="contact-note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            maxLength={5000}
-            className={inputClass}
-          />
-        </div>
+        <PhonesField idPrefix="contact" phones={phones} onChange={setPhones} />
+        <MoreFields>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="contact-job-title" className={labelClass}>
+                Job title
+              </label>
+              <input
+                id="contact-job-title"
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+                maxLength={200}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="contact-department" className={labelClass}>
+                Department
+              </label>
+              <input
+                id="contact-department"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                maxLength={100}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <SocialLinksField links={links} onChange={setLinks} />
+          <div className="grid grid-cols-2 gap-3">
+            <SourceField
+              sources={sources}
+              choice={sourceChoice}
+              newSource={newSource}
+              onChoice={setSourceChoice}
+              onNewSource={setNewSource}
+            />
+            <RatingField id="contact-rating" value={rating} onChange={setRating} />
+          </div>
+          <div>
+            <label htmlFor="contact-note" className={labelClass}>
+              Note <span className="text-xs">(optional)</span>
+            </label>
+            <textarea
+              id="contact-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              maxLength={5000}
+              className={inputClass}
+            />
+          </div>
+        </MoreFields>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
           <button

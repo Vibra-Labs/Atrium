@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PhonesField, SocialLinksField, cleanLinks, cleanPhones } from "./contact-fields";
+import { MoreFields, PhonesField, SocialLinksField, cleanLinks, cleanPhones } from "./contact-fields";
 
 describe("repeater fields", () => {
   it("remove buttons are named by their label; the X icon is hidden from screen readers", () => {
@@ -25,5 +25,29 @@ describe("cleanPhones / cleanLinks", () => {
       "https://linkedin.com/in/a",
       "https://x.com/a",
     ]);
+  });
+});
+
+describe("MoreFields", () => {
+  it("hides its fields until opened", () => {
+    const closed: string = renderToStaticMarkup(
+      <MoreFields>
+        <input aria-label="Hidden field" />
+      </MoreFields>,
+    );
+    expect(closed).toContain('aria-expanded="false"');
+    expect(closed).toContain("More fields");
+    expect(closed).not.toContain("Hidden field");
+  });
+
+  it("shows its fields when open by default", () => {
+    const open: string = renderToStaticMarkup(
+      <MoreFields defaultOpen>
+        <input aria-label="Hidden field" />
+      </MoreFields>,
+    );
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("Fewer fields");
+    expect(open).toContain("Hidden field");
   });
 });

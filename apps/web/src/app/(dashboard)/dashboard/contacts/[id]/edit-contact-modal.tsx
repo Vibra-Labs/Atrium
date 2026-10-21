@@ -6,6 +6,7 @@ import { useToast } from "@/components/toast";
 import { splitFullName } from "@/lib/contact-fields";
 import {
   CompanyField,
+  MoreFields,
   PhonesField,
   RatingField,
   SocialLinksField,
@@ -192,64 +193,12 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
           )}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="edit-job-title" className={labelClass}>Job title</label>
-            <input
-              id="edit-job-title"
-              value={jobTitle}
-              onChange={(e) => setJobTitle(e.target.value)}
-              maxLength={200}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="edit-department" className={labelClass}>Department</label>
-            <input
-              id="edit-department"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              maxLength={100}
-              className={inputClass}
-            />
-          </div>
-        </div>
-        <CompanyField
-          text={companyText}
-          onChange={(text, id) => {
-            setCompanyText(text);
-            setCompanyId(id);
-          }}
-        />
-        <PhonesField idPrefix="edit" phones={phones} onChange={setPhones} />
-        <SocialLinksField links={links} onChange={setLinks} />
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="edit-website" className={labelClass}>Website</label>
-            <input id="edit-website" value={website} onChange={(e) => setWebsite(e.target.value)} className={inputClass} />
-          </div>
-          <div>
-            <label htmlFor="edit-address" className={labelClass}>Address</label>
-            <input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass} />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="edit-description" className={labelClass}>About</label>
-          <textarea
-            id="edit-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={2000}
-            rows={3}
-            className={`${inputClass} resize-y`}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <SourceField
-            sources={sources}
-            choice={sourceChoice}
-            newSource={newSource}
-            onChoice={setSourceChoice}
-            onNewSource={setNewSource}
+          <CompanyField
+            text={companyText}
+            onChange={(text, id) => {
+              setCompanyText(text);
+              setCompanyId(id);
+            }}
           />
           <div>
             <label htmlFor="edit-status" className={labelClass}>Status</label>
@@ -260,58 +209,114 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
             </select>
           </div>
         </div>
-        <RatingField id="edit-rating" value={rating} onChange={setRating} />
-        {isReferral && (
-          <div className="relative">
-            <label htmlFor="edit-referrer" className={labelClass}>Referred by</label>
-            {referrer ? (
-              <div className="flex items-center justify-between text-sm">
-                <span>{referrer.name}</span>
-                <button
-                  type="button"
-                  onClick={() => setReferrer(null)}
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <>
-                <input
-                  id="edit-referrer"
-                  value={referrerSearch}
-                  autoComplete="off"
-                  placeholder="Search contacts"
-                  onChange={(e) => setReferrerSearch(e.target.value)}
-                  className={inputClass}
-                />
-                {referrerResults.length > 0 && (
-                  <ul
-                    role="listbox"
-                    className="absolute z-10 mt-1 w-full bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg text-sm overflow-hidden"
-                  >
-                    {referrerResults.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={false}
-                          onClick={() => {
-                            setReferrer(c);
-                            setReferrerSearch("");
-                          }}
-                          className="w-full text-left px-3 py-2 hover:bg-[var(--muted)]"
-                        >
-                          {c.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
+        <PhonesField idPrefix="edit" phones={phones} onChange={setPhones} />
+        <MoreFields>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="edit-job-title" className={labelClass}>Job title</label>
+              <input
+                id="edit-job-title"
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+                maxLength={200}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="edit-department" className={labelClass}>Department</label>
+              <input
+                id="edit-department"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                maxLength={100}
+                className={inputClass}
+              />
+            </div>
           </div>
-        )}
+          <SocialLinksField links={links} onChange={setLinks} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="edit-website" className={labelClass}>Website</label>
+              <input id="edit-website" value={website} onChange={(e) => setWebsite(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label htmlFor="edit-address" className={labelClass}>Address</label>
+              <input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="edit-description" className={labelClass}>About</label>
+            <textarea
+              id="edit-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={2000}
+              rows={3}
+              className={`${inputClass} resize-y`}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <SourceField
+              sources={sources}
+              choice={sourceChoice}
+              newSource={newSource}
+              onChoice={setSourceChoice}
+              onNewSource={setNewSource}
+            />
+            <RatingField id="edit-rating" value={rating} onChange={setRating} />
+          </div>
+          {isReferral && (
+            <div className="relative">
+              <label htmlFor="edit-referrer" className={labelClass}>Referred by</label>
+              {referrer ? (
+                <div className="flex items-center justify-between text-sm">
+                  <span>{referrer.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setReferrer(null)}
+                    className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    id="edit-referrer"
+                    value={referrerSearch}
+                    autoComplete="off"
+                    placeholder="Search contacts"
+                    onChange={(e) => setReferrerSearch(e.target.value)}
+                    className={inputClass}
+                  />
+                  {referrerResults.length > 0 && (
+                    <ul
+                      role="listbox"
+                      className="absolute z-10 mt-1 w-full bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg text-sm overflow-hidden"
+                    >
+                      {referrerResults.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={false}
+                            onClick={() => {
+                              setReferrer(c);
+                              setReferrerSearch("");
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-[var(--muted)]"
+                          >
+                            {c.name}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </MoreFields>
         {sourcesError && (
           <p className="text-sm text-red-600">
             Couldn&apos;t load lead sources.{" "}

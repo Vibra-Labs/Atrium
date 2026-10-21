@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { NEW_SOURCE, PHONE_LABELS, RATING_LABELS, inputClass, labelClass } from "./shared";
 import type { ContactPhone } from "./shared";
 
@@ -263,6 +263,30 @@ export function SourceField({ sources, choice, newSource, onChoice, onNewSource 
           className={`${inputClass} col-span-2 order-last`}
         />
       )}
+    </>
+  );
+}
+
+interface MoreFieldsProps {
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}
+
+/** Keeps the less-used fields of a form out of the way until asked for. */
+export function MoreFields({ defaultOpen = false, children }: MoreFieldsProps) {
+  const [open, setOpen] = useState<boolean>(defaultOpen);
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={`${addButtonClass} inline-flex items-center gap-1`}
+      >
+        <ChevronDown aria-hidden="true" className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
+        {open ? "Fewer fields" : "More fields"}
+      </button>
+      {open && <div className="space-y-4">{children}</div>}
     </>
   );
 }

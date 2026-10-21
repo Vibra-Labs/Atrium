@@ -1,7 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
-import { InAppNotificationsService } from "../notifications/in-app-notifications.service";
 
 const BATCH_SIZE = 500;
 
@@ -20,10 +19,7 @@ function formatDate(date: Date): string {
 export class FollowUpTask {
   private readonly logger = new Logger(FollowUpTask.name);
 
-  constructor(
-    private prisma: PrismaService,
-    private notifications: InAppNotificationsService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   @Cron(CronExpression.EVERY_HOUR)
   async run(): Promise<void> {
@@ -49,20 +45,27 @@ export class FollowUpTask {
     for (const contact of due) {
       try {
         const recipients = this.recipients(staff.get(contact.organizationId) ?? [], contact.followUpOwnerId);
-        for (const userId of recipients) {
-          await this.notifications.create({
-            userId,
-            organizationId: contact.organizationId,
-            type: "contact_follow_up",
-            title: `Follow up with ${contact.name}`,
-            message: `Follow-up due ${formatDate(contact.followUpAt as Date)}`,
-            link: `/dashboard/contacts/${contact.id}`,
+        // Claim and notify in one transaction: a failed insert releases the claim for the next run,
+        // and a concurrent run (another replica) finds the contact already claimed and skips it.
+        const claimed = await this.prisma.$transaction(async (tx): Promise<boolean> => {
+          const { count } = await tx.contact.updateMany({
+            where: { id: contact.id, followUpNotifiedAt: null, followUpAt: contact.followUpAt },
+            data: { followUpNotifiedAt: now },
           });
-        }
-        await this.prisma.contact.update({
-          where: { id: contact.id },
-          data: { followUpNotifiedAt: now },
+          if (count === 0 || recipients.length === 0) return count > 0;
+          await tx.notification.createMany({
+            data: recipients.map((userId) => ({
+              userId,
+              organizationId: contact.organizationId,
+              type: "contact_follow_up",
+              title: `Follow up with ${contact.name}`,
+              message: `Follow-up due ${formatDate(contact.followUpAt as Date)}`,
+              link: `/dashboard/contacts/${contact.id}`,
+            })),
+          });
+          return true;
         });
+        if (!claimed) continue;
         if (recipients.length === 0) {
           this.logger.warn(`No one to remind about contact ${contact.id}; skipping`);
           continue;

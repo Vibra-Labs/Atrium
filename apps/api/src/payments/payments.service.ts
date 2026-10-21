@@ -15,6 +15,7 @@ import { SettingsService } from "../settings/settings.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { calculateInvoiceTotal } from "./invoice-total";
+import { CLIENT_HIDDEN_STATUSES } from "../invoices/invoices.service";
 import { publicApiUrl } from "../common/helpers/public-api-url";
 
 interface StripeConfig {
@@ -442,8 +443,9 @@ export class PaymentsService {
 
     const [config, invoice, settings] = await Promise.all([
       this.getStripeConfig(orgId),
+      // A client must not learn that a draft or cancelled invoice exists.
       this.prisma.invoice.findFirst({
-        where: { id: invoiceId, organizationId: orgId },
+        where: { id: invoiceId, organizationId: orgId, status: { notIn: CLIENT_HIDDEN_STATUSES } },
         include: { lineItems: true },
       }),
       this.prisma.systemSettings.findUnique({

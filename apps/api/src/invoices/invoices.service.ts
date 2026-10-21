@@ -26,7 +26,7 @@ function parsePaidAt(value: string): Date {
 }
 
 // Statuses a portal client must never see (list, detail, PDF).
-const CLIENT_HIDDEN_STATUSES: string[] = ["draft", "cancelled"];
+export const CLIENT_HIDDEN_STATUSES: string[] = ["draft", "cancelled"];
 
 @Injectable()
 export class InvoicesService {

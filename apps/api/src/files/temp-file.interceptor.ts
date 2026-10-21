@@ -29,6 +29,10 @@ async function removeTempFile(filePath: string | undefined): Promise<void> {
   }
 }
 
+function logCallbackError(err: unknown): void {
+  logger.error("Temp upload callback threw", err instanceof Error ? err.stack : String(err));
+}
+
 /**
  * multer disk engine. Unlike multer's own diskStorage, it deletes the partial
  * file when the request stream dies mid-file (client abort), instead of
@@ -39,16 +43,21 @@ function tempDiskStorage(dir: string): StorageEngine {
     _handleFile(_req, file, cb): void {
       const filePath = join(dir, `atrium-upload-${randomBytes(16).toString("hex")}`);
       const out = createWriteStream(filePath, { mode: 0o600 });
-      pipeline(file.stream, out).then(
-        () => cb(null, { path: filePath, size: out.bytesWritten }),
-        async (err: Error) => {
-          await removeTempFile(filePath);
-          cb(err);
-        },
-      );
+      pipeline(file.stream, out)
+        .then(
+          () => cb(null, { path: filePath, size: out.bytesWritten }),
+          async (err: Error) => {
+            await removeTempFile(filePath);
+            cb(err);
+          },
+        )
+        // A throw inside multer's callback must not become an unhandled rejection.
+        .catch((err: unknown) => logCallbackError(err));
     },
     _removeFile(_req, file, cb): void {
-      removeTempFile(file.path).then(() => cb(null));
+      removeTempFile(file.path)
+        .then(() => cb(null))
+        .catch((err: unknown) => logCallbackError(err));
     },
   };
 }

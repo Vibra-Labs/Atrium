@@ -52,9 +52,12 @@ async function run(interceptor: NestInterceptor, req: FakeRequest, next: CallHan
   return lastValueFrom(out as Observable<unknown>);
 }
 
-/** Let fire-and-forget unlinks settle. */
-async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 50));
+/** Waits (up to 2 s) for fire-and-forget unlinks to empty `dir`; the caller asserts it is empty. */
+async function emptied(dir: string): Promise<void> {
+  const deadline: number = Date.now() + 2000;
+  while ((await fs.readdir(dir)).length > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 describe("TempFileInterceptor", () => {
@@ -82,7 +85,7 @@ describe("TempFileInterceptor", () => {
       seenContent = await fs.readFile(seenPath, "utf8");
       return "ok";
     }));
-    await settle();
+    await emptied(dir);
 
     expect(result).toBe("ok");
     expect(seenContent).toBe("hello streaming world");
@@ -102,7 +105,7 @@ describe("TempFileInterceptor", () => {
       seenPath = req.file?.path ?? "";
       throw new Error("storage down");
     })).catch((e: Error) => e);
-    await settle();
+    await emptied(dir);
 
     expect((err as Error).message).toBe("storage down");
     expect(seenPath).not.toBe("");
@@ -118,7 +121,7 @@ describe("TempFileInterceptor", () => {
     const err = await run(new Interceptor(), req, handler(async () => {
       called = true;
     })).catch((e: Error) => e);
-    await settle();
+    await emptied(dir);
 
     expect(err).toBeInstanceOf(PayloadTooLargeException);
     expect(called).toBe(false);
@@ -137,7 +140,7 @@ describe("TempFileInterceptor", () => {
     const err = await run(new Interceptor(), req, handler(async () => {
       called = true;
     })).catch((e: Error) => e);
-    await settle();
+    await emptied(dir);
 
     expect(err).toBeInstanceOf(Error);
     expect(called).toBe(false);

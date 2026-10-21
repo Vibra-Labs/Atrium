@@ -30,6 +30,7 @@ const prisma = {
   company: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
     create: mock(() => Promise.resolve({ id: "co-new" })),
+    updateMany: mock(() => Promise.resolve({ count: 1 })),
   },
   leadSource: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
@@ -1059,6 +1060,143 @@ describe("ContactsService", () => {
       expect(statuses).toEqual(["client", "past_client", "lead"]);
     });
 
+    it("import stores every phone column, the follow-up, the referrer and fills an empty company size", async () => {
+      prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-bo", name: "Bo" }));
+      prisma.contact.create.mockImplementation((a: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: "c-1", ...a.data }),
+      );
+      const csv = [
+        "Name,Mobile,Work Phone,Company,Referred by,Follow up,Revenue,Employees",
+        "Ann,+1 555 0100,+1 555 0200,Acme,bo@x.com,2026-11-05,1000,12",
+      ].join("\n");
+      const res = await service.importCsv(
+        {
+          csv,
+          mapping: {
+            Name: "name",
+            Mobile: "phone",
+            "Work Phone": "phone",
+            Company: "company",
+            "Referred by": "referredBy",
+            "Follow up": "followUpAt",
+            Revenue: "companyRevenue",
+            Employees: "companyEmployees",
+          },
+        },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({ created: 1, skipped: [], warnings: [] });
+      expect(prisma.contact.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", email: "bo@x.com" },
+        select: { id: true },
+      });
+      const data = (prisma.contact.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      expect(data).toMatchObject({
+        referredById: "c-bo",
+        phone: "+1 555 0100",
+        phones: [
+          { label: "Mobile", number: "+1 555 0100" },
+          { label: "Work", number: "+1 555 0200" },
+        ],
+      });
+      expect(prisma.contact.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            followUpAt: new Date("2026-11-05T12:00:00.000Z"),
+            followUpOwnerId: "u-1",
+          }),
+        }),
+      );
+      expect(prisma.company.updateMany).toHaveBeenCalledWith({
+        where: { id: "co-new", organizationId: "org-1", annualRevenue: null },
+        data: { annualRevenue: 1000 },
+      });
+      expect(prisma.company.updateMany).toHaveBeenCalledWith({
+        where: { id: "co-new", organizationId: "org-1", employeeCount: null },
+        data: { employeeCount: 12 },
+      });
+    });
+
+    it("import leaves out a referrer it can't find or that matches several contacts", async () => {
+      prisma.contact.findMany.mockImplementation((args: unknown) => {
+        const name = (args as { where: { name?: { equals: string } } }).where.name?.equals;
+        return Promise.resolve(name === "Sam" ? [{ id: "s1" }, { id: "s2" }] : []);
+      });
+      const csv = "Name,Referred by\nAnn,Nobody\nBo,Sam\n";
+      const res = await service.importCsv(
+        { csv, mapping: { Name: "name", "Referred by": "referredBy" } },
+        "org-1",
+        "u-1",
+      );
+      expect(res.created).toBe(2);
+      expect(res.warnings).toEqual([
+        { row: 2, reason: 'Referred by "Nobody" matches no contact; left out' },
+        { row: 3, reason: 'Referred by "Sam" matches several contacts; left out' },
+      ]);
+      expect(prisma.contact.findMany).toHaveBeenCalledWith({
+        where: { organizationId: "org-1", name: { equals: "Sam", mode: "insensitive" } },
+        select: { id: true },
+        take: 2,
+      });
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+    });
+
+    it("check previews the import without writing, including existing emails and unknown referrers", async () => {
+      prisma.contact.findMany.mockImplementation((args: unknown) => {
+        const where = (args as { where: { email?: unknown; name?: unknown } }).where;
+        if (where.email) return Promise.resolve([{ email: "taken@x.com" }]);
+        if (where.name) return Promise.resolve([{ name: "Known Person" }]);
+        return Promise.resolve([]);
+      });
+      const csv = [
+        "First Name,Last Name,Email,Mobile,Company,Referred by,Tags",
+        "Ann,Lee,ann@x.com,+1 555,Acme,known person,vip; hot",
+        "Bo,,taken@x.com,,,,",
+        ",,c@x.com,,,,",
+        "Di,,d@x.com,,,Ann Lee,",
+        "Ed,,e@x.com,,,Stranger,",
+      ].join("\n");
+      const res = await service.checkImport(
+        {
+          csv,
+          mapping: {
+            "First Name": "firstName",
+            "Last Name": "lastName",
+            Email: "email",
+            Mobile: "phone",
+            Company: "company",
+            "Referred by": "referredBy",
+            Tags: "tags",
+          },
+        },
+        "org-1",
+      );
+      expect(prisma.contact.create).not.toHaveBeenCalled();
+      expect(res.total).toBe(5);
+      expect(res.toCreate).toBe(3);
+      expect(res.skipped).toEqual([
+        { row: 3, reason: "Email already exists" },
+        { row: 4, reason: "Missing name" },
+      ]);
+      // "Ann Lee" is created earlier in the same file, so Di's referrer resolves.
+      expect(res.warnings).toEqual([{ row: 6, reason: 'Referred by "Stranger" matches no contact; left out' }]);
+      expect(res.sample[0]).toEqual({
+        row: 2,
+        name: "Ann Lee",
+        email: "ann@x.com",
+        company: "Acme",
+        phones: [{ label: "Mobile", number: "+1 555" }],
+        status: "lead",
+        rating: null,
+        tags: ["vip", "hot"],
+        followUpAt: null,
+        referredBy: "known person",
+      });
+      expect(res.sample.map((s) => s.row)).toEqual([2, 5, 6]);
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+    });
+
     it("import rejects more than 5,000 rows", async () => {
       const csv = "Name\n" + Array.from({ length: 5001 }, (_, i) => `n${i}`).join("\n");
       const e = await rejects(service.importCsv({ csv, mapping: { Name: "name" } }, "org-1", "u-1"));
@@ -1238,6 +1376,7 @@ describe("ContactsService", () => {
       const fake = {
         previewCsv: (t: string) => ({ t }),
         importCsv: (...a: unknown[]) => calls.push(a),
+        checkImport: (...a: unknown[]) => calls.push(["check", ...a]),
       };
       const ctrl = new ContactsController(fake as unknown as ContactsService);
       const csvFile = { originalname: "a.CSV", buffer: Buffer.from("Name\nAnn\n") };
@@ -1262,12 +1401,19 @@ describe("ContactsService", () => {
         ctrl.importCsv(csvFile, '{"Name":"name"}', "org-1", "u-1");
         expect(calls[0]).toEqual([{ csv: "Name\nAnn\n", mapping: { Name: "name" } }, "org-1", "u-1"]);
       });
+
+      it("check validates the mapping and passes the same input to the dry run", () => {
+        expect(() => ctrl.checkImport(csvFile, "nope", "org-1")).toThrow("Invalid mapping");
+        ctrl.checkImport(csvFile, '{"Name":"name"}', "org-1");
+        expect(calls.at(-1)).toEqual(["check", { csv: "Name\nAnn\n", mapping: { Name: "name" } }, "org-1"]);
+      });
     });
 
     it("declares export/import routes before :id", () => {
       const names = Object.getOwnPropertyNames(ContactsController.prototype);
       expect(names.indexOf("exportCsv")).toBeLessThan(names.indexOf("findOne"));
       expect(names.indexOf("importCsv")).toBeLessThan(names.indexOf("findOne"));
+      expect(names.indexOf("checkImport")).toBeLessThan(names.indexOf("findOne"));
     });
   });
 });

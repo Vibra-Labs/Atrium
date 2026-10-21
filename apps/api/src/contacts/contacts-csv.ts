@@ -15,6 +15,11 @@ export const IMPORT_FIELDS = [
   "tags",
   "status",
   "notes",
+  "description",
+  "referredBy",
+  "followUpAt",
+  "companyRevenue",
+  "companyEmployees",
   "skip",
 ] as const;
 export type ImportField = (typeof IMPORT_FIELDS)[number];

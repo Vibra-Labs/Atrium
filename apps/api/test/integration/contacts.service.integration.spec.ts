@@ -87,4 +87,53 @@ describe("ContactsService contact fields (Postgres)", () => {
     expect(row.phones).toEqual([]);
     expect(row.socialLinks).toEqual([]);
   });
+
+  it("CSV import: several phones, referrer from earlier in the file, follow-up and company size", async () => {
+    const s = Date.now();
+    const user = await prisma.user.create({ data: { id: `imp-u-${s}`, name: "Owner", email: `imp-${s}@x.com` } });
+    const company = `ImportCo ${s}`;
+    const csv = [
+      "First Name,Last Name,Email,Mobile,Work Phone,Company,Referred by,Follow up,Revenue,Employees",
+      `Rea,Ferrer,rea-${s}@x.com,+1 555 0100,,${company},,,"$1,000",`,
+      `Ann,Lee,ann-${s}@x.com,+1 555 0200,+1 555 0300,${company},rea-${s}@x.com,11/5/2026,"$9,999",12`,
+    ].join("\n");
+    const mapping = {
+      "First Name": "firstName",
+      "Last Name": "lastName",
+      Email: "email",
+      Mobile: "phone",
+      "Work Phone": "phone",
+      Company: "company",
+      "Referred by": "referredBy",
+      "Follow up": "followUpAt",
+      Revenue: "companyRevenue",
+      Employees: "companyEmployees",
+    } as const;
+
+    const check = await contacts.checkImport({ csv, mapping }, orgId);
+    expect(check).toMatchObject({ total: 2, toCreate: 2, skipped: [], warnings: [] });
+    expect(await prisma.contact.count({ where: { organizationId: orgId, email: `ann-${s}@x.com` } })).toBe(0);
+
+    const res = await contacts.importCsv({ csv, mapping }, orgId, user.id);
+    expect(res).toEqual({ created: 2, skipped: [], warnings: [] });
+    const rea = await prisma.contact.findFirstOrThrow({ where: { organizationId: orgId, email: `rea-${s}@x.com` } });
+    const ann = await prisma.contact.findFirstOrThrow({
+      where: { organizationId: orgId, email: `ann-${s}@x.com` },
+      include: { company: true },
+    });
+    expect(ann.phones).toEqual([
+      { label: "Mobile", number: "+1 555 0200" },
+      { label: "Work", number: "+1 555 0300" },
+    ]);
+    expect(ann.referredById).toBe(rea.id);
+    expect(ann.followUpAt?.toISOString()).toBe("2026-11-05T12:00:00.000Z");
+    expect(ann.followUpOwnerId).toBe(user.id);
+    // The first row set revenue; a later row only fills what is still empty.
+    expect([ann.company?.annualRevenue, ann.company?.employeeCount]).toEqual([1000, 12]);
+
+    // Re-checking the same file now finds both emails taken.
+    const again = await contacts.checkImport({ csv, mapping }, orgId);
+    expect(again.toCreate).toBe(0);
+    await prisma.user.delete({ where: { id: user.id } }).catch((e: unknown) => console.error(e));
+  });
 });

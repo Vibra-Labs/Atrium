@@ -76,6 +76,20 @@ export class ContactsController {
     return this.contactsService.previewCsv(readCsvUpload(file));
   }
 
+  /** Dry run of POST import with the same file and mapping: nothing is written. */
+  @Post("import/check")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_CSV_BYTES } }))
+  checkImport(
+    @UploadedFile() file: CsvUpload | undefined,
+    @Body("mapping") rawMapping: unknown,
+    @CurrentOrg("id") orgId: string,
+  ) {
+    const csv = readCsvUpload(file);
+    const mapping = parseMapping(rawMapping);
+    if (!mapping) throw new BadRequestException("Invalid mapping");
+    return this.contactsService.checkImport({ csv, mapping }, orgId);
+  }
+
   @Post("import")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_CSV_BYTES } }))
   importCsv(

@@ -6,7 +6,7 @@ All notable changes to Atrium will be documented in this file.
 
 ### Added
 
-- **Contacts** — A light CRM for owners and admins at `/dashboard/contacts`: contacts and companies, lead sources, notes, linked projects and revenue per contact, follow-up reminders, and CSV import/export. Contacts are kept in step with invitations, project clients and invoice payments. Free on all plans. New MCP tools `list_contacts`, `get_contact` and `add_contact_note`.
+- **Contacts** — A light CRM for owners and admins at `/dashboard/contacts`: contacts and companies, lead sources, notes, linked projects and revenue per contact, follow-up reminders, sortable columns and Linear-style filters, and CSV import/export. Import lets you match each column to a field (several phone columns, referrer, follow-up date, company revenue and size included) and review what will be created before anything is written. Contacts are kept in step with invitations, project clients and invoice payments. Free on all plans. New MCP tools `list_contacts`, `get_contact` and `add_contact_note`.
 
 ### Changed
 

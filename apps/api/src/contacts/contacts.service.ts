@@ -5,7 +5,6 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { isEmail } from "class-validator";
 import { Prisma } from "@atrium/database";
 import type { Contact } from "@atrium/database";
 import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
@@ -16,8 +15,10 @@ import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { ContactRevenueService, rankByPaid } from "./contact-revenue.service";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
-import type { ImportField, ImportMapping } from "./contacts-csv";
-import { LEAD_SOURCE_NAME_MAX, TIMELINE_MAX_PAGE } from "./contacts.dto";
+import type { ImportMapping } from "./contacts-csv";
+import { planImport } from "./contacts-import";
+import type { ImportDraft, PlannedRow } from "./contacts-import";
+import { TIMELINE_MAX_PAGE } from "./contacts.dto";
 import type {
   ContactSort,
   CreateContactDto,
@@ -28,12 +29,9 @@ import type {
 } from "./contacts.dto";
 import { requireName } from "./require-name";
 import {
-  NAME_PART_MAX,
   createNames,
-  importSocialLinks,
   normalizeSocialLinks,
   optionalText,
-  parseRating,
   phonesOf,
   resolvePhones,
   updateNames,
@@ -41,6 +39,31 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOO_MANY_ROWS = "CSV has more than 5,000 rows";
+const IMPORT_SAMPLE_SIZE = 5;
+
+export interface RowNote {
+  row: number;
+  reason: string;
+}
+
+/** One contact as the import preview shows it. */
+export interface ImportSample {
+  row: number;
+  name: string;
+  email: string | null;
+  company: string | null;
+  phones: ContactPhone[];
+  status: string;
+  rating: string | null;
+  tags: string[];
+  followUpAt: string | null;
+  referredBy: string | null;
+}
+
+function referrerWarning(value: string, problem: "none" | "several"): string {
+  const what = problem === "none" ? "matches no contact" : "matches several contacts";
+  return `Referred by "${value.slice(0, 100)}" ${what}; left out`;
+}
 
 const STATUS_LABELS: Record<ContactStatus, string> = {
   lead: "Lead",
@@ -62,19 +85,6 @@ function formatPhones(phones: ContactPhone[]): string {
 
 function readLinks(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-function parseStatus(value: string): ContactStatus {
-  const v = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
-  return v === "client" || v === "past_client" ? v : "lead";
-}
-
-function splitTags(value: string): string[] {
-  const names = value
-    .split(/[;,]/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-  return names.filter((n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i);
 }
 
 /**
@@ -342,110 +352,176 @@ export class ContactsService {
     dto: { csv: string; mapping: ImportMapping },
     orgId: string,
     userId: string,
-  ): Promise<{
-    created: number;
-    skipped: { row: number; reason: string }[];
-    warnings: { row: number; reason: string }[];
-  }> {
-    const [headers = [], ...data] = parseCsv(dto.csv);
-    if (data.length > MAX_IMPORT_ROWS) throw new BadRequestException(TOO_MANY_ROWS);
-
-    const columns = new Map<ImportField, number>();
-    // Exports often split links over several columns (LinkedIn, Twitter...), so all are read.
-    const linkColumns: { header: string; index: number }[] = [];
-    headers.forEach((h, i) => {
-      if (!Object.hasOwn(dto.mapping, h)) return;
-      const field = dto.mapping[h];
-      if (field === "socialLinks") linkColumns.push({ header: h, index: i });
-      else if (field !== "skip" && !columns.has(field)) columns.set(field, i);
-    });
-    const cell = (row: string[], field: ImportField): string => {
-      const i = columns.get(field);
-      return i === undefined ? "" : (row[i] ?? "").trim();
-    };
-
-    const skipped: { row: number; reason: string }[] = [];
+  ): Promise<{ created: number; skipped: RowNote[]; warnings: RowNote[] }> {
+    const planned = this.planCsv(dto.csv, dto.mapping);
+    const skipped: RowNote[] = [];
     // Non-fatal: the contact was imported, but something in the row was left out.
-    const warnings: { row: number; reason: string }[] = [];
-    const seen = new Set<string>();
+    const warnings: RowNote[] = [];
     let created = 0;
 
-    for (const [i, row] of data.entries()) {
-      const rowNumber = i + 2; // 1-based, header is row 1
-      const name = cell(row, "name");
-      const firstName = cell(row, "firstName");
-      if (!name && !firstName) {
-        skipped.push({ row: rowNumber, reason: "Missing name" });
+    for (const planRow of planned) {
+      if ("skip" in planRow) {
+        skipped.push({ row: planRow.row, reason: planRow.skip });
         continue;
       }
-      const rating = parseRating(cell(row, "rating"));
-      if (rating === null) {
-        skipped.push({ row: rowNumber, reason: "Invalid rating" });
-        continue;
-      }
-      // A link never costs the row: unusable ones are dropped with a warning.
-      const { links: socialLinks, dropped } = importSocialLinks(
-        linkColumns.map((c) => ({ header: c.header, value: row[c.index] ?? "" })),
-      );
-      const rawEmail = cell(row, "email");
-      if (rawEmail && !isEmail(rawEmail)) {
-        skipped.push({ row: rowNumber, reason: "Invalid email" });
-        continue;
-      }
-      const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
-      if (email && seen.has(email)) {
-        skipped.push({ row: rowNumber, reason: "Email already exists" });
-        continue;
-      }
-      let contact: { id: string };
+      const { row, draft } = planRow;
+      // Rows are written in order, so a referrer added earlier in the file is found here.
+      const referrer = draft.referredBy ? await this.findReferrer(draft.referredBy, orgId) : null;
+      let contact: ContactRecord;
       try {
         contact = await this.create(
-          {
-            name: name.slice(0, 200) || undefined,
-            firstName: firstName.slice(0, NAME_PART_MAX) || undefined,
-            lastName: cell(row, "lastName").slice(0, NAME_PART_MAX) || undefined,
-            jobTitle: cell(row, "jobTitle").slice(0, 200) || undefined,
-            department: cell(row, "department").slice(0, 100) || undefined,
-            socialLinks,
-            rating,
-            email,
-            phone: cell(row, "phone").slice(0, 50) || undefined,
-            website: cell(row, "website").slice(0, 500) || undefined,
-            address: cell(row, "address").slice(0, 500) || undefined,
-            status: parseStatus(cell(row, "status")),
-            companyName: cell(row, "company").slice(0, 200) || undefined,
-            leadSourceName: cell(row, "source").slice(0, LEAD_SOURCE_NAME_MAX) || undefined,
-          },
+          { ...draft.contact, referredById: typeof referrer === "string" ? referrer : undefined },
           orgId,
         );
       } catch (e) {
         if (e instanceof ConflictException) {
-          skipped.push({ row: rowNumber, reason: "Email already exists" });
+          skipped.push({ row, reason: "Email already exists" });
         } else {
-          this.logger.error(`Contact import row ${rowNumber} failed`, e);
-          skipped.push({ row: rowNumber, reason: "Invalid row" });
+          this.logger.error(`Contact import row ${row} failed`, e);
+          skipped.push({ row, reason: "Invalid row" });
         }
         continue;
       }
-      if (email) seen.add(email);
       created++;
-      for (const link of dropped) {
-        warnings.push({ row: rowNumber, reason: `Social link "${link.slice(0, 100)}" isn't a web address; left out` });
+      for (const reason of planRow.warnings) warnings.push({ row, reason });
+      if (referrer && typeof referrer !== "string") {
+        warnings.push({ row, reason: referrerWarning(draft.referredBy, referrer.problem) });
       }
       try {
-        await this.attachTags(contact.id, splitTags(cell(row, "tags")), orgId);
-        const notes = cell(row, "notes");
-        if (notes) {
+        await this.attachTags(contact.id, draft.tags, orgId);
+        if (draft.notes) {
           await this.prisma.contactNote.create({
-            data: { contactId: contact.id, organizationId: orgId, authorId: userId, content: notes },
+            data: { contactId: contact.id, organizationId: orgId, authorId: userId, content: draft.notes },
           });
         }
+        if (draft.followUpAt) await this.setFollowUp(contact.id, { followUpAt: draft.followUpAt }, orgId, userId);
+        if (contact.companyId) await this.fillCompanySize(contact.companyId, draft.company, orgId);
       } catch (e) {
-        // The contact exists; losing its tags or note shouldn't discard it.
-        this.logger.error(`Contact import row ${rowNumber}: tags/notes failed`, e);
+        // The contact exists; losing its extras shouldn't discard it.
+        this.logger.error(`Contact import row ${row}: tags/notes/follow-up/company failed`, e);
       }
     }
     return { created, skipped, warnings };
+  }
+
+  /** Dry run of importCsv: what would be created, skipped and left out, with nothing written. */
+  async checkImport(
+    dto: { csv: string; mapping: ImportMapping },
+    orgId: string,
+  ): Promise<{ total: number; toCreate: number; skipped: RowNote[]; warnings: RowNote[]; sample: ImportSample[] }> {
+    const planned = this.planCsv(dto.csv, dto.mapping);
+    const drafts = planned.flatMap((p) => ("draft" in p ? [p.draft] : []));
+    const emails = drafts.flatMap((d) => (d.contact.email ? [d.contact.email] : []));
+    const refs = drafts.map((d) => d.referredBy).filter(Boolean);
+    const refNames = refs.filter((r) => !r.includes("@"));
+    const refEmails = refs.filter((r) => r.includes("@")).map(normalizeEmail);
+
+    const [taken, knownNames, knownEmails] = await Promise.all([
+      this.existingEmails(emails, orgId),
+      refNames.length
+        ? this.prisma.contact
+            .findMany({
+              where: { organizationId: orgId, name: { in: refNames, mode: "insensitive" } },
+              select: { name: true },
+            })
+            .then((rows) => rows.map((c) => c.name.toLowerCase()))
+        : Promise.resolve([] as string[]),
+      this.existingEmails(refEmails, orgId),
+    ]);
+
+    const skipped: RowNote[] = [];
+    const warnings: RowNote[] = [];
+    const sample: ImportSample[] = [];
+    // Contacts this import creates before a given row, so a later row can name them as referrer.
+    const earlierNames: string[] = [];
+    const earlierEmails = new Set<string>();
+    for (const p of planned) {
+      if ("skip" in p) {
+        skipped.push({ row: p.row, reason: p.skip });
+        continue;
+      }
+      const { contact } = p.draft;
+      if (contact.email && taken.has(contact.email)) {
+        skipped.push({ row: p.row, reason: "Email already exists" });
+        continue;
+      }
+      const name = createNames(contact).name;
+      for (const reason of p.warnings) warnings.push({ row: p.row, reason });
+      const ref = p.draft.referredBy;
+      if (ref) {
+        const key = ref.includes("@") ? normalizeEmail(ref) : ref.toLowerCase();
+        const matches = ref.includes("@")
+          ? Number(knownEmails.has(key) || earlierEmails.has(key))
+          : [...knownNames, ...earlierNames].filter((n) => n === key).length;
+        if (matches !== 1) warnings.push({ row: p.row, reason: referrerWarning(ref, matches ? "several" : "none") });
+      }
+      earlierNames.push(name.toLowerCase());
+      if (contact.email) earlierEmails.add(contact.email);
+      if (sample.length < IMPORT_SAMPLE_SIZE) {
+        sample.push({
+          row: p.row,
+          name,
+          email: contact.email ?? null,
+          company: contact.companyName ?? null,
+          phones: contact.phones ?? [],
+          status: contact.status ?? "lead",
+          rating: contact.rating ?? null,
+          tags: p.draft.tags,
+          followUpAt: p.draft.followUpAt,
+          referredBy: ref || null,
+        });
+      }
+    }
+    return { total: planned.length, toCreate: planned.length - skipped.length, skipped, warnings, sample };
+  }
+
+  private async existingEmails(emails: string[], orgId: string): Promise<Set<string>> {
+    if (emails.length === 0) return new Set();
+    const rows = await this.prisma.contact.findMany({
+      where: { organizationId: orgId, email: { in: emails } },
+      select: { email: true },
+    });
+    return new Set(rows.flatMap((c) => (c.email ? [c.email] : [])));
+  }
+
+  private planCsv(csv: string, mapping: ImportMapping): PlannedRow[] {
+    const [headers = [], ...data] = parseCsv(csv);
+    if (data.length > MAX_IMPORT_ROWS) throw new BadRequestException(TOO_MANY_ROWS);
+    return planImport(headers, data, mapping);
+  }
+
+  /** A contact id, or why none was used: an email must match one contact, a name exactly one. */
+  private async findReferrer(value: string, orgId: string): Promise<string | { problem: "none" | "several" }> {
+    if (value.includes("@")) {
+      const byEmail = await this.prisma.contact.findFirst({
+        where: { organizationId: orgId, email: normalizeEmail(value) },
+        select: { id: true },
+      });
+      return byEmail ? byEmail.id : { problem: "none" };
+    }
+    const byName = await this.prisma.contact.findMany({
+      where: { organizationId: orgId, name: { equals: value, mode: "insensitive" } },
+      select: { id: true },
+      take: 2,
+    });
+    if (byName.length === 1) return byName[0].id;
+    return { problem: byName.length ? "several" : "none" };
+  }
+
+  /** Imported size only fills a company's empty fields; values typed in the app win. */
+  private async fillCompanySize(companyId: string, size: ImportDraft["company"], orgId: string): Promise<void> {
+    if (size.annualRevenue !== undefined) {
+      await this.prisma.company.updateMany({
+        where: { id: companyId, organizationId: orgId, annualRevenue: null },
+        data: { annualRevenue: size.annualRevenue },
+      });
+    }
+    if (size.employeeCount !== undefined) {
+      await this.prisma.company.updateMany({
+        where: { id: companyId, organizationId: orgId, employeeCount: null },
+        data: { employeeCount: size.employeeCount },
+      });
+    }
   }
 
   async exportCsv(orgId: string, query: ListContactsQueryDto): Promise<string> {

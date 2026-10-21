@@ -74,12 +74,12 @@ export default async function PortalLayout({
             } as React.CSSProperties
           }
         >
-          <DynamicFavicon href={logoSrc || "/icon.png"} />
+          <DynamicFavicon href={logoSrc || "/icon-64.png"} />
           <PreviewBanner />
           <header className="border-b border-[var(--border)] px-4 sm:px-6 py-4 flex items-center gap-2 sm:gap-3">
             {!branding?.hideLogo && (
               /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={logoSrc || "/icon.png"} alt="Logo" className="h-8 w-8 object-contain shrink-0" />
+              <img src={logoSrc || "/icon-64.png"} alt="Logo" className="h-8 w-8 object-contain shrink-0" />
             )}
             <span className="font-semibold flex-1 min-w-0 truncate">{orgName || "Atrium"}</span>
             <Link

@@ -38,18 +38,12 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ mode: "closed" });
-  const [now, setNow] = useState<number>(() => Date.now());
   const [draftDescription, setDraftDescription] = useState<string>("");
   const [timerBusy, setTimerBusy] = useState<boolean>(false);
   const [stopPrompt, setStopPrompt] = useState<{ description: string } | null>(null);
 
   const runningEntry = entries.find((e) => !e.endedAt);
   const hasRunning = !!runningEntry;
-  useEffect(() => {
-    if (!hasRunning) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [hasRunning]);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -272,7 +266,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
                   <span className="font-mono">
                     {e.endedAt
                       ? formatDuration(e.durationSec ?? 0)
-                      : formatDuration(Math.floor((now - new Date(e.startedAt).getTime()) / 1000))}
+                      : <RunningClock startedAt={e.startedAt} />}
                   </span>
                   {!e.endedAt && (
                     <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 inline-flex items-center gap-1">
@@ -347,7 +341,7 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
 
       {stopPrompt && runningEntry && (
         <StopTimerModal
-          elapsedSec={Math.floor((now - new Date(runningEntry.startedAt).getTime()) / 1000)}
+          startedAt={runningEntry.startedAt}
           initialDescription={stopPrompt.description}
           busy={timerBusy}
           onCancel={() => setStopPrompt(null)}
@@ -358,8 +352,18 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
   );
 }
 
+/** Ticks every second on its own, so the rest of the tab doesn't re-render with it. */
+function RunningClock({ startedAt }: { startedAt: string }): React.ReactElement {
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{formatDuration(Math.floor((now - new Date(startedAt).getTime()) / 1000))}</>;
+}
+
 interface StopTimerModalProps {
-  elapsedSec: number;
+  startedAt: string;
   initialDescription: string;
   busy: boolean;
   onCancel: () => void;
@@ -367,7 +371,7 @@ interface StopTimerModalProps {
 }
 
 function StopTimerModal({
-  elapsedSec,
+  startedAt,
   initialDescription,
   busy,
   onCancel,
@@ -409,7 +413,7 @@ function StopTimerModal({
           </button>
         </div>
         <div className="text-sm text-[var(--muted-foreground)]">
-          Elapsed: <span className="font-mono text-[var(--foreground)]">{formatDuration(elapsedSec)}</span>
+          Elapsed: <span className="font-mono text-[var(--foreground)]"><RunningClock startedAt={startedAt} /></span>
         </div>
         <div>
           <label className="block text-xs text-[var(--muted-foreground)] mb-1">

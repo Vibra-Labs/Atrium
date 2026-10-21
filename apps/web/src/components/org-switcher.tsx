@@ -95,7 +95,7 @@ export function OrgSwitcher({
       {!hideLogo && (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
-          src={logoSrc || "/icon.png"}
+          src={logoSrc || "/icon-64.png"}
           alt=""
           className="h-7 w-7 object-contain shrink-0"
         />

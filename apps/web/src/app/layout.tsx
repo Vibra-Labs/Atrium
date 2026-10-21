@@ -14,6 +14,7 @@ function latestChangelogVersion(): string {
 export const metadata: Metadata = {
   title: "Atrium",
   description: "Client portal for agencies and freelancers",
+  icons: { icon: "/icon-64.png" },
 };
 
 // Analytics must never carry identifiers. The hook is defined in

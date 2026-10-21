@@ -59,7 +59,7 @@ export function MobileNav({
         {!hideLogo && (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
-            src={logoSrc || "/icon.png"}
+            src={logoSrc || "/icon-64.png"}
             alt=""
             className="h-6 w-6 object-contain shrink-0"
           />

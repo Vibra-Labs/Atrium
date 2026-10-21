@@ -229,6 +229,7 @@ export function EmbedPreview({
             src={embed.embedUrl}
             className="absolute inset-0 w-full h-full"
             allowFullScreen
+            loading="lazy"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             title={`${label} embed`}
           />
@@ -252,7 +253,20 @@ interface OEmbedResult {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
-async function resolveOEmbed(url: string): Promise<OEmbedResult | null> {
+// One lookup per URL for the life of the page: remounting the Updates tab or paging
+// back shouldn't hit the API (and the remote site) again.
+const oembedCache = new Map<string, Promise<OEmbedResult | null>>();
+
+function resolveOEmbed(url: string): Promise<OEmbedResult | null> {
+  let cached: Promise<OEmbedResult | null> | undefined = oembedCache.get(url);
+  if (!cached) {
+    cached = requestOEmbed(url);
+    oembedCache.set(url, cached);
+  }
+  return cached;
+}
+
+async function requestOEmbed(url: string): Promise<OEmbedResult | null> {
   try {
     const res = await fetch(
       `${API_URL}/api/embeds/resolve?url=${encodeURIComponent(url)}`,
@@ -261,6 +275,7 @@ async function resolveOEmbed(url: string): Promise<OEmbedResult | null> {
     if (!res.ok) return null;
     return (await res.json()) as OEmbedResult;
   } catch {
+    oembedCache.delete(url); // a network error may be transient, so allow a retry
     return null;
   }
 }
@@ -359,7 +374,18 @@ interface UnfurlCard {
   favicon?: string;
 }
 
-async function fetchUnfurl(url: string): Promise<UnfurlCard | null> {
+const unfurlCache = new Map<string, Promise<UnfurlCard | null>>();
+
+function fetchUnfurl(url: string): Promise<UnfurlCard | null> {
+  let cached: Promise<UnfurlCard | null> | undefined = unfurlCache.get(url);
+  if (!cached) {
+    cached = requestUnfurl(url);
+    unfurlCache.set(url, cached);
+  }
+  return cached;
+}
+
+async function requestUnfurl(url: string): Promise<UnfurlCard | null> {
   try {
     const res = await fetch(
       `${API_URL}/api/embeds/unfurl?url=${encodeURIComponent(url)}`,
@@ -368,6 +394,7 @@ async function fetchUnfurl(url: string): Promise<UnfurlCard | null> {
     if (!res.ok) return null;
     return (await res.json()) as UnfurlCard;
   } catch {
+    unfurlCache.delete(url);
     return null;
   }
 }

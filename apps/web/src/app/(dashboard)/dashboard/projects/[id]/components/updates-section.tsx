@@ -529,7 +529,9 @@ export function UpdatesSection({
                 <img
                   src={attachmentSrc}
                   alt=""
-                  className="mt-3 max-w-full max-h-80 rounded-lg border border-[var(--border)]"
+                  loading="lazy"
+                  decoding="async"
+                  className="mt-3 max-w-full max-h-80 min-h-32 rounded-lg border border-[var(--border)] object-contain"
                 />
               )}
               {entry.hasAttachment && !isImage && (

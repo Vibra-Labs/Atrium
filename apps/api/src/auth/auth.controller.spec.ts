@@ -240,6 +240,7 @@ describe("AuthController", () => {
       for (const url of [
         "/api/auth/organization/list-members/",
         "/api/auth//organization/list-members",
+        "//api/auth/organization/list-members",
         "/api/auth/organization/LIST-MEMBERS",
         "/api/auth/organization/list%2Dmembers",
       ]) {

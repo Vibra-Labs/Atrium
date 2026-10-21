@@ -72,7 +72,8 @@ function authRoute(pathname: string): string {
  * SessionMiddleware resolved belongs to the active one only.
  */
 function assertMayReadOrg(req: Request): void {
-  const url: URL = new URL(req.originalUrl, "http://internal");
+  // Concatenated, not a base URL: "//x/..." would otherwise parse as a host.
+  const url: URL = new URL(`http://internal${req.originalUrl}`);
   if (!STAFF_ONLY_ORG_ROUTES.has(authRoute(url.pathname))) return;
 
   const { organization, member } = req as Partial<Pick<AuthenticatedRequest, "organization" | "member">>;

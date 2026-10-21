@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { useId, useState } from "react";
+import { useTypeahead } from "@/lib/use-typeahead";
 import { ChevronDown, X } from "lucide-react";
 import { NEW_SOURCE, PHONE_LABELS, RATING_LABELS, inputClass, labelClass } from "./shared";
 import type { ContactPhone } from "./shared";
@@ -160,18 +160,9 @@ interface CompanyFieldProps {
 
 /** Company typeahead: pick an existing company or type a new name to create one. */
 export function CompanyField({ text, onChange }: CompanyFieldProps) {
-  const [companies, setCompanies] = useState<Option[]>([]);
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    apiFetch<{ data: Option[] }>("/companies?limit=100")
-      .then((res) => setCompanies(res.data))
-      .catch(console.error);
-  }, []);
-
-  const matches = companies
-    .filter((c) => c.name.toLowerCase().includes(text.trim().toLowerCase()))
-    .slice(0, 6);
+  const term: string = text.trim();
+  const { items: matches, loading } = useTypeahead<Option>("/companies", term, open && term !== "");
 
   return (
     <div className="relative">
@@ -211,8 +202,8 @@ export function CompanyField({ text, onChange }: CompanyFieldProps) {
               </button>
             </li>
           ))}
-          {!companies.some((c) => c.name.toLowerCase() === text.trim().toLowerCase()) && (
-            <li className="px-3 py-2 text-[var(--muted-foreground)]">Create “{text.trim()}”</li>
+          {!loading && !matches.some((c) => c.name.toLowerCase() === term.toLowerCase()) && (
+            <li className="px-3 py-2 text-[var(--muted-foreground)]">Create “{term}”</li>
           )}
         </ul>
       )}

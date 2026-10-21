@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Facebook, Instagram, Link as LinkIcon, Linkedin, Phone, Twitter, Youtube } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { socialSite, telHref } from "@/lib/contact-fields";
 import type { SocialSite } from "@/lib/contact-fields";
 import { apiFetch } from "@/lib/api";
+import { useTypeahead } from "@/lib/use-typeahead";
 import { useToast } from "@/components/toast";
 import { LabelPicker } from "@/components/label-picker";
 import { LabelBadge } from "@/components/label-badge";
@@ -36,15 +37,11 @@ const headingClass =
 
 function ProjectsSection({ contact, onChanged }: Props) {
   const { error: showError } = useToast();
-  const [options, setOptions] = useState<ProjectOption[]>([]);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-
-  useEffect(() => {
-    apiFetch<{ data: ProjectOption[] }>("/projects?limit=100")
-      .then((res) => setOptions(res.data))
-      .catch(console.error);
-  }, [contact.projects.length]);
+  const [search, setSearch] = useState("");
+  const [searching, setSearching] = useState(false);
+  const { items: options } = useTypeahead<ProjectOption>("/projects", search.trim(), searching);
 
   const linkedIds = new Set(contact.projects.map((p) => p.id));
   const available = options.filter((p) => !linkedIds.has(p.id));
@@ -112,21 +109,46 @@ function ProjectsSection({ contact, onChanged }: Props) {
           </li>
         ))}
       </ul>
-      {available.length > 0 && (
-        <select
+      <div className="relative mb-2">
+        <input
           aria-label="Link a project"
-          value=""
-          onChange={(e) => e.target.value && link(e.target.value)}
-          className={`${inputClass} mb-2`}
-        >
-          <option value="">Link existing project…</option>
-          {available.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      )}
+          placeholder="Link existing project…"
+          value={search}
+          autoComplete="off"
+          onChange={(e) => setSearch(e.target.value)}
+          onFocus={() => setSearching(true)}
+          onBlur={() => setTimeout(() => setSearching(false), 150)}
+          className={inputClass}
+        />
+        {searching && (
+          <ul
+            role="listbox"
+            className="absolute z-10 mt-1 w-full max-h-60 overflow-auto bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg text-sm"
+          >
+            {available.length === 0 && (
+              <li className="px-3 py-2 text-[var(--muted-foreground)]">No matching projects</li>
+            )}
+            {available.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  onMouseDown={async () => {
+                    if (await link(p.id)) {
+                      setSearch("");
+                      setSearching(false);
+                    }
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-[var(--muted)]"
+                >
+                  {p.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       {creating ? (
         <form onSubmit={createAndLink} className="flex gap-2">
           <input

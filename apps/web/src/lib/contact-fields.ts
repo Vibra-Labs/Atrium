@@ -18,6 +18,7 @@ export type ImportField =
   | "description"
   | "referredBy"
   | "followUpAt"
+  | "followUpEveryDays"
   | "companyRevenue"
   | "companyEmployees"
   | "skip";
@@ -42,7 +43,8 @@ export const IMPORT_FIELDS: { value: ImportField; label: string }[] = [
   { value: "notes", label: "Notes" },
   { value: "description", label: "About" },
   { value: "referredBy", label: "Referred by (name or email)" },
-  { value: "followUpAt", label: "Next follow-up" },
+  { value: "followUpAt", label: "Next follow-up (date)" },
+  { value: "followUpEveryDays", label: "Follow-up repeats (days)" },
   { value: "companyRevenue", label: "Company annual revenue" },
   { value: "companyEmployees", label: "Company employees" },
 ];
@@ -86,14 +88,28 @@ const ALIASES: Record<string, ImportField> = {
   "no of employees": "companyEmployees",
   "number of employees": "companyEmployees",
   "employee count": "companyEmployees",
+  "all phones": "phone",
+  "follow up repeat": "followUpEveryDays",
+  "follow up repeats (days)": "followUpEveryDays",
 };
 
-/** Guesses the field for a CSV header (Zoho / HubSpot style exports included). */
+const normalizeHeader = (h: string): string =>
+  h.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+
+/**
+ * Guesses the field for a CSV header: Zoho / HubSpot / Outlook / Google exports and our own
+ * Contacts export. Unknown headers are skipped.
+ */
 export function autoMatch(header: string): ImportField {
-  const key = header.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  const key = normalizeHeader(header);
   if (ALIASES[key]) return ALIASES[key];
-  const field = IMPORT_FIELDS.find((f) => f.value !== "skip" && f.value.toLowerCase() === key);
-  return field ? field.value : "skip";
+  const field = IMPORT_FIELDS.find(
+    (f) => f.value !== "skip" && (f.value.toLowerCase() === key || normalizeHeader(f.label) === key),
+  );
+  if (field) return field.value;
+  // "Business Phone", "Home Phone 2", "Phone 1 - Value", "Fax" — but not a phone's type or label column.
+  if (/\b(phone|mobile|cell|fax)\b/.test(key) && !/\b(type|label|ext|extension)\b/.test(key)) return "phone";
+  return "skip";
 }
 
 export type SocialSite = "linkedin" | "instagram" | "x" | "facebook" | "tiktok" | "youtube" | "other";

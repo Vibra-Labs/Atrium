@@ -16,7 +16,10 @@ const sample: ImportSample = {
   rating: "hot",
   tags: ["vip", "expo"],
   followUpAt: "2026-11-05",
+  followUpEveryDays: null,
   referredBy: "Bo",
+  companyRevenue: null,
+  companyEmployees: null,
 };
 
 describe("checkSummary", () => {
@@ -37,6 +40,13 @@ describe("sampleDetails", () => {
   it("lists status, rating, tags, follow-up and referrer", () => {
     expect(sampleDetails(sample)).toBe("Client · Hot · vip, expo · Follow up 2026-11-05 · Referred by Bo");
     expect(sampleDetails({ ...sample, rating: null, tags: [], followUpAt: null, referredBy: null })).toBe("Client");
+  });
+
+  it("shows the repeat and the company size it will fill in", () => {
+    const s: ImportSample = { ...sample, followUpEveryDays: 30, companyRevenue: 2500, companyEmployees: 12 };
+    expect(sampleDetails(s)).toBe(
+      "Client · Hot · vip, expo · Follow up 2026-11-05, every 30 days · Referred by Bo · Revenue 2,500 · 12 employees",
+    );
   });
 });
 

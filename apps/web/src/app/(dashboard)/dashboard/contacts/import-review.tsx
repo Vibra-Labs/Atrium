@@ -16,7 +16,10 @@ export interface ImportSample {
   rating: string | null;
   tags: string[];
   followUpAt: string | null;
+  followUpEveryDays: number | null;
   referredBy: string | null;
+  companyRevenue: number | null;
+  companyEmployees: number | null;
 }
 
 /** Response of POST /contacts/import/check. */
@@ -40,13 +43,17 @@ export function checkSummary(check: ImportCheck): string {
   return parts.join(" · ");
 }
 
-/** Status, rating, tags, follow-up and referrer of a sample row, as one short line. */
+/** Status, rating, tags, follow-up, referrer and company size of a sample row, as one short line. */
 export function sampleDetails(s: ImportSample): string {
   const parts = [STATUS_LABELS[s.status] ?? s.status];
   if (s.rating) parts.push(RATING_LABELS[s.rating] ?? s.rating);
   if (s.tags.length) parts.push(s.tags.join(", "));
-  if (s.followUpAt) parts.push(`Follow up ${s.followUpAt}`);
+  if (s.followUpAt) {
+    parts.push(`Follow up ${s.followUpAt}${s.followUpEveryDays ? `, every ${s.followUpEveryDays} days` : ""}`);
+  }
   if (s.referredBy) parts.push(`Referred by ${s.referredBy}`);
+  if (s.companyRevenue !== null) parts.push(`Revenue ${s.companyRevenue.toLocaleString("en-US")}`);
+  if (s.companyEmployees !== null) parts.push(plural(s.companyEmployees, "employee", "employees"));
   return parts.join(" · ");
 }
 

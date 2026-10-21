@@ -59,7 +59,10 @@ export interface ImportSample {
   rating: string | null;
   tags: string[];
   followUpAt: string | null;
+  followUpEveryDays: number | null;
   referredBy: string | null;
+  companyRevenue: number | null;
+  companyEmployees: number | null;
 }
 
 function referrerWarning(value: string, problem: "none" | "several"): string {
@@ -376,6 +379,8 @@ export class ContactsService {
     // Non-fatal: the contact was imported, but something in the row was left out.
     const warnings: RowNote[] = [];
     let created = 0;
+    // Only emails this import actually wrote make a later row a duplicate.
+    const createdEmails = new Set<string>();
 
     for (const planRow of planned) {
       if ("skip" in planRow) {
@@ -383,6 +388,11 @@ export class ContactsService {
         continue;
       }
       const { row, draft } = planRow;
+      const email = draft.contact.email;
+      if (email && createdEmails.has(email)) {
+        skipped.push({ row, reason: "Email already exists" });
+        continue;
+      }
       // Rows are written in order, so a referrer added earlier in the file is found here.
       const referrer = draft.referredBy ? await this.findReferrer(draft.referredBy, orgId) : null;
       let contact: ContactRecord;
@@ -401,25 +411,58 @@ export class ContactsService {
         continue;
       }
       created++;
+      if (email) createdEmails.add(email);
       for (const reason of planRow.warnings) warnings.push({ row, reason });
       if (referrer && typeof referrer !== "string") {
         warnings.push({ row, reason: referrerWarning(draft.referredBy, referrer.problem) });
       }
-      try {
-        await this.attachTags(contact.id, draft.tags, orgId);
-        if (draft.notes) {
-          await this.prisma.contactNote.create({
-            data: { contactId: contact.id, organizationId: orgId, authorId: userId, content: draft.notes },
-          });
+      // The contact exists; each extra is saved on its own so one failure doesn't drop the rest.
+      const extras: [string, () => Promise<unknown>][] = [
+        ["Tags", () => this.attachTags(contact.id, draft.tags, orgId)],
+        [
+          "The note",
+          async () => {
+            if (!draft.notes) return;
+            await this.prisma.contactNote.create({
+              data: { contactId: contact.id, organizationId: orgId, authorId: userId, content: draft.notes },
+            });
+          },
+        ],
+        ["The follow-up", () => this.importFollowUp(contact.id, draft, orgId, userId)],
+        [
+          "The company size",
+          async () => {
+            if (contact.companyId) await this.fillCompanySize(contact.companyId, draft.company, orgId);
+          },
+        ],
+      ];
+      for (const [what, save] of extras) {
+        try {
+          await save();
+        } catch (e) {
+          this.logger.error(`Contact import row ${row}: ${what.toLowerCase()} failed`, e);
+          warnings.push({ row, reason: `${what} couldn't be saved` });
         }
-        if (draft.followUpAt) await this.setFollowUp(contact.id, { followUpAt: draft.followUpAt }, orgId, userId);
-        if (contact.companyId) await this.fillCompanySize(contact.companyId, draft.company, orgId);
-      } catch (e) {
-        // The contact exists; losing its extras shouldn't discard it.
-        this.logger.error(`Contact import row ${row}: tags/notes/follow-up/company failed`, e);
       }
     }
     return { created, skipped, warnings };
+  }
+
+  /** A past date stays overdue on the list but doesn't send a reminder for every imported row. */
+  private async importFollowUp(contactId: string, draft: ImportDraft, orgId: string, userId: string): Promise<void> {
+    if (!draft.followUpAt) return;
+    await this.setFollowUp(
+      contactId,
+      { followUpAt: draft.followUpAt, everyDays: draft.followUpEveryDays ?? undefined },
+      orgId,
+      userId,
+    );
+    if (draft.followUpAt < new Date().toISOString().slice(0, 10)) {
+      await this.prisma.contact.updateMany({
+        where: { id: contactId, organizationId: orgId },
+        data: { followUpNotifiedAt: new Date() },
+      });
+    }
   }
 
   /** Dry run of importCsv: what would be created, skipped and left out, with nothing written. */
@@ -459,7 +502,7 @@ export class ContactsService {
         continue;
       }
       const { contact } = p.draft;
-      if (contact.email && taken.has(contact.email)) {
+      if (contact.email && (taken.has(contact.email) || earlierEmails.has(contact.email))) {
         skipped.push({ row: p.row, reason: "Email already exists" });
         continue;
       }
@@ -486,7 +529,11 @@ export class ContactsService {
           rating: contact.rating ?? null,
           tags: p.draft.tags,
           followUpAt: p.draft.followUpAt,
+          followUpEveryDays: p.draft.followUpEveryDays,
           referredBy: ref || null,
+          // Shown so a misread number (e.g. a European "2.500") is caught before importing.
+          companyRevenue: p.draft.company.annualRevenue ?? null,
+          companyEmployees: p.draft.company.employeeCount ?? null,
         });
       }
     }

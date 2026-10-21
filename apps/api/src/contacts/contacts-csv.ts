@@ -18,6 +18,7 @@ export const IMPORT_FIELDS = [
   "description",
   "referredBy",
   "followUpAt",
+  "followUpEveryDays",
   "companyRevenue",
   "companyEmployees",
   "skip",

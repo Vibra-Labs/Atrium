@@ -24,6 +24,9 @@ describe("phoneLabel", () => {
   it("falls back to Phone for a generic header and keeps labels short", () => {
     expect(phoneLabel("Phone")).toBe("Phone");
     expect(phoneLabel("Telephone Number")).toBe("Phone");
+    expect(phoneLabel("Phone 2")).toBe("Phone");
+    expect(phoneLabel("Phone 1 - Value")).toBe("Phone");
+    expect(phoneLabel("Business Phone")).toBe("Business");
     expect(phoneLabel("x".repeat(40))).toHaveLength(30);
   });
 });
@@ -34,6 +37,11 @@ describe("parseImportDate", () => {
     expect(parseImportDate("11/5/2026")).toBe("2026-11-05");
     expect(parseImportDate("2026/11/05")).toBe("2026-11-05");
     expect(parseImportDate("2026-11-05T09:30:00Z")).toBe("2026-11-05");
+  });
+
+  it("reads day/month/year when asked", () => {
+    expect(parseImportDate("05/11/2026", true)).toBe("2026-11-05");
+    expect(parseImportDate("2026-11-05", true)).toBe("2026-11-05");
   });
 
   it("rejects anything else, including impossible days", () => {
@@ -49,6 +57,15 @@ describe("parseWholeNumber", () => {
     expect(parseWholeNumber("1500000.00")).toBe(1500000);
     expect(parseWholeNumber(" 42 ")).toBe(42);
     expect(parseWholeNumber("€ 2 500")).toBe(2500);
+  });
+
+  it("reads European separators: dots or commas before groups of three are thousands", () => {
+    expect(parseWholeNumber("€2.500")).toBe(2500);
+    expect(parseWholeNumber("1.234.567")).toBe(1234567);
+    expect(parseWholeNumber("2,500")).toBe(2500);
+    expect(parseWholeNumber("1,5")).toBe(2);
+    expect(parseWholeNumber("1.500,75")).toBe(1501);
+    expect(parseWholeNumber("1,500.75")).toBe(1501);
   });
 
   it("rejects text, negatives and out-of-range values", () => {
@@ -124,7 +141,7 @@ describe("planImport", () => {
     ]);
   });
 
-  it("skips rows with no name, a bad rating or email, or an email seen earlier in the file", () => {
+  it("skips rows with no name, a bad rating or email; repeats are left to the writer", () => {
     const rows = plan(
       [
         ["Name", "Email", "Rating"],
@@ -132,6 +149,7 @@ describe("planImport", () => {
         ["Bo", "b@x.com", "lukewarm"],
         ["Cy", "nope", ""],
         ["Di", "D@x.com", "hot"],
+        // Only a row that is actually created makes a later one a duplicate.
         ["Ed", "d@X.com", ""],
       ],
       { Name: "name", Email: "email", Rating: "rating" },
@@ -141,9 +159,52 @@ describe("planImport", () => {
       "Invalid rating",
       "Invalid email",
       "ok",
-      "Email already exists",
+      "ok",
     ]);
     expect(rows.map((r) => r.row)).toEqual([2, 3, 4, 5, 6]);
     expect(draftOf(rows[3]).contact).toMatchObject({ name: "Di", email: "d@x.com", rating: "hot" });
+  });
+
+  it("undoes the export's spreadsheet-formula guard (a leading ' before = + - @)", () => {
+    const [row] = plan(
+      [["Name", "Phone", "Notes"], ["'=Ann", "'+1 555 0100", "'-not a formula"]],
+      { Name: "name", Phone: "phone", Notes: "notes" },
+    );
+    expect(draftOf(row).contact.name).toBe("=Ann");
+    expect(draftOf(row).contact.phones).toEqual([{ label: "Phone", number: "+1 555 0100" }]);
+    expect(draftOf(row).notes).toBe("-not a formula");
+  });
+
+  it("splits our own export's All phones column into labelled numbers, ahead of the plain Phone column", () => {
+    const [row] = plan(
+      [
+        ["Name", "Phone", "All phones"],
+        ["Ann", "+1 555 0100", "Mobile: +1 555 0100; Work: +1 555 0200"],
+      ],
+      { Name: "name", Phone: "phone", "All phones": "phone" },
+    );
+    expect(draftOf(row).contact.phones).toEqual([
+      { label: "Mobile", number: "+1 555 0100" },
+      { label: "Work", number: "+1 555 0200" },
+    ]);
+  });
+
+  it("reads a day-first date column when any of its dates can only be day-first", () => {
+    const rows = plan(
+      [["Name", "Follow up"], ["Ann", "25/12/2026"], ["Bo", "05/11/2026"]],
+      { Name: "name", "Follow up": "followUpAt" },
+    );
+    expect(rows.map((r) => draftOf(r).followUpAt)).toEqual(["2026-12-25", "2026-11-05"]);
+  });
+
+  it("imports a follow-up repeat in days, warning about one the app doesn't offer", () => {
+    const rows = plan(
+      [["Name", "Follow up", "Repeat"], ["Ann", "2026-11-05", "30"], ["Bo", "2026-11-05", "7"], ["Cy", "", "30"]],
+      { Name: "name", "Follow up": "followUpAt", Repeat: "followUpEveryDays" },
+    );
+    expect(draftOf(rows[0]).followUpEveryDays).toBe(30);
+    expect(draftOf(rows[1]).followUpEveryDays).toBeNull();
+    expect(rows[1].warnings).toEqual(['Follow-up repeat "7" isn\'t one of 14, 30, 90, 180, 365 days; left out']);
+    expect(rows[2].warnings).toEqual(["Follow-up repeat needs a follow-up date; left out"]);
   });
 });

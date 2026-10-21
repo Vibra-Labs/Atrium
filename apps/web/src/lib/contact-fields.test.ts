@@ -32,6 +32,44 @@ describe("autoMatch", () => {
     expect(autoMatch("Employees")).toBe("companyEmployees");
   });
 
+  it("matches Outlook / Google phone headers, but not their type or label columns", () => {
+    for (const h of ["Business Phone", "Primary Phone", "Home Phone 2", "Company Main Phone", "Fax", "Phone 1 - Value"]) {
+      expect(autoMatch(h)).toBe("phone");
+    }
+    expect(autoMatch("Phone 1 - Type")).toBe("skip");
+    expect(autoMatch("Phone Label")).toBe("skip");
+  });
+
+  it("matches every column of our own Contacts export", () => {
+    const expected: Record<string, string> = {
+      Name: "name",
+      "First name": "firstName",
+      "Last name": "lastName",
+      Email: "email",
+      Phone: "phone",
+      "All phones": "phone",
+      Company: "company",
+      "Job title": "jobTitle",
+      Department: "department",
+      Website: "website",
+      Address: "address",
+      Status: "status",
+      Rating: "rating",
+      Source: "source",
+      Tags: "tags",
+      "Social links": "socialLinks",
+      "Next follow-up": "followUpAt",
+      "Follow-up repeats (days)": "followUpEveryDays",
+      "Paid all time": "skip",
+      About: "description",
+      "Referred by": "referredBy",
+      "Company annual revenue": "companyRevenue",
+      "Company employees": "companyEmployees",
+      "Portal access": "skip",
+    };
+    for (const [header, field] of Object.entries(expected)) expect([header, autoMatch(header)]).toEqual([header, field]);
+  });
+
   it("keeps the existing matches and skips unknown headers", () => {
     expect(autoMatch("Name")).toBe("name");
     expect(autoMatch("E-mail")).toBe("email");

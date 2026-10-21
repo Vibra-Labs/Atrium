@@ -131,6 +131,24 @@ describe("ContactsService contact fields (Postgres)", () => {
     // The first row set revenue; a later row only fills what is still empty.
     expect([ann.company?.annualRevenue, ann.company?.employeeCount]).toEqual([1000, 12]);
 
+    // A name referrer in any case, from the workspace or from earlier in the same file.
+    await contacts.create({ firstName: "Known", lastName: `Person${s}` }, orgId);
+    const byName = [
+      "Name,Referred by",
+      `New One ${s},known PERSON${s}`,
+      `New Two ${s},new one ${s}`,
+    ].join("\n");
+    const nameMapping = { Name: "name", "Referred by": "referredBy" } as const;
+    const nameCheck = await contacts.checkImport({ csv: byName, mapping: nameMapping }, orgId);
+    expect(nameCheck.warnings).toEqual([]);
+    const nameRes = await contacts.importCsv({ csv: byName, mapping: nameMapping }, orgId, user.id);
+    expect(nameRes).toEqual({ created: 2, skipped: [], warnings: [] });
+    const two = await prisma.contact.findFirstOrThrow({
+      where: { organizationId: orgId, name: `New Two ${s}` },
+      include: { referredBy: true },
+    });
+    expect(two.referredBy?.name).toBe(`New One ${s}`);
+
     // Re-checking the same file now finds both emails taken.
     const again = await contacts.checkImport({ csv, mapping }, orgId);
     expect(again.toCreate).toBe(0);

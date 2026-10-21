@@ -30,7 +30,6 @@ test.describe("Notifications", () => {
     test("creating a project update succeeds (triggers notification)", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(
         `${API}/updates?projectId=${projectId}`,
@@ -53,7 +52,6 @@ test.describe("Notifications", () => {
     test("creating a task succeeds (triggers notification)", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(
         `${API}/tasks?projectId=${projectId}`,
@@ -70,7 +68,6 @@ test.describe("Notifications", () => {
     test("creating a task with due date succeeds (triggers notification)", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(
         `${API}/tasks?projectId=${projectId}`,
@@ -93,8 +90,6 @@ test.describe("Notifications", () => {
     test("transitioning invoice to sent succeeds (triggers notification)", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
-
       // Create an invoice linked to the project
       const csrfToken = getCsrfToken();
       const createRes = await request.post(`${API}/invoices`, {
@@ -123,8 +118,6 @@ test.describe("Notifications", () => {
     test("updating invoice without status change to sent does not break", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
-
       const csrfToken = getCsrfToken();
       const createRes = await request.post(`${API}/invoices`, {
         data: {

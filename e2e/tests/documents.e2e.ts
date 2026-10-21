@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import { getCsrfToken, getCsrfTokenFromContext, getPlanFeatures } from "./helpers";
+import {
+  createPortalClientProject,
+  getCsrfToken,
+  getCsrfTokenFromContext,
+  getOrCreateProject,
+  getPlanFeatures,
+  openProjectTab,
+} from "./helpers";
+import type { PortalClientProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 const API_URL = "http://localhost:3001";
@@ -15,6 +23,7 @@ function buildDocumentMultipart(
     filename: string;
     content?: string;
     requiresSignature?: boolean;
+    requiresApproval?: boolean;
   },
 ) {
   const boundary = "----DocBoundary" + Date.now();
@@ -42,6 +51,15 @@ function buildDocumentMultipart(
     );
   }
 
+  if (opts.requiresApproval) {
+    parts.push(
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="requiresApproval"',
+      "",
+      "true",
+    );
+  }
+
   parts.push(
     `--${boundary}`,
     `Content-Disposition: form-data; name="file"; filename="${opts.filename}"`,
@@ -58,20 +76,11 @@ test.describe("Documents", () => {
   let projectId: string;
 
   test.beforeAll(async ({ request }) => {
-    const csrfToken = getCsrfToken();
-    const res = await request.post(`${API}/projects`, {
-      data: { name: "Document Test Project" },
-      headers: { "x-csrf-token": csrfToken },
-    });
-    if (res.ok()) {
-      const body = await res.json();
-      projectId = body.id;
-    }
+    projectId = await getOrCreateProject(request, "Document Test Project");
   });
 
   test.describe("API", () => {
     test("create document via API — defaults to draft status", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -94,7 +103,6 @@ test.describe("Documents", () => {
     });
 
     test("send document transitions draft to pending", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -123,7 +131,6 @@ test.describe("Documents", () => {
     });
 
     test("send with expiresInDays sets expiresAt", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "nda",
@@ -155,7 +162,6 @@ test.describe("Documents", () => {
     });
 
     test("void document transitions to voided status", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -186,7 +192,6 @@ test.describe("Documents", () => {
     test("cannot void a signed document", async ({ request }) => {
       // We can't easily create a signed document in e2e, but we can verify
       // that voiding a voided document fails
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -218,7 +223,6 @@ test.describe("Documents", () => {
     });
 
     test("audit trail endpoint returns events", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -248,7 +252,6 @@ test.describe("Documents", () => {
     });
 
     test("list documents by project via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(`${API}/documents/project/${projectId}`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -256,7 +259,6 @@ test.describe("Documents", () => {
     });
 
     test("get single document via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -281,7 +283,6 @@ test.describe("Documents", () => {
     });
 
     test("delete document via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "nda",
@@ -305,7 +306,6 @@ test.describe("Documents", () => {
     });
 
     test("document respond endpoint rejects draft documents", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -331,7 +331,6 @@ test.describe("Documents", () => {
     });
 
     test("document respond endpoint requires project assignment", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -365,7 +364,6 @@ test.describe("Documents", () => {
     // --- E-Signature / Signing tests ---
 
     test("create document with requiresSignature flag", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -389,7 +387,6 @@ test.describe("Documents", () => {
 
     test("set signature fields with type for a document", async ({ request }) => {
       test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -424,7 +421,6 @@ test.describe("Documents", () => {
 
     test("signing-info endpoint returns fields and signed status for admin", async ({ request }) => {
       test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "nda",
@@ -461,7 +457,6 @@ test.describe("Documents", () => {
 
     test("sign endpoint rejects draft documents", async ({ request }) => {
       test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -520,7 +515,6 @@ test.describe("Documents", () => {
 
     test("sign endpoint requires project client assignment", async ({ request }) => {
       test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -584,7 +578,6 @@ test.describe("Documents", () => {
     });
 
     test("view endpoint streams PDF inline", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "other",
@@ -610,7 +603,6 @@ test.describe("Documents", () => {
     });
 
     test("track-view endpoint works", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -636,7 +628,6 @@ test.describe("Documents", () => {
     });
 
     test("certificate endpoint rejects non-signed documents", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -658,7 +649,6 @@ test.describe("Documents", () => {
     });
 
     test("cannot send signature document with zero fields", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -686,7 +676,6 @@ test.describe("Documents", () => {
 
     test("cannot edit signature fields on sent document", async ({ request }) => {
       test.skip(!(await getPlanFeatures(request)).e_signatures, "E-signatures need a paid plan");
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -727,7 +716,6 @@ test.describe("Documents", () => {
     });
 
     test("generate access token validates org ownership", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -753,7 +741,6 @@ test.describe("Documents", () => {
     });
 
     test("send endpoint validates expiresInDays", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -781,7 +768,6 @@ test.describe("Documents", () => {
     // --- Version history tests ---
 
     test("upload new version to a document", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -824,7 +810,6 @@ test.describe("Documents", () => {
     });
 
     test("cannot upload version to voided document", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "quote",
@@ -867,7 +852,6 @@ test.describe("Documents", () => {
     });
 
     test("version history shows previous versions after upload", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "nda",
@@ -913,7 +897,6 @@ test.describe("Documents", () => {
     });
 
     test("restore a version reverts to the previous file", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -969,7 +952,6 @@ test.describe("Documents", () => {
     // --- Access token tests ---
 
     test("list access tokens returns empty array for new document", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -994,7 +976,6 @@ test.describe("Documents", () => {
     });
 
     test("revoke access token returns 404 for nonexistent token", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const { body, boundary } = buildDocumentMultipart(projectId, {
         type: "contract",
@@ -1021,138 +1002,120 @@ test.describe("Documents", () => {
   });
 
   test.describe("Dashboard UI", () => {
-    test("project detail page shows documents section in files tab", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        await expect(page.getByText(/documents/i)).toBeVisible({ timeout: 5000 });
+    test("project files tab lists the project's documents", async ({ request, page }) => {
+      const title = `Files tab doc ${Date.now()}`;
+      const { body, boundary } = buildDocumentMultipart(projectId, {
+        type: "quote",
+        title,
+        filename: "files-tab.pdf",
+      });
+      const res = await request.post(`${API}/documents`, {
+        data: body,
+        headers: { "Content-Type": `multipart/form-data; boundary=${boundary}`, "x-csrf-token": getCsrfToken() },
+      });
+      expect(res.status()).toBe(201);
+
+      await openProjectTab(page, projectId, "files");
+      await expect(page.getByRole("heading", { name: "Files", exact: true })).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(title)).toBeVisible({ timeout: 10000 });
+    });
+
+    test("Add menu offers approval, upload and link", async ({ page }) => {
+      await openProjectTab(page, projectId, "files");
+      await page.getByRole("button", { name: "Add", exact: true }).click({ timeout: 10000 });
+      for (const item of ["Request approval", "Upload file", "Add link"]) {
+        await expect(page.getByText(item, { exact: true })).toBeVisible();
       }
     });
 
-    test("upload document button is visible", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        await expect(page.getByRole("button", { name: /upload/i })).toBeVisible({ timeout: 5000 });
-      }
+    test("collect signature option appears only once a PDF is chosen", async ({ page }) => {
+      await openProjectTab(page, projectId, "files");
+      await page.getByRole("button", { name: "Add", exact: true }).click({ timeout: 10000 });
+      await page.getByText("Upload file", { exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Upload File" })).toBeVisible();
+
+      const collectSignature = page.getByText("Collect signature", { exact: true });
+      await expect(collectSignature).toBeHidden();
+
+      await page.locator('input[type="file"][accept*=".pdf"]').setInputFiles({
+        name: "contract.pdf",
+        mimeType: "application/pdf",
+        buffer: Buffer.from("%PDF-1.4\n%%EOF"),
+      });
+      await expect(collectSignature).toBeVisible();
     });
   });
 
   test.describe("Portal UI - Document Confirmation Dialog", () => {
-    test("accept button opens confirmation dialog on portal", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        await page.waitForTimeout(2000);
+    const docTitle = "Portal Approval Quote";
+    let portal: PortalClientProject;
 
-        const acceptBtn = page.getByRole("button", { name: /^accept$/i }).first();
-        if (await acceptBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await acceptBtn.click();
-          // Confirmation dialog should appear
-          await expect(page.getByText(/are you sure you want to/i)).toBeVisible({ timeout: 3000 });
-          await expect(page.getByRole("button", { name: /confirm accept/i })).toBeVisible();
-          await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
-        }
-      }
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(120000);
+      portal = await createPortalClientProject(browser, "doc-confirm", "Portal Documents E2E");
+      const { body, boundary } = buildDocumentMultipart(portal.projectId, {
+        type: "quote",
+        title: docTitle,
+        filename: "approval-quote.pdf",
+        requiresApproval: true,
+      });
+      const createRes = await portal.owner.request.post(`${API}/documents`, {
+        data: body,
+        headers: { "Content-Type": `multipart/form-data; boundary=${boundary}`, ...portal.ownerHeaders },
+      });
+      expect(createRes.status()).toBe(201);
+      const doc: { id: string } = await createRes.json();
+      const sendRes = await portal.owner.request.post(`${API}/documents/${doc.id}/send`, {
+        data: {},
+        headers: portal.ownerHeaders,
+      });
+      expect(sendRes.ok()).toBeTruthy();
     });
 
-    test("decline button opens confirmation dialog with reason textarea", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        await page.waitForTimeout(2000);
-
-        const declineBtn = page.getByRole("button", { name: /^decline$/i }).first();
-        if (await declineBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await declineBtn.click();
-          // Confirmation dialog should appear with decline-specific content
-          await expect(page.getByText(/decline document/i)).toBeVisible({ timeout: 3000 });
-          await expect(page.getByText(/reason for declining/i)).toBeVisible();
-          await expect(page.getByPlaceholder(/provide a reason/i)).toBeVisible();
-          await expect(page.getByRole("button", { name: /confirm decline/i })).toBeVisible();
-        }
-      }
+    test.afterAll(async () => {
+      await portal?.close();
     });
 
-    test("acknowledge button opens confirmation dialog on portal", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        await page.waitForTimeout(2000);
+    async function openFiles(): Promise<Page> {
+      await portal.client.goto(`${WEB_URL}/portal/projects/${portal.projectId}?tab=files`);
+      await expect(portal.client.getByText(docTitle).first()).toBeVisible({ timeout: 15000 });
+      return portal.client;
+    }
 
-        const ackBtn = page.getByRole("button", { name: /^acknowledge$/i }).first();
-        if (await ackBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await ackBtn.click();
-          await expect(page.getByText(/acknowledge document/i)).toBeVisible({ timeout: 3000 });
-          await expect(page.getByRole("button", { name: /confirm acknowledge/i })).toBeVisible();
-        }
-      }
+    test("accept button opens confirmation dialog on portal", async () => {
+      const client = await openFiles();
+      await client.getByRole("button", { name: "Accept", exact: true }).click();
+      await expect(client.getByRole("heading", { name: "Accept Document" })).toBeVisible();
+      await expect(client.getByText(/are you sure you want to/i)).toBeVisible();
+      await expect(client.getByRole("button", { name: "Confirm Accept" })).toBeVisible();
+      await expect(client.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
     });
 
-    test("cancel button in confirmation dialog closes it without action", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        await page.waitForTimeout(2000);
-
-        const acceptBtn = page.getByRole("button", { name: /^accept$/i }).first();
-        if (await acceptBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await acceptBtn.click();
-          await expect(page.getByText(/are you sure you want to/i)).toBeVisible({ timeout: 3000 });
-          // Click cancel
-          await page.getByRole("button", { name: /^cancel$/i }).click();
-          // Dialog should be gone
-          await expect(page.getByText(/are you sure you want to/i)).not.toBeVisible();
-        }
-      }
+    test("decline button opens confirmation dialog with reason textarea", async () => {
+      const client = await openFiles();
+      await client.getByRole("button", { name: "Decline", exact: true }).click();
+      await expect(client.getByRole("heading", { name: "Decline Document" })).toBeVisible();
+      await expect(client.getByText(/reason for declining/i)).toBeVisible();
+      await expect(client.getByPlaceholder(/provide a reason/i)).toBeVisible();
+      await expect(client.getByRole("button", { name: "Confirm Decline" })).toBeVisible();
     });
 
-    test("confirmation dialog shows document title and type", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        await page.waitForTimeout(2000);
-
-        const acceptBtn = page.getByRole("button", { name: /^accept$/i }).first();
-        if (await acceptBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await acceptBtn.click();
-          // Dialog should show document type badge (Quote, Contract, NDA, Other)
-          const dialog = page.locator(".fixed.inset-0.z-50");
-          await expect(dialog).toBeVisible({ timeout: 3000 });
-          // Should contain a type label like Quote, Contract, NDA, or Other
-          const typeLabel = dialog.locator("text=/Quote|Contract|NDA|Other/i");
-          await expect(typeLabel.first()).toBeVisible();
-        }
-      }
+    test("cancel button in confirmation dialog closes it without action", async () => {
+      const client = await openFiles();
+      await client.getByRole("button", { name: "Accept", exact: true }).click();
+      await expect(client.getByText(/are you sure you want to/i)).toBeVisible();
+      await client.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(client.getByText(/are you sure you want to/i)).toBeHidden();
+      // Nothing was recorded: the document still asks for a response.
+      await expect(client.getByRole("button", { name: "Accept", exact: true })).toBeVisible();
     });
 
-    test("requires signature checkbox visible for PDF uploads", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^files$/i }).click();
-        const uploadBtn = page.getByText(/upload document/i);
-        if (await uploadBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await uploadBtn.click();
-          // The checkbox should not be visible until a PDF file is selected
-          await expect(page.getByText(/requires signature/i)).not.toBeVisible();
-        }
-      }
+    test("confirmation dialog shows document title and type", async () => {
+      const client = await openFiles();
+      await client.getByRole("button", { name: "Accept", exact: true }).click();
+      const dialog = client.locator("div.fixed.inset-0.z-50").filter({ hasText: /are you sure/i });
+      await expect(dialog.getByText(docTitle, { exact: true })).toBeVisible();
+      await expect(dialog.getByText("Quote", { exact: true })).toBeVisible();
     });
   });
 });

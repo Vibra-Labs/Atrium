@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createOwner, getCsrfToken } from "./helpers";
+import { createOwner, getCsrfToken, getCsrfTokenFromContext, inviteAndAcceptClient } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -288,36 +288,32 @@ test.describe("Team", () => {
   // ── API: role change ──────────────────────────────────────────────────────────
 
   test.describe("API: role change", () => {
-    let testMemberId: string;
-    let testUserId: string;
-
-    test.beforeAll(async ({ request }) => {
-      // Find a non-owner member to use for role change tests
-      const res = await request.get(`${API}/clients?page=1&limit=100`);
-      if (!res.ok()) return;
-      const body = await res.json();
-      const adminOrMember = body.data.find(
-        (m: { role: string }) => m.role === "admin",
-      );
-      if (adminOrMember) {
-        testMemberId = adminOrMember.id;
-        testUserId = adminOrMember.userId;
-      }
-    });
-
-    test("PUT /clients/:id/role requires owner role (endpoint exists)", async ({
-      request,
+    test("PUT /clients/:id/role lets the owner promote a member to admin", async ({
+      browser,
     }) => {
-      test.skip(!testMemberId, "No admin member available to test role change");
-      const csrfToken = getCsrfToken();
-      // We just verify the endpoint exists and returns a meaningful status
-      const res = await request.put(`${API}/clients/${testMemberId}/role`, {
-        data: { role: "admin" },
-        headers: { "x-csrf-token": csrfToken },
-      });
-      // Owner is making this request so it should succeed (200) or at minimum
-      // not return 404. Forbidden (403) would mean the test user is not owner.
-      expect([200, 403]).toContain(res.status());
+      test.setTimeout(120000);
+      // A fresh workspace so promoting someone doesn't change the shared test org.
+      const { context, page: owner } = await createOwner(browser, "team-role");
+      try {
+        const { clientEmail } = await inviteAndAcceptClient(browser, owner, "team-role-member");
+        const headers: Record<string, string> = { "x-csrf-token": await getCsrfTokenFromContext(context) };
+
+        const listRes = await owner.request.get(`${API}/clients?limit=100`);
+        expect(listRes.ok()).toBeTruthy();
+        const list: { data: { id: string; role: string; user: { email: string } }[] } = await listRes.json();
+        const member = list.data.find((m) => m.user.email === clientEmail);
+        expect(member?.role).toBe("member");
+
+        const res = await owner.request.put(`${API}/clients/${member!.id}/role`, {
+          data: { role: "admin" },
+          headers,
+        });
+        expect(res.status()).toBe(200);
+        const updated: { role: string } = await res.json();
+        expect(updated.role).toBe("admin");
+      } finally {
+        await context.close();
+      }
     });
   });
 

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken, getPlanFeatures } from "./helpers";
+import { createPortalClientProject, getCsrfToken, getPlanFeatures } from "./helpers";
+import type { PortalClientProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -45,7 +46,11 @@ test.describe("Invoice Payments", () => {
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
       expect(body.enabled).toBe(false);
-      expect(body.mode).toBe("direct");
+      // Same rule as PaymentsService.isConnectMode(): a platform Connect client
+      // id switches the workspace to Connect. playwright.config.ts loads the
+      // root .env the API also reads, so both sides see the same value.
+      const expectedMode: "connect" | "direct" = process.env.STRIPE_CONNECT_CLIENT_ID ? "connect" : "direct";
+      expect(body.mode).toBe(expectedMode);
     });
 
     test("GET /payments/enabled returns enabled: false by default", async ({
@@ -235,20 +240,36 @@ test.describe("Invoice Payments", () => {
 
   test.describe("Portal — Pay Now visibility", () => {
     test("portal does not show Pay Now when payments disabled", async ({
-      page,
+      browser,
     }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page
-        .locator("a[href*='/portal/projects/']")
-        .first();
-      if (
-        await projectLink.isVisible({ timeout: 5000 }).catch(() => false)
-      ) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-        await expect(
-          page.getByRole("button", { name: /pay now/i }),
-        ).not.toBeVisible();
+      test.setTimeout(120000);
+      // A fresh workspace has no Stripe account connected.
+      const portal: PortalClientProject = await createPortalClientProject(browser, "paynow", "Pay Now E2E");
+      try {
+        const invoiceRes = await portal.owner.request.post(`${API}/invoices`, {
+          data: {
+            projectId: portal.projectId,
+            lineItems: [{ description: "Pay now item", quantity: 1, unitPrice: 5000 }],
+          },
+          headers: portal.ownerHeaders,
+        });
+        expect(invoiceRes.status()).toBe(201);
+        const invoice: { id: string; invoiceNumber: string } = await invoiceRes.json();
+        const sentRes = await portal.owner.request.put(`${API}/invoices/${invoice.id}`, {
+          data: { status: "sent" },
+          headers: portal.ownerHeaders,
+        });
+        expect(sentRes.ok()).toBeTruthy();
+
+        const enabledRes = await portal.client.request.get(`${API}/payments/enabled`);
+        expect(enabledRes.ok()).toBeTruthy();
+        expect((await enabledRes.json()).enabled).toBe(false);
+
+        await portal.client.goto(`http://localhost:3000/portal/projects/${portal.projectId}?tab=invoices`);
+        await expect(portal.client.getByText(invoice.invoiceNumber).first()).toBeVisible({ timeout: 15000 });
+        await expect(portal.client.getByRole("button", { name: /pay now/i })).toHaveCount(0);
+      } finally {
+        await portal.close();
       }
     });
   });

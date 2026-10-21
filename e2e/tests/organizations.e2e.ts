@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { getCsrfTokenFromContext } from "./helpers";
+import { createOwner, getCsrfTokenFromContext } from "./helpers";
 
 const API = "http://localhost:3001";
 
@@ -91,20 +91,28 @@ test.describe("Organizations", () => {
     await expect(page.getByText(/current/i)).toBeVisible();
   });
 
-  test("a single-org user gets no switcher dropdown", async ({ page }) => {
-    // Later tests in this file create organizations, so only assert this while
-    // the account genuinely has one — otherwise the expectation is wrong
-    // rather than the code.
-    const orgs = await page.request
-      .get(`${API}/api/auth/organization/list`)
-      .then((r) => r.json());
-    test.skip(orgs.length !== 1, "account already has more than one org");
+  test("a single-org user gets no switcher dropdown", async ({ browser }) => {
+    // A fresh owner, so other tests that add organizations can't affect this one.
+    const { context, page } = await createOwner(browser, "single-org");
+    try {
+      const orgs: unknown[] = await page.request
+        .get(`${API}/api/auth/organization/list`)
+        .then((r) => r.json());
+      expect(orgs).toHaveLength(1);
 
-    await page.goto("/dashboard");
-    // The org name still shows, it just isn't a button.
-    await expect(
-      page.getByRole("button", { name: /switch organization/i }),
-    ).toHaveCount(0);
+      const org: { name: string } = await page.request
+        .get(`${API}/api/auth/organization/get-full-organization`)
+        .then((r) => r.json());
+
+      await page.goto("http://localhost:3000/dashboard");
+      await expect(page.getByText(org.name, { exact: true }).first()).toBeVisible({ timeout: 15000 });
+      // The org name still shows, it just isn't a button.
+      await expect(
+        page.getByRole("button", { name: /switch organization/i }),
+      ).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
   });
 
   test("creating an organization makes it active and reveals the switcher", async ({

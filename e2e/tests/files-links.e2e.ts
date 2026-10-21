@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getOrCreateProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -10,11 +10,7 @@ test.describe("File links", () => {
     const csrfToken = getCsrfToken();
 
     // 1. Find a project to attach the link to
-    const projectsRes = await request.get(`${API}/projects?limit=1`);
-    expect(projectsRes.ok()).toBeTruthy();
-    const projects = await projectsRes.json();
-    if (!projects.data?.length) return;
-    const projectId = projects.data[0].id as string;
+    const projectId: string = await getOrCreateProject(request, "File Links E2E");
 
     // 2. POST /files/link creates a LINK-type file
     const linkRes = await request.post(`${API}/files/link`, {
@@ -65,10 +61,7 @@ test.describe("File links", () => {
   test("rejects non-http(s) URLs", async ({ request }) => {
     const csrfToken = getCsrfToken();
 
-    const projectsRes = await request.get(`${API}/projects?limit=1`);
-    const projects = await projectsRes.json();
-    if (!projects.data?.length) return;
-    const projectId = projects.data[0].id as string;
+    const projectId: string = await getOrCreateProject(request, "File Links E2E");
 
     const ftpRes = await request.post(`${API}/files/link`, {
       headers: {
@@ -101,10 +94,7 @@ test.describe("File links", () => {
   test("rejects missing title", async ({ request }) => {
     const csrfToken = getCsrfToken();
 
-    const projectsRes = await request.get(`${API}/projects?limit=1`);
-    const projects = await projectsRes.json();
-    if (!projects.data?.length) return;
-    const projectId = projects.data[0].id as string;
+    const projectId: string = await getOrCreateProject(request, "File Links E2E");
 
     const res = await request.post(`${API}/files/link`, {
       headers: {

@@ -1,54 +1,35 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { createPortalClientProject, getCsrfToken, getOrCreateProject, openProjectTab } from "./helpers";
+import type { PortalClientProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
+const WEB = "http://localhost:3000";
 
 test.describe("Files", () => {
-  test("project detail page shows file upload area", async ({ page }) => {
-    await page.goto("/dashboard/projects");
-    // The page should load and show the projects heading
-    await expect(page.getByRole("heading", { name: /projects/i })).toBeVisible();
+  let projectId: string;
+
+  test.beforeAll(async ({ request }) => {
+    projectId = await getOrCreateProject(request, "Files Test Project");
   });
 
-  test("upload button is visible on project detail page", async ({ page }) => {
-    // Navigate to the projects list and check that the UI renders
-    await page.goto("/dashboard/projects");
-    await expect(page.getByRole("heading", { name: /projects/i })).toBeVisible();
+  test("project files tab offers upload in the Add menu", async ({ page }) => {
+    await openProjectTab(page, projectId, "files");
+    await expect(page.getByRole("heading", { name: "Files", exact: true })).toBeVisible({ timeout: 10000 });
 
-    // If there are project links, click the first one and check for upload UI
-    const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-    if (await projectLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await projectLink.click();
-
-      // The detail page opens on the Updates tab, and on the Files tab the
-      // upload action sits behind the "Add" menu rather than being visible
-      // outright. The tab handler is attached on hydration, so retry the click
-      // until the panel actually renders.
-      const filesHeading = page.getByRole("heading", { name: "Files" });
-      await expect(async () => {
-        await page.getByTestId("project-tab-files").click();
-        await expect(filesHeading).toBeVisible({ timeout: 1000 });
-      }).toPass({ timeout: 15000 });
-
-      await page.getByRole("button", { name: "Add", exact: true }).first().click();
-      await expect(page.getByText("Upload file")).toBeVisible({ timeout: 5000 });
-    }
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText("Upload file", { exact: true })).toBeVisible();
   });
 
-  test("portal project page does not show upload button for clients", async ({ page }) => {
-    await page.goto("/portal/projects");
-    await expect(
-      page.getByRole("heading", { name: /your projects/i }),
-    ).toBeVisible();
-
-    // Clients should see projects list but the portal project detail
-    // should not have an upload button (read-only file access)
-    const projectLink = page.locator("a[href*='/portal/projects/']").first();
-    if (await projectLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await projectLink.click();
-      await expect(page.getByText(/files/i)).toBeVisible({ timeout: 5000 });
-      // Upload button should NOT be visible on the portal (client) view
-      await expect(page.getByText(/upload file/i)).not.toBeVisible();
+  test("portal client can open the Files tab of their project", async ({ browser }) => {
+    test.setTimeout(120000);
+    const portal: PortalClientProject = await createPortalClientProject(browser, "files", "Portal Files E2E");
+    try {
+      await portal.client.goto(`${WEB}/portal/projects/${portal.projectId}?tab=files`);
+      // Clients may upload their own files; the staff-only Add menu is absent.
+      await expect(portal.client.getByText("Upload File", { exact: true })).toBeVisible({ timeout: 15000 });
+      await expect(portal.client.getByRole("button", { name: "Add", exact: true })).toHaveCount(0);
+    } finally {
+      await portal.close();
     }
   });
 
@@ -82,15 +63,7 @@ test.describe("Files", () => {
   test("posting an update with attachment creates a file record", async ({
     request,
   }) => {
-    // 1. Get a project to attach the update to
-    const projectsRes = await request.get(`${API}/projects?limit=1`);
-    expect(projectsRes.ok()).toBeTruthy();
-    const projects = await projectsRes.json();
-    if (!projects.data?.length) return;
-
-    const projectId = projects.data[0].id as string;
-
-    // 2. Get current file count for the project
+    // 1. Get current file count for the project
     const filesBeforeRes = await request.get(
       `${API}/files/project/${projectId}`,
     );
@@ -98,7 +71,7 @@ test.describe("Files", () => {
     const filesBefore = await filesBeforeRes.json();
     const countBefore = filesBefore.meta?.total ?? filesBefore.data?.length ?? 0;
 
-    // 3. Post an update with a small text-file attachment
+    // 2. Post an update with a small text-file attachment
     const boundary = "----TestBoundary" + Date.now();
     const fileContent = "test file content for e2e";
     const body = [
@@ -129,7 +102,7 @@ test.describe("Files", () => {
     const update = await updateRes.json();
     expect(update.fileId).toBeTruthy();
 
-    // 4. Verify the file count increased
+    // 3. Verify the file count increased
     const filesAfterRes = await request.get(
       `${API}/files/project/${projectId}`,
     );
@@ -138,7 +111,7 @@ test.describe("Files", () => {
     const countAfter = filesAfter.meta?.total ?? filesAfter.data?.length ?? 0;
     expect(countAfter).toBeGreaterThan(countBefore);
 
-    // 5. Verify the file is downloadable via the files endpoint
+    // 4. Verify the file is downloadable via the files endpoint
     const fileId = update.fileId as string;
     const downloadRes = await request.get(`${API}/files/${fileId}/download`);
     expect(downloadRes.ok()).toBeTruthy();

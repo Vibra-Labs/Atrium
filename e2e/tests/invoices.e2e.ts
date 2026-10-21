@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken, getOrCreateProject } from "./helpers";
+import type { APIRequestContext } from "@playwright/test";
+import { createPortalClientProject, getCsrfToken, getOrCreateProject, openProjectTab } from "./helpers";
+import type { PortalClientProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -8,7 +10,7 @@ const API = "http://localhost:3001/api";
 // The test user is an owner so the POST /invoices endpoint is accessible.
 // ---------------------------------------------------------------------------
 async function createTestInvoice(
-  request: Parameters<Parameters<typeof test>[1]>[0]["request"],
+  request: APIRequestContext,
   overrides: Record<string, unknown> = {},
 ): Promise<string> {
   const csrfToken = getCsrfToken();
@@ -26,108 +28,122 @@ async function createTestInvoice(
   return body.id as string;
 }
 
+async function invoiceNumber(
+  request: APIRequestContext,
+  invoiceId: string,
+): Promise<string> {
+  const res = await request.get(`${API}/invoices/${invoiceId}`);
+  expect(res.ok()).toBeTruthy();
+  const body: { invoiceNumber: string } = await res.json();
+  return body.invoiceNumber;
+}
+
 test.describe("Invoices", () => {
   test.describe("Dashboard - Invoices within project", () => {
+    let projectId: string;
+    let seededNumber: string;
+
+    test.beforeAll(async ({ request }) => {
+      projectId = await getOrCreateProject(request, "Invoices UI E2E");
+      const invoiceId = await createTestInvoice(request, {
+        projectId,
+        lineItems: [{ description: "Seeded line item", quantity: 2, unitPrice: 12500 }],
+      });
+      seededNumber = await invoiceNumber(request, invoiceId);
+    });
+
     test("project detail page shows invoices tab", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await expect(page.getByRole("button", { name: /^invoices$/i })).toBeVisible({ timeout: 5000 });
-      }
+      await page.goto(`/dashboard/projects/${projectId}`);
+      await expect(async () => {
+        await page.getByTestId("project-tab-invoices").click();
+        await expect(page.getByRole("heading", { name: "Invoices", exact: true })).toBeVisible({ timeout: 1000 });
+      }).toPass({ timeout: 15000 });
     });
 
     test("invoices tab has new invoice button", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^invoices$/i }).click();
-        await expect(page.getByRole("button", { name: /new invoice/i })).toBeVisible({ timeout: 5000 });
+      await openProjectTab(page, projectId, "invoices");
+      await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 10000 });
+      for (const item of [/create new/i, /generate from time/i, /upload pdf/i]) {
+        await expect(page.getByRole("menuitem", { name: item })).toBeVisible();
       }
     });
 
     test("invoices tab has status filter", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^invoices$/i }).click();
-        await expect(page.getByText(/all statuses/i)).toBeVisible({ timeout: 5000 });
-      }
+      await openProjectTab(page, projectId, "invoices");
+      const filter = page.getByRole("combobox").filter({ has: page.getByRole("option", { name: "All Statuses" }) });
+      await expect(filter).toHaveValue("");
+      const seededRow = page.getByText(seededNumber, { exact: true });
+      await expect(seededRow).toBeVisible({ timeout: 10000 });
+
+      await filter.selectOption("paid");
+      await expect(seededRow).toBeHidden();
+      await filter.selectOption("draft");
+      await expect(seededRow).toBeVisible();
     });
 
     test("new invoice modal opens and has form fields", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^invoices$/i }).click();
-        await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 5000 });
-        await page.getByRole("menuitem", { name: /create new/i }).click();
-        await expect(page.getByText(/line items/i)).toBeVisible();
-        await expect(page.getByText(/due date/i)).toBeVisible();
-        await expect(page.getByRole("button", { name: /create invoice/i })).toBeVisible();
-        await expect(page.getByText(/add line item/i)).toBeVisible();
-      }
+      await openProjectTab(page, projectId, "invoices");
+      await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 10000 });
+      await page.getByRole("menuitem", { name: /create new/i }).click();
+
+      await expect(page.getByRole("heading", { name: "New Invoice" })).toBeVisible();
+      await expect(page.getByText("Line Items", { exact: true })).toBeVisible();
+      await expect(page.getByText("Due Date", { exact: true })).toBeVisible();
+      await expect(page.getByPlaceholder("Description")).toBeVisible();
+      await expect(page.getByPlaceholder("Qty")).toBeVisible();
+      await expect(page.getByPlaceholder("0.00")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Add Line Item" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Save as Draft" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Send to Client" })).toBeVisible();
     });
 
-    test("create invoice within project and verify it appears", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^invoices$/i }).click();
-        await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 5000 });
-        await page.getByRole("menuitem", { name: /create new/i }).click();
+    test("create invoice within project and verify it appears", async ({ page, request }) => {
+      await openProjectTab(page, projectId, "invoices");
+      await page.getByRole("button", { name: /new invoice/i }).click({ timeout: 10000 });
+      await page.getByRole("menuitem", { name: /create new/i }).click();
 
-        // Fill in a line item
-        await page.getByPlaceholder("Description").fill("E2E Test Service");
-        const qtyInput = page.locator('input[type="number"]').first();
-        await qtyInput.fill("2");
-        const priceInput = page.locator('input[type="number"]').nth(1);
-        await priceInput.fill("100");
+      const description = `E2E Test Service ${Date.now()}`;
+      await page.getByPlaceholder("Description").fill(description);
+      await page.getByPlaceholder("Qty").fill("2");
+      await page.getByPlaceholder("0.00").fill("100");
+      await page.getByRole("button", { name: "Save as Draft" }).click();
+      await expect(page.getByRole("heading", { name: "New Invoice" })).toBeHidden({ timeout: 10000 });
 
-        // Submit
-        await page.getByRole("button", { name: /create invoice/i }).click();
+      // The API is the source of the number; the row must show it with the total.
+      let created: { invoiceNumber: string; status: string } | undefined;
+      await expect.poll(async () => {
+        const res = await request.get(`${API}/invoices?projectId=${projectId}&limit=100`);
+        const body: { data: { invoiceNumber: string; status: string; lineItems: { description: string }[] }[] } = await res.json();
+        created = body.data.find((inv) => inv.lineItems.some((li) => li.description === description));
+        return created?.status;
+      }, { timeout: 10000 }).toBe("draft");
 
-        // The new invoice should appear in the project's invoice section
-        await expect(page.getByText("INV-")).toBeVisible({ timeout: 10000 });
-      }
+      const row = page.getByRole("button").filter({ hasText: created!.invoiceNumber });
+      await expect(row).toBeVisible({ timeout: 10000 });
+      await expect(row).toContainText("$200.00");
     });
 
     test("invoice row expands to show line items", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^invoices$/i }).click();
-        const invoiceRow = page.getByText("INV-").first();
-        if (await invoiceRow.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await invoiceRow.click();
-          await expect(page.getByText(/description/i)).toBeVisible({ timeout: 3000 });
-          await expect(page.getByText(/total/i)).toBeVisible();
-        }
-      }
+      await openProjectTab(page, projectId, "invoices");
+      await page.getByText(seededNumber, { exact: true }).click({ timeout: 10000 });
+      await expect(page.getByRole("cell", { name: "Seeded line item" })).toBeVisible();
+      await expect(page.getByRole("cell", { name: "Total", exact: true })).toBeVisible();
+      // Unit price $125.00; the line total and the invoice total are both $250.00.
+      await expect(page.getByRole("cell", { name: "$125.00" })).toBeVisible();
+      await expect(page.getByRole("cell", { name: "$250.00" })).toHaveCount(2);
     });
 
-    test("invoice shows status transition buttons", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^invoices$/i }).click();
-        const invoiceRow = page.getByText("INV-").first();
-        if (await invoiceRow.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await invoiceRow.click();
-          // Draft invoices should show "Mark as Sent"
-          const markSent = page.getByRole("button", { name: /mark as sent/i });
-          const markPaid = page.getByRole("button", { name: /mark as paid/i });
-          const hasTransition = await markSent.isVisible().catch(() => false)
-            || await markPaid.isVisible().catch(() => false);
-          expect(hasTransition).toBeTruthy();
-        }
-      }
+    test("invoice shows status transition buttons", async ({ page, request }) => {
+      const invoiceId = await createTestInvoice(request, { projectId });
+      const number = await invoiceNumber(request, invoiceId);
+
+      await openProjectTab(page, projectId, "invoices");
+      await page.getByText(number, { exact: true }).click({ timeout: 10000 });
+
+      // Draft → Sent → Paid, each step offering the next one.
+      await page.getByRole("button", { name: "Mark as Sent" }).click();
+      await expect(page.getByRole("button", { name: "Mark as Paid" })).toBeVisible({ timeout: 10000 });
+      await expect(page.getByRole("button", { name: "Mark as Sent" })).toHaveCount(0);
     });
   });
 
@@ -145,15 +161,16 @@ test.describe("Invoices", () => {
       });
       expect(sentRes.ok()).toBeTruthy();
 
-      await page.goto(`/dashboard/projects/${projectId}`);
-      await page.getByRole("button", { name: /^invoices$/i }).click();
-      await page.getByText("INV-").first().click();
+      const number = await invoiceNumber(request, invoiceId);
+      await openProjectTab(page, projectId, "invoices");
+      await page.getByText(number, { exact: true }).click();
       await page.getByRole("button", { name: /mark as paid/i }).click();
       await page.getByLabel("Paid date").fill("2026-09-01");
       await page.getByRole("button", { name: /^confirm$/i }).click();
 
       // Scoped to the paid-details box so a due date cannot match.
-      const paidBox = page.getByText("Marked as paid").locator("xpath=..");
+      // Exact, so the "Invoice marked as paid" toast doesn't match too.
+      const paidBox = page.getByText("Marked as paid", { exact: true }).locator("xpath=..");
       await expect(paidBox).toBeVisible({ timeout: 10000 });
       await expect(paidBox).toContainText("9/1/2026");
     });
@@ -201,16 +218,17 @@ test.describe("Invoices", () => {
     });
 
     test("list invoices filtered by project via API", async ({ request }) => {
-      // First get a project
-      const projectsRes = await request.get(`${API}/projects?limit=1`);
-      const projects = await projectsRes.json();
-      if (projects.data?.length > 0) {
-        const projectId = projects.data[0].id;
-        const res = await request.get(`${API}/invoices?projectId=${projectId}`);
-        expect(res.ok()).toBeTruthy();
-        const body = await res.json();
-        expect(body.data).toBeInstanceOf(Array);
-      }
+      const projectId = await getOrCreateProject(request, "Invoices API Filter E2E");
+      const invoiceId = await createTestInvoice(request, { projectId });
+      const otherId = await createTestInvoice(request);
+
+      const res = await request.get(`${API}/invoices?projectId=${projectId}&limit=100`);
+      expect(res.ok()).toBeTruthy();
+      const body: { data: { id: string; projectId: string | null }[] } = await res.json();
+      const ids: string[] = body.data.map((inv) => inv.id);
+      expect(ids).toContain(invoiceId);
+      expect(ids).not.toContain(otherId);
+      expect(body.data.every((inv) => inv.projectId === projectId)).toBe(true);
     });
 
     test("get invoice stats via API", async ({ request }) => {
@@ -437,61 +455,36 @@ test.describe("Invoices", () => {
     });
 
     test("GET /invoices/mine/:id/pdf returns application/pdf when client is assigned", async ({
-      request,
+      browser,
     }) => {
-      // Set up: create a project, add the test user as a client, create an invoice.
-      const csrfToken = getCsrfToken();
+      test.setTimeout(120000);
+      const portal: PortalClientProject = await createPortalClientProject(browser, "inv-pdf", "PDF Client Test Project");
+      try {
+        const invoiceRes = await portal.owner.request.post(`${API}/invoices`, {
+          data: {
+            projectId: portal.projectId,
+            lineItems: [{ description: "Client PDF Item", quantity: 1, unitPrice: 5000 }],
+          },
+          headers: portal.ownerHeaders,
+        });
+        expect(invoiceRes.status()).toBe(201);
+        const invoice: { id: string } = await invoiceRes.json();
+        const sentRes = await portal.owner.request.put(`${API}/invoices/${invoice.id}`, {
+          data: { status: "sent" },
+          headers: portal.ownerHeaders,
+        });
+        expect(sentRes.ok()).toBeTruthy();
 
-      // 1. Create a project
-      const projectRes = await request.post(`${API}/projects`, {
-        data: { name: "PDF Client Test Project" },
-        headers: { "x-csrf-token": csrfToken },
-      });
+        const pdfRes = await portal.client.request.get(`${API}/invoices/mine/${invoice.id}/pdf`);
 
-      if (!projectRes.ok()) {
-        // If project creation is not available in this test context, skip gracefully
-        return;
+        expect(pdfRes.ok()).toBeTruthy();
+        expect(pdfRes.headers()["content-type"]).toContain("application/pdf");
+        const disposition = pdfRes.headers()["content-disposition"];
+        expect(disposition).toContain("attachment");
+        expect(disposition).toMatch(/INV-\d+\.pdf/);
+      } finally {
+        await portal.close();
       }
-
-      const project = await projectRes.json();
-      const projectId = project.id as string;
-
-      // 2. Get the current user's member id — we need the userId to add as client
-      const meRes = await request.get(`${API}/auth/me`);
-      if (!meRes.ok()) return;
-
-      const me = await meRes.json();
-      const userId: string = me?.user?.id ?? me?.id;
-      if (!userId) return;
-
-      // 3. Assign the user as a project client
-      const assignRes = await request.post(
-        `${API}/projects/${projectId}/clients`,
-        { data: { userId }, headers: { "x-csrf-token": csrfToken } },
-      );
-      if (!assignRes.ok()) return;
-
-      // 4. Create an invoice linked to the project
-      const invoiceRes = await request.post(`${API}/invoices`, {
-        data: {
-          projectId,
-          lineItems: [{ description: "Client PDF Item", quantity: 1, unitPrice: 5000 }],
-        },
-        headers: { "x-csrf-token": csrfToken },
-      });
-      if (!invoiceRes.ok()) return;
-      const invoice = await invoiceRes.json();
-
-      // 5. Download the PDF via the client endpoint
-      const pdfRes = await request.get(
-        `${API}/invoices/mine/${invoice.id}/pdf`,
-      );
-
-      expect(pdfRes.ok()).toBeTruthy();
-      expect(pdfRes.headers()["content-type"]).toContain("application/pdf");
-      const disposition = pdfRes.headers()["content-disposition"];
-      expect(disposition).toContain("attachment");
-      expect(disposition).toMatch(/INV-\d+\.pdf/);
     });
   });
 });

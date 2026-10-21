@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import { createOwner, inviteAndAcceptClient } from "./helpers";
+import { createOwner, createPortalClientProject, inviteAndAcceptClient } from "./helpers";
+import type { PortalClientProject } from "./helpers";
+
+const API = "http://localhost:3001/api";
+const WEB = "http://localhost:3000";
 
 /**
  * Portal Isolation Tests
@@ -13,126 +17,128 @@ import { createOwner, inviteAndAcceptClient } from "./helpers";
  * - Dashboard navigation
  */
 test.describe("Portal Isolation", () => {
-  test.describe("Portal project detail hides internal content", () => {
-    test("portal project page does NOT show internal notes", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
+  test.describe("Portal client view", () => {
+    const noteContent = "Internal margin note: do not share";
+    const taskTitle = "Portal isolation visible task";
+    let portal: PortalClientProject;
+    let invoiceNumber: string;
 
-        // Internal notes must NEVER appear on portal
-        await expect(page.getByText(/internal notes/i)).not.toBeVisible();
-        await expect(page.getByText(/team only/i)).not.toBeVisible();
+    // One workspace, one client, one project seeded with a note, a task and a sent invoice.
+    test.beforeAll(async ({ browser }) => {
+      test.setTimeout(120000);
+      portal = await createPortalClientProject(browser, "isolation", "Portal Isolation E2E");
+      const { owner, ownerHeaders: headers, projectId } = portal;
+
+      const noteRes = await owner.request.post(`${API}/notes?projectId=${projectId}`, {
+        data: { content: noteContent },
+        headers,
+      });
+      expect(noteRes.status()).toBe(201);
+
+      const taskRes = await owner.request.post(`${API}/tasks?projectId=${projectId}`, {
+        data: { title: taskTitle },
+        headers,
+      });
+      expect(taskRes.status()).toBe(201);
+
+      const invoiceRes = await owner.request.post(`${API}/invoices`, {
+        data: { projectId, lineItems: [{ description: "Isolation item", quantity: 1, unitPrice: 5000 }] },
+        headers,
+      });
+      expect(invoiceRes.status()).toBe(201);
+      const invoice: { id: string; invoiceNumber: string } = await invoiceRes.json();
+      invoiceNumber = invoice.invoiceNumber;
+      const sentRes = await owner.request.put(`${API}/invoices/${invoice.id}`, {
+        data: { status: "sent" },
+        headers,
+      });
+      expect(sentRes.ok()).toBeTruthy();
+    });
+
+    test.afterAll(async () => {
+      await portal?.close();
+    });
+
+    async function openTab(tab: "updates" | "tasks" | "files" | "invoices"): Promise<Page> {
+      await portal.client.goto(`${WEB}/portal/projects/${portal.projectId}?tab=${tab}`);
+      await expect(portal.client.getByRole("heading", { name: "Portal Isolation E2E" })).toBeVisible({ timeout: 15000 });
+      return portal.client;
+    }
+
+    test("portal project page does NOT show internal notes", async () => {
+      const client = await openTab("updates");
+      await expect(client.getByRole("button", { name: "Add Update" })).toBeVisible();
+      await expect(client.getByRole("button", { name: "Notes", exact: true })).toHaveCount(0);
+      await expect(client.getByText(noteContent)).toHaveCount(0);
+      await expect(client.getByText(/team only/i)).toHaveCount(0);
+
+      const notesRes = await client.request.get(`${API}/notes/project/${portal.projectId}`);
+      expect(notesRes.status()).toBe(403);
+    });
+
+    test("portal project page does NOT show add task form", async () => {
+      const client = await openTab("tasks");
+      await expect(client.getByRole("button", { name: /new request/i })).toBeVisible();
+      await expect(client.getByRole("button", { name: "Create", exact: true })).toHaveCount(0);
+      await expect(client.getByPlaceholder(/add a task/i)).toHaveCount(0);
+      await expect(client.getByRole("button", { name: /add note/i })).toHaveCount(0);
+    });
+
+    test("portal project tasks are read-only (no delete)", async () => {
+      const client = await openTab("tasks");
+      await expect(client.getByText(taskTitle)).toBeVisible();
+      await expect(client.getByRole("button", { name: "Delete task" })).toHaveCount(0);
+    });
+
+    test("portal files tab has client upload but no staff Add menu", async () => {
+      const client = await openTab("files");
+      await expect(client.getByText("Upload File", { exact: true })).toBeVisible();
+      await expect(client.getByRole("button", { name: "Add", exact: true })).toHaveCount(0);
+      await expect(client.getByText("Request approval", { exact: true })).toHaveCount(0);
+    });
+
+    test("portal project page does NOT show archive/status controls", async () => {
+      await openTab("updates");
+      const client = portal.client;
+      await expect(client.getByRole("button", { name: /archive/i })).toHaveCount(0);
+      await expect(client.getByRole("button", { name: /duplicate/i })).toHaveCount(0);
+      await expect(client.getByText(/assigned clients/i)).toHaveCount(0);
+    });
+
+    test("portal project detail shows invoices section", async () => {
+      const client = await openTab("invoices");
+      await expect(client.getByRole("heading", { name: "Invoices", exact: true })).toBeVisible();
+      await expect(client.getByText(invoiceNumber).first()).toBeVisible();
+    });
+
+    test("portal project invoices do NOT show management controls", async () => {
+      const client = await openTab("invoices");
+      await expect(client.getByText(invoiceNumber).first()).toBeVisible();
+      await expect(client.getByRole("button", { name: /new invoice/i })).toHaveCount(0);
+      await expect(client.getByRole("button", { name: /mark as sent/i })).toHaveCount(0);
+      await expect(client.getByRole("button", { name: /mark as paid/i })).toHaveCount(0);
+      await expect(client.getByRole("button", { name: /^edit$/i })).toHaveCount(0);
+      await expect(client.getByRole("combobox").filter({ hasText: "All Statuses" })).toHaveCount(0);
+    });
+
+    test("portal header has only client-safe links", async () => {
+      const client = portal.client;
+      await client.goto(`${WEB}/portal`);
+      const header = client.locator("header");
+      await expect(header.getByRole("link", { name: "Projects", exact: true })).toBeVisible({ timeout: 15000 });
+      await expect(header.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+
+      for (const name of [/^overview$/i, /^clients$/i, /^contacts$/i, /branding/i, /^team$/i]) {
+        await expect(client.getByRole("link", { name })).toHaveCount(0);
       }
     });
 
-    test("portal project page does NOT show add task form", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-
-        // No task creation on portal
-        await expect(page.getByPlaceholder(/add a task/i)).not.toBeVisible();
-        await expect(page.getByRole("button", { name: /add note/i })).not.toBeVisible();
-      }
-    });
-
-    test("portal project tasks are read-only (no checkboxes, no delete)", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-
-        // Should NOT have task delete buttons or edit controls
-        // The portal task items should not have clickable checkboxes
-        const trashButtons = page.locator('[title="Delete task"]');
-        await expect(trashButtons).toHaveCount(0);
-      }
-    });
-
-    test("portal project page does NOT show upload file button", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-
-        await expect(page.getByText(/upload file/i)).not.toBeVisible();
-      }
-    });
-
-    test("portal project page does NOT show archive/status controls", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-
-        await expect(page.getByRole("button", { name: /archive/i })).not.toBeVisible();
-        await expect(page.getByText(/assigned clients/i)).not.toBeVisible();
-      }
-    });
-  });
-
-  test.describe("Portal invoices are read-only (within project)", () => {
-    test("portal project detail shows invoices section", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-        await expect(page.getByText(/invoices/i)).toBeVisible();
-      }
-    });
-
-    test("portal project invoices do NOT show new invoice button", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-
-        await expect(page.getByRole("button", { name: /new invoice/i })).not.toBeVisible();
-      }
-    });
-
-    test("portal project invoices do NOT show status controls", async ({ page }) => {
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.waitForTimeout(2000);
-
-        // No status transition buttons
-        await expect(page.getByRole("button", { name: /mark as sent/i })).not.toBeVisible();
-        await expect(page.getByRole("button", { name: /mark as paid/i })).not.toBeVisible();
-        // No edit or delete
-        await expect(page.getByRole("button", { name: /edit/i })).not.toBeVisible();
-      }
-    });
-  });
-
-  test.describe("Portal navigation does NOT expose admin routes", () => {
-    test("portal header has only client-safe links", async ({ page }) => {
-      await page.goto("/portal");
-      // Should have portal nav links (Projects and Settings; Invoices is now within projects)
-      await expect(page.getByRole("link", { name: /projects/i })).toBeVisible();
-      await expect(page.getByRole("link", { name: /settings/i })).toBeVisible();
-
-      // Should NOT have dashboard links
-      await expect(page.getByRole("link", { name: /^overview$/i })).not.toBeVisible();
-      await expect(page.getByRole("link", { name: /^clients$/i })).not.toBeVisible();
-      await expect(page.getByRole("link", { name: /branding/i })).not.toBeVisible();
-    });
-
-    test("portal does NOT render dashboard sidebar", async ({ page }) => {
-      await page.goto("/portal");
-      // The sidebar nav is a dashboard-only component
-      await expect(page.locator("nav").getByText(/overview/i)).not.toBeVisible();
+    test("portal does NOT render dashboard sidebar", async () => {
+      const client = portal.client;
+      await client.goto(`${WEB}/portal`);
+      await expect(client.locator("header").getByRole("link", { name: "Projects", exact: true })).toBeVisible({ timeout: 15000 });
+      await expect(client.locator("nav").getByText(/overview/i)).toHaveCount(0);
+      await expect(client.locator('a[href^="/dashboard"]')).toHaveCount(0);
     });
   });
 

@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { createPortalClientProject, getCsrfToken, getOrCreateProject, openProjectTab } from "./helpers";
+import type { PortalClientProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
+const WEB = "http://localhost:3000";
 
 /**
  * Tests for client-submitted requests and the task status workflow.
@@ -13,20 +15,14 @@ test.describe("Client Requests", () => {
   let taskId: string;
 
   test.beforeAll(async ({ request }) => {
-    const csrfToken = getCsrfToken();
-    const res = await request.post(`${API}/projects`, {
-      data: { name: "Client Requests Test Project" },
-      headers: { "x-csrf-token": csrfToken },
-    });
-    if (res.ok()) {
-      const body = await res.json();
-      projectId = body.id;
-    }
+    projectId = await getOrCreateProject(request, "Client Requests Test Project");
   });
 
   test.describe("Task status workflow (agency)", () => {
+    // Later steps move the task created by the first one.
+    test.describe.configure({ mode: "serial" });
+
     test("agency can create a task with status=open", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: { title: "Status Test Task" },
@@ -39,7 +35,6 @@ test.describe("Client Requests", () => {
     });
 
     test("agency can change task status to in_progress", async ({ request }) => {
-      test.skip(!taskId, "No task available");
       const csrfToken = getCsrfToken();
       const res = await request.put(`${API}/tasks/${taskId}`, {
         data: { status: "in_progress" },
@@ -51,7 +46,6 @@ test.describe("Client Requests", () => {
     });
 
     test("agency can change task status to done", async ({ request }) => {
-      test.skip(!taskId, "No task available");
       const csrfToken = getCsrfToken();
       const res = await request.put(`${API}/tasks/${taskId}`, {
         data: { status: "done" },
@@ -63,7 +57,6 @@ test.describe("Client Requests", () => {
     });
 
     test("task list includes isClientRequest field", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(`${API}/tasks/project/${projectId}`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -74,7 +67,6 @@ test.describe("Client Requests", () => {
     });
 
     test("task list includes requester and assignee shape", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(`${API}/tasks/project/${projectId}`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -95,7 +87,6 @@ test.describe("Client Requests", () => {
 
   test.describe("Agency task requestedById", () => {
     test("POST /tasks creates a task with requestedById=null", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: { title: "Agency Owned Task" },
@@ -108,36 +99,29 @@ test.describe("Client Requests", () => {
   });
 
   test.describe("Status filter", () => {
-    let openTaskId: string;
-    let doneTaskId: string;
-
     test.beforeAll(async ({ request }) => {
-      test.skip(!projectId, "No project available");
-      const csrfToken = getCsrfToken();
+      const headers: Record<string, string> = { "x-csrf-token": getCsrfToken() };
 
       const openRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: { title: "Filter Open Task" },
-        headers: { "x-csrf-token": csrfToken },
+        headers,
       });
-      if (openRes.ok()) {
-        openTaskId = (await openRes.json()).id;
-      }
+      expect(openRes.ok()).toBeTruthy();
 
       const doneRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: { title: "Filter Done Task" },
-        headers: { "x-csrf-token": csrfToken },
+        headers,
       });
-      if (doneRes.ok()) {
-        doneTaskId = (await doneRes.json()).id;
-        await request.put(`${API}/tasks/${doneTaskId}`, {
-          data: { status: "done" },
-          headers: { "x-csrf-token": csrfToken },
-        });
-      }
+      expect(doneRes.ok()).toBeTruthy();
+      const doneTaskId: string = (await doneRes.json()).id;
+      const putRes = await request.put(`${API}/tasks/${doneTaskId}`, {
+        data: { status: "done" },
+        headers,
+      });
+      expect(putRes.ok()).toBeTruthy();
     });
 
     test("GET /tasks/project/:id?status=active returns only open/in_progress tasks", async ({ request }) => {
-      test.skip(!projectId || !openTaskId, "No project or task available");
       const res = await request.get(`${API}/tasks/project/${projectId}?status=active`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -148,7 +132,6 @@ test.describe("Client Requests", () => {
     });
 
     test("GET /tasks/project/:id?status=done returns only done tasks", async ({ request }) => {
-      test.skip(!projectId || !doneTaskId, "No project or task available");
       const res = await request.get(`${API}/tasks/project/${projectId}?status=done`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -159,7 +142,6 @@ test.describe("Client Requests", () => {
     });
 
     test("GET /tasks/project/:id?status=all returns tasks of all statuses", async ({ request }) => {
-      test.skip(!projectId || !openTaskId || !doneTaskId, "No project or tasks available");
       const res = await request.get(`${API}/tasks/project/${projectId}?status=all`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -173,7 +155,6 @@ test.describe("Client Requests", () => {
 
   test.describe("assigneeId validation", () => {
     test("PUT /tasks/:id with a non-member assigneeId returns 400", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
@@ -193,7 +174,6 @@ test.describe("Client Requests", () => {
 
   test.describe("Status query param validation", () => {
     test("GET /tasks/project/:id?status=bogus returns 400", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(`${API}/tasks/project/${projectId}?status=bogus`);
       expect(res.status()).toBe(400);
     });
@@ -201,7 +181,6 @@ test.describe("Client Requests", () => {
 
   test.describe("Cancel endpoint", () => {
     test("PATCH /tasks/:id/cancel on an agency-created task returns 403", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       // Agency creates a task (requestedById=null) then tries to cancel it — should be Forbidden
@@ -219,7 +198,6 @@ test.describe("Client Requests", () => {
     });
 
     test("PATCH /tasks/:id/cancel on a non-open task returns 400", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
@@ -245,32 +223,20 @@ test.describe("Client Requests", () => {
     // guaranteed to appear on page 1 (tasks list sorts by `order` asc with a
     // limit of 20, so sharing a project across many tests can paginate the
     // newly-created task off-screen).
-    let uiProjectId: string | null = null;
+    let uiProjectId: string;
 
     test.beforeAll(async ({ request }) => {
-      const csrfToken = getCsrfToken();
-      const res = await request.post(`${API}/projects`, {
-        data: { name: "Client Requests Dashboard UI Project" },
-        headers: { "x-csrf-token": csrfToken },
-      });
-      if (res.ok()) {
-        const body = await res.json();
-        uiProjectId = body.id;
-      }
+      uiProjectId = await getOrCreateProject(request, "Client Requests Dashboard UI Project");
     });
 
     test("tasks section shows status filter bar", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      const hasProject = await projectLink.isVisible({ timeout: 5000 }).catch(() => false);
-      test.skip(!hasProject, "No project link visible — skipping UI assertion");
-      await projectLink.click();
-      await expect(page.getByRole("button", { name: /active/i })).toBeVisible({ timeout: 5000 });
-      await expect(page.getByRole("button", { name: /all/i })).toBeVisible({ timeout: 5000 });
+      await openProjectTab(page, uiProjectId, "tasks");
+      // Scoped to the bar: the status pipeline also has a "Cancelled" button.
+      const bar = page.getByRole("button", { name: "Active", exact: true }).locator("..");
+      await expect(bar.getByRole("button")).toHaveText(["Active", "All", "Done", "Cancelled"], { timeout: 10000 });
     });
 
     test("clicking a task row opens the detail modal and ?task= deep link", async ({ page, request }) => {
-      test.skip(!uiProjectId, "No project available");
       const csrfToken = getCsrfToken();
       // Seed a task we can definitely locate
       const createRes = await request.post(`${API}/tasks?projectId=${uiProjectId}`, {
@@ -280,10 +246,7 @@ test.describe("Client Requests", () => {
       expect(createRes.status()).toBe(201);
       const createdTask = await createRes.json();
 
-      await page.goto(`/dashboard/projects/${uiProjectId}`);
-      // Project detail defaults to the Updates tab — switch to Tasks so the
-      // TasksSection (and the task row) is mounted.
-      await page.getByRole("button", { name: /^tasks$/i }).click();
+      await openProjectTab(page, uiProjectId, "tasks");
       const row = page.getByTestId(`task-row-${createdTask.id}`);
       await expect(row).toBeVisible({ timeout: 10000 });
       await row.click();
@@ -294,7 +257,6 @@ test.describe("Client Requests", () => {
     });
 
     test("status change inside modal persists via API", async ({ page, request }) => {
-      test.skip(!uiProjectId, "No project available");
       const csrfToken = getCsrfToken();
       const createRes = await request.post(`${API}/tasks?projectId=${uiProjectId}`, {
         data: { title: "Modal Status Change Task" },
@@ -319,15 +281,20 @@ test.describe("Client Requests", () => {
   });
 
   test.describe("Portal — New Request button", () => {
-    test("portal tasks tab shows New Request button", async ({ page }) => {
-      // Relies on global setup auth — test user may not be a portal client
-      await page.goto("/portal/projects");
-      const projectLink = page.locator("a[href*='/portal/projects/']").first();
-      const hasProject = await projectLink.isVisible({ timeout: 5000 }).catch(() => false);
-      test.skip(!hasProject, "No portal project link visible — test user may not be a portal client");
-      await projectLink.click();
-      await page.getByRole("button", { name: /tasks/i }).click();
-      await expect(page.getByRole("button", { name: /new request/i })).toBeVisible({ timeout: 5000 });
+    test.setTimeout(120000);
+
+    test("portal tasks tab shows New Request button and submits a request", async ({ browser }) => {
+      const portal: PortalClientProject = await createPortalClientProject(browser, "requests", "Portal Requests E2E");
+      try {
+        await portal.client.goto(`${WEB}/portal/projects/${portal.projectId}?tab=tasks`);
+        await portal.client.getByRole("button", { name: /new request/i }).click({ timeout: 15000 });
+        const title = `Need a logo ${Date.now()}`;
+        await portal.client.getByPlaceholder("What do you need?").fill(title);
+        await portal.client.getByRole("button", { name: "Submit", exact: true }).click();
+        await expect(portal.client.getByText(title)).toBeVisible({ timeout: 10000 });
+      } finally {
+        await portal.close();
+      }
     });
   });
 });

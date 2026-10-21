@@ -1,48 +1,37 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getOrCreateProject, openProjectTab } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
 test.describe("Tasks", () => {
+  let projectId: string;
+
+  test.beforeAll(async ({ request }) => {
+    projectId = await getOrCreateProject(request, "Task Test Project");
+  });
+
   test.describe("Dashboard project detail", () => {
     test("project detail page shows tasks section", async ({ page }) => {
-      // First create a project so we have one to visit
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await expect(page.getByText(/tasks/i)).toBeVisible({ timeout: 5000 });
-      }
+      await openProjectTab(page, projectId, "tasks");
+      await expect(page.getByRole("heading", { name: /^Tasks/ })).toBeVisible({ timeout: 10000 });
     });
 
     test("project detail has add task form when not archived", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await expect(page.getByPlaceholder(/add a task/i)).toBeVisible({ timeout: 5000 });
-      }
+      await openProjectTab(page, projectId, "tasks");
+      await page.getByRole("button", { name: "Create", exact: true }).click();
+      await page.getByRole("button", { name: "Task", exact: true }).click();
+      const input = page.getByPlaceholder("Add a task...");
+      await expect(input).toBeVisible();
+
+      const title = `UI Task ${Date.now()}`;
+      await input.fill(title);
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await expect(page.getByText(title)).toBeVisible({ timeout: 10000 });
     });
   });
 
   test.describe("API", () => {
-    let projectId: string;
-
-    test.beforeAll(async ({ request }) => {
-      // Create a project for task tests
-      const csrfToken = getCsrfToken();
-      const res = await request.post(`${API}/projects`, {
-        data: { name: "Task Test Project" },
-        headers: { "x-csrf-token": csrfToken },
-      });
-      if (res.ok()) {
-        const body = await res.json();
-        projectId = body.id;
-      }
-    });
-
     test("create task via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: { title: "E2E Test Task" },
@@ -55,7 +44,6 @@ test.describe("Tasks", () => {
     });
 
     test("list tasks via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(`${API}/tasks/project/${projectId}`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -63,7 +51,6 @@ test.describe("Tasks", () => {
     });
 
     test("update task via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       // Create a task first
       const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
@@ -82,7 +69,6 @@ test.describe("Tasks", () => {
     });
 
     test("delete task via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: { title: "Task to Delete" },

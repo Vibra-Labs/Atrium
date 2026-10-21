@@ -44,10 +44,8 @@ test.describe("Global Search", () => {
         data: { name: uniqueName },
         headers: { "x-csrf-token": csrfToken },
       });
-      if (res.ok()) {
-        const body = await res.json();
-        projectId = body.id;
-      }
+      expect(res.ok(), "project setup").toBeTruthy();
+      projectId = (await res.json()).id;
     });
 
     test.afterAll(async ({ request }) => {
@@ -61,7 +59,6 @@ test.describe("Global Search", () => {
     test("searching by project name returns it in projects", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(
         `${API}/search?q=${encodeURIComponent(uniqueName.slice(0, 12))}`,
       );
@@ -83,10 +80,8 @@ test.describe("Global Search", () => {
         data: { name: uiProjectName },
         headers: { "x-csrf-token": csrfToken },
       });
-      if (res.ok()) {
-        const body = await res.json();
-        uiProjectId = body.id;
-      }
+      expect(res.ok(), "project setup").toBeTruthy();
+      uiProjectId = (await res.json()).id;
     });
 
     test.afterAll(async ({ request }) => {
@@ -103,8 +98,6 @@ test.describe("Global Search", () => {
     });
 
     test("typing 2+ chars shows results section headers", async ({ page }) => {
-      test.skip(!uiProjectId, "No UI project available");
-
       await page.goto("/dashboard");
       const input = await openSearchPalette(page);
       // Search for the prefix of the unique project name created in beforeAll

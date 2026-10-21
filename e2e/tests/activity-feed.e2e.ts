@@ -44,17 +44,14 @@ test.describe("Activity Feed", () => {
       data: { name: "Activity Feed Test Project" },
       headers: { "x-csrf-token": csrfToken },
     });
-    if (res.ok()) {
-      const body = await res.json();
-      projectId = body.id;
-    }
+    expect(res.ok(), "project setup").toBeTruthy();
+    projectId = (await res.json()).id;
   });
 
   test.describe("Timeline API", () => {
     test("timeline endpoint returns empty data for new project", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(
         `${API}/updates/timeline/${projectId}?page=1&limit=10`,
       );
@@ -66,7 +63,6 @@ test.describe("Activity Feed", () => {
     });
 
     test("timeline includes project updates", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       // Post an update
@@ -94,7 +90,6 @@ test.describe("Activity Feed", () => {
     });
 
     test("decision vote creates activity in timeline", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       // Create a decision task
@@ -144,7 +139,6 @@ test.describe("Activity Feed", () => {
     test("document response creates activity in timeline", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       // Create a document
@@ -181,8 +175,6 @@ test.describe("Activity Feed", () => {
     test("timeline merges activities and updates chronologically", async ({
       request,
     }) => {
-      test.skip(!projectId, "No project available");
-
       const res = await request.get(
         `${API}/updates/timeline/${projectId}?page=1&limit=50`,
       );
@@ -206,8 +198,6 @@ test.describe("Activity Feed", () => {
     });
 
     test("timeline supports pagination", async ({ request }) => {
-      test.skip(!projectId, "No project available");
-
       const res = await request.get(
         `${API}/updates/timeline/${projectId}?page=1&limit=1`,
       );
@@ -222,7 +212,6 @@ test.describe("Activity Feed", () => {
     test("updates tab shows activity entries in timeline", async ({
       page,
     }) => {
-      test.skip(!projectId, "No project available");
       await page.goto(`/dashboard/projects/${projectId}`);
 
       // The updates tab should be active by default

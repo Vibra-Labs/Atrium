@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { getCsrfToken, getOrCreateProject } from "./helpers";
+import { createPortalClientProject, getCsrfToken, getOrCreateProject } from "./helpers";
+import type { PortalClientProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -225,16 +226,15 @@ test.describe("Time tracking", () => {
   });
 
   test("Client (member role) is blocked from /api/time-entries", async ({
-    request,
+    browser,
   }) => {
-    test.fixme(
-      true,
-      "Member-role test helper not yet available; add when fixture exists",
-    );
-    // Placeholder — currently the e2e suite only authenticates as the org
-    // owner. When a member-role fixture lands, this test should switch to
-    // it and assert a 403 from GET /time-entries.
-    const res = await request.get(`${API}/time-entries`);
-    expect(res.status()).toBe(403);
+    test.setTimeout(120000);
+    const portal: PortalClientProject = await createPortalClientProject(browser, "time-client", "Time Client E2E");
+    try {
+      const res = await portal.client.request.get(`${API}/time-entries`);
+      expect(res.status()).toBe(403);
+    } finally {
+      await portal.close();
+    }
   });
 });

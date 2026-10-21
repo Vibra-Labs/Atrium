@@ -148,21 +148,13 @@ test.describe("Account Deletion", () => {
       },
     );
 
-    if (!inviteRes.ok()) {
-      await ctxA.close();
-      test.skip(true, "Could not invite member — skipping non-owner test");
-      return;
-    }
+    expect(inviteRes.ok(), await inviteRes.text()).toBeTruthy();
 
     const inviteData = await inviteRes.json();
     const invitationId =
       inviteData?.id || inviteData?.invitation?.id || inviteData?.data?.id;
 
-    if (!invitationId) {
-      await ctxA.close();
-      test.skip(true, "No invitation ID returned — skipping non-owner test");
-      return;
-    }
+    expect(invitationId, "invitation id").toBeTruthy();
 
     // Create user B and accept the invitation
     const ctxB = await browser.newContext({ storageState: undefined });

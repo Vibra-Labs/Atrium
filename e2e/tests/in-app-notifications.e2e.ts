@@ -55,7 +55,6 @@ test.describe("In-App Notifications API", () => {
   test("creating an update succeeds and triggers notification flow", async ({
     request,
   }) => {
-    test.skip(!projectId, "No project available");
     const csrfToken = getCsrfToken();
 
     const updateRes = await request.post(

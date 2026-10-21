@@ -12,20 +12,13 @@ const API = "http://localhost:3001/api";
 test.describe("Branded Login", () => {
   let orgSlug: string;
 
-  test.beforeAll(async ({ browser }) => {
-    // Resolve the test org's slug from an authenticated session so subsequent
-    // tests can construct valid /login/:slug URLs.
-    const ctx = await browser.newContext();
-    const page = await ctx.newPage();
-    await page.goto("/dashboard");
-    await page.waitForTimeout(1000);
-
-    const res = await page.request.get(`${API}/auth/get-session`, {
-      headers: { "Content-Type": "application/json" },
-    });
-    const session = await res.json().catch(() => null);
-    orgSlug = session?.session?.activeOrganizationSlug ?? "";
-    await ctx.close();
+  test.beforeAll(async ({ request }) => {
+    // The test org's slug, so the tests can build valid /login/:slug URLs.
+    const res = await request.get(`${API}/auth/organization/get-full-organization`);
+    expect(res.ok()).toBeTruthy();
+    const org: { slug: string } = await res.json();
+    orgSlug = org.slug;
+    expect(orgSlug).toBeTruthy();
   });
 
   // -------------------------------------------------------------------------
@@ -42,8 +35,6 @@ test.describe("Branded Login", () => {
     test("returns 200 with required fields for a known slug", async ({
       request,
     }) => {
-      if (!orgSlug) test.skip();
-
       const res = await request.get(`${API}/branding/public/${orgSlug}`);
       expect(res.status()).toBe(200);
 
@@ -57,8 +48,6 @@ test.describe("Branded Login", () => {
     test("orgName is a non-empty string for a known slug", async ({
       request,
     }) => {
-      if (!orgSlug) test.skip();
-
       const res = await request.get(`${API}/branding/public/${orgSlug}`);
       expect(res.status()).toBe(200);
 
@@ -73,8 +62,6 @@ test.describe("Branded Login", () => {
   // -------------------------------------------------------------------------
   test.describe("Branded login page UI", () => {
     test("renders the login form for a valid slug", async ({ browser }) => {
-      if (!orgSlug) test.skip();
-
       const ctx = await browser.newContext({ storageState: undefined });
       const page = await ctx.newPage();
 

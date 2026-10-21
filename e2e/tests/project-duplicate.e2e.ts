@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getOrCreateProject } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -144,10 +144,7 @@ test.describe("Project duplication", () => {
 
   test("rejects duplicate when name is missing", async ({ request }) => {
     const csrfToken = getCsrfToken();
-    const projectsRes = await request.get(`${API}/projects?limit=1`);
-    const projects = await projectsRes.json();
-    if (!projects.data?.length) return;
-    const projectId = projects.data[0].id as string;
+    const projectId: string = await getOrCreateProject(request, "Project Duplicate E2E");
 
     const res = await request.post(`${API}/projects/${projectId}/duplicate`, {
       data: {},

@@ -12,10 +12,8 @@ test.describe("Content Embeds", () => {
       data: { name: `Embeds Test Project ${Date.now()}` },
       headers: { "x-csrf-token": csrfToken },
     });
-    if (res.ok()) {
-      const body = await res.json();
-      projectId = body.id;
-    }
+    expect(res.ok(), "project setup").toBeTruthy();
+    projectId = (await res.json()).id;
   });
 
   test.afterAll(async ({ request }) => {
@@ -30,8 +28,6 @@ test.describe("Content Embeds", () => {
     page,
     request,
   }) => {
-    test.skip(!projectId, "No project available");
-
     const csrfToken = getCsrfToken();
     await request.post(`${API}/updates?projectId=${projectId}`, {
       multipart: {
@@ -51,8 +47,6 @@ test.describe("Content Embeds", () => {
     page,
     request,
   }) => {
-    test.skip(!projectId, "No project available");
-
     const plainTextContent = "Just a plain text update with no embeddable URLs.";
     const csrfToken = getCsrfToken();
     await request.post(`${API}/updates?projectId=${projectId}`, {
@@ -81,8 +75,6 @@ test.describe("Content Embeds", () => {
     page,
     request,
   }) => {
-    test.skip(!projectId, "No project available");
-
     const csrfToken = getCsrfToken();
     await request.post(`${API}/updates?projectId=${projectId}`, {
       multipart: {
@@ -102,8 +94,6 @@ test.describe("Content Embeds", () => {
     page,
     request,
   }) => {
-    test.skip(!projectId, "No project available");
-
     const csrfToken = getCsrfToken();
     const canvaUrl = "https://www.canva.com/design/DAF0000TEST/view";
     await request.post(`${API}/updates?projectId=${projectId}`, {
@@ -141,8 +131,6 @@ test.describe("Content Embeds", () => {
     page,
     request,
   }) => {
-    test.skip(!projectId, "No project available");
-
     const csrfToken = getCsrfToken();
     const vimeoUrl = "https://vimeo.com/000000000";
     const content = `See: ${vimeoUrl}`;

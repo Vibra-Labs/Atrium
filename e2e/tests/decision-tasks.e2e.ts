@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, getOrCreateProject, openProjectTab } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -7,20 +7,11 @@ test.describe("Decision Tasks", () => {
   let projectId: string;
 
   test.beforeAll(async ({ request }) => {
-    const csrfToken = getCsrfToken();
-    const res = await request.post(`${API}/projects`, {
-      data: { name: "Decision Task Test Project" },
-      headers: { "x-csrf-token": csrfToken },
-    });
-    if (res.ok()) {
-      const body = await res.json();
-      projectId = body.id;
-    }
+    projectId = await getOrCreateProject(request, "Decision Task Test Project");
   });
 
   test.describe("API", () => {
     test("create decision task via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: {
@@ -44,7 +35,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("decision task requires at least 2 options", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: {
@@ -59,7 +49,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("decision task requires a question", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: {
@@ -73,7 +62,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("list tasks includes decision task with options", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const res = await request.get(`${API}/tasks/project/${projectId}`);
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
@@ -83,7 +71,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("close voting on decision task", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       // Create a decision task
@@ -109,7 +96,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("cannot close voting twice", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
@@ -136,7 +122,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("vote endpoint requires project assignment", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
@@ -159,7 +144,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("delete decision task via API", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
 
       const createRes = await request.post(`${API}/tasks?projectId=${projectId}`, {
@@ -180,7 +164,6 @@ test.describe("Decision Tasks", () => {
     });
 
     test("checkbox tasks still work normally", async ({ request }) => {
-      test.skip(!projectId, "No project available");
       const csrfToken = getCsrfToken();
       const res = await request.post(`${API}/tasks?projectId=${projectId}`, {
         data: { title: "Regular Checkbox Task" },
@@ -194,14 +177,18 @@ test.describe("Decision Tasks", () => {
   });
 
   test.describe("Dashboard UI", () => {
-    test("project detail has task type toggle", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (await projectLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await projectLink.click();
-        await page.getByRole("button", { name: /^tasks$/i }).click();
-        await expect(page.getByRole("button", { name: /decision/i })).toBeVisible({ timeout: 5000 });
-      }
+    test("project detail creates a decision from the Create menu", async ({ page }) => {
+      await openProjectTab(page, projectId, "tasks");
+      await page.getByRole("button", { name: "Create", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Task", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Decision", exact: true }).click();
+
+      const question = `Pick a colour ${Date.now()}`;
+      await page.getByPlaceholder("Ask a question...").fill(question);
+      await page.getByPlaceholder("Option 1").fill("Red");
+      await page.getByPlaceholder("Option 2").fill("Blue");
+      await page.getByRole("button", { name: "Add Decision" }).click();
+      await expect(page.getByText(question)).toBeVisible({ timeout: 10000 });
     });
   });
 });

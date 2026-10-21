@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, openProjectTab } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -57,6 +57,8 @@ test.describe("Comments", () => {
   });
 
   test.describe("Update comments API", () => {
+    // The delete step removes the comment the first step created.
+    test.describe.configure({ mode: "serial" });
     let commentId: string;
 
     test("can add a comment to an update", async ({ request }) => {
@@ -83,7 +85,6 @@ test.describe("Comments", () => {
     });
 
     test("can delete own comment", async ({ request }) => {
-      test.skip(!commentId, "No comment to delete");
       const csrfToken = getCsrfToken();
       const res = await request.delete(`${API}/comments/${commentId}`, {
         headers: { "x-csrf-token": csrfToken },
@@ -114,6 +115,8 @@ test.describe("Comments", () => {
   });
 
   test.describe("Task comments API", () => {
+    // The delete step removes the comment the first step created.
+    test.describe.configure({ mode: "serial" });
     let commentId: string;
 
     test("can add a comment to a task", async ({ request }) => {
@@ -148,7 +151,6 @@ test.describe("Comments", () => {
     });
 
     test("can delete own task comment", async ({ request }) => {
-      test.skip(!commentId, "No comment to delete");
       const csrfToken = getCsrfToken();
       const res = await request.delete(`${API}/comments/${commentId}`, {
         headers: { "x-csrf-token": csrfToken },
@@ -159,77 +161,31 @@ test.describe("Comments", () => {
 
   test.describe("Dashboard UI", () => {
     test("shows reply button on updates", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (!(await projectLink.isVisible({ timeout: 5000 }).catch(() => false))) {
-        test.skip(true, "No projects available");
-        return;
-      }
-      await projectLink.click();
-      await page.waitForURL("**/dashboard/projects/**");
-
-      // Post an update if none exist
-      const addBtn = page.getByText("Add Update");
-      if (await addBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await addBtn.click();
-        await page.getByPlaceholder("Write a status update...").fill("Test update for comments");
-        await page.getByRole("button", { name: "Post" }).click();
-        await page.waitForTimeout(1000);
-      }
-
-      // Look for reply/comments toggle
-      const replyBtn = page.locator("[data-testid^='comments-toggle-']").first();
-      await expect(replyBtn).toBeVisible({ timeout: 5000 });
+      await openProjectTab(page, projectId, "updates");
+      await expect(page.getByTestId(`comments-toggle-${updateId}`)).toBeVisible({ timeout: 10000 });
     });
 
     test("can post and see a comment on an update", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (!(await projectLink.isVisible({ timeout: 5000 }).catch(() => false))) {
-        test.skip(true, "No projects available");
-        return;
-      }
-      await projectLink.click();
-      await page.waitForURL("**/dashboard/projects/**");
+      await openProjectTab(page, projectId, "updates");
+      await page.getByTestId(`comments-toggle-${updateId}`).click({ timeout: 10000 });
 
-      // Expand comments on first update
-      const replyBtn = page.locator("[data-testid^='comments-toggle-']").first();
-      if (!(await replyBtn.isVisible({ timeout: 5000 }).catch(() => false))) {
-        test.skip(true, "No updates with comment toggle visible");
-        return;
-      }
-      await replyBtn.click();
+      const list = page.getByTestId(`comments-list-${updateId}`);
+      const content = `E2E dashboard comment ${Date.now()}`;
+      await list.getByTestId("comment-input").fill(content);
+      await list.getByTestId("comment-submit").click();
 
-      // Type and submit a comment
-      const commentInput = page.locator("[data-testid='comment-input']").first();
-      await expect(commentInput).toBeVisible({ timeout: 3000 });
-      await commentInput.fill("E2E test comment from dashboard");
-      await page.locator("[data-testid='comment-submit']").first().click();
-
-      // Verify comment appears
-      await expect(
-        page.locator("[data-testid='comment-entry']").filter({ hasText: "E2E test comment from dashboard" }),
-      ).toBeVisible({ timeout: 5000 });
+      await expect(list.getByTestId("comment-entry").filter({ hasText: content })).toBeVisible({ timeout: 10000 });
     });
 
-    test("shows reply button on tasks", async ({ page }) => {
-      await page.goto("/dashboard/projects");
-      const projectLink = page.locator("a[href*='/dashboard/projects/']").first();
-      if (!(await projectLink.isVisible({ timeout: 5000 }).catch(() => false))) {
-        test.skip(true, "No projects available");
-        return;
-      }
-      await projectLink.click();
-      await page.waitForURL("**/dashboard/projects/**");
+    test("task detail modal shows comments and accepts a new one", async ({ page }) => {
+      await page.goto(`/dashboard/projects/${projectId}?task=${taskId}`);
+      const modal = page.getByTestId("task-detail-modal");
+      await expect(modal).toBeVisible({ timeout: 15000 });
 
-      // Switch to Tasks tab
-      await page.getByText("Tasks", { exact: true }).click();
-      await page.waitForTimeout(500);
-
-      const replyBtn = page.locator("[data-testid^='comments-toggle-']").first();
-      if (await replyBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await expect(replyBtn).toBeVisible();
-      }
+      const content = `E2E task comment ${Date.now()}`;
+      await modal.getByTestId("comment-input").fill(content);
+      await modal.getByTestId("comment-submit").click();
+      await expect(modal.getByTestId("comment-entry").filter({ hasText: content })).toBeVisible({ timeout: 10000 });
     });
   });
 

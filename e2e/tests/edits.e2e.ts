@@ -255,45 +255,13 @@ test.describe("Edit flows", () => {
 
     // 3. Assign the new client to the project so /projects/mine/:id works.
     // Look up the client's user id via the owner's session, then add them.
-    const membersRes = await ownerPage.request.get(
-      `${API_URL}/api/auth/organization/list-members`,
-      { headers: { Origin: WEB_URL } },
-    );
-    let clientUserId = "";
-    if (membersRes.ok()) {
-      const membersBody = await membersRes.json();
-      const members = membersBody?.members ?? membersBody?.data ?? membersBody;
-      if (Array.isArray(members)) {
-        const match = members.find(
-          (m: { user?: { email?: string }; email?: string }) =>
-            m.user?.email === clientEmail || m.email === clientEmail,
-        );
-        clientUserId = match?.user?.id ?? match?.userId ?? "";
-      }
-    }
-    // Fallback: fetch clients list used by dashboard.
-    if (!clientUserId) {
-      const clientsRes = await ownerPage.request.get(
-        `${API}/clients?limit=50`,
-      );
-      if (clientsRes.ok()) {
-        const body = await clientsRes.json();
-        const clients = body?.data ?? body;
-        if (Array.isArray(clients)) {
-          const match = clients.find(
-            (c: { email?: string }) => c.email === clientEmail,
-          );
-          clientUserId = match?.id ?? match?.userId ?? "";
-        }
-      }
-    }
-
-    // Skipping this test if we cannot derive the client user id — the
-    // /projects/:projectId/clients endpoint needs it to link the user.
-    test.skip(
-      !clientUserId,
-      "Could not resolve client user id via members/clients APIs",
-    );
+    const clientsRes = await ownerPage.request.get(`${API}/clients?limit=100`);
+    expect(clientsRes.ok()).toBeTruthy();
+    const clientsBody: { data: { userId: string; user: { email: string } }[] } = await clientsRes.json();
+    const clientUserId: string | undefined = clientsBody.data.find(
+      (m) => m.user.email === clientEmail,
+    )?.userId;
+    expect(clientUserId, "client user id").toBeTruthy();
 
     const assignRes = await ownerPage.request.put(
       `${API}/projects/${projectId}`,

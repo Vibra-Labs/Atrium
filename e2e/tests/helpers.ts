@@ -265,3 +265,66 @@ export async function applyContactFilter(page: Page, category: string, value: st
   await page.getByRole("menuitem", { name: category }).click();
   await page.getByRole("menuitemradio", { name: value }).click();
 }
+
+export type ProjectTab = "updates" | "tasks" | "files" | "time" | "invoices" | "notes";
+
+/** Opens a dashboard project straight on one tab (the page honours ?tab=). */
+export async function openProjectTab(page: Page, projectId: string, tab: ProjectTab): Promise<void> {
+  await page.goto(`${WEB_URL}/dashboard/projects/${projectId}?tab=${tab}`);
+  await expect(page.getByTestId(`project-tab-${tab}`)).toBeVisible({ timeout: 15000 });
+}
+
+export interface PortalClientProject {
+  owner: Page;
+  ownerHeaders: Record<string, string>;
+  client: Page;
+  clientEmail: string;
+  projectId: string;
+  close: () => Promise<void>;
+}
+
+/**
+ * A fresh workspace with one portal client signed in and one project that
+ * client is assigned to. Portal tests use this instead of whatever project
+ * happens to be listed first. Call `close()` when done.
+ */
+export async function createPortalClientProject(
+  browser: Browser,
+  prefix: string,
+  projectName: string,
+): Promise<PortalClientProject> {
+  const { context: ownerContext, page: owner } = await createOwner(browser, `${prefix}-owner`);
+  const { clientEmail, password } = await inviteAndAcceptClient(browser, owner, `${prefix}-client`);
+  const ownerHeaders: Record<string, string> = {
+    "x-csrf-token": await getCsrfTokenFromContext(ownerContext),
+  };
+
+  const clientsRes = await owner.request.get(`${API}/clients?limit=100`);
+  expect(clientsRes.ok()).toBe(true);
+  const clientsBody: { data: { userId: string; user: { email: string } }[] } = await clientsRes.json();
+  const clientRow = clientsBody.data.find((m) => m.user.email === clientEmail);
+  if (!clientRow) throw new Error(`Client ${clientEmail} not found in /clients`);
+
+  const projectRes = await owner.request.post(`${API}/projects`, {
+    data: { name: projectName, clientUserIds: [clientRow.userId] },
+    headers: ownerHeaders,
+  });
+  if (!projectRes.ok()) {
+    throw new Error(`Project create failed (${projectRes.status()}): ${await projectRes.text()}`);
+  }
+  const project: { id: string } = await projectRes.json();
+
+  const { context: clientContext, page: client } = await signIn(browser, clientEmail, password);
+
+  return {
+    owner,
+    ownerHeaders,
+    client,
+    clientEmail,
+    projectId: project.id,
+    close: async (): Promise<void> => {
+      await clientContext.close();
+      await ownerContext.close();
+    },
+  };
+}

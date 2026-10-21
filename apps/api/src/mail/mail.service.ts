@@ -13,8 +13,27 @@ interface SmtpConfig {
   secure: boolean;
 }
 
+const MAX_CONCURRENT_SENDS = 2;
+
+/** Runs at most `max` tasks at once; the rest wait their turn in order. */
+function createLimiter(max: number): <T>(task: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    if (active >= max) await new Promise<void>((resolve) => waiting.push(resolve));
+    active++;
+    try {
+      return await task();
+    } finally {
+      active--;
+      waiting.shift()?.();
+    }
+  };
+}
+
 @Injectable()
 export class MailService {
+  private readonly limitSend = createLimiter(MAX_CONCURRENT_SENDS);
   private resend: Resend | null;
   private from: string;
   private static readonly SMTP_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -53,7 +72,17 @@ export class MailService {
     return transporter;
   }
 
-  async send(
+  /** Sends are capped at MAX_CONCURRENT_SENDS at a time so a burst stays under provider rate limits. */
+  send(
+    to: string,
+    subject: string,
+    html: string,
+    organizationId?: string,
+  ): Promise<{ sent: boolean; viaOrgConfig: boolean }> {
+    return this.limitSend(() => this.deliver(to, subject, html, organizationId));
+  }
+
+  private async deliver(
     to: string,
     subject: string,
     html: string,

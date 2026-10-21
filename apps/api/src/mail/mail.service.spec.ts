@@ -307,4 +307,27 @@ describe("MailService", () => {
     expect(mockLogger.error).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ sent: false, viaOrgConfig: false });
   });
+
+  test("at most two sends run at once, and all of them complete", async () => {
+    let active = 0;
+    let peak = 0;
+    mockResendSend.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return { data: { id: "x" }, error: null };
+    });
+    const service = new MailService(
+      makeConfig({ RESEND_API_KEY: "re_env" }) as unknown as ConfigService,
+      makeSettingsService() as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
+    const results = await Promise.all(
+      Array.from({ length: 7 }, (_, i) => service.send(`u${i}@test.com`, "Hi", "<p>x</p>")),
+    );
+    expect(results.every((r) => r.sent)).toBe(true);
+    expect(mockResendSend).toHaveBeenCalledTimes(7);
+    expect(peak).toBe(2);
+  });
 });

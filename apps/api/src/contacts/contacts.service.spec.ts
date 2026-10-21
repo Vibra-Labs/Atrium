@@ -649,7 +649,7 @@ describe("ContactsService", () => {
       );
       expect(await service.pendingInviteEmails("org-1", now)).toEqual(["ann@x.com", "bo@x.com"]);
       expect(prisma.invitation.findMany).toHaveBeenCalledWith({
-        where: { organizationId: "org-1", role: "member", status: "pending", expiresAt: { gt: now } },
+        where: { organizationId: "org-1", AND: [{ OR: [{ role: "member" }, { role: null }] }], status: "pending", expiresAt: { gt: now } },
         select: { email: true },
       });
     });

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
+import { isPortalInviteRole } from "../clients/invitations";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { splitName } from "../contacts/contact-fields";
 
@@ -203,8 +204,7 @@ export class ContactSyncService {
    * new lead named after the email until they accept. Staff invitations are not contacts.
    */
   async recordInvited(orgId: string, email: string, role: string | null | undefined): Promise<void> {
-    // Better Auth's default invitation role is "member".
-    if ((role ?? "member") !== "member") return;
+    if (!isPortalInviteRole(role)) return;
     const contact = await this.ensureForInvitee(orgId, email);
     await this.addEvent(contact.id, orgId, "portal_invited", "Invited to the client portal");
   }

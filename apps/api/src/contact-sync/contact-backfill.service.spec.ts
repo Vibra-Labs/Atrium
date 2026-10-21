@@ -180,7 +180,7 @@ describe("ContactBackfillService.backfillInvitees", () => {
     const { svc, prismaMock, ensureForInvitee } = build(null);
     await svc.backfillInvitees("org-1", now);
     expect(prismaMock.invitation.findMany).toHaveBeenCalledWith({
-      where: { organizationId: "org-1", role: "member", status: "pending", expiresAt: { gt: now } },
+      where: { organizationId: "org-1", AND: [{ OR: [{ role: "member" }, { role: null }] }], status: "pending", expiresAt: { gt: now } },
       select: { id: true, email: true },
     });
     expect(ensureForInvitee.mock.calls.map((c) => c[1])).toEqual(["Ann@X.com", "bad@x.com", "cy@x.com"]);

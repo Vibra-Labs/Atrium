@@ -10,6 +10,7 @@ import type { Contact } from "@atrium/database";
 import { CONTACT_STATUSES, keepMentions, mentionedContactIds } from "@atrium/shared";
 import type { ContactPhone, ContactRating, ContactStatus } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { PORTAL_INVITATION_ROLE } from "../clients/invitations";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
@@ -333,7 +334,7 @@ export class ContactsService {
    */
   async pendingInviteEmails(orgId: string, now: Date = new Date()): Promise<string[]> {
     const rows = await this.prisma.invitation.findMany({
-      where: { organizationId: orgId, role: "member", status: "pending", expiresAt: { gt: now } },
+      where: { organizationId: orgId, AND: [PORTAL_INVITATION_ROLE], status: "pending", expiresAt: { gt: now } },
       select: { email: true },
     });
     return [...new Set(rows.map((r) => normalizeEmail(r.email)))];

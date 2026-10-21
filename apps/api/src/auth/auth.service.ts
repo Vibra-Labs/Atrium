@@ -16,7 +16,7 @@ import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING, DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
-import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
+import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS, logsInviteLinks } from "../clients/invitations";
 import { publicApiUrl } from "../common/helpers/public-api-url";
 
 interface AdminResetContext {
@@ -309,7 +309,7 @@ export class AuthService {
               sent = result.sent;
             } finally {
               // Lets a local tester accept an invite without a working mail provider.
-              if (process.env.NODE_ENV !== "production") {
+              if (logsInviteLinks(process.env.NODE_ENV)) {
                 this.logger.log(
                   `Invitation for ${invitation.email} ${sent ? "emailed" : "NOT emailed"}; accept at ${inviteUrl}`,
                 );

@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
 import { DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { PORTAL_INVITATION_ROLE } from "../clients/invitations";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { ContactSyncService } from "./contact-sync.service";
 import { LEGACY_PHONE_LABEL, readPhones, resolvePhones, splitName } from "../contacts/contact-fields";
@@ -147,7 +148,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     });
     if (!org || org.inviteesBackfilledAt) return;
     const invitations = await this.prisma.invitation.findMany({
-      where: { organizationId: orgId, role: "member", status: "pending", expiresAt: { gt: now } },
+      where: { organizationId: orgId, AND: [PORTAL_INVITATION_ROLE], status: "pending", expiresAt: { gt: now } },
       select: { id: true, email: true },
     });
     let failed: boolean = false;

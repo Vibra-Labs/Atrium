@@ -1,4 +1,22 @@
-import type { Invitation } from "@atrium/database";
+import type { Invitation, Prisma } from "@atrium/database";
+
+/** Better Auth treats an invitation with no role as "member", i.e. a portal client invite. */
+export function isPortalInviteRole(role: string | null | undefined): boolean {
+  return (role ?? "member") === "member";
+}
+
+/** Where-clause matching portal invitations: role "member" or no role. Combine with `AND`. */
+export const PORTAL_INVITATION_ROLE: Prisma.InvitationWhereInput = {
+  OR: [{ role: "member" }, { role: null }],
+};
+
+/**
+ * An invite link is a working credential, so it is logged (for testing invites without a mail
+ * provider) only in development, never on staging or production deployments.
+ */
+export function logsInviteLinks(nodeEnv: string | undefined): boolean {
+  return nodeEnv === "development";
+}
 
 /** How long an invitation link stays valid. */
 export const INVITATION_EXPIRES_IN_SECONDS: number = 14 * 24 * 60 * 60;

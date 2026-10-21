@@ -14,6 +14,24 @@ describe("autoMatch", () => {
     expect(autoMatch("Social")).toBe("socialLinks");
   });
 
+  it("matches every kind of phone column to Phone", () => {
+    for (const h of ["Phone", "Mobile", "Mobile Phone", "Work Phone", "Home Phone", "Phone Number", "Telephone", "Cell"]) {
+      expect(autoMatch(h)).toBe("phone");
+    }
+  });
+
+  it("matches About, Referred by, follow-up and company size headers", () => {
+    expect(autoMatch("Description")).toBe("description");
+    expect(autoMatch("About")).toBe("description");
+    expect(autoMatch("Referred By")).toBe("referredBy");
+    expect(autoMatch("Referrer")).toBe("referredBy");
+    expect(autoMatch("Next Follow-up")).toBe("followUpAt");
+    expect(autoMatch("Follow up date")).toBe("followUpAt");
+    expect(autoMatch("Annual Revenue")).toBe("companyRevenue");
+    expect(autoMatch("No. of Employees")).toBe("companyEmployees");
+    expect(autoMatch("Employees")).toBe("companyEmployees");
+  });
+
   it("keeps the existing matches and skips unknown headers", () => {
     expect(autoMatch("Name")).toBe("name");
     expect(autoMatch("E-mail")).toBe("email");

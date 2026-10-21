@@ -168,7 +168,11 @@ test.describe("Contacts list", () => {
     await expect(page.getByLabel("Field for E-mail")).toHaveValue("email");
     await expect(page.getByLabel("Field for Company Name")).toHaveValue("company");
 
-    await page.getByRole("button", { name: /import 2 contacts/i }).click();
+    // The review shows the duplicate before anything is written.
+    await page.getByRole("button", { name: "Review import" }).click();
+    await expect(page.getByTestId("import-summary")).toHaveText("1 contact will be created · 1 row skipped");
+    await expect(page.getByTestId("import-check-skipped")).toContainText("Row 3: Email already exists");
+    await page.getByRole("button", { name: "Import 1 contact" }).click();
     await expect(page.getByTestId("import-result")).toContainText("Imported 1 contact, skipped 1");
     await expect(page.getByText(/email already exists/i)).toBeVisible();
 
@@ -197,7 +201,9 @@ test.describe("Contacts list", () => {
     await expect(page.getByLabel("Field for First Name")).toHaveValue("firstName");
     await expect(page.getByLabel("Field for Twitter")).toHaveValue("socialLinks");
 
-    await page.getByRole("button", { name: /import 1 contact/i }).click();
+    await page.getByRole("button", { name: "Review import" }).click();
+    await expect(page.getByTestId("import-check-warnings")).toContainText("not-a-link");
+    await page.getByRole("button", { name: "Import 1 contact" }).click();
     await expect(page.getByTestId("import-result")).toContainText("Imported 1 contact, skipped 0");
     await expect(page.getByTestId("import-warnings")).toContainText("not-a-link");
 
@@ -206,6 +212,60 @@ test.describe("Contacts list", () => {
     ).json();
     expect(list.data[0].name).toBe(`Zed${stamp} Lee`);
     expect(list.data[0].socialLinks).toEqual(["https://x.com/zed_co"]);
+  });
+
+  test("import review shows every phone, then the import stores phones, follow-up, referrer and company size", async ({
+    page,
+    request,
+  }) => {
+    const stamp = Date.now();
+    const company = `SizeImport${stamp}`;
+    const csv = [
+      "First Name,Last Name,Email,Mobile,Work Phone,Company,Annual Revenue,No. of Employees,Referred By,Next Follow-up,Description",
+      `Ref${stamp},One,ref-${stamp}@example.com,,,${company},,,,,`,
+      `Pho${stamp},Two,pho-${stamp}@example.com,+1 555 0100,+1 555 0200,${company},"$250,000",12,ref-${stamp}@example.com,11/5/2030,Runs the bakery`,
+    ].join("\n");
+
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: /^import$/i }).click();
+    await page.getByLabel("CSV file").setInputFiles({ name: "crm.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+
+    for (const [header, field] of [
+      ["Mobile", "phone"],
+      ["Work Phone", "phone"],
+      ["Annual Revenue", "companyRevenue"],
+      ["No. of Employees", "companyEmployees"],
+      ["Referred By", "referredBy"],
+      ["Next Follow-up", "followUpAt"],
+      ["Description", "description"],
+    ]) {
+      await expect(page.getByLabel(`Field for ${header}`)).toHaveValue(field);
+    }
+
+    await page.getByRole("button", { name: "Review import" }).click();
+    await expect(page.getByTestId("import-summary")).toHaveText("2 contacts will be created");
+    const second = page.getByTestId("import-sample-row").nth(1);
+    await expect(second).toContainText("Mobile: +1 555 0100");
+    await expect(second).toContainText("Work: +1 555 0200");
+    await expect(second).toContainText("Follow up 2030-11-05");
+    // Review writes nothing.
+    const before = await (await request.get(`${API}/contacts?search=pho-${stamp}`)).json();
+    expect(before.data).toHaveLength(0);
+
+    await page.getByRole("button", { name: "Import 2 contacts" }).click();
+    await expect(page.getByTestId("import-result")).toContainText("Imported 2 contacts, skipped 0");
+
+    const list = await (await request.get(`${API}/contacts?search=pho-${stamp}`)).json();
+    const contact = await (await request.get(`${API}/contacts/${list.data[0].id}`)).json();
+    expect(contact.phones).toEqual([
+      { label: "Mobile", number: "+1 555 0100" },
+      { label: "Work", number: "+1 555 0200" },
+    ]);
+    expect(contact.referredBy.name).toBe(`Ref${stamp} One`);
+    expect(contact.followUpAt.slice(0, 10)).toBe("2030-11-05");
+    expect(contact.description).toBe("Runs the bakery");
+    const co = await (await request.get(`${API}/companies/${contact.company.id}`)).json();
+    expect([co.annualRevenue, co.employeeCount]).toEqual([250000, 12]);
   });
 
   test("global search finds a contact", async ({ page, request }) => {

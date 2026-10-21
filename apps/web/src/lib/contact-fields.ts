@@ -15,6 +15,11 @@ export type ImportField =
   | "rating"
   | "socialLinks"
   | "notes"
+  | "description"
+  | "referredBy"
+  | "followUpAt"
+  | "companyRevenue"
+  | "companyEmployees"
   | "skip";
 
 export const IMPORT_FIELDS: { value: ImportField; label: string }[] = [
@@ -35,6 +40,11 @@ export const IMPORT_FIELDS: { value: ImportField; label: string }[] = [
   { value: "rating", label: "Rating" },
   { value: "socialLinks", label: "Social links" },
   { value: "notes", label: "Notes" },
+  { value: "description", label: "About" },
+  { value: "referredBy", label: "Referred by (name or email)" },
+  { value: "followUpAt", label: "Next follow-up" },
+  { value: "companyRevenue", label: "Company annual revenue" },
+  { value: "companyEmployees", label: "Company employees" },
 ];
 
 const ALIASES: Record<string, ImportField> = {
@@ -53,6 +63,29 @@ const ALIASES: Record<string, ImportField> = {
   twitter: "socialLinks",
   social: "socialLinks",
   "social links": "socialLinks",
+  mobile: "phone",
+  "mobile phone": "phone",
+  "work phone": "phone",
+  "home phone": "phone",
+  "other phone": "phone",
+  "phone number": "phone",
+  telephone: "phone",
+  cell: "phone",
+  "cell phone": "phone",
+  about: "description",
+  bio: "description",
+  "referred by": "referredBy",
+  referrer: "referredBy",
+  "follow up": "followUpAt",
+  "next follow up": "followUpAt",
+  "follow up date": "followUpAt",
+  "annual revenue": "companyRevenue",
+  revenue: "companyRevenue",
+  employees: "companyEmployees",
+  "no. of employees": "companyEmployees",
+  "no of employees": "companyEmployees",
+  "number of employees": "companyEmployees",
+  "employee count": "companyEmployees",
 };
 
 /** Guesses the field for a CSV header (Zoho / HubSpot style exports included). */

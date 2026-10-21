@@ -491,10 +491,9 @@ export class ContactsService {
         labels: { include: { label: { select: { name: true } } } },
       },
     });
-    const paid = await this.revenue.paidTotals(
-      found.map((c) => c.id),
-      orgId,
-    );
+    // The whole workspace in one aggregate: binding every exported id would pass Postgres's
+    // bind-parameter limit (~32k) on a large export.
+    const paid = await this.revenue.paidTotals(null, orgId);
     // Same order as the list the export was started from.
     const sort: ContactSort = query.sort ?? "name";
     const dir = query.dir ?? (sort === "paid" ? "desc" : "asc");

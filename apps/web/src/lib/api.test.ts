@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
-import { fetchAllPages, MAX_PAGE_LIMIT, setActiveOrgAndRedirect } from "./api";
+import { ApiError, apiFetch, fetchAllPages, MAX_PAGE_LIMIT, setActiveOrgAndRedirect } from "./api";
 
 const originalFetch = globalThis.fetch;
 
@@ -91,5 +91,17 @@ describe("setActiveOrgAndRedirect", () => {
     const calls = mockAuth({ orgs: ["a"], sessionOrg: null, role: "admin" });
     expect(await setActiveOrgAndRedirect()).toBe("/dashboard");
     expect(calls.some((c) => c.endsWith("/set-active"))).toBe(true);
+  });
+});
+
+describe("apiFetch errors", () => {
+  it("throws an ApiError carrying the HTTP status", async () => {
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ message: "No active organization" }), { status: 401 }),
+    ) as unknown as typeof fetch;
+    const err: unknown = await apiFetch("/organization/current").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(401);
+    expect((err as ApiError).message).toBe("No active organization");
   });
 });

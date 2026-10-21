@@ -12,6 +12,14 @@ function getCsrfToken(): string | undefined {
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/** Error thrown by apiFetch for a non-2xx response; `status` is the HTTP status. */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function doFetch(
   path: string,
   options: RequestInit,
@@ -61,13 +69,13 @@ export async function apiFetch<T = unknown>(
     if (message.toLowerCase().includes("csrf")) {
       res = await doFetch(path, options);
     } else {
-      throw new Error(message || `API error: ${res.status}`);
+      throw new ApiError(message || `API error: ${res.status}`, res.status);
     }
   }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as Record<string, unknown>).message as string || `API error: ${res.status}`);
+    throw new ApiError((body as Record<string, unknown>).message as string || `API error: ${res.status}`, res.status);
   }
 
   const text = await res.text();

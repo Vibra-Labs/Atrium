@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import { StepOrgProfile } from "./step-org-profile";
 import { StepEmailConfig } from "./step-email-config";
 import { StepFirstProject } from "./step-first-project";
@@ -46,7 +46,9 @@ function SetupWizardContent() {
       apiFetch<SwitchableOrg[]>("/auth/organization/list"),
       // No active workspace is a 401 here, not an error worth losing the org list over.
       apiFetch<{ id: string }>("/organization/current").catch((err: unknown) => {
-        console.error("Failed to load the active organization", err);
+        if (!(err instanceof ApiError && err.status === 401)) {
+          console.error("Failed to load the active organization", err);
+        }
         return null;
       }),
     ])

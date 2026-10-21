@@ -23,6 +23,7 @@ const mockPrisma = {
   projectContact: {
     findMany: mock(() => Promise.resolve([] as unknown[])),
     createMany: mock(() => Promise.resolve({ count: 0 })),
+    updateMany: mock((a: unknown) => Promise.resolve({ count: 0, a })),
   },
   project: { findUnique: mock(() => Promise.resolve({ id: "p-1", name: "Site" } as unknown)) },
   invoice: { findUnique: mock(() => Promise.resolve(null as unknown)) },
@@ -302,16 +303,54 @@ describe("ContactSyncService", () => {
       await service.linkProjectClients("p-1", "org-1", ["u-1"]);
 
       expect(mockPrisma.contactEvent.createMany).not.toHaveBeenCalled();
+      expect(mockPrisma.projectContact.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("reopens an ended link and logs it like a new one", async () => {
+      mockPrisma.projectContact.findMany.mockImplementation(() =>
+        Promise.resolve([{ contactId: "c-1", endedAt: new Date("2026-01-01") }]),
+      );
+
+      await service.linkProjectClients("p-1", "org-1", ["u-1"]);
+
+      expect(mockPrisma.projectContact.updateMany).toHaveBeenCalledWith({
+        where: { projectId: "p-1", contactId: { in: ["c-1"] } },
+        data: { endedAt: null },
+      });
+      expect(mockPrisma.contactEvent.createMany).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("endProjectClients", () => {
+    it("ends only the open links of those clients on that project", async () => {
+      await service.endProjectClients("p-1", "org-1", ["u-1", "u-2"]);
+      const call = mockPrisma.projectContact.updateMany.mock.calls[0] as unknown as [
+        { where: unknown; data: { endedAt: Date } },
+      ];
+      expect(call[0].where).toEqual({
+        projectId: "p-1",
+        endedAt: null,
+        contact: { organizationId: "org-1", userId: { in: ["u-1", "u-2"] } },
+      });
+      expect(call[0].data.endedAt).toBeInstanceOf(Date);
+    });
+
+    it("does nothing for no clients", async () => {
+      await service.endProjectClients("p-1", "org-1", []);
+      expect(mockPrisma.projectContact.updateMany).not.toHaveBeenCalled();
     });
   });
 
   describe("detachMember", () => {
-    it("clears userId and sets past_client", async () => {
+    it("ends the contact's project links, then clears userId and sets past_client", async () => {
       await service.detachMember("org-1", "u-1");
+      const ended = mockPrisma.projectContact.updateMany.mock.calls[0] as unknown as [{ where: unknown }];
+      expect(ended[0].where).toEqual({ endedAt: null, contact: { organizationId: "org-1", userId: "u-1" } });
       expect(mockPrisma.contact.updateMany).toHaveBeenCalledWith({
         where: { organizationId: "org-1", userId: "u-1" },
         data: { userId: null, status: "past_client" },
       });
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -378,6 +417,8 @@ describe("ContactSyncService", () => {
   describe("detachUserEverywhere", () => {
     it("clears the user across all orgs", async () => {
       await service.detachUserEverywhere("u-1");
+      const ended = mockPrisma.projectContact.updateMany.mock.calls[0] as unknown as [{ where: unknown }];
+      expect(ended[0].where).toEqual({ endedAt: null, contact: { userId: "u-1" } });
       expect(mockPrisma.contact.updateMany).toHaveBeenCalledWith({
         where: { userId: "u-1" },
         data: { userId: null, status: "past_client" },

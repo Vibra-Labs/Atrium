@@ -144,15 +144,23 @@ export class ContactSyncService {
 
     const existing = await this.prisma.projectContact.findMany({
       where: { projectId, contactId: { in: contacts.map((c) => c.id) } },
-      select: { contactId: true },
+      select: { contactId: true, endedAt: true },
     });
-    const alreadyLinked = new Set(existing.map((l) => l.contactId));
+    const alreadyLinked = new Set(existing.filter((l) => !l.endedAt).map((l) => l.contactId));
+    const ended = existing.filter((l) => l.endedAt).map((l) => l.contactId);
+    // A client put back on the project gets a fresh link (and event), like a first-time client.
     const fresh = contacts.filter((c) => !alreadyLinked.has(c.id));
 
     await this.prisma.projectContact.createMany({
       data: contacts.map((c) => ({ projectId, contactId: c.id })),
       skipDuplicates: true,
     });
+    if (ended.length > 0) {
+      await this.prisma.projectContact.updateMany({
+        where: { projectId, contactId: { in: ended } },
+        data: { endedAt: null },
+      });
+    }
 
     if (fresh.length === 0) return;
     const project = await this.prisma.project.findUnique({
@@ -170,11 +178,30 @@ export class ContactSyncService {
     });
   }
 
-  async detachMember(orgId: string, userId: string): Promise<void> {
-    await this.prisma.contact.updateMany({
-      where: { organizationId: orgId, userId },
-      data: { userId: null, status: "past_client" },
+  /**
+   * Ends the project links of clients taken off a project, so invoices paid after this no longer
+   * count toward them. Earlier invoices still do.
+   */
+  async endProjectClients(projectId: string, orgId: string, userIds: string[]): Promise<void> {
+    if (userIds.length === 0) return;
+    await this.prisma.projectContact.updateMany({
+      where: { projectId, endedAt: null, contact: { organizationId: orgId, userId: { in: userIds } } },
+      data: { endedAt: new Date() },
     });
+  }
+
+  /** A client who leaves the workspace is a past client: their project links end, then the user link goes. */
+  async detachMember(orgId: string, userId: string): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.projectContact.updateMany({
+        where: { endedAt: null, contact: { organizationId: orgId, userId } },
+        data: { endedAt: new Date() },
+      }),
+      this.prisma.contact.updateMany({
+        where: { organizationId: orgId, userId },
+        data: { userId: null, status: "past_client" },
+      }),
+    ]);
   }
 
   /**
@@ -193,10 +220,16 @@ export class ContactSyncService {
   }
 
   async detachUserEverywhere(userId: string): Promise<void> {
-    await this.prisma.contact.updateMany({
-      where: { userId },
-      data: { userId: null, status: "past_client" },
-    });
+    await this.prisma.$transaction([
+      this.prisma.projectContact.updateMany({
+        where: { endedAt: null, contact: { userId } },
+        data: { endedAt: new Date() },
+      }),
+      this.prisma.contact.updateMany({
+        where: { userId },
+        data: { userId: null, status: "past_client" },
+      }),
+    ]);
   }
 
   /**
@@ -239,7 +272,11 @@ export class ContactSyncService {
     if (!invoice?.projectId) return;
 
     const links = await this.prisma.projectContact.findMany({
-      where: { projectId: invoice.projectId },
+      // Same rule as revenue: an ended link only gets invoices paid until it ended.
+      where: {
+        projectId: invoice.projectId,
+        OR: [{ endedAt: null }, ...(invoice.paidAt ? [{ endedAt: { gte: invoice.paidAt } }] : [])],
+      },
       select: { contactId: true },
     });
     if (links.length === 0) return;

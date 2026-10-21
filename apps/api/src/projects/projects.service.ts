@@ -44,10 +44,16 @@ export class ProjectsService implements OnApplicationBootstrap {
     private contactSync: ContactSyncService,
   ) {}
 
-  private async syncClients(projectId: string, organizationId: string, userIds: string[]): Promise<void> {
-    if (!userIds.length) return;
+  private async syncClients(
+    projectId: string,
+    organizationId: string,
+    userIds: string[],
+    removedUserIds: string[] = [],
+  ): Promise<void> {
+    if (!userIds.length && !removedUserIds.length) return;
     try {
-      await this.contactSync.linkProjectClients(projectId, organizationId, userIds);
+      if (removedUserIds.length) await this.contactSync.endProjectClients(projectId, organizationId, removedUserIds);
+      if (userIds.length) await this.contactSync.linkProjectClients(projectId, organizationId, userIds);
     } catch (err) {
       Sentry.captureException(err);
       this.logger.error("Failed to link project contacts", err);
@@ -317,6 +323,12 @@ export class ProjectsService implements OnApplicationBootstrap {
         }
       }
 
+      const previous = await this.prisma.projectClient.findMany({
+        where: { projectId: id, project: { organizationId } },
+        select: { userId: true },
+      });
+      const removed: string[] = previous.map((c) => c.userId).filter((u) => !clientUserIds.includes(u));
+
       const [, project] = await this.prisma.$transaction([
         this.prisma.projectClient.deleteMany({ where: { projectId: id } }),
         this.prisma.project.update({
@@ -331,7 +343,7 @@ export class ProjectsService implements OnApplicationBootstrap {
           include: { clients: { select: { userId: true } } },
         }),
       ]);
-      await this.syncClients(id, organizationId, clientUserIds);
+      await this.syncClients(id, organizationId, clientUserIds, removed);
       return project;
     }
 

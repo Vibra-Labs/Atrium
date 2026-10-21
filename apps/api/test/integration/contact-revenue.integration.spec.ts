@@ -207,6 +207,37 @@ describe("ContactRevenueService", () => {
     expect([...allCompanies.entries()]).toEqual([[company.id, 7000]]);
   });
 
+  it("an ended link counts invoices paid until it ended, and nothing outstanding", async () => {
+    const d = await seed();
+    const day = 24 * 60 * 60 * 1000;
+    const company = await prisma.company.create({ data: { organizationId: d.orgId, name: "Co" } });
+    await prisma.contact.update({ where: { id: d.contactId }, data: { companyId: company.id } });
+    await prisma.projectContact.updateMany({
+      where: { projectId: d.projectId, contactId: d.contactId },
+      data: { endedAt: new Date(Date.now() - day) },
+    });
+    const current = await prisma.contact.create({
+      data: { organizationId: d.orgId, name: "B", email: `b-${d.s}@x.com`, companyId: company.id },
+    });
+    await prisma.projectContact.create({ data: { projectId: d.projectId, contactId: current.id } });
+    await uploaded(d, "paid", 1000, { paidAt: new Date(Date.now() - 2 * day) });
+    await uploaded(d, "paid", 500, { paidAt: new Date() });
+    await uploaded(d, "sent", 200);
+
+    const ended = await revenue.forContact(d.contactId, d.orgId, new Date());
+    expect([ended.paidCents, ended.outstandingCents]).toEqual([1000, 0]);
+    const open = await revenue.forContact(current.id, d.orgId, new Date());
+    expect([open.paidCents, open.outstandingCents]).toEqual([1500, 200]);
+
+    for (const ids of [[d.contactId, current.id], null]) {
+      const totals = await revenue.paidTotals(ids, d.orgId);
+      expect([totals.get(d.contactId), totals.get(current.id)]).toEqual([1000, 1500]);
+    }
+    const co = await revenue.forCompany(company.id, d.orgId, new Date());
+    expect([co.paidCents, co.outstandingCents]).toEqual([1500, 200]);
+    expect((await revenue.paidTotalsForCompanies(null, d.orgId)).get(company.id)).toBe(1500);
+  });
+
   it("invoices without a project are not counted", async () => {
     const d = await seed();
     await uploaded(d, "paid", 50000, { paidAt: new Date(), projectId: null });

@@ -1100,6 +1100,9 @@ model ProjectContact {
   projectId String
   contactId String
   createdAt DateTime @default(now())
+  // Set when the client is taken off the project or leaves the workspace. The link stays so
+  // invoices paid until then still count toward the contact; later ones don't.
+  endedAt   DateTime?
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)

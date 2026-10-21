@@ -731,10 +731,15 @@ export class ContactsService {
     const existing = await this.prisma.projectContact.findUnique({
       where: { projectId_contactId: { projectId, contactId: id } },
     });
-    if (existing) return;
+    if (existing && !existing.endedAt) return;
 
     try {
-      await this.prisma.projectContact.create({ data: { projectId, contactId: id } });
+      if (existing) {
+        // Linking again reopens an ended link.
+        await this.prisma.projectContact.update({ where: { id: existing.id }, data: { endedAt: null } });
+      } else {
+        await this.prisma.projectContact.create({ data: { projectId, contactId: id } });
+      }
     } catch (e) {
       // A concurrent request linked it first; the link exists, which is the goal.
       if ((e as { code?: string })?.code === "P2002") return;

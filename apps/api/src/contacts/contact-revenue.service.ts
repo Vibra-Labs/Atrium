@@ -19,6 +19,13 @@ const MONTHS = 12;
 
 const PAID_ONLY = Prisma.sql`i.status = 'paid'`;
 
+/**
+ * Joins a link (`sel`) to a paid invoice (`t`) on its project. An ended link only counts
+ * invoices paid until it ended; a paid invoice with no date predates link ends, so it counts.
+ */
+const PAID_WHILE_LINKED = Prisma.sql`t."projectId" = sel."projectId"
+  AND (sel."endedAt" IS NULL OR t."paidAt" IS NULL OR t."paidAt" <= sel."endedAt")`;
+
 function monthKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
@@ -75,7 +82,7 @@ export class ContactRevenueService {
     return Prisma.sql`
       ${this.linkedProjects(orgId, Prisma.sql`pc."contactId"`, only ?? Prisma.sql`TRUE`, only !== undefined)}
       SELECT sel."contactId" AS "contactId", SUM(t."paidCents") AS paid
-      FROM sel JOIN t ON t."projectId" = sel."projectId"
+      FROM sel JOIN t ON ${PAID_WHILE_LINKED}
       GROUP BY sel."contactId"
     `;
   }
@@ -93,7 +100,7 @@ export class ContactRevenueService {
       SELECT d."companyId" AS "companyId", SUM(d."paidCents") AS paid
       FROM (
         SELECT DISTINCT sel."companyId", t.id, t."paidCents"
-        FROM sel JOIN t ON t."projectId" = sel."projectId"
+        FROM sel JOIN t ON ${PAID_WHILE_LINKED}
       ) d
       GROUP BY d."companyId"
     `;
@@ -107,7 +114,7 @@ export class ContactRevenueService {
     const linked = restrict ? Prisma.sql`AND i."projectId" IN (SELECT "projectId" FROM sel)` : Prisma.empty;
     return Prisma.sql`
       WITH sel AS (
-        SELECT DISTINCT ${owner}, pc."projectId"
+        SELECT DISTINCT ${owner}, pc."projectId", pc."endedAt"
         FROM "project_contact" pc
         JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
         WHERE ${where}
@@ -143,6 +150,7 @@ export class ContactRevenueService {
       JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
       JOIN "invoice" i2 ON i2."projectId" = pc."projectId" AND i2."organizationId" = ${orgId}
       WHERE ${contactFilter}
+        AND (pc."endedAt" IS NULL OR (i2.status = 'paid' AND (i2."paidAt" IS NULL OR i2."paidAt" <= pc."endedAt")))
     )`;
     const rows = await this.prisma.$queryRaw<InvoiceRow[]>`
       WITH t AS MATERIALIZED (${this.invoiceTotals(orgId, linked)})

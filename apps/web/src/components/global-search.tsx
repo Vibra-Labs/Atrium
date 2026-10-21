@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
-import { Search, FolderOpen, CheckSquare, FileText, Users, Contact, Building2, Loader2 } from "lucide-react";
+import { Search, FolderOpen, CheckSquare, FileText, Contact, Building2, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -30,13 +30,6 @@ interface FileResult {
   project: { id: string; name: string };
 }
 
-interface ClientResult {
-  id: string;
-  userId: string;
-  company: string | null;
-  user: { id: string; name: string; email: string };
-}
-
 interface ContactResult {
   id: string;
   name: string;
@@ -53,7 +46,6 @@ interface SearchResults {
   projects: ProjectResult[];
   tasks: TaskResult[];
   files: FileResult[];
-  clients: ClientResult[];
   contacts?: ContactResult[];
   companies?: CompanyResult[];
 }
@@ -75,9 +67,6 @@ function buildFlatItems(results: SearchResults): FlatItem[] {
   }
   for (const f of results.files) {
     items.push({ key: `file-${f.id}`, href: `/dashboard/projects/${f.projectId}`, label: f.filename, sublabel: f.project.name });
-  }
-  for (const c of results.clients) {
-    items.push({ key: `client-${c.id}`, href: `/dashboard/clients`, label: c.user.name, sublabel: c.company || c.user.email });
   }
   for (const c of results.contacts ?? []) {
     items.push({ key: `contact-${c.id}`, href: `/dashboard/contacts/${c.id}`, label: c.name, sublabel: c.company || c.email || undefined });
@@ -170,8 +159,9 @@ export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) 
     }
   };
 
-  const { projects = [], tasks = [], files = [], clients = [], contacts = [], companies = [] } = results ?? {};
-  const hasResults = projects.length > 0 || tasks.length > 0 || files.length > 0 || clients.length > 0 || contacts.length > 0 || companies.length > 0;
+  // Portal clients appear once, as contacts.
+  const { projects = [], tasks = [], files = [], contacts = [], companies = [] } = results ?? {};
+  const hasResults = projects.length > 0 || tasks.length > 0 || files.length > 0 || contacts.length > 0 || companies.length > 0;
 
   return (
     <>
@@ -287,26 +277,6 @@ export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) 
                             href={`/dashboard/projects/${f.projectId}`}
                             label={f.filename}
                             sublabel={f.project.name}
-                            active={activeIndex === idx}
-                            ref={(el) => { itemRefs.current[idx] = el; }}
-                            onMouseEnter={() => setActiveIndex(idx)}
-                            onClick={close}
-                          />
-                        );
-                      })}
-                    </Section>
-                  )}
-
-                  {clients.length > 0 && (
-                    <Section icon={<Users size={13} />} label="People">
-                      {clients.map((c) => {
-                        const idx = indexByKey.get(`client-${c.id}`)!;
-                        return (
-                          <ResultRow
-                            key={c.id}
-                            href="/dashboard/clients"
-                            label={c.user.name}
-                            sublabel={c.company || c.user.email}
                             active={activeIndex === idx}
                             ref={(el) => { itemRefs.current[idx] = el; }}
                             onMouseEnter={() => setActiveIndex(idx)}

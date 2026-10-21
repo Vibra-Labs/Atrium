@@ -19,6 +19,17 @@ import { RatingBadge } from "./rating-badge";
 import { useRowLink } from "@/lib/use-row-link";
 import { FilterChips, FilterMenu, SortHeader, SortMenu, nextSort } from "./list-controls";
 import type { FilterGroup, SortDir, SortOption } from "./list-controls";
+import {
+  ACCESS_FILTERS,
+  COMPANY_SORTS,
+  CONTACT_SORTS,
+  NO_FILTERS,
+  TABS,
+  listQuery,
+  readListState,
+  sortsFor,
+} from "./list-state";
+import type { Filters, TabId } from "./list-state";
 
 interface ContactRow {
   id: string;
@@ -52,47 +63,7 @@ interface Paginated<T> {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
-type TabId = "all" | "lead" | "client" | "past_client" | "companies";
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "lead", label: "Leads" },
-  { id: "client", label: "Clients" },
-  { id: "past_client", label: "Past clients" },
-  { id: "companies", label: "Companies" },
-];
-
 const LIMIT = 20;
-
-type AccessFilter = "portal" | "pending" | "none";
-
-const ACCESS_FILTERS: Record<AccessFilter, string> = {
-  portal: "Has access",
-  pending: "Invite pending",
-  none: "No access",
-};
-
-function isAccessFilter(value: string): value is AccessFilter {
-  return Object.hasOwn(ACCESS_FILTERS, value);
-}
-
-const CONTACT_SORTS: SortOption[] = [
-  { value: "name", label: "Name", defaultDir: "asc" },
-  { value: "company", label: "Company", defaultDir: "asc" },
-  { value: "status", label: "Status", defaultDir: "asc" },
-  { value: "followUp", label: "Next follow-up", defaultDir: "asc" },
-  { value: "paid", label: "Paid, all time", defaultDir: "desc" },
-];
-
-const COMPANY_SORTS: SortOption[] = [
-  { value: "name", label: "Company", defaultDir: "asc" },
-  { value: "people", label: "People", defaultDir: "desc" },
-  { value: "paid", label: "Paid, all time", defaultDir: "desc" },
-];
-
-type Filters = { labelId: string; leadSourceId: string; rating: string; access: string };
-
-const NO_FILTERS: Filters = { labelId: "", leadSourceId: "", rating: "", access: "" };
 
 interface ClientLimit {
   max: number;
@@ -166,18 +137,32 @@ export default function ContactsPage() {
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [labels, setLabels] = useState<Option[]>([]);
-  const [sources, setSources] = useState<Option[]>([]);
+  const [labels, setLabels] = useState<Option[] | null>(null);
+  const [sources, setSources] = useState<Option[] | null>(null);
+  // The list waits for the address to be read, so Back restores it without a flash of defaults.
+  const [ready, setReady] = useState<boolean>(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  // Deep links: a company page back to the Companies tab; /dashboard/clients to ?access=portal.
+  // Sort, filters, search, tab and page live in the address: Back from a contact (and deep links
+  // such as /dashboard/clients -> ?access=portal, or a company page -> ?tab=companies) restore them.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("tab") === "companies") setTab("companies");
-    const deepAccess: string = params.get("access") ?? "";
-    if (isAccessFilter(deepAccess)) setFilters((f) => ({ ...f, access: deepAccess }));
+    const state = readListState(window.location.search);
+    setTab(state.tab);
+    setSearch(state.search);
+    setDebouncedSearch(state.search.trim());
+    setPage(state.page);
+    setOrder({ sort: state.sort, dir: state.dir });
+    setFilters(state.filters);
+    setReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const query = listQuery({ tab, search: debouncedSearch, page, sort: order.sort, dir: order.dir, filters });
+    const url = `${window.location.pathname}${query ? `?${query}` : ""}`;
+    if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", url);
+  }, [ready, tab, debouncedSearch, page, order, filters]);
 
   useEffect(() => {
     if (!config?.billingEnabled) return;
@@ -192,9 +177,30 @@ export default function ContactsPage() {
   }, [config?.billingEnabled]);
 
   useEffect(() => {
-    apiFetch<Option[]>("/labels").then(setLabels).catch(console.error);
-    apiFetch<Option[]>("/lead-sources").then(setSources).catch(console.error);
+    apiFetch<Option[]>("/labels")
+      .then(setLabels)
+      .catch((err: unknown) => {
+        console.error(err);
+        setLabels([]);
+      });
+    apiFetch<Option[]>("/lead-sources")
+      .then(setSources)
+      .catch((err: unknown) => {
+        console.error(err);
+        setSources([]);
+      });
   }, []);
+
+  // A tag or source filter from an old link may point at one that was deleted since: drop it
+  // rather than show a chip with a raw id.
+  useEffect(() => {
+    if (labels && filters.labelId && !labels.some((l) => l.id === filters.labelId)) {
+      setFilters((f) => ({ ...f, labelId: "" }));
+    }
+    if (sources && filters.leadSourceId && !sources.some((s) => s.id === filters.leadSourceId)) {
+      setFilters((f) => ({ ...f, leadSourceId: "" }));
+    }
+  }, [labels, sources, filters.labelId, filters.leadSourceId]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -212,6 +218,7 @@ export default function ContactsPage() {
   const requestId = useRef(0);
 
   const load = useCallback(async () => {
+    if (!ready) return;
     const id = ++requestId.current;
     setLoading(true);
     try {
@@ -241,7 +248,7 @@ export default function ContactsPage() {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [tab, page, debouncedSearch, filterParams, order, showError]);
+  }, [ready, tab, page, debouncedSearch, filterParams, order, showError]);
 
   useEffect(() => {
     load();
@@ -249,15 +256,18 @@ export default function ContactsPage() {
 
   async function exportCsv(): Promise<void> {
     try {
-      const qs = filterParams().toString();
-      await downloadCsv(`/contacts/export${qs ? `?${qs}` : ""}`);
+      // Same rows, in the same order, as the list on screen.
+      const params = filterParams();
+      params.set("sort", order.sort);
+      params.set("dir", order.dir);
+      await downloadCsv(`/contacts/export?${params}`);
     } catch (err) {
       console.error(err);
       showError("Export failed");
     }
   }
 
-  const sortOptions: SortOption[] = tab === "companies" ? COMPANY_SORTS : CONTACT_SORTS;
+  const sortOptions: SortOption[] = sortsFor(tab);
 
   function sortBy(option: SortOption): void {
     setOrder((o) => nextSort(o, option));
@@ -270,8 +280,8 @@ export default function ContactsPage() {
   }
 
   const filterGroups: FilterGroup[] = [
-    { key: "labelId", label: "Tag", options: labels.map((l) => ({ value: l.id, label: l.name })) },
-    { key: "leadSourceId", label: "Source", options: sources.map((s) => ({ value: s.id, label: s.name })) },
+    { key: "labelId", label: "Tag", options: (labels ?? []).map((l) => ({ value: l.id, label: l.name })) },
+    { key: "leadSourceId", label: "Source", options: (sources ?? []).map((s) => ({ value: s.id, label: s.name })) },
     {
       key: "rating",
       label: "Rating",
@@ -355,16 +365,19 @@ export default function ContactsPage() {
           placeholder={tab === "companies" ? "Search companies" : "Search name, company, email"}
           className={`${selectClass} flex-1 min-w-[12rem]`}
         />
-        {tab !== "companies" && <FilterMenu groups={filterGroups} values={filters} onChange={setFilter} />}
-        <SortMenu
-          options={sortOptions}
-          sort={order.sort}
-          dir={order.dir}
-          onChange={(sort, dir) => {
-            setOrder({ sort, dir });
-            setPage(1);
-          }}
-        />
+        {/* Kept together and to the right, so their menus have room when the row wraps on a phone. */}
+        <div className="flex gap-2 ml-auto">
+          {tab !== "companies" && <FilterMenu groups={filterGroups} values={filters} onChange={setFilter} />}
+          <SortMenu
+            options={sortOptions}
+            sort={order.sort}
+            dir={order.dir}
+            onChange={(sort, dir) => {
+              setOrder({ sort, dir });
+              setPage(1);
+            }}
+          />
+        </div>
       </div>
 
       {tab !== "companies" && <FilterChips groups={filterGroups} values={filters} onChange={setFilter} />}

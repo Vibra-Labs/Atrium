@@ -5,6 +5,12 @@ import { InAppNotificationsService } from "../notifications/in-app-notifications
 
 const BATCH_SIZE = 500;
 
+interface StaffMember {
+  organizationId: string;
+  userId: string;
+  role: string;
+}
+
 function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
@@ -37,10 +43,12 @@ export class FollowUpTask {
       take: BATCH_SIZE,
     });
 
+    const staff = await this.loadStaff([...new Set(due.map((c) => c.organizationId))]);
+
     let sent = 0;
     for (const contact of due) {
       try {
-        const recipients = await this.recipients(contact.organizationId, contact.followUpOwnerId);
+        const recipients = this.recipients(staff.get(contact.organizationId) ?? [], contact.followUpOwnerId);
         for (const userId of recipients) {
           await this.notifications.create({
             userId,
@@ -67,19 +75,23 @@ export class FollowUpTask {
     return sent;
   }
 
-  /** The follow-up owner if still an owner/admin, otherwise every owner of the workspace. */
-  private async recipients(organizationId: string, ownerId: string | null): Promise<string[]> {
-    if (ownerId) {
-      const current = await this.prisma.member.findMany({
-        where: { organizationId, userId: ownerId, role: { in: ["owner", "admin"] } },
-        select: { userId: true },
-      });
-      if (current.length > 0) return [ownerId];
-    }
-    const owners = await this.prisma.member.findMany({
-      where: { organizationId, role: "owner" },
-      select: { userId: true },
+  /** Owners and admins of the given workspaces in one query, grouped by workspace. */
+  private async loadStaff(orgIds: string[]): Promise<Map<string, StaffMember[]>> {
+    const byOrg = new Map<string, StaffMember[]>();
+    if (orgIds.length === 0) return byOrg;
+    const rows = await this.prisma.member.findMany({
+      where: { organizationId: { in: orgIds }, role: { in: ["owner", "admin"] } },
+      select: { organizationId: true, userId: true, role: true },
     });
-    return owners.map((m) => m.userId);
+    for (const row of rows) {
+      byOrg.set(row.organizationId, [...(byOrg.get(row.organizationId) ?? []), row]);
+    }
+    return byOrg;
+  }
+
+  /** The follow-up owner if still an owner/admin, otherwise every owner of the workspace. */
+  private recipients(staff: StaffMember[], ownerId: string | null): string[] {
+    if (ownerId && staff.some((m) => m.userId === ownerId)) return [ownerId];
+    return staff.filter((m) => m.role === "owner").map((m) => m.userId);
   }
 }

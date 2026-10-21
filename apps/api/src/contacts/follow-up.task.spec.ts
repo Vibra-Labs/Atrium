@@ -23,7 +23,7 @@ function fake(id: string): FakeContact {
   };
 }
 
-function build(opts: { contacts?: FakeContact[]; adminIds?: string[]; ownerIds?: string[] } = {}) {
+function build(opts: { contacts?: FakeContact[]; adminIds?: string[]; ownerIds?: string[]; otherOrgOwnerIds?: string[] } = {}) {
   const contacts: FakeContact[] = opts.contacts ?? [fake("c1")];
   const prisma = {
     contact: {
@@ -36,12 +36,12 @@ function build(opts: { contacts?: FakeContact[]; adminIds?: string[]; ownerIds?:
       }),
     },
     member: {
-      findMany: mock((a: { where: { role: string | { in: string[] } } }) =>
-        Promise.resolve(
-          typeof a.where.role === "string"
-            ? (opts.ownerIds ?? []).map((userId) => ({ userId }))
-            : (opts.adminIds ?? ["u1"]).map((userId) => ({ userId })),
-        ),
+      findMany: mock(() =>
+        Promise.resolve([
+          ...(opts.adminIds ?? ["u1"]).map((userId) => ({ organizationId: "org1", userId, role: "admin" })),
+          ...(opts.ownerIds ?? []).map((userId) => ({ organizationId: "org1", userId, role: "owner" })),
+          ...(opts.otherOrgOwnerIds ?? []).map((userId) => ({ organizationId: "org2", userId, role: "owner" })),
+        ]),
       ),
     },
   };
@@ -96,5 +96,20 @@ describe("FollowUpTask", () => {
     expect(await task.sendDue(NOW)).toBe(0);
     expect(notifications.create).not.toHaveBeenCalled();
     expect(contacts[0].followUpNotifiedAt).toEqual(NOW);
+  });
+
+  it("looks up staff once for the whole batch, scoped per workspace", async () => {
+    const other = { ...fake("d"), organizationId: "org2", followUpOwnerId: null };
+    const { task, prisma, notifications } = build({
+      contacts: [fake("c1"), fake("c2"), other],
+      otherOrgOwnerIds: ["o9"],
+    });
+    expect(await task.sendDue(NOW)).toBe(3);
+    expect(prisma.member.findMany).toHaveBeenCalledTimes(1);
+    const users = notifications.create.mock.calls.map((c) => {
+      const d = c[0] as { userId: string; organizationId: string };
+      return `${d.organizationId}:${d.userId}`;
+    });
+    expect(users).toEqual(["org1:u1", "org1:u1", "org2:o9"]);
   });
 });

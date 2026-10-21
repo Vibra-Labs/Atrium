@@ -20,6 +20,7 @@ import type { ContactDetail } from "./types";
 
 interface PendingInvite {
   email: string;
+  role: string | null;
   expiresAt: string;
   inviteLink: string;
   expired: boolean;
@@ -75,7 +76,10 @@ export default function ContactPage() {
     try {
       const invitations = await apiFetch<PendingInvite[]>("/clients/invitations");
       const lower = email.toLowerCase();
-      setPendingInvite(invitations.find((i) => !i.expired && i.email.toLowerCase() === lower) ?? null);
+      // Only portal (client) invites: a pending staff invite must never be offered here.
+      setPendingInvite(
+        invitations.find((i) => !i.expired && i.role === "member" && i.email.toLowerCase() === lower) ?? null,
+      );
     } catch (err) {
       console.error(err);
     }

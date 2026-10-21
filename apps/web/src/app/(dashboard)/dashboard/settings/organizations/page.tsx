@@ -1,5 +1,6 @@
 "use client";
 
+import { resetWorkspaceCaches } from "@/lib/workspace-caches";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Plus } from "lucide-react";
@@ -109,6 +110,7 @@ export default function OrganizationsSettingsPage(): React.ReactElement {
         }
       }
       setName("");
+      resetWorkspaceCaches();
       router.replace("/dashboard");
       router.refresh();
     } catch (err) {
@@ -131,6 +133,7 @@ export default function OrganizationsSettingsPage(): React.ReactElement {
         body: JSON.stringify({ organizationId }),
       });
       if (!res.ok) throw new Error(`set-active failed (${res.status})`);
+      resetWorkspaceCaches();
       router.replace("/dashboard");
       router.refresh();
     } catch (err) {

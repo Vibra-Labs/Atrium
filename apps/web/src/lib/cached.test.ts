@@ -48,6 +48,17 @@ describe("cached reference data", () => {
     expect(await loadCached("k", async () => "new")).toBe("new");
   });
 
+  it("ignores a response that was in flight when the key was invalidated", async () => {
+    let resolveOld: (v: string) => void = () => {};
+    const old = loadCached("k", () => new Promise<string>((r) => (resolveOld = r)));
+    invalidate("k");
+    const fresh = loadCached("k", async () => "new");
+    resolveOld("old");
+    await old;
+    expect(await fresh).toBe("new");
+    expect(await loadCached("k", async () => "unused")).toBe("new");
+  });
+
   it("does not cache failures", async () => {
     const original = console.error;
     console.error = mock(() => {});

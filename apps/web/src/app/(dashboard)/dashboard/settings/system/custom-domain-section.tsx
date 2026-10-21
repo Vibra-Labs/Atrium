@@ -246,7 +246,7 @@ export function CustomDomainSection() {
     }
   };
 
-  if (loadingPlan) return null;
+  if (loadingPlan) return <div className="h-24 bg-[var(--muted)] rounded-lg animate-pulse" />;
 
   // Free plan — premium feature gate
   if (!isPaid) {

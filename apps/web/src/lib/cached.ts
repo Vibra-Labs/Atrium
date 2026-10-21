@@ -10,8 +10,6 @@ interface Entry {
 
 const entries = new Map<string, Entry>();
 const pending = new Map<string, Promise<unknown>>();
-// Bumped on clear so a response for the previous workspace is ignored.
-let generation = 0;
 const listeners = new Set<() => void>();
 
 function notify(): void {
@@ -37,10 +35,11 @@ export function loadCached<T>(
   const inFlight: Promise<unknown> | undefined = pending.get(key);
   if (inFlight) return inFlight as Promise<T | null>;
 
-  const requested: number = generation;
   const request: Promise<T | null> = fetcher()
     .then((data: T): T => {
-      if (requested === generation) entries.set(key, { data, stale: false, loadedAt: Date.now() });
+      // Only the request still registered for this key may write: an invalidate or clear
+      // since it started means its data may already be out of date.
+      if (pending.get(key) === request) entries.set(key, { data, stale: false, loadedAt: Date.now() });
       return data;
     })
     .catch((err: unknown): null => {
@@ -48,7 +47,7 @@ export function loadCached<T>(
       return null;
     })
     .finally(() => {
-      if (requested !== generation) return;
+      if (pending.get(key) !== request) return;
       pending.delete(key);
       notify();
     });
@@ -58,9 +57,9 @@ export function loadCached<T>(
 
 /** Mark a key stale so mounted consumers re-read it. */
 export function invalidate(key: string): void {
+  // Dropping the in-flight request means its (possibly pre-change) response is ignored.
   const entry: Entry | undefined = entries.get(key);
-  if (!entry) return;
-  entries.set(key, { ...entry, stale: true });
+  entries.set(key, { data: entry?.data, stale: true, loadedAt: 0 });
   pending.delete(key);
   notify();
 }
@@ -69,7 +68,6 @@ export function invalidate(key: string): void {
 export function clearCached(): void {
   entries.clear();
   pending.clear();
-  generation++;
   notify();
 }
 
@@ -87,7 +85,7 @@ export function useCached<T>(key: string, fetcher: () => Promise<T>): T | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, entry]);
 
-  return entry ? (entry.data as T) : null;
+  return (entry?.data as T | undefined) ?? null;
 }
 
 /** useCached for a GET endpoint; the path is the cache key (and what invalidate() takes). */

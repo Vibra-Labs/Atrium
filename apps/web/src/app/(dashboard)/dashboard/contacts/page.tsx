@@ -30,7 +30,7 @@ import {
 } from "./list-state";
 import type { Filters, ListState, TabId } from "./list-state";
 import { useSearchParams } from "next/navigation";
-import { loadSubscription, useCachedApi } from "@/lib/cached";
+import { invalidate, loadSubscription, useCachedApi } from "@/lib/cached";
 
 interface ContactRow {
   id: string;
@@ -494,7 +494,13 @@ export default function ContactsPage() {
         />
       )}
       {showImport && (
-        <ImportContactsModal onClose={() => setShowImport(false)} onImported={load} />
+        <ImportContactsModal onClose={() => setShowImport(false)} onImported={() => {
+          // An import can create tags and lead sources.
+          invalidate("/labels");
+          invalidate("/lead-sources");
+          load();
+        }}
+      />
       )}
     </div>
   );

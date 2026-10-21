@@ -40,7 +40,7 @@ export function EmailPreferencesSection(): React.ReactElement | null {
       });
   }, []);
 
-  if (!prefs) return null;
+  if (!prefs) return <div className="h-24 bg-[var(--muted)] rounded-lg animate-pulse" />;
 
   const toggle = async (option: (typeof OPTIONS)[number], next: boolean): Promise<void> => {
     const previous: EmailPreferences = prefs;

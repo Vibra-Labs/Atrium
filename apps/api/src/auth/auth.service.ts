@@ -298,12 +298,23 @@ export class AuthService {
                 expiresOn: formatInvitationExpiry(new Date(invitation.expiresAt)),
               }),
             );
-            await this.mail.send(
-              invitation.email,
-              `You've been invited to ${organization.name}`,
-              html,
-              organization.id,
-            );
+            let sent: boolean = false;
+            try {
+              const result = await this.mail.send(
+                invitation.email,
+                `You've been invited to ${organization.name}`,
+                html,
+                organization.id,
+              );
+              sent = result.sent;
+            } finally {
+              // Lets a local tester accept an invite without a working mail provider.
+              if (process.env.NODE_ENV !== "production") {
+                this.logger.log(
+                  `Invitation for ${invitation.email} ${sent ? "emailed" : "NOT emailed"}; accept at ${inviteUrl}`,
+                );
+              }
+            }
           },
           organizationHooks: {
             // The clients page disables inviting at the limit; this makes the API agree.

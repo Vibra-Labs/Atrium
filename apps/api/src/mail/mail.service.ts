@@ -69,14 +69,18 @@ export class MailService {
           emailConfig.apiKey
         ) {
           const resend = new Resend(emailConfig.apiKey);
-          await resend.emails.send({
+          const { error } = await resend.emails.send({
             from: emailConfig.from,
             to,
             subject,
             html,
           });
-          this.logger.info({ to, subject }, "Email sent via DB-configured Resend");
-          return { sent: true, viaOrgConfig: true };
+          if (error) {
+            this.logResendError(error, to, subject, "DB-configured Resend failed, falling back to env vars");
+          } else {
+            this.logger.info({ to, subject }, "Email sent via DB-configured Resend");
+            return { sent: true, viaOrgConfig: true };
+          }
         }
 
         if (
@@ -107,13 +111,22 @@ export class MailService {
       return { sent: false, viaOrgConfig: false };
     }
 
-    await this.resend.emails.send({
+    const { error } = await this.resend.emails.send({
       from: this.from,
       to,
       subject,
       html,
     });
+    if (error) {
+      this.logResendError(error, to, subject, "Email not sent: env-var Resend failed");
+      return { sent: false, viaOrgConfig: false };
+    }
     this.logger.info({ to, subject }, "Email sent via env-var Resend");
     return { sent: true, viaOrgConfig: false };
+  }
+
+  /** Resend v4 reports failures in the return value instead of throwing. */
+  private logResendError(error: { name: string; message: string }, to: string, subject: string, msg: string): void {
+    this.logger.error({ errorName: error.name, error: error.message, to, subject }, msg);
   }
 }

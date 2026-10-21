@@ -67,6 +67,8 @@ describe("MailService", () => {
     createdTransporters.length = 0;
     mockSendMail.mockClear();
     mockResendSend.mockClear();
+    mockResendSend.mockImplementation(() => Promise.resolve({ data: { id: "resend-id" }, error: null }));
+    mockLogger.error.mockClear();
   });
 
   // --- SMTP transporter caching ---
@@ -233,5 +235,76 @@ describe("MailService", () => {
 
     expect(mockResendSend).not.toHaveBeenCalled();
     expect(mockSendMail).not.toHaveBeenCalled();
+  });
+  // --- Resend returns { error } instead of throwing ---
+
+  test("DB-configured Resend error is logged and falls back to env-var Resend", async () => {
+    let call = 0;
+    mockResendSend.mockImplementation(() => {
+      call += 1;
+      return Promise.resolve(
+        call === 1
+          ? { data: null, error: { name: "validation_error", message: "Domain not verified" } }
+          : { data: { id: "resend-id" }, error: null },
+      );
+    });
+    const settings = makeSettingsService({
+      provider: "resend",
+      apiKey: "re_test_key",
+      from: "noreply@example.com",
+      smtp: null,
+      isOrgConfigured: true,
+    });
+    const service = new MailService(
+      makeConfig({ RESEND_API_KEY: "re_env_key" }) as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
+
+    const result = await service.send("client@test.com", "Hello", "<p>Hi</p>", "org-1");
+
+    expect(mockLogger.error).toHaveBeenCalledTimes(1);
+    expect(mockResendSend).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ sent: true, viaOrgConfig: false });
+  });
+
+  test("DB-configured Resend error with no env fallback reports not sent", async () => {
+    mockResendSend.mockImplementation(() =>
+      Promise.resolve({ data: null, error: { name: "validation_error", message: "Domain not verified" } }),
+    );
+    const settings = makeSettingsService({
+      provider: "resend",
+      apiKey: "re_test_key",
+      from: "noreply@example.com",
+      smtp: null,
+      isOrgConfigured: true,
+    });
+    const service = new MailService(
+      makeConfig({ RESEND_API_KEY: undefined }) as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
+
+    const result = await service.send("client@test.com", "Hello", "<p>Hi</p>", "org-1");
+
+    expect(mockLogger.error).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ sent: false, viaOrgConfig: false });
+  });
+
+  test("env-var Resend error is logged and reports not sent", async () => {
+    mockResendSend.mockImplementation(() =>
+      Promise.resolve({ data: null, error: { name: "invalid_api_key", message: "API key is invalid" } }),
+    );
+    const service = new MailService(
+      makeConfig({ RESEND_API_KEY: "re_env_key" }) as unknown as ConfigService,
+      makeSettingsService(null) as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
+
+    const result = await service.send("client@test.com", "Subject", "<p>Body</p>");
+
+    expect(mockResendSend).toHaveBeenCalledTimes(1);
+    expect(mockLogger.error).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ sent: false, viaOrgConfig: false });
   });
 });

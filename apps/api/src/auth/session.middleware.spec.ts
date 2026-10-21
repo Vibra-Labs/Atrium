@@ -415,13 +415,18 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
   });
 });
 
-describe("SessionMiddleware last seen", () => {
-  function cookieBuild() {
-    const member = { id: "m1", userId: "u1", organizationId: "org1", role: "member", createdAt: new Date() };
+describe("SessionMiddleware cookie session", () => {
+  const COOKIE = { "better-auth.session_token": "s1" };
+
+  function cookieBuild(memberRow: unknown = { id: "m1", userId: "u1", organizationId: "org1", role: "member", createdAt: new Date() }) {
     const getSession = mock(() =>
       Promise.resolve({ user: resolved.user, session: { id: "s1", userId: "u1", activeOrganizationId: "org1" } }),
     );
-    const getFullOrganization = mock(() => Promise.resolve({ ...resolved.organization, members: [member] }));
+    const getFullOrganization = mock(() => Promise.resolve(null));
+    const prisma = {
+      organization: { findUnique: mock(() => Promise.resolve(resolved.organization)) },
+      member: { findFirst: mock(() => Promise.resolve(memberRow)) },
+    };
     const tracker = lastSeen();
     const mw = new SessionMiddleware(
       { auth: { api: { getSession, getFullOrganization } } } as never,
@@ -429,14 +434,72 @@ describe("SessionMiddleware last seen", () => {
       { resolve: mock(() => Promise.resolve(null)) } as never,
       config() as never,
       tracker as never,
+      prisma as never,
     );
-    return { mw, tracker };
+    return { mw, tracker, getSession, getFullOrganization, prisma };
   }
+
+  it("reads the active organization and the caller's own member row directly", async () => {
+    const { mw, prisma, getFullOrganization } = cookieBuild();
+    const r = req({}, COOKIE) as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+
+    expect(r.organization.id).toBe("org1");
+    expect(r.member.role).toBe("member");
+    expect(prisma.organization.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.member.findFirst).toHaveBeenCalledWith({ where: { organizationId: "org1", userId: "u1" } });
+    expect(getFullOrganization).not.toHaveBeenCalled();
+  });
+
+  it("sets no organization when the user is not a member of the active one", async () => {
+    const { mw } = cookieBuild(null);
+    const r = req({}, COOKIE) as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+
+    expect(r.user.id).toBe("u1");
+    expect(r.organization).toBeUndefined();
+    expect(r.member).toBeUndefined();
+  });
+
+  it("does not resolve the session on an auth route, and evicts the cached entry", async () => {
+    const { mw, getSession } = cookieBuild();
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(getSession).toHaveBeenCalledTimes(1);
+
+    const authReq = req({}, COOKIE, "10.0.0.1", "/api/auth/get-session") as Request & Record<string, any>;
+    const next = noop();
+    await mw.use(authReq, {} as Response, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(authReq.user).toBeUndefined();
+    expect(authReq.member).toBeUndefined();
+    expect(getSession).toHaveBeenCalledTimes(1);
+
+    // The auth route dropped the cache entry, so the next API call re-resolves.
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(getSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves the caller's role on the staff-only organization routes the auth proxy gates", async () => {
+    const { mw, getSession } = cookieBuild({ id: "m1", userId: "u1", organizationId: "org1", role: "owner", createdAt: new Date() });
+    for (const url of [
+      "/api/auth/organization/list-members",
+      "/api/auth/organization/get-full-organization?organizationId=org1",
+      "/api/auth//Organization/List-Invitations/",
+      "/api/auth/organization/get-active-member-role",
+    ]) {
+      const r = req({}, COOKIE, "10.0.0.1", url) as Request & Record<string, any>;
+      await mw.use(r, {} as Response, noop());
+      expect(r.member.role).toBe("owner");
+      expect(r.organization.id).toBe("org1");
+    }
+    // Never served from the cache: each one resolves afresh.
+    expect(getSession).toHaveBeenCalledTimes(4);
+  });
 
   it("records a visit for a cookie session, including one served from the cache", async () => {
     const { mw, tracker } = cookieBuild();
-    await mw.use(req({}, { "better-auth.session_token": "s1" }), {} as Response, noop());
-    await mw.use(req({}, { "better-auth.session_token": "s1" }), {} as Response, noop());
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    await mw.use(req({}, COOKIE), {} as Response, noop());
     expect(tracker.touch).toHaveBeenCalledTimes(2);
     expect(tracker.touch).toHaveBeenCalledWith("m1");
   });

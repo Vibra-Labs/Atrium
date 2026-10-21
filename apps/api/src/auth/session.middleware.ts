@@ -5,6 +5,8 @@ import { AuthService } from "./auth.service";
 import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
 import { McpAuthService } from "../mcp-auth/mcp-auth.service";
 import { LastSeenTracker } from "./last-seen.tracker";
+import { isStaffOnlyOrgRoute, parseOriginalUrl } from "./staff-only-org-routes";
+import { PrismaService } from "../prisma/prisma.service";
 import { bearerToken, isMcpPath, RateLimiter } from "../common";
 import type {
   Actor, AuthenticatedRequest, AuthUser, AuthSession, BearerKind, FullOrganization, OrgMember,
@@ -21,6 +23,10 @@ interface CachedSession {
 }
 
 const SESSION_CACHE_TTL = 30_000; // 30 seconds
+/** The columns `req.organization` carries (FullOrganization, minus members). */
+const ORGANIZATION_FIELDS = {
+  id: true, name: true, slug: true, logo: true, createdAt: true, updatedAt: true, metadata: true,
+} as const;
 const FAILED_KEY_LIMIT = 30;
 const FAILED_KEY_WINDOW_MS = 60_000;
 const FAILED_KEY_MAX_IPS = 10_000;
@@ -70,6 +76,7 @@ export class SessionMiddleware implements NestMiddleware {
     private mcpAuth: McpAuthService,
     private config: ConfigService,
     private lastSeen: LastSeenTracker,
+    private prisma: PrismaService,
   ) {}
 
   private extractSessionToken(req: Request): string | undefined {
@@ -191,10 +198,14 @@ export class SessionMiddleware implements NestMiddleware {
         }
       }
 
-      // Auth routes mutate session state (login, set-active org, etc.)
-      // so always bypass cache and invalidate stale entries
-      if (isAuthRoute && token) {
-        this.cache.delete(token);
+      // Better Auth resolves the session itself on its own routes, so skip it
+      // here. Those routes mutate session state (login, set-active org, ...),
+      // so the cached entry is dropped either way. The staff-only organization
+      // routes are the exception: the auth proxy gates them on the caller's
+      // role, so they resolve afresh below.
+      if (isAuthRoute) {
+        if (token) this.cache.delete(token);
+        if (!isStaffOnlyOrgRoute(parseOriginalUrl(req.originalUrl))) return next();
       }
 
       // Check cache first (skip for auth routes)
@@ -235,28 +246,20 @@ export class SessionMiddleware implements NestMiddleware {
       const activeOrgId = (
         session?.session as { activeOrganizationId?: string } | undefined
       )?.activeOrganizationId;
-      if (activeOrgId) {
-        const getFullOrg = (
-          this.authService.auth.api as unknown as Record<
-            string,
-            | ((opts: { headers: Headers }) => Promise<FullOrganization | null>)
-            | undefined
-          >
-        ).getFullOrganization;
-        if (getFullOrg) {
-          const orgData = await getFullOrg({ headers });
-
-          if (orgData) {
-            authReq.organization = orgData as FullOrganization;
-            const member = orgData.members?.find(
-              (m: OrgMember) => m.userId === session!.user.id,
-            );
-            if (member) {
-              authReq.member = member;
-              // Cookie sessions only: an API key or MCP client is not a person visiting.
-              void this.lastSeen.touch(member.id);
-            }
-          }
+      if (session && activeOrgId) {
+        // Two indexed reads instead of Better Auth's getFullOrganization, which
+        // loads every member (capped at 100, so anyone past that lost their role).
+        const [organization, member] = await Promise.all([
+          this.prisma.organization.findUnique({ where: { id: activeOrgId }, select: ORGANIZATION_FIELDS }),
+          this.prisma.member.findFirst({ where: { organizationId: activeOrgId, userId: session.user.id } }),
+        ]);
+        // Organization only alongside a membership, as before: AuthGuard reads
+        // req.organization as "a member of the active workspace".
+        if (organization && member) {
+          authReq.organization = organization;
+          authReq.member = member;
+          // Cookie sessions only: an API key or MCP client is not a person visiting.
+          void this.lastSeen.touch(member.id);
         }
       }
 

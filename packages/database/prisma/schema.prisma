@@ -143,6 +143,8 @@ model Member {
 
   @@index([organizationId])
   @@index([userId])
+  // Session resolution and most services look a member up by (org, user).
+  @@index([organizationId, userId])
   @@map("member")
 }
 

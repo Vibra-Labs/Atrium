@@ -6,6 +6,7 @@ import { Public } from "../common";
 import type { AuthenticatedRequest } from "../common";
 import type { Request, Response } from "express";
 import { publicApiUrl } from "../common/helpers/public-api-url";
+import { isStaffOnlyOrgRoute, parseOriginalUrl } from "./staff-only-org-routes";
 
 /**
  * Request headers that must not be forwarded: the proxy re-serializes the
@@ -36,35 +37,7 @@ function encodeForm(body: Record<string, unknown> | undefined): string {
   return params.toString();
 }
 
-/**
- * Better Auth organization routes that return other members or invitations
- * with no permission check beyond membership. Portal clients are members too,
- * so these are staff-only. (Teams aren't enabled, so list-team-members and
- * friends don't exist.)
- */
-const STAFF_ONLY_ORG_ROUTES: ReadonlySet<string> = new Set([
-  "/organization/get-full-organization",
-  "/organization/list-members",
-  "/organization/list-invitations",
-  "/organization/get-active-member-role",
-]);
 const STAFF_ROLES: ReadonlySet<string> = new Set([ROLES.OWNER, ROLES.ADMIN]);
-
-/** The Better Auth route a URL names, in a canonical spelling. */
-function authRoute(pathname: string): string {
-  let decoded: string = pathname;
-  try {
-    decoded = decodeURIComponent(pathname);
-  } catch (err) {
-    // Malformed escapes: match on the raw path; Better Auth won't route it either.
-    Logger.warn(`Undecodable auth path ${pathname}: ${String(err)}`, "AuthController");
-  }
-  return decoded
-    .toLowerCase()
-    .replace(/\/{2,}/g, "/")
-    .replace(/^\/api\/auth/, "")
-    .replace(/\/+$/, "");
-}
 
 /**
  * Refuses staff-only organization routes unless the caller is owner/admin of
@@ -72,9 +45,8 @@ function authRoute(pathname: string): string {
  * SessionMiddleware resolved belongs to the active one only.
  */
 function assertMayReadOrg(req: Request): void {
-  // Concatenated, not a base URL: "//x/..." would otherwise parse as a host.
-  const url: URL = new URL(`http://internal${req.originalUrl}`);
-  if (!STAFF_ONLY_ORG_ROUTES.has(authRoute(url.pathname))) return;
+  const url: URL = parseOriginalUrl(req.originalUrl);
+  if (!isStaffOnlyOrgRoute(url)) return;
 
   const { organization, member } = req as Partial<Pick<AuthenticatedRequest, "organization" | "member">>;
   if (!organization || !member || !STAFF_ROLES.has(member.role)) {

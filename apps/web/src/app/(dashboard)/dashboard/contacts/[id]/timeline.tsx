@@ -4,7 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
+import Link from "next/link";
 import { inputClass } from "../shared";
+import { MentionTextarea, NoteContent, toNoteContent } from "../mentions";
+import type { PickedContact } from "../mentions";
 
 interface TimelineItem {
   kind: "note" | "event";
@@ -13,6 +16,8 @@ interface TimelineItem {
   content?: string;
   detail?: string;
   type?: string;
+  /** For a "mentioned" event: the contact whose note mentioned this one. */
+  refId?: string | null;
   author?: { id: string; name: string };
 }
 
@@ -37,6 +42,7 @@ export function Timeline({ contactId, refreshKey }: { contactId: string; refresh
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState("");
+  const [mentions, setMentions] = useState<PickedContact[]>([]);
   const [saving, setSaving] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
@@ -99,9 +105,10 @@ export function Timeline({ contactId, refreshKey }: { contactId: string; refresh
     try {
       await apiFetch(`/contacts/${contactId}/notes`, {
         method: "POST",
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: toNoteContent(content, mentions) }),
       });
       setNote("");
+      setMentions([]);
       await load();
     } catch (err) {
       console.error(err);
@@ -134,13 +141,16 @@ export function Timeline({ contactId, refreshKey }: { contactId: string; refresh
         Timeline
       </h2>
       <form onSubmit={addNote} className="mb-3 space-y-2">
-        <textarea
-          ref={noteRef}
+        <MentionTextarea
+          textareaRef={noteRef}
           rows={1}
           aria-label="Add a note"
-          placeholder="Add a note…"
+          placeholder="Add a note… type @ to mention a contact"
           value={note}
-          onChange={(e) => setNote(e.target.value)}
+          onChange={setNote}
+          mentions={mentions}
+          onMentionsChange={setMentions}
+          excludeId={contactId}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -173,14 +183,20 @@ export function Timeline({ contactId, refreshKey }: { contactId: string; refresh
               <span className="flex-1 min-w-0 break-words">
                 {item.kind === "note" ? (
                   <>
-                    Note: {item.content}
+                    Note: <NoteContent content={item.content ?? ""} />
                     {item.author && (
                       <span className="text-xs text-[var(--muted-foreground)]"> · {item.author.name}</span>
                     )}
                   </>
                 ) : (
                   <>
-                    {item.detail}{" "}
+                    {item.type === "mentioned" && item.refId ? (
+                      <Link href={`/dashboard/contacts/${item.refId}`} className="hover:underline">
+                        {item.detail}
+                      </Link>
+                    ) : (
+                      item.detail
+                    )}{" "}
                     <span className="text-xs text-[var(--muted-foreground)]">(auto)</span>
                   </>
                 )}

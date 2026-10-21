@@ -212,6 +212,55 @@ describe("ContactsService", () => {
     expect(res.meta.total).toBe(3);
   });
 
+  it("a mentioned contact's timeline event links back to the contact whose note mentioned them", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-2" }));
+    prisma.contactNote.findMany.mockImplementation(() => Promise.resolve([]));
+    prisma.contactEvent.findMany.mockImplementation(() =>
+      Promise.resolve([
+        { id: "e1", type: "mentioned", detail: "Mentioned in a note on Ann", refId: "c-1", createdAt: new Date() },
+      ]),
+    );
+    const res = await service.timeline("c-2", "org-1", 1, 20);
+    expect(res.data[0]).toMatchObject({ kind: "event", type: "mentioned", refId: "c-1" });
+  });
+
+  it("a note keeps mentions of this workspace's contacts and tells each mentioned contact", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", name: "Ann Lee" }));
+    prisma.contact.findMany.mockImplementation(() => Promise.resolve([{ id: "c-2" }, { id: "c-1" }]));
+    prisma.contactNote.create.mockImplementation((a: { data: Record<string, unknown> }) =>
+      Promise.resolve({ id: "n-1", ...a.data }),
+    );
+    const content =
+      "Call @[Bo](contact:c-2), not @[Ghost](contact:c-9); cc @[Ann Lee](contact:c-1) @[Bo](contact:c-2)";
+    const note = await service.addNote("c-1", content, "org-1", "u-1");
+
+    expect(prisma.contact.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["c-2", "c-9", "c-1"] }, organizationId: "org-1" },
+      select: { id: true },
+    });
+    // A contact from elsewhere (or deleted) is left as plain text, never a link.
+    expect(note.content).toBe("Call @[Bo](contact:c-2), not @Ghost; cc @[Ann Lee](contact:c-1) @[Bo](contact:c-2)");
+    // One entry per mentioned contact, none for mentioning the note's own contact.
+    expect(prisma.contactEvent.create).toHaveBeenCalledTimes(1);
+    expect(prisma.contactEvent.create).toHaveBeenCalledWith({
+      data: {
+        contactId: "c-2",
+        organizationId: "org-1",
+        type: "mentioned",
+        detail: "Mentioned in a note on Ann Lee",
+        refId: "c-1",
+      },
+    });
+    prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+  });
+
+  it("a note without mentions doesn't look anything up", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", name: "Ann" }));
+    await service.addNote("c-1", "plain note", "org-1", "u-1");
+    expect(prisma.contact.findMany).not.toHaveBeenCalled();
+    expect(prisma.contactEvent.create).not.toHaveBeenCalled();
+  });
+
   it("timeline bounds the rows it fetches", async () => {
     prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1" }));
     const e = await rejects(service.timeline("c-1", "org-1", 51, 100));

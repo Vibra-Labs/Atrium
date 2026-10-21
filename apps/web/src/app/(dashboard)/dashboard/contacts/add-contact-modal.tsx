@@ -15,6 +15,8 @@ import {
 } from "./contact-fields";
 import { NEW_SOURCE, PHONE_LABELS, STATUS_LABELS, inputClass, labelClass } from "./shared";
 import type { ContactPhone } from "./shared";
+import { MentionTextarea, ReferrerField, toNoteContent } from "./mentions";
+import type { PickedContact } from "./mentions";
 
 interface LeadSource {
   id: string;
@@ -41,6 +43,8 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
   const [status, setStatus] = useState("lead");
   const [rating, setRating] = useState("");
   const [note, setNote] = useState("");
+  const [mentions, setMentions] = useState<PickedContact[]>([]);
+  const [referrer, setReferrer] = useState<PickedContact | null>(null);
   const [companyText, setCompanyText] = useState(company?.name ?? "");
   const [companyId, setCompanyId] = useState<string | null>(company?.id ?? null);
   const [sourceChoice, setSourceChoice] = useState("");
@@ -76,6 +80,11 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
     } else if (sourceChoice) {
       body.leadSourceId = sourceChoice;
     }
+    if (referrer) {
+      body.referredById = referrer.id;
+      // Someone referred them, so with no source picked the source is a referral.
+      if (!sourceChoice) body.leadSourceName = "Referral";
+    }
     let contact: { id: string };
     try {
       contact = await apiFetch<{ id: string }>("/contacts", { method: "POST", body: JSON.stringify(body) });
@@ -93,7 +102,7 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
       try {
         await apiFetch(`/contacts/${contact.id}/notes`, {
           method: "POST",
-          body: JSON.stringify({ content }),
+          body: JSON.stringify({ content: toNoteContent(content, mentions) }),
         });
       } catch (err) {
         console.error(err);
@@ -187,7 +196,8 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
         <MoreFields
           filled={
             [jobTitle, department, sourceChoice, rating, note].filter((v) => v.trim()).length +
-            (cleanLinks(links).length > 0 ? 1 : 0)
+            (cleanLinks(links).length > 0 ? 1 : 0) +
+            (referrer ? 1 : 0)
           }
         >
           <div className="grid grid-cols-2 gap-3">
@@ -227,14 +237,18 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
             />
             <RatingField id="contact-rating" value={rating} onChange={setRating} />
           </div>
+          <ReferrerField id="contact-referrer" value={referrer} onChange={setReferrer} />
           <div>
             <label htmlFor="contact-note" className={labelClass}>
               Note <span className="text-xs">(optional)</span>
             </label>
-            <textarea
+            <MentionTextarea
               id="contact-note"
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={setNote}
+              mentions={mentions}
+              onMentionsChange={setMentions}
+              placeholder="Type @ to mention a contact"
               rows={3}
               maxLength={5000}
               className={inputClass}

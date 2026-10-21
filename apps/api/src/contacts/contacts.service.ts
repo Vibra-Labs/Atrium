@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@atrium/database";
 import type { Contact } from "@atrium/database";
-import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
+import { DEFAULT_LABEL_COLOR, keepMentions, mentionedContactIds } from "@atrium/shared";
 import type { ContactPhone, ContactRating, ContactStatus } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
@@ -166,6 +166,8 @@ export interface TimelineItem {
   content?: string;
   detail?: string;
   type?: string;
+  /** For a "mentioned" event: the contact whose note mentioned this one. */
+  refId?: string | null;
   author?: { id: string; name: string };
 }
 
@@ -824,6 +826,7 @@ export class ContactsService {
         createdAt: e.createdAt,
         detail: e.detail,
         type: e.type,
+        refId: e.refId,
       })),
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
@@ -831,11 +834,36 @@ export class ContactsService {
     return paginatedResponse(items.slice(start, start + limit), noteCount + eventCount, page, limit);
   }
 
+  /**
+   * Adds a note. "@[Name](contact:id)" mentions stay links only for contacts in this workspace
+   * (others become plain "@Name"), and each mentioned contact gets a timeline entry pointing back.
+   */
   async addNote(id: string, content: string, orgId: string, authorId: string) {
-    await this.getOrThrow(id, orgId);
-    return this.prisma.contactNote.create({
-      data: { contactId: id, organizationId: orgId, authorId, content },
+    const contact = await this.getOrThrow(id, orgId);
+    const ids = mentionedContactIds(content);
+    const known = ids.length
+      ? new Set(
+          (
+            await this.prisma.contact.findMany({
+              where: { id: { in: ids }, organizationId: orgId },
+              select: { id: true },
+            })
+          ).map((c) => c.id),
+        )
+      : new Set<string>();
+    const note = await this.prisma.contactNote.create({
+      data: { contactId: id, organizationId: orgId, authorId, content: keepMentions(content, known) },
     });
+    for (const mentionedId of ids) {
+      if (mentionedId === id || !known.has(mentionedId)) continue;
+      try {
+        await this.addEvent(mentionedId, orgId, "mentioned", `Mentioned in a note on ${contact.name}`, id);
+      } catch (e) {
+        // The note is saved; a missing back-reference shouldn't fail it.
+        this.logger.error(`Mention event for contact ${mentionedId} failed`, e);
+      }
+    }
+    return note;
   }
 
   async removeNote(id: string, noteId: string, orgId: string): Promise<void> {

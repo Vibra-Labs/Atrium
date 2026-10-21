@@ -35,7 +35,8 @@ export function contactTools(deps: { contacts: ContactsService }): McpTool[] {
     }),
     defineTool({
       name: "add_contact_note",
-      description: "Adds an internal note to a CRM contact. Contacts and their notes are never visible to clients.",
+      description:
+        "Adds an internal note to a CRM contact. Contacts and their notes are never visible to clients. To mention another contact, write @[Their Name](contact:<their contact id>); it shows as a link and adds an entry to their timeline.",
       inputSchema: z.object({
         contactId: z.string(),
         content: z.string().trim().min(1).max(5000),

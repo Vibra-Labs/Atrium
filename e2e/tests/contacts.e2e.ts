@@ -446,6 +446,58 @@ function localDate(d: Date): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+test.describe("Mentions and referrers", () => {
+  test("@ in a note links another contact, and their timeline points back", async ({ page, request }) => {
+    const stamp = Date.now();
+    const mentioned = `Mentioned ${stamp}`;
+    const writer = `Writer ${stamp}`;
+    const mentionedId = await createContact(request, { name: mentioned });
+    const writerId = await createContact(request, { name: writer });
+
+    await page.goto(`/dashboard/contacts/${writerId}`);
+    const box = page.getByLabel("Add a note");
+    await box.click();
+    await box.pressSequentially(`Ask @${mentioned}`);
+    await page.getByRole("option", { name: mentioned }).click();
+    await box.pressSequentially("about the intro");
+    await expect(box).toHaveValue(`Ask @${mentioned} about the intro`);
+    await page.getByRole("button", { name: "Add note" }).click();
+
+    const link = page.getByTestId("timeline-note").getByRole("link", { name: `@${mentioned}` });
+    await expect(link).toHaveAttribute("href", `/dashboard/contacts/${mentionedId}`);
+
+    await link.click();
+    await expect(page.getByRole("heading", { name: mentioned })).toBeVisible();
+    const back = page.getByTestId("timeline-event").getByRole("link", { name: `Mentioned in a note on ${writer}` });
+    await expect(back).toHaveAttribute("href", `/dashboard/contacts/${writerId}`);
+  });
+
+  test("Referred by on Add contact finds a contact by @name and sets the source to Referral", async ({
+    page,
+    request,
+  }) => {
+    const stamp = Date.now();
+    const referrer = `Referrer${stamp}`;
+    await createContact(request, { name: referrer });
+    const first = `Referee${stamp}`;
+
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: /add contact/i }).click();
+    await page.getByLabel("First name").fill(first);
+    await page.getByRole("button", { name: /^More info/ }).click();
+    await page.getByLabel("Referred by").fill(`@${referrer}`);
+    await page.getByRole("option", { name: referrer }).click();
+    await expect(page.getByTestId("referrer-name")).toHaveText(referrer);
+    await page.getByRole("button", { name: /^add contact$/i }).last().click();
+    await expect(page.getByText("Contact added")).toBeVisible();
+
+    const list = await (await request.get(`${API}/contacts?search=${first}`)).json();
+    const contact = await (await request.get(`${API}/contacts/${list.data[0].id}`)).json();
+    expect(contact.referredBy.name).toBe(referrer);
+    expect(contact.leadSource.name).toBe("Referral");
+  });
+});
+
 test.describe("Contact page", () => {
   test("Edit keeps a referrer the contact already has, and saves fields under More info", async ({
     page,

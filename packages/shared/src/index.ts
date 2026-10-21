@@ -193,3 +193,50 @@ export type IntegrationEvent =
 export const INTEGRATION_EVENTS: readonly IntegrationEvent[] = INTEGRATION_EVENT_GROUPS.flatMap(
   (g) => g.events.map((e) => e.id),
 );
+
+// ── Contact mentions in notes ─────────────────────────────────────────────────
+// A note stores "@[Ann Lee](contact:<id>)"; the app shows it as a link to that contact.
+
+const MENTION_PATTERN = /@\[([^\]\n]{1,200})\]\(contact:([A-Za-z0-9_-]{1,64})\)/g;
+
+export interface NoteMention {
+  name: string;
+  contactId: string;
+}
+
+export type NotePart = { text: string } | { mention: NoteMention };
+
+export function mentionToken(name: string, contactId: string): string {
+  const safe = name.replace(/\[/g, "(").replace(/\]/g, ")").replace(/\s+/g, " ").trim();
+  return `@[${safe}](contact:${contactId})`;
+}
+
+export function splitMentions(content: string): NotePart[] {
+  const parts: NotePart[] = [];
+  let last = 0;
+  for (const m of content.matchAll(MENTION_PATTERN)) {
+    const at = m.index ?? 0;
+    if (at > last) parts.push({ text: content.slice(last, at) });
+    parts.push({ mention: { name: m[1], contactId: m[2] } });
+    last = at + m[0].length;
+  }
+  if (last < content.length || parts.length === 0) parts.push({ text: content.slice(last) });
+  return parts;
+}
+
+/** Each mentioned contact id once, in order of first mention. */
+export function mentionedContactIds(content: string): string[] {
+  return [...new Set([...content.matchAll(MENTION_PATTERN)].map((m) => m[2]))];
+}
+
+/** The note with every mention as a plain "@Name". */
+export function mentionsAsText(content: string): string {
+  return content.replace(MENTION_PATTERN, (_, name: string) => `@${name}`);
+}
+
+/** Replaces mentions of contacts not in `keep` with their plain "@Name". */
+export function keepMentions(content: string, keep: ReadonlySet<string>): string {
+  return content.replace(MENTION_PATTERN, (token: string, name: string, id: string) =>
+    keep.has(id) ? token : `@${name}`,
+  );
+}

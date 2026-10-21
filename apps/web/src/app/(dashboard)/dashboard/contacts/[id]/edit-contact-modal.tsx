@@ -17,6 +17,7 @@ import {
 import { NEW_SOURCE, PHONE_LABELS, STATUS_LABELS, inputClass, labelClass } from "../shared";
 import type { ContactPhone } from "../shared";
 import type { ContactDetail } from "./types";
+import { ReferrerField } from "../mentions";
 
 interface Option {
   id: string;
@@ -55,8 +56,6 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   const [newSource, setNewSource] = useState("");
   const [sources, setSources] = useState<Option[]>([]);
   const [referrer, setReferrer] = useState<Option | null>(contact.referredBy);
-  const [referrerSearch, setReferrerSearch] = useState("");
-  const [referrerResults, setReferrerResults] = useState<Option[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [sourcesError, setSourcesError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -78,26 +77,6 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   useEffect(() => {
     loadSources();
   }, [loadSources]);
-
-  const sourceName =
-    sourceChoice === NEW_SOURCE ? newSource : (sources.find((s) => s.id === sourceChoice)?.name ?? "");
-  const isReferral = sourceName.trim().toLowerCase() === "referral";
-  // Imports set a referrer whatever the source is, so one that exists is always shown and kept.
-  const showReferrer: boolean = isReferral || contact.referredBy !== null;
-
-  useEffect(() => {
-    const term = referrerSearch.trim();
-    if (!showReferrer || !term) {
-      setReferrerResults([]);
-      return;
-    }
-    const t = setTimeout(() => {
-      apiFetch<{ data: Option[] }>(`/contacts?search=${encodeURIComponent(term)}&limit=6`)
-        .then((res) => setReferrerResults(res.data.filter((c) => c.id !== contact.id)))
-        .catch(console.error);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [referrerSearch, showReferrer, contact.id]);
 
   async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -275,57 +254,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
             />
             <RatingField id="edit-rating" value={rating} onChange={setRating} />
           </div>
-          {showReferrer && (
-            <div className="relative">
-              <label htmlFor="edit-referrer" className={labelClass}>Referred by</label>
-              {referrer ? (
-                <div className="flex items-center justify-between text-sm">
-                  <span>{referrer.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => setReferrer(null)}
-                    className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  >
-                    Change
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <input
-                    id="edit-referrer"
-                    value={referrerSearch}
-                    autoComplete="off"
-                    placeholder="Search contacts"
-                    onChange={(e) => setReferrerSearch(e.target.value)}
-                    className={inputClass}
-                  />
-                  {referrerResults.length > 0 && (
-                    <ul
-                      role="listbox"
-                      className="absolute z-10 mt-1 w-full bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg text-sm overflow-hidden"
-                    >
-                      {referrerResults.map((c) => (
-                        <li key={c.id}>
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected={false}
-                            onClick={() => {
-                              setReferrer(c);
-                              setReferrerSearch("");
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-[var(--muted)]"
-                          >
-                            {c.name}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+          <ReferrerField id="edit-referrer" value={referrer} onChange={setReferrer} excludeId={contact.id} />
         </MoreFields>
         {sourcesError && (
           <p className="text-sm text-red-600">

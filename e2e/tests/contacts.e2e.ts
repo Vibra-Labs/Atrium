@@ -805,6 +805,38 @@ test.describe("Company page", () => {
   });
 });
 
+test.describe("Company typeahead", () => {
+  test("finds a company beyond the first 100", async ({ page, request }) => {
+    const stamp = Date.now();
+    const company = (n: number): string => `Typeahead ${String(n).padStart(3, "0")} ${stamp}`;
+    // One CSV import makes 120 companies (the API rate limit rules out 120 separate requests).
+    const rows: string[] = Array.from({ length: 120 }, (_, i) => `Person ${stamp} ${i + 1},${company(i + 1)}`);
+    const imported = await request.post(`${API}/contacts/import`, {
+      headers: { "x-csrf-token": getCsrfToken() },
+      multipart: {
+        file: { name: "companies.csv", mimeType: "text/csv", buffer: Buffer.from(`Name,Company\n${rows.join("\n")}\n`) },
+        mapping: JSON.stringify({ Name: "name", Company: "company" }),
+      },
+    });
+    expect(imported.ok()).toBeTruthy();
+    const all = await (await request.get(`${API}/companies?search=${stamp}&limit=1`)).json();
+    expect(all.meta.total).toBeGreaterThan(100);
+
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: /add contact/i }).click();
+    await page.getByLabel("First name").fill(`Typeahead${stamp}`);
+    // Sorted by name, #120 is past the first 100 companies.
+    await page.getByLabel("Company", { exact: true }).fill(company(120));
+    await page.getByRole("option", { name: company(120) }).click();
+    await expect(page.getByLabel("Company", { exact: true })).toHaveValue(company(120));
+    await page.getByRole("button", { name: /^add contact$/i }).last().click();
+
+    const row = page.getByRole("row", { name: new RegExp(`Typeahead${stamp}`) });
+    await expect(row).toBeVisible();
+    await expect(row.getByText(company(120))).toBeVisible();
+  });
+});
+
 test.describe("Lead source settings", () => {
   test("rename a lead source in settings", async ({ page, request }) => {
     const stamp = Date.now();

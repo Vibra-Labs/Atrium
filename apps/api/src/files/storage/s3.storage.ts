@@ -1,17 +1,18 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { StorageProvider } from "./storage.interface";
 import { Readable } from "stream";
 import {
   S3Client,
-  PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 @Injectable()
 export class S3Storage implements StorageProvider {
+  protected readonly logger = new Logger(S3Storage.name);
   protected client: S3Client;
   protected bucket: string;
 
@@ -29,15 +30,28 @@ export class S3Storage implements StorageProvider {
     });
   }
 
-  async upload(key: string, body: Buffer, contentType: string): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: body,
-        ContentType: contentType,
-      }),
-    );
+  /**
+   * Streams via lib-storage: one PutObject for bodies up to 5 MB, otherwise a
+   * multipart upload holding at most a few 5 MB parts in memory. A failed
+   * multipart upload is aborted so no orphaned parts are left in the bucket.
+   */
+  async upload(key: string, body: Readable, size: number, contentType: string): Promise<void> {
+    try {
+      await new Upload({
+        client: this.client,
+        params: {
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          ContentLength: size,
+        },
+      }).done();
+    } catch (err) {
+      this.logger.warn(`Upload of ${key} failed: ${err instanceof Error ? err.message : String(err)}`);
+      body.destroy();
+      throw err;
+    }
   }
 
   async download(

@@ -22,6 +22,7 @@ import { AuthGuard, RolesGuard, Roles, CurrentOrg, Public } from "../common";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import { randomUUID } from "crypto";
+import { Readable } from "stream";
 import { BillingService } from "../billing/billing.service";
 import { logoCacheControl } from "../common/helpers/http-cache";
 
@@ -95,7 +96,7 @@ export class BrandingController {
     const ext = MIME_TO_EXT[file.mimetype] || ".png";
     const storageKey = `branding/${orgId}/logo-${randomUUID()}${ext}`;
 
-    await this.storage.upload(storageKey, file.buffer, file.mimetype);
+    await this.storage.upload(storageKey, Readable.from(file.buffer), file.buffer.length, file.mimetype);
 
     const branding = await this.brandingService.update(orgId, {
       logoKey: storageKey,

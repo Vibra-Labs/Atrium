@@ -13,11 +13,11 @@ import {
   UseInterceptors,
   UploadedFile,
 } from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { InvoicesService } from "./invoices.service";
 import { InvoicePdfService } from "./invoice-pdf.service";
-import { FilesService, UploadedFile as UploadedFileType, INVOICE_ALLOWED_MIMES } from "../files/files.service";
+import { FilesService, INVOICE_ALLOWED_MIMES, MAX_UPLOAD_BYTES, type TempUploadedFile } from "../files/files.service";
+import { TempFileInterceptor } from "../files/temp-file.interceptor";
 import {
   CreateInvoiceDto,
   CreateUploadedInvoiceDto,
@@ -59,9 +59,9 @@ export class InvoicesController {
   @Post("upload")
   @Roles("owner", "admin")
   @PlanLimit("storage")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
+  @UseInterceptors(TempFileInterceptor("file", MAX_UPLOAD_BYTES))
   async createUploaded(
-    @UploadedFile() file: UploadedFileType,
+    @UploadedFile() file: TempUploadedFile,
     @Body() dto: CreateUploadedInvoiceDto,
     @CurrentOrg("id") orgId: string,
     @CurrentUser("id") userId: string,

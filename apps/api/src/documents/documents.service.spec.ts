@@ -13,6 +13,13 @@ import type { ActivityService } from "../activity/activity.service";
 import type { DocumentAuditService } from "./document-audit.service";
 import type { PinoLogger } from "nestjs-pino";
 import type { BillingService } from "../billing/billing.service";
+import { writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
+/** Stands in for the temp file TempFileInterceptor writes for uploadVersion. */
+const TEMP_PDF = join(tmpdir(), `atrium-documents-spec-${process.pid}.pdf`);
+writeFileSync(TEMP_PDF, "%PDF-fake");
 
 const mockBilling = { hasFeature: mock(() => Promise.resolve(true)) };
 
@@ -1620,7 +1627,7 @@ describe("DocumentsService", () => {
 
   describe("uploadVersion()", () => {
     const pdfFile = {
-      buffer: Buffer.from("%PDF-fake"),
+      path: TEMP_PDF,
       originalname: "v2.pdf",
       mimetype: "application/pdf",
       size: 9,
@@ -1710,7 +1717,7 @@ describe("DocumentsService", () => {
         Promise.resolve(makeDoc({ requiresSignature: true, currentVersion: 1, uploadedById: USER, responses: [] })),
       );
 
-      const nonPdfFile = { buffer: Buffer.from("fake"), originalname: "doc.docx", mimetype: "application/msword", size: 4 };
+      const nonPdfFile = { path: TEMP_PDF, originalname: "doc.docx", mimetype: "application/msword", size: 4 };
 
       try {
         await service.uploadVersion(DOC_ID, ORG, USER, nonPdfFile);

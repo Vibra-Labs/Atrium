@@ -7,9 +7,12 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { Readable } from "stream";
+import { writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { ConfigService } from "@nestjs/config";
-import type { StorageProvider } from "./storage/storage.provider";
+import type { StorageProvider } from "./storage/storage.interface";
 
 import type { SettingsService } from "../settings/settings.service";
 
@@ -19,13 +22,21 @@ interface PrismaArgs {
 
 interface MockFile {
   originalname: string;
-  buffer: Buffer;
+  path: string;
   mimetype: string;
   size: number;
 }
 
+/** Stands in for the temp file TempFileInterceptor writes. */
+const TEMP_UPLOAD = join(tmpdir(), `atrium-files-spec-${process.pid}`);
+writeFileSync(TEMP_UPLOAD, "pdf content");
+
 const mockStorage = {
-  upload: mock(() => Promise.resolve()),
+  upload: mock(async (_key: string, body: Readable): Promise<void> => {
+    for await (const _chunk of body) {
+      // drain, as a real provider would
+    }
+  }),
   download: mock(() =>
     Promise.resolve({
       body: Readable.from(Buffer.from("data")),
@@ -103,7 +114,7 @@ describe("FilesService", () => {
   it("upload rejects files over size limit with PayloadTooLargeException", async () => {
     const file = {
       originalname: "big.zip",
-      buffer: Buffer.alloc(0),
+      path: TEMP_UPLOAD,
       mimetype: "application/zip",
       size: 100 * 1024 * 1024, // 100 MB — exceeds default 50 MB
     } as MockFile;
@@ -124,7 +135,7 @@ describe("FilesService", () => {
 
     const file = {
       originalname: "large.zip",
-      buffer: Buffer.alloc(0),
+      path: TEMP_UPLOAD,
       mimetype: "application/zip",
       size: 25 * 1024 * 1024, // 25 MB
     } as MockFile;
@@ -153,7 +164,7 @@ describe("FilesService", () => {
 
     const file = {
       originalname: "exact.pdf",
-      buffer: Buffer.alloc(0),
+      path: TEMP_UPLOAD,
       mimetype: "application/pdf",
       size: 10 * 1024 * 1024, // exactly 10 MB
     } as MockFile;
@@ -166,7 +177,7 @@ describe("FilesService", () => {
   it("upload rejects blocked file extensions with BadRequestException", async () => {
     const file = {
       originalname: "malware.exe",
-      buffer: Buffer.alloc(0),
+      path: TEMP_UPLOAD,
       mimetype: "application/octet-stream",
       size: 1024,
     } as MockFile;
@@ -186,7 +197,7 @@ describe("FilesService", () => {
 
     const file = {
       originalname: "doc.pdf",
-      buffer: Buffer.from("pdf content"),
+      path: TEMP_UPLOAD,
       mimetype: "application/pdf",
       size: 1024,
     } as MockFile;
@@ -194,6 +205,27 @@ describe("FilesService", () => {
     const result = await service.upload(file, "proj-1", "org-1", "user-1");
     expect(result.filename).toBe("doc.pdf");
     expect(mockStorage.upload).toHaveBeenCalled();
+  });
+
+  it("upload streams the temp file to storage with its size and mime type", async () => {
+    mockPrisma.project.findFirst.mockReturnValue(
+      Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
+    );
+    let streamed = "";
+    mockStorage.upload.mockImplementationOnce(async (_key: string, body: Readable): Promise<void> => {
+      for await (const chunk of body) streamed += String(chunk);
+    });
+
+    await service.upload(
+      { originalname: "doc.pdf", path: TEMP_UPLOAD, mimetype: "application/pdf", size: 11 },
+      "proj-1", "org-1", "user-1",
+    );
+
+    expect(streamed).toBe("pdf content");
+    const args = mockStorage.upload.mock.lastCall as unknown as [string, Readable, number, string];
+    expect(args[0]).toMatch(/^org-1\/proj-1\/.+-doc\.pdf$/);
+    expect(args[2]).toBe(11);
+    expect(args[3]).toBe("application/pdf");
   });
 
   // --- Download authorization ---
@@ -436,7 +468,7 @@ describe("FilesService", () => {
   describe("uploadAsClient", () => {
     const clientFile = {
       originalname: "report.pdf",
-      buffer: Buffer.from("pdf content"),
+      path: TEMP_UPLOAD,
       mimetype: "application/pdf",
       size: 1024,
     } as MockFile;
@@ -585,7 +617,7 @@ describe("FilesService", () => {
 
       const exeFile = {
         originalname: "virus.exe",
-        buffer: Buffer.alloc(0),
+        path: TEMP_UPLOAD,
         mimetype: "application/octet-stream",
         size: 512,
       } as MockFile;
@@ -611,7 +643,7 @@ describe("FilesService", () => {
 
       const bigFile = {
         originalname: "huge.pdf",
-        buffer: Buffer.alloc(0),
+        path: TEMP_UPLOAD,
         mimetype: "application/pdf",
         size: 20 * 1024 * 1024, // 20 MB > 5 MB limit
       } as MockFile;

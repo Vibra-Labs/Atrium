@@ -9,7 +9,8 @@ import {
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { randomBytes, createHash } from "crypto";
-import type { Readable } from "stream";
+import { Readable } from "stream";
+import { createReadStream } from "fs";
 import type { DocumentResponse } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -20,6 +21,7 @@ import {
 } from "../common";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
+import type { TempUploadedFile } from "../files/files.service";
 import { CreateDocumentDto } from "./documents.dto";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ActivityService } from "../activity/activity.service";
@@ -784,7 +786,7 @@ export class DocumentsService {
 
       // Upload signature image to storage
       const sigKey = `${orgId}/${doc.projectId}/signatures/${id}-${userId}-${dto.fieldId}.png`;
-      await this.storage.upload(sigKey, signatureFile.buffer, signatureFile.mimetype);
+      await this.storage.upload(sigKey, Readable.from(signatureFile.buffer), signatureFile.buffer.length, signatureFile.mimetype);
 
       // Download the latest signed PDF (or original)
       const sourceFile = doc.signedFileId ? doc.signedFile! : doc.file;
@@ -847,7 +849,7 @@ export class DocumentsService {
       const pdfBytes = await pdfDoc.save();
 
       const signedPdfKey = `${orgId}/${doc.projectId}/documents/${id}-signed.pdf`;
-      await this.storage.upload(signedPdfKey, Buffer.from(pdfBytes), "application/pdf");
+      await this.storage.upload(signedPdfKey, Readable.from(Buffer.from(pdfBytes)), pdfBytes.length, "application/pdf");
 
       // Clean up old signed File record
       const oldSignedFileId = doc.signedFileId;
@@ -981,7 +983,7 @@ export class DocumentsService {
 
     const pdfBytes = await pdfDoc.save();
     const signedPdfKey = `${ctx.orgId}/${doc.projectId}/documents/${ctx.id}-signed.pdf`;
-    await this.storage.upload(signedPdfKey, Buffer.from(pdfBytes), "application/pdf");
+    await this.storage.upload(signedPdfKey, Readable.from(Buffer.from(pdfBytes)), pdfBytes.length, "application/pdf");
 
     const oldSignedFileId = doc.signedFileId;
     const signedFileRecord = await tx.file.create({
@@ -1141,7 +1143,7 @@ export class DocumentsService {
     id: string,
     orgId: string,
     userId: string,
-    file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+    file: TempUploadedFile,
     note?: string,
   ) {
     // Collect orphaned storage keys for cleanup after transaction
@@ -1173,7 +1175,7 @@ export class DocumentsService {
 
       // Upload new file to storage
       const storageKey = `${orgId}/${doc.projectId}/documents/${id}-v${newVersion}-${Date.now()}`;
-      await this.storage.upload(storageKey, file.buffer, file.mimetype);
+      await this.storage.upload(storageKey, createReadStream(file.path), file.size, file.mimetype);
 
       // Save current file as a version entry
       await tx.documentVersion.create({

@@ -18,7 +18,8 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
 import { DocumentsService, type PendingApproval } from "./documents.service";
 import { DocumentAuditService } from "./document-audit.service";
-import { FilesService, UploadedFile as UploadedFileType, DOCUMENT_ALLOWED_MIMES } from "../files/files.service";
+import { FilesService, UploadedFile as UploadedFileType, DOCUMENT_ALLOWED_MIMES, MAX_UPLOAD_BYTES, type TempUploadedFile } from "../files/files.service";
+import { TempFileInterceptor } from "../files/temp-file.interceptor";
 import {
   CreateDocumentDto,
   CreateDeliverableLinkDto,
@@ -57,9 +58,9 @@ export class DocumentsController {
   @Post()
   @Roles("owner", "admin")
   @PlanLimit("storage")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
+  @UseInterceptors(TempFileInterceptor("file", MAX_UPLOAD_BYTES))
   async create(
-    @UploadedFile() file: UploadedFileType,
+    @UploadedFile() file: TempUploadedFile,
     @Body() dto: CreateDocumentDto,
     @CurrentOrg("id") orgId: string,
     @CurrentUser("id") userId: string,
@@ -271,10 +272,10 @@ export class DocumentsController {
   @Post(":id/upload-version")
   @Roles("owner", "admin")
   @PlanLimit("storage")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
+  @UseInterceptors(TempFileInterceptor("file", MAX_UPLOAD_BYTES))
   async uploadVersion(
     @Param("id") id: string,
-    @UploadedFile() file: UploadedFileType,
+    @UploadedFile() file: TempUploadedFile,
     @Body() dto: UploadVersionDto,
     @CurrentOrg("id") orgId: string,
     @CurrentUser("id") userId: string,

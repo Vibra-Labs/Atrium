@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash, randomBytes } from "crypto";
 import { createPortalClientProject, getCsrfToken, getOrCreateProject, openProjectTab } from "./helpers";
 import type { PortalClientProject } from "./helpers";
 
@@ -115,5 +116,42 @@ test.describe("Files", () => {
     const fileId = update.fileId as string;
     const downloadRes = await request.get(`${API}/files/${fileId}/download`);
     expect(downloadRes.ok()).toBeTruthy();
+  });
+
+  test("a 25 MB upload streams to storage and downloads back intact", async ({ request }) => {
+    test.setTimeout(120000);
+    const size = 25 * 1024 * 1024;
+    const content: Buffer = randomBytes(size);
+    const sha256 = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
+
+    const uploadRes = await request.post(`${API}/files/upload?projectId=${projectId}`, {
+      multipart: { file: { name: "large-e2e.bin", mimeType: "application/octet-stream", buffer: content } },
+      headers: { "x-csrf-token": getCsrfToken() },
+      timeout: 90000,
+    });
+    expect(uploadRes.status()).toBe(201);
+    const file: { id: string; sizeBytes: number } = await uploadRes.json();
+    try {
+      expect(file.sizeBytes).toBe(size);
+
+      const downloadRes = await request.get(`${API}/files/${file.id}/download`, { timeout: 90000 });
+      expect(downloadRes.ok()).toBeTruthy();
+      const downloaded: Buffer = await downloadRes.body();
+      expect(downloaded.length).toBe(size);
+      expect(sha256(downloaded)).toBe(sha256(content));
+    } finally {
+      const del = await request.delete(`${API}/files/${file.id}`, {
+        headers: { "x-csrf-token": getCsrfToken() },
+      });
+      expect(del.ok()).toBeTruthy();
+    }
+  });
+
+  test("streamed uploads still reject blocked extensions", async ({ request }) => {
+    const res = await request.post(`${API}/files/upload?projectId=${projectId}`, {
+      multipart: { file: { name: "payload.exe", mimeType: "application/octet-stream", buffer: Buffer.from("MZ") } },
+      headers: { "x-csrf-token": getCsrfToken() },
+    });
+    expect(res.status()).toBe(400);
   });
 });

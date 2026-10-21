@@ -13,14 +13,28 @@ import type { StorageProvider } from "./storage/storage.interface";
 import { STORAGE_PROVIDER } from "./storage/storage.interface";
 import { randomUUID } from "crypto";
 import { extname } from "path";
+import { createReadStream } from "fs";
 import { paginationArgs, paginatedResponse, sanitizeFilename, assertProjectAccess, BLOCKED_EXTENSIONS } from "../common";
 
+/** A multer upload held in memory (small routes: logos, update attachments, signatures). */
 export interface UploadedFile {
   originalname: string;
   buffer: Buffer;
   mimetype: string;
   size: number;
 }
+
+/** A multer upload streamed to a temp file by `TempFileInterceptor` (large routes). */
+export interface TempUploadedFile {
+  originalname: string;
+  /** Temp file path; deleted by the interceptor after the request. */
+  path: string;
+  mimetype: string;
+  size: number;
+}
+
+/** Hard cap for streamed uploads; the org's own max file size is checked in `FilesService.upload`. */
+export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 /** Safe MIME types for document uploads (quotes, contracts, NDAs). */
 export const DOCUMENT_ALLOWED_MIMES = new Set([
@@ -51,7 +65,7 @@ export class FilesService {
   ) {}
 
   async upload(
-    file: UploadedFile,
+    file: TempUploadedFile,
     projectId: string,
     organizationId: string,
     uploadedById: string,
@@ -82,7 +96,7 @@ export class FilesService {
     const safeName = sanitizeFilename(file.originalname);
     const storageKey = `${organizationId}/${projectId}/${randomUUID()}-${safeName}`;
 
-    await this.storage.upload(storageKey, file.buffer, file.mimetype);
+    await this.storage.upload(storageKey, createReadStream(file.path), file.size, file.mimetype);
 
     return this.prisma.file.create({
       data: {
@@ -98,7 +112,7 @@ export class FilesService {
   }
 
   async uploadAsClient(
-    file: UploadedFile,
+    file: TempUploadedFile,
     projectId: string,
     organizationId: string,
     userId: string,

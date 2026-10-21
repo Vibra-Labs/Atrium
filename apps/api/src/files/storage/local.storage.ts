@@ -1,13 +1,16 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { StorageProvider } from "./storage.interface";
 import { Readable } from "stream";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { createReadStream, existsSync } from "fs";
+import { createReadStream, createWriteStream, existsSync } from "fs";
+import { pipeline } from "stream/promises";
+import { randomUUID } from "crypto";
 
 @Injectable()
 export class LocalStorage implements StorageProvider {
+  private readonly logger = new Logger(LocalStorage.name);
   private uploadDir: string;
 
   constructor(private config: ConfigService) {
@@ -22,10 +25,24 @@ export class LocalStorage implements StorageProvider {
     return filePath;
   }
 
-  async upload(key: string, body: Buffer, _contentType: string): Promise<void> {
+  /** Writes to a sibling `.part` file and renames it into place, so a failed stream never leaves a partial file at `key`. */
+  async upload(key: string, body: Readable, size: number, _contentType: string): Promise<void> {
     const filePath = this.getFilePath(key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, body);
+    const partPath = `${filePath}.${randomUUID()}.part`;
+    try {
+      await pipeline(body, createWriteStream(partPath));
+      const written = (await fs.stat(partPath)).size;
+      if (written !== size) {
+        throw new Error(`Upload of ${key} was truncated: expected ${size} bytes, got ${written}`);
+      }
+      await fs.rename(partPath, filePath);
+    } catch (err) {
+      this.logger.warn(`Upload of ${key} failed: ${err instanceof Error ? err.message : String(err)}`);
+      body.destroy();
+      await fs.rm(partPath, { force: true });
+      throw err;
+    }
   }
 
   async download(

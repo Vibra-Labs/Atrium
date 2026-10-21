@@ -17,6 +17,7 @@
     "@atrium/email": "workspace:*",
     "@atrium/shared": "workspace:*",
     "@aws-sdk/client-s3": "^3.1005.0",
+    "@aws-sdk/lib-storage": "^3.1005.0",
     "@aws-sdk/s3-request-presigner": "^3.1005.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",

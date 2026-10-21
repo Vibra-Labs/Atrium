@@ -13,6 +13,7 @@ import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
 import type { UploadedFile } from "../files/files.service";
 import { randomUUID } from "crypto";
+import { Readable } from "stream";
 import { extname } from "path";
 import type { Response } from "express";
 import { DOWNLOAD_CACHE } from "../common/helpers/http-cache";
@@ -86,7 +87,7 @@ export class UpdatesService {
       attachmentMimeType = attachment.mimetype;
       attachmentName = attachment.originalname;
 
-      await this.storage.upload(attachmentKey, attachment.buffer, attachment.mimetype);
+      await this.storage.upload(attachmentKey, Readable.from(attachment.buffer), attachment.buffer.length, attachment.mimetype);
 
       // Create a File record so the attachment appears in the project's Files tab
       const file = await this.prisma.file.create({

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
+import { openClientContact } from "./helpers";
 
 const API = "http://localhost:3001/api";
 const WEB = "http://localhost:3000";
@@ -37,11 +38,6 @@ async function invite(page: Page, email: string): Promise<string> {
   return body.id ?? body.invitation?.id;
 }
 
-async function openClientsTab(page: Page): Promise<void> {
-  await page.goto(`${WEB}/dashboard/clients`);
-  await page.getByRole("button", { name: /^clients/i }).click();
-}
-
 test.describe("Client invite follow-through", () => {
   test("invites last two weeks, not Better Auth's default 48 hours", async ({ browser }) => {
     const { context, page } = await createOwner(browser);
@@ -56,24 +52,38 @@ test.describe("Client invite follow-through", () => {
     await context.close();
   });
 
-  test("owner can resend a pending client invitation", async ({ browser }) => {
+  test("an invitation gives the invitee a contact, listed as Invite pending", async ({ browser }) => {
+    const { context, page } = await createOwner(browser);
+    const email: string = uniqueEmail("follow-contact");
+    await invite(page, email);
+
+    await page.goto(`${WEB}/dashboard/contacts?access=pending`);
+    await expect(page.getByLabel("Filter by portal access")).toHaveValue("pending");
+    const row = page.getByTestId("contact-row").filter({ hasText: email });
+    await expect(row).toBeVisible();
+    await expect(row.getByTestId("portal-badge")).toHaveText("Invite pending");
+    await context.close();
+  });
+
+  test("owner can resend a pending client invitation from the contact page", async ({ browser }) => {
     const { context, page } = await createOwner(browser);
     const email: string = uniqueEmail("follow-resend");
     await invite(page, email);
 
-    await openClientsTab(page);
-    const row = page.getByTestId("pending-invitation").filter({ hasText: email });
-    await expect(row).toBeVisible();
-    await expect(row.getByRole("button", { name: /copy link/i })).toBeVisible();
+    await openClientContact(page, email);
+    const bar = page.getByTestId("pending-invite");
+    await expect(bar).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Copy invite link" })).toBeVisible();
 
-    await row.getByRole("button", { name: /resend/i }).click();
-    await expect(page.getByText(`Invitation resent to ${email}`)).toBeVisible();
-    // Resending a live invite extends it rather than adding a second row.
-    await expect(page.getByTestId("pending-invitation").filter({ hasText: email })).toHaveCount(1);
+    await page.getByRole("button", { name: "Resend invite" }).click();
+    await expect(page.getByText("Invitation renewed")).toBeVisible();
+    // Resending a live invite extends it rather than adding a second one.
+    const invitations = (await (await page.request.get(`${API}/clients/invitations`)).json()) as { email: string }[];
+    expect(invitations.filter((i) => i.email === email)).toHaveLength(1);
     await context.close();
   });
 
-  test("clients page shows whether a client has visited the portal", async ({ browser }) => {
+  test("the contact page shows whether a client has visited the portal", async ({ browser }) => {
     const { context: ownerCtx, page: ownerPage } = await createOwner(browser);
     const clientEmail: string = uniqueEmail("follow-client");
     const invitationId: string = await invite(ownerPage, clientEmail);
@@ -90,12 +100,8 @@ test.describe("Client invite follow-through", () => {
     await clientPage.waitForLoadState("networkidle");
     await clientCtx.close();
 
-    await openClientsTab(ownerPage);
-    const lastSeen = ownerPage
-      .locator("div.border")
-      .filter({ hasText: clientEmail })
-      .getByTestId("client-last-seen");
-    await expect(lastSeen).toHaveText("Active today");
+    await openClientContact(ownerPage, clientEmail);
+    await expect(ownerPage.getByTestId("portal-access").getByTestId("client-last-seen")).toHaveText("Active today");
     await ownerCtx.close();
   });
 });

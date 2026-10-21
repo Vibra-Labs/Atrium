@@ -412,7 +412,7 @@ test.describe("Contact page", () => {
     await page.reload();
     await expect(page.getByTestId("timeline-note")).toContainText("Met at the conference");
     await expect(page.getByTestId("contact-status")).toHaveText("Client");
-    await expect(page.getByText("has portal login")).toBeVisible();
+    await expect(page.getByTestId("portal-access")).toContainText("Portal access");
     await expect(page.getByRole("button", { name: "Invite to portal" })).toHaveCount(0);
     await context.close();
   });

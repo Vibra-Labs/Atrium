@@ -1,62 +1,67 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { createOwner, getCsrfToken } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
-test.describe("People (Team & Clients)", () => {
-  // ── Page structure ──────────────────────────────────────────────────────────
+// Team = your staff (owners and admins). Clients are contacts with portal access.
+test.describe("Team", () => {
+  // ── Navigation and redirects ────────────────────────────────────────────────
 
-  test.describe("Page structure", () => {
-    test("people page loads with heading and both tabs", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      await expect(page.locator("h1", { hasText: /people/i })).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: /^team/i }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: /^clients/i }),
-      ).toBeVisible();
-    });
-
-    test("page has descriptive subtitle", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      await expect(
-        page.getByText(/manage your team and clients/i),
-      ).toBeVisible();
-    });
-
-    test("people nav link exists in sidebar", async ({ page }) => {
-      await page.goto("/dashboard");
-      await expect(
-        page.getByRole("link", { name: /people/i }),
-      ).toBeVisible();
-    });
-
-    test("/dashboard/team redirects to /dashboard/clients", async ({ page }) => {
+  test.describe("Navigation", () => {
+    test("team page loads with heading and no tabs", async ({ page }) => {
       await page.goto("/dashboard/team");
-      await page.waitForURL("**/dashboard/clients");
-      await expect(
-        page.locator("h1", { hasText: /people/i }),
-      ).toBeVisible();
+      await expect(page.locator("h1", { hasText: /^team$/i })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^clients/i })).toHaveCount(0);
+      await expect(page.getByPlaceholder("client@example.com")).toHaveCount(0);
+    });
+
+    test("sidebar has Team and Contacts, and no People", async ({ page }) => {
+      await page.goto("/dashboard");
+      await expect(page.getByRole("link", { name: /^team$/i }).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: /^contacts$/i }).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: /^people$/i })).toHaveCount(0);
+    });
+
+    test("/dashboard/clients?tab=team redirects to /dashboard/team", async ({ page }) => {
+      await page.goto("/dashboard/clients?tab=team");
+      await page.waitForURL("**/dashboard/team");
+      await expect(page.locator("h1", { hasText: /^team$/i })).toBeVisible();
+    });
+
+    test("/dashboard/clients redirects to contacts with portal access", async ({ page }) => {
+      await page.goto("/dashboard/clients");
+      await page.waitForURL("**/dashboard/contacts?access=portal");
+      await expect(page.locator("h1", { hasText: /contacts/i })).toBeVisible();
+    });
+
+    test("/dashboard/clients?tab=clients redirects to contacts with portal access", async ({ page }) => {
+      await page.goto("/dashboard/clients?tab=clients");
+      await page.waitForURL("**/dashboard/contacts?access=portal");
+    });
+
+    test("the subtitle points clients to Contacts", async ({ page }) => {
+      await page.goto("/dashboard/team");
+      await expect(page.getByRole("link", { name: "Contacts", exact: true }).last()).toHaveAttribute(
+        "href",
+        "/dashboard/contacts?access=portal",
+      );
     });
   });
 
-  // ── Team tab ─────────────────────────────────────────────────────────────────
+  // ── Staff list and invites ──────────────────────────────────────────────────
 
-  test.describe("Team tab (default)", () => {
-    test("team tab is active by default", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      // The team invite form placeholder is only present when team tab is active
-      await expect(
-        page.getByPlaceholder("team@example.com"),
-      ).toBeVisible();
+  test.describe("Staff", () => {
+    test("current user appears in the list with (you) label", async ({ page }) => {
+      await page.goto("/dashboard/team");
+      await expect(page.getByText("(you)")).toBeVisible();
     });
 
-    test("current user appears in team list with (you) label", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      await expect(page.getByText("(you)")).toBeVisible();
+    test("only staff are listed", async ({ page, request }) => {
+      const res = await request.get(`${API}/clients?page=1&limit=100`);
+      const body: { data: { role: string }[] } = await res.json();
+      const staff = body.data.filter((m) => m.role !== "member").length;
+      await page.goto("/dashboard/team");
+      await expect(page.getByTestId("team-member-row")).toHaveCount(staff);
     });
 
     test("owner can tag a staff member and the badge shows", async ({ page, request }) => {
@@ -68,7 +73,7 @@ test.describe("People (Team & Clients)", () => {
       expect(created.ok()).toBeTruthy();
       const label = (await created.json()) as { id: string };
 
-      await page.goto("/dashboard/clients");
+      await page.goto("/dashboard/team");
       const row = page.getByTestId("team-member-row").filter({ hasText: "(you)" });
       await row.getByRole("button", { name: "Edit labels" }).click();
       await row.getByRole("option", { name }).click();
@@ -86,339 +91,54 @@ test.describe("People (Team & Clients)", () => {
     });
 
     test("team invite form is visible for owner", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      await expect(
-        page.getByPlaceholder("team@example.com"),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: /^invite$/i }),
-      ).toBeVisible();
+      await page.goto("/dashboard/team");
+      await expect(page.getByPlaceholder("team@example.com")).toBeVisible();
+      await expect(page.getByRole("button", { name: /^invite$/i })).toBeVisible();
     });
 
-    test("team invite form has role selector with admin and owner options", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      const roleSelect = page.locator("select").first();
-      await expect(roleSelect).toBeVisible();
+    test("team invite role selector has admin and owner, defaulting to admin", async ({ page }) => {
+      await page.goto("/dashboard/team");
+      const roleSelect = page.getByLabel("Role", { exact: true });
+      await expect(roleSelect).toHaveValue("admin");
       await expect(roleSelect.locator("option[value='admin']")).toHaveCount(1);
       await expect(roleSelect.locator("option[value='owner']")).toHaveCount(1);
-    });
-
-    test("team invite role selector defaults to admin", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      const roleSelect = page.locator("select").first();
-      await expect(roleSelect).toHaveValue("admin");
-    });
-
-    test("team members section heading is visible", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      await expect(page.getByText(/^members/i)).toBeVisible();
+      await expect(roleSelect.locator("option[value='member']")).toHaveCount(0);
     });
 
     test("current user row shows their role badge", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      // The owner sees their own role displayed as a non-interactive badge
-      // (canChangeRole is false for self)
-      const youLabel = page.getByText("(you)");
-      await expect(youLabel).toBeVisible();
-      // The owner row is a border/rounded-lg container that includes the (you) label
-      // and a role badge span (e.g. "owner")
-      const memberRow = page.locator(".border.rounded-lg").filter({ has: youLabel });
-      await expect(memberRow).toBeVisible();
-      // The role badge should be present (owner/admin)
+      await page.goto("/dashboard/team");
+      const memberRow = page.getByTestId("team-member-row").filter({ hasText: "(you)" });
       await expect(memberRow.locator("span.rounded-full")).toBeVisible();
     });
 
-    test("invite button is disabled while inviting", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      const emailInput = page.getByPlaceholder("team@example.com");
-      const inviteBtn = page.getByRole("button", { name: /^invite$/i });
-
-      await emailInput.fill("pending-test@example.com");
-      // We do not actually submit; just verify the button is enabled before submit
-      await expect(inviteBtn).not.toBeDisabled();
-    });
-
-    test("empty state message shown when only current user exists", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      // If there are no OTHER team members the empty state may show; if there are
-      // additional members the list renders instead. Either state is valid — we
-      // assert the section heading is present in both cases.
+    test("members section heading is visible", async ({ page }) => {
+      await page.goto("/dashboard/team");
       await expect(page.getByText(/^members/i)).toBeVisible();
     });
-  });
 
-  // ── Clients tab ──────────────────────────────────────────────────────────────
-
-  test.describe("Clients tab", () => {
-    test("switching to clients tab shows client invite form", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      await expect(
-        page.getByPlaceholder("client@example.com"),
-      ).toBeVisible();
-    });
-
-    test("clients tab shows invite button", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      await expect(
-        page.getByRole("button", { name: /^invite$/i }),
-      ).toBeVisible();
-    });
-
-    test("clients tab shows Clients section heading", async ({ page }) => {
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      // The section heading "Invite a Client" or "Clients (N)" should be visible
-      // Use a heading-specific locator to avoid matching the tab button itself
-      await expect(page.locator("h2", { hasText: /client/i }).first()).toBeVisible();
-    });
-
-    test("clients tab shows empty state when no clients exist", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      // Wait for the loading skeleton to disappear
-      await page.waitForTimeout(500);
-      // Either the client list or the empty state message should be present
-      const emptyMsg = page.getByText(/no clients yet/i);
-      const clientItem = page.locator(
-        "[class*='border'][class*='rounded'] .text-sm.font-medium",
-      );
-      const hasEmpty = await emptyMsg.isVisible({ timeout: 3000 }).catch(() => false);
-      const hasClients = await clientItem.first().isVisible({ timeout: 1000 }).catch(() => false);
-      expect(hasEmpty || hasClients).toBe(true);
-    });
-
-    test("team tab content hides when clients tab is active", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      // The team invite email placeholder should no longer be on screen
-      await expect(
-        page.getByPlaceholder("team@example.com"),
-      ).not.toBeVisible();
-    });
-
-    test("client invite button is disabled while inviting", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      const emailInput = page.getByPlaceholder("client@example.com");
-      const inviteBtn = page.getByRole("button", { name: /^invite$/i });
-
-      await emailInput.fill("client-pending@example.com");
-      await expect(inviteBtn).not.toBeDisabled();
-    });
-  });
-
-  // ── Tab switching ─────────────────────────────────────────────────────────────
-
-  test.describe("Tab switching", () => {
-    test("can switch from team tab to clients tab and back", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-
-      // Start on team tab
-      await expect(
-        page.getByPlaceholder("team@example.com"),
-      ).toBeVisible();
-
-      // Switch to clients
-      await page.getByRole("button", { name: /^clients/i }).click();
-      await expect(
-        page.getByPlaceholder("client@example.com"),
-      ).toBeVisible();
-      await expect(
-        page.getByPlaceholder("team@example.com"),
-      ).not.toBeVisible();
-
-      // Switch back to team
-      await page.getByRole("button", { name: /^team/i }).click();
-      await expect(
-        page.getByPlaceholder("team@example.com"),
-      ).toBeVisible();
-      await expect(
-        page.getByPlaceholder("client@example.com"),
-      ).not.toBeVisible();
-    });
-
-    test("tab count badge appears once members are loaded", async ({
-      page,
-    }) => {
-      await page.goto("/dashboard/clients");
-      // Wait for loading to complete — the API call populates team count
-      await page.waitForTimeout(1000);
-      // The team tab button text includes a count like "Team (1)" when loaded
-      // We just assert the button is visible; the count is a bonus
-      await expect(
-        page.getByRole("button", { name: /team/i }),
-      ).toBeVisible();
-    });
-  });
-
-  // ── Pending invitations UI ───────────────────────────────────────────────────
-
-  test.describe("Pending invitations display", () => {
-    test("pending team invitations section shows when invitations exist", async ({
-      page,
-      request,
-    }) => {
-      // First check via API if there are any pending non-member invitations
-      const res = await request.get(`${API}/clients/invitations`);
-      if (!res.ok()) {
-        test.skip(true, "Could not fetch invitations");
-        return;
-      }
-      const invitations: Array<{ role: string }> = await res.json();
-      const teamInvitations = invitations.filter((i) => i.role !== "member");
-      if (teamInvitations.length === 0) {
-        test.skip(true, "No pending team invitations to verify UI");
-        return;
+    test("pending staff invitations show with copy link; client invites do not", async ({ browser }) => {
+      // A fresh workspace, so these invites never touch the shared account's seats.
+      const { context, page } = await createOwner(browser, "team-pending");
+      const stamp = Date.now();
+      const staffEmail = `team-pending-${stamp}@example.com`;
+      const clientEmail = `team-client-pending-${stamp}@example.com`;
+      for (const [email, role] of [
+        [staffEmail, "admin"],
+        [clientEmail, "member"],
+      ]) {
+        const res = await page.request.post(`${API}/auth/organization/invite-member`, {
+          data: { email, role },
+          headers: { Origin: "http://localhost:3000" },
+        });
+        expect(res.ok()).toBeTruthy();
       }
 
-      await page.goto("/dashboard/clients");
-      await expect(
-        page.getByText(/pending invitations/i),
-      ).toBeVisible({ timeout: 5000 });
-    });
-
-    test("pending client invitations section shows when invitations exist", async ({
-      page,
-      request,
-    }) => {
-      const res = await request.get(`${API}/clients/invitations`);
-      if (!res.ok()) {
-        test.skip(true, "Could not fetch invitations");
-        return;
-      }
-      const invitations: Array<{ role: string }> = await res.json();
-      const clientInvitations = invitations.filter((i) => i.role === "member");
-      if (clientInvitations.length === 0) {
-        test.skip(true, "No pending client invitations to verify UI");
-        return;
-      }
-
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      await expect(
-        page.getByText(/pending invitations/i),
-      ).toBeVisible({ timeout: 5000 });
-    });
-
-    test("pending invitation row shows copy link button", async ({
-      page,
-      request,
-    }) => {
-      const res = await request.get(`${API}/clients/invitations`);
-      if (!res.ok()) {
-        test.skip(true, "Could not fetch invitations");
-        return;
-      }
-      const invitations: Array<{ role: string }> = await res.json();
-      if (invitations.length === 0) {
-        test.skip(true, "No pending invitations to verify UI");
-        return;
-      }
-
-      const isTeamInvite = invitations[0].role !== "member";
-      await page.goto("/dashboard/clients");
-      if (!isTeamInvite) {
-        await page.getByRole("button", { name: /^clients/i }).click();
-      }
-      await expect(
-        page.getByText(/copy link/i).first(),
-      ).toBeVisible({ timeout: 5000 });
-    });
-  });
-
-  // ── Client profile expansion ──────────────────────────────────────────────────
-
-  test.describe("Client profile expansion", () => {
-    test("client row expands to show profile fields when clicked", async ({
-      page,
-      request,
-    }) => {
-      // Check if there are any client members via API first
-      const res = await request.get(`${API}/clients?page=1&limit=10`);
-      if (!res.ok()) {
-        test.skip(true, "Could not fetch members");
-        return;
-      }
-      const body: { data: Array<{ role: string }> } = await res.json();
-      const clients = body.data.filter((m) => m.role === "member");
-      if (clients.length === 0) {
-        test.skip(true, "No client members to test profile expansion");
-        return;
-      }
-
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      // Wait for client list to render
-      await page.waitForTimeout(500);
-
-      // Click the first client row to expand it
-      const firstClientRow = page
-        .locator("[class*='border'][class*='rounded-lg']")
-        .filter({ has: page.locator("[class*='cursor-pointer']") })
-        .first();
-      await firstClientRow.click();
-
-      // Profile fields should now be visible
-      await expect(page.getByText(/^company$/i)).toBeVisible({ timeout: 3000 });
-      await expect(page.getByText(/^phone$/i)).toBeVisible({ timeout: 3000 });
-      await expect(page.getByText(/^address$/i)).toBeVisible({ timeout: 3000 });
-      await expect(page.getByText(/^website$/i)).toBeVisible({ timeout: 3000 });
-      await expect(page.getByText(/^description$/i)).toBeVisible({ timeout: 3000 });
-      await expect(
-        page.getByRole("button", { name: /save profile/i }),
-      ).toBeVisible();
-    });
-
-    test("clicking expanded client row again collapses the profile", async ({
-      page,
-      request,
-    }) => {
-      const res = await request.get(`${API}/clients?page=1&limit=10`);
-      if (!res.ok()) {
-        test.skip(true, "Could not fetch members");
-        return;
-      }
-      const body: { data: Array<{ role: string }> } = await res.json();
-      const clients = body.data.filter((m) => m.role === "member");
-      if (clients.length === 0) {
-        test.skip(true, "No client members to test profile collapse");
-        return;
-      }
-
-      await page.goto("/dashboard/clients");
-      await page.getByRole("button", { name: /^clients/i }).click();
-      await page.waitForTimeout(500);
-
-      const clickTarget = page
-        .locator("[class*='cursor-pointer']")
-        .first();
-      // First click expands
-      await clickTarget.click();
-      await expect(
-        page.getByRole("button", { name: /save profile/i }),
-      ).toBeVisible({ timeout: 3000 });
-
-      // Second click collapses
-      await clickTarget.click();
-      await expect(
-        page.getByRole("button", { name: /save profile/i }),
-      ).not.toBeVisible({ timeout: 3000 });
+      await page.goto("http://localhost:3000/dashboard/team");
+      const row = page.getByTestId("pending-invitation").filter({ hasText: staffEmail });
+      await expect(row).toBeVisible();
+      await expect(row.getByRole("button", { name: /copy link/i })).toBeVisible();
+      await expect(page.getByTestId("pending-invitation").filter({ hasText: clientEmail })).toHaveCount(0);
+      await context.close();
     });
   });
 
@@ -545,48 +265,6 @@ test.describe("People (Team & Clients)", () => {
       for (const inv of invitations) {
         expect(() => new URL(inv.inviteLink)).not.toThrow();
       }
-    });
-  });
-
-  // ── API: client profile (own) ─────────────────────────────────────────────────
-
-  test.describe("API: client profile (own)", () => {
-    test("GET /clients/me/profile returns own profile", async ({ request }) => {
-      const res = await request.get(`${API}/clients/me/profile`);
-      expect(res.ok()).toBeTruthy();
-    });
-
-    test("PUT /clients/me/profile updates own profile fields", async ({
-      request,
-    }) => {
-      const csrfToken = getCsrfToken();
-      const res = await request.put(`${API}/clients/me/profile`, {
-        data: {
-          company: "E2E People Test Company",
-          phone: "555-9876",
-          address: "123 E2E St",
-          website: "https://e2e-test.example.com",
-          description: "Automated e2e test description",
-        },
-        headers: { "x-csrf-token": csrfToken },
-      });
-      expect(res.ok()).toBeTruthy();
-      const body = await res.json();
-      expect(body.company).toBe("E2E People Test Company");
-      expect(body.phone).toBe("555-9876");
-    });
-
-    test("PUT /clients/me/profile accepts partial updates", async ({
-      request,
-    }) => {
-      const csrfToken = getCsrfToken();
-      const res = await request.put(`${API}/clients/me/profile`, {
-        data: { company: "Partial Update Co" },
-        headers: { "x-csrf-token": csrfToken },
-      });
-      expect(res.ok()).toBeTruthy();
-      const body = await res.json();
-      expect(body.company).toBe("Partial Update Co");
     });
   });
 

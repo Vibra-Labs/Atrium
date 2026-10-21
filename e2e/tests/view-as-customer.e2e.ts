@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createOwner, inviteAndAcceptClient } from "./helpers";
+import { createOwner, inviteAndAcceptClient, openClientContact } from "./helpers";
 
 const API_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
@@ -16,20 +16,11 @@ test.describe("View as customer", () => {
       "vac-client",
     );
 
-    await ownerPage.goto(`${WEB_URL}/dashboard/clients`, {
-      waitUntil: "networkidle",
-      timeout: 15000,
-    });
-    await ownerPage.getByRole("button", { name: /^clients/i }).click();
+    await openClientContact(ownerPage, clientEmail);
+    const contactUrl: string = ownerPage.url();
 
-    const clientRow = ownerPage
-      .locator("div")
-      .filter({ hasText: clientEmail })
-      .first();
-    await expect(clientRow).toBeVisible({ timeout: 10000 });
-
-    const viewButton = clientRow.getByTitle("View as customer");
-    await expect(viewButton).toBeVisible();
+    const viewButton = ownerPage.getByTestId("portal-access").getByRole("button", { name: "View as client" });
+    await expect(viewButton).toBeVisible({ timeout: 10000 });
 
     const [previewPage] = await Promise.all([
       ownerCtx.waitForEvent("page"),
@@ -71,7 +62,7 @@ test.describe("View as customer", () => {
 
     await previewPage.getByRole("button", { name: /exit preview/i }).click();
     await previewPage
-      .waitForURL(/\/dashboard\/clients/, { timeout: 5000 })
+      .waitForURL(contactUrl, { timeout: 5000 })
       .catch(() => {
         // Tab may have closed via window.close() instead of navigating.
       });
@@ -92,19 +83,9 @@ test.describe("View as customer", () => {
       "vac-strip-client",
     );
 
-    await ownerPage.goto(`${WEB_URL}/dashboard/clients`, {
-      waitUntil: "networkidle",
-      timeout: 15000,
-    });
-    await ownerPage.getByRole("button", { name: /^clients/i }).click();
-
-    const clientRow = ownerPage
-      .locator("div")
-      .filter({ hasText: clientEmail })
-      .first();
-    await expect(clientRow).toBeVisible({ timeout: 10000 });
-
-    const viewButton = clientRow.getByTitle("View as customer");
+    await openClientContact(ownerPage, clientEmail);
+    const viewButton = ownerPage.getByTestId("portal-access").getByRole("button", { name: "View as client" });
+    await expect(viewButton).toBeVisible({ timeout: 10000 });
     const [previewPage] = await Promise.all([
       ownerCtx.waitForEvent("page"),
       viewButton.click(),

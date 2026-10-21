@@ -226,3 +226,35 @@ export async function inviteAndAcceptClient(
 
   return { clientEmail, clientName, password };
 }
+
+/** The id of the contact with this email in the page's workspace (portal clients have one). */
+export async function contactIdByEmail(page: Page, email: string): Promise<string> {
+  const res = await page.request.get(`${API}/contacts?search=${encodeURIComponent(email)}`);
+  expect(res.ok()).toBe(true);
+  const body: { data: { id: string; email: string | null }[] } = await res.json();
+  const contact = body.data.find((c) => c.email === email.toLowerCase());
+  if (!contact) throw new Error(`No contact for ${email}`);
+  return contact.id;
+}
+
+/** Opens the contact page of the client with this email (where portal access is managed). */
+export async function openClientContact(page: Page, email: string): Promise<void> {
+  const id: string = await contactIdByEmail(page, email);
+  await page.goto(`${WEB_URL}/dashboard/contacts/${id}`, { waitUntil: "networkidle", timeout: 15000 });
+}
+
+/** Signs in an existing user in a fresh browser context. */
+export async function signIn(
+  browser: Browser,
+  email: string,
+  password: string,
+): Promise<{ context: BrowserContext; page: Page }> {
+  const context: BrowserContext = await browser.newContext({ storageState: undefined });
+  const page: Page = await context.newPage();
+  await page.goto(`${WEB_URL}/login`);
+  await page.getByLabel(/email/i).fill(email);
+  await page.getByLabel(/password/i).fill(password);
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.waitForURL(/\/(portal|dashboard)/, { timeout: 20000 });
+  return { context, page };
+}

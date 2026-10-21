@@ -7,9 +7,10 @@ test.describe("CSV Export", () => {
     await expect(page.getByTitle("Export CSV")).toBeVisible();
   });
 
-  test("people export button exists", async ({ page }) => {
-    await page.goto("/dashboard/clients");
-    await expect(page.getByRole("heading", { name: /people/i })).toBeVisible();
+  // Contacts export replaces the old People export: clients are contacts with portal access.
+  test("contacts export button exists", async ({ page }) => {
+    await page.goto("/dashboard/contacts");
+    await expect(page.getByRole("heading", { name: /contacts/i })).toBeVisible();
     await expect(page.getByTitle("Export CSV")).toBeVisible();
   });
 
@@ -31,9 +32,9 @@ test.describe("CSV Export", () => {
     }
   });
 
-  test("people CSV download returns valid CSV", async ({ page }) => {
-    await page.goto("/dashboard/clients");
-    await expect(page.getByRole("heading", { name: /people/i })).toBeVisible();
+  test("contacts CSV download includes portal access", async ({ page }) => {
+    await page.goto("/dashboard/contacts");
+    await expect(page.getByRole("heading", { name: /contacts/i })).toBeVisible();
 
     const downloadPromise = page.waitForEvent("download");
     await page.getByTitle("Export CSV").click();
@@ -45,7 +46,13 @@ test.describe("CSV Export", () => {
     if (path) {
       const fs = await import("fs");
       const content = fs.readFileSync(path, "utf-8");
-      expect(content).toContain("Name,Email,Role");
+      expect(content).toContain("Name,First name,Last name,Email");
+      expect(content.split("\n")[0]).toContain("Portal access");
     }
   });
+});
+
+test("the old People export endpoint is gone", async ({ request }) => {
+  const res = await request.get("http://localhost:3001/api/clients/export");
+  expect(res.ok()).toBe(false);
 });

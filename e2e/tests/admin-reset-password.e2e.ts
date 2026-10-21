@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openClientContact } from "./helpers";
 
 const API_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
@@ -106,20 +107,11 @@ test.describe("Admin Reset Password", () => {
       "admin-reset-client",
     );
 
-    // Owner navigates to the people page and switches to Clients tab
-    await ownerPage.goto(`${WEB_URL}/dashboard/clients`, {
-      waitUntil: "networkidle",
-      timeout: 15000,
-    });
-    await ownerPage.getByRole("button", { name: /^clients/i }).click();
-
-    // Find the client row and click the reset-password action
-    const clientRow = ownerPage
-      .locator("div")
-      .filter({ hasText: clientEmail })
-      .first();
-    await expect(clientRow).toBeVisible({ timeout: 10000 });
-    await clientRow.getByTitle("Send password reset link").click();
+    // Owner opens the client's contact page; portal access actions live there
+    await openClientContact(ownerPage, clientEmail);
+    const access = ownerPage.getByTestId("portal-access");
+    await expect(access).toBeVisible({ timeout: 10000 });
+    await access.getByRole("button", { name: "Send password reset link" }).click();
 
     // Confirm modal appears
     await ownerPage.getByRole("button", { name: /generate link/i }).click();

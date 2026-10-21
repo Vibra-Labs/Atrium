@@ -24,11 +24,13 @@ test.describe("Global Search", () => {
       expect(body).toHaveProperty("projects");
       expect(body).toHaveProperty("tasks");
       expect(body).toHaveProperty("files");
-      expect(body).toHaveProperty("clients");
+      expect(body).toHaveProperty("contacts");
+      // Portal clients are found once, as contacts; there is no separate clients group.
+      expect(body).not.toHaveProperty("clients");
       expect(Array.isArray(body.projects)).toBe(true);
       expect(Array.isArray(body.tasks)).toBe(true);
       expect(Array.isArray(body.files)).toBe(true);
-      expect(Array.isArray(body.clients)).toBe(true);
+      expect(Array.isArray(body.contacts)).toBe(true);
     });
   });
 

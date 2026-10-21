@@ -157,7 +157,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               required
-              maxLength={100}
+              maxLength={99}
               className={inputClass}
             />
           </div>
@@ -167,7 +167,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
               id="edit-last-name"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              maxLength={100}
+              maxLength={99}
               className={inputClass}
             />
           </div>

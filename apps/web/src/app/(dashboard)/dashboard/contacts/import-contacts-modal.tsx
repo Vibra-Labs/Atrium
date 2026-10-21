@@ -15,6 +15,8 @@ interface Preview {
 interface ImportResult {
   created: number;
   skipped: { row: number; reason: string }[];
+  /** Rows that were imported with something left out (e.g. a social link that isn't a URL). */
+  warnings: { row: number; reason: string }[];
 }
 
 interface Props {
@@ -93,6 +95,21 @@ export function ImportContactsModal({ onClose, onImported }: Props) {
                   </li>
                 ))}
               </ul>
+            )}
+            {result.warnings.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-sm">Imported with something left out:</p>
+                <ul
+                  data-testid="import-warnings"
+                  className="text-sm text-[var(--muted-foreground)] space-y-1 max-h-48 overflow-y-auto"
+                >
+                  {result.warnings.map((w, i) => (
+                    <li key={`${w.row}-${i}`}>
+                      Row {w.row}: {w.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <div className="flex justify-end">
               <button

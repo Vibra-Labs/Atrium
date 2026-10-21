@@ -127,7 +127,7 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
               onChange={(e) => setFirstName(e.target.value)}
               autoFocus
               required
-              maxLength={100}
+              maxLength={99}
               className={inputClass}
             />
           </div>
@@ -139,7 +139,7 @@ export function AddContactModal({ company, onClose, onCreated }: Props) {
               id="contact-last-name"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              maxLength={100}
+              maxLength={99}
               className={inputClass}
             />
           </div>

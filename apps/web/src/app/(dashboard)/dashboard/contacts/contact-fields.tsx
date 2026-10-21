@@ -68,7 +68,7 @@ export function PhonesField({ idPrefix, phones, onChange }: PhonesFieldProps) {
             onClick={() => onChange(phones.filter((_, j) => j !== i))}
             className={removeButtonClass}
           >
-            <X size={14} />
+            <X size={14} aria-hidden />
           </button>
         </div>
       ))}
@@ -111,7 +111,7 @@ export function SocialLinksField({ links, onChange }: SocialLinksFieldProps) {
             onClick={() => onChange(links.filter((_, j) => j !== i))}
             className={removeButtonClass}
           >
-            <X size={14} />
+            <X size={14} aria-hidden />
           </button>
         </div>
       ))}

@@ -138,6 +138,38 @@ test.describe("Contacts list", () => {
     await expect(page.getByRole("row", { name: new RegExp(`Import One ${stamp}`) })).toBeVisible();
   });
 
+  test("import of a CRM export keeps Twitter handles and warns about a link it can't use", async ({
+    page,
+    request,
+  }) => {
+    const stamp = Date.now();
+    const email = `zoho-${stamp}@example.com`;
+    const csv = [
+      "First Name,Last Name,Email,Twitter,Social",
+      `Zed${stamp},Lee,${email},@zed_co,not-a-link`,
+    ].join("\n");
+
+    await page.goto("/dashboard/contacts");
+    await page.getByRole("button", { name: /^import$/i }).click();
+    await page.getByLabel("CSV file").setInputFiles({
+      name: "zoho.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await expect(page.getByLabel("Field for First Name")).toHaveValue("firstName");
+    await expect(page.getByLabel("Field for Twitter")).toHaveValue("socialLinks");
+
+    await page.getByRole("button", { name: /import 1 contact/i }).click();
+    await expect(page.getByTestId("import-result")).toContainText("Imported 1 contact, skipped 0");
+    await expect(page.getByTestId("import-warnings")).toContainText("not-a-link");
+
+    const list = await (
+      await request.get(`${API}/contacts?search=${encodeURIComponent(email)}`)
+    ).json();
+    expect(list.data[0].name).toBe(`Zed${stamp} Lee`);
+    expect(list.data[0].socialLinks).toEqual(["https://x.com/zed_co"]);
+  });
+
   test("global search finds a contact", async ({ page, request }) => {
     const name = `Searchable${Date.now()}`;
     const res = await request.post(`${API}/contacts`, {
@@ -387,6 +419,9 @@ test.describe("Contact page", () => {
 });
 
 test.describe("Company page", () => {
+  // Revenue and employee counts are grouped by the browser locale ("1,500,000").
+  test.use({ locale: "en-US" });
+
   test("company page totals two contacts on one project once", async ({ page, request }) => {
     const headers = { "x-csrf-token": getCsrfToken() };
     const stamp = Date.now();

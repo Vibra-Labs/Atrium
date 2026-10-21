@@ -11,6 +11,7 @@ import { AddContactModal } from "../../add-contact-modal";
 import { RevenueStrip } from "../../[id]/revenue-strip";
 import type { Revenue } from "../../[id]/types";
 import { STATUS_LABELS, inputClass } from "../../shared";
+import { useRowLink } from "@/lib/use-row-link";
 
 interface CompanyDetail {
   id: string;
@@ -48,6 +49,7 @@ export default function CompanyPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { success, error: showError } = useToast();
+  const rowLink = useRowLink();
   const confirm = useConfirm();
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -309,7 +311,11 @@ export default function CompanyPage() {
           ) : (
             <ul className="divide-y divide-[var(--border)] border border-[var(--border)] rounded-xl">
               {company.people.map((p) => (
-                <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                <li
+                  key={p.id}
+                  {...rowLink(`/dashboard/contacts/${p.id}`)}
+                  className="cursor-pointer flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-[var(--muted)]"
+                >
                   <div className="min-w-0">
                     <Link href={`/dashboard/contacts/${p.id}`} className="font-medium hover:underline">
                       {p.name}

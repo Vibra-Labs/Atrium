@@ -15,6 +15,7 @@ import { ImportContactsModal } from "./import-contacts-modal";
 import { followUpWhen, formatFollowUpDay } from "@/lib/follow-up-date";
 import { RATING_LABELS, REPEAT_LABELS, STATUS_LABELS } from "./shared";
 import { RatingBadge } from "./rating-badge";
+import { useRowLink } from "@/lib/use-row-link";
 
 interface ContactRow {
   id: string;
@@ -78,6 +79,7 @@ function FollowUp({ at, everyDays }: { at: string | null; everyDays: number | nu
 
 export default function ContactsPage() {
   const { error: showError } = useToast();
+  const rowLink = useRowLink();
   const [tab, setTab] = useState<TabId>("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -299,7 +301,12 @@ export default function ContactsPage() {
               </thead>
               <tbody>
                 {companies.map((c) => (
-                  <tr key={c.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]">
+                  <tr
+                    key={c.id}
+                    data-testid="company-row"
+                    {...rowLink(`/dashboard/contacts/companies/${c.id}`)}
+                    className="cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
+                  >
                     <td className="px-4 py-3 font-medium">
                       <Link href={`/dashboard/contacts/companies/${c.id}`} className="hover:underline">
                         {c.name}
@@ -335,7 +342,12 @@ export default function ContactsPage() {
             </thead>
             <tbody>
               {contacts.map((c) => (
-                <tr key={c.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]">
+                <tr
+                  key={c.id}
+                  data-testid="contact-row"
+                  {...rowLink(`/dashboard/contacts/${c.id}`)}
+                  className="cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
+                >
                   <td className="px-4 py-3">
                     <Link href={`/dashboard/contacts/${c.id}`} className="font-medium hover:underline">
                       {c.name}

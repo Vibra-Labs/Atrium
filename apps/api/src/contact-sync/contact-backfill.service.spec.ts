@@ -61,6 +61,36 @@ describe("ContactBackfillService.backfillContactFields", () => {
     });
   });
 
+  it("copying a client profile writes phones with the phone, independent of step order", async () => {
+    const txUpdate = mock((_args: { data: Record<string, unknown> }) => Promise.resolve({}));
+    const withProfile = {
+      ...prisma,
+      clientProfile: {
+        findUnique: mock(() => Promise.resolve({ phone: " 555 ", company: null, description: null })),
+      },
+      $transaction: mock((fn: (tx: unknown) => Promise<void>) => fn({ contact: { update: txUpdate } })),
+    };
+    const svc = new ContactBackfillService(withProfile as unknown as PrismaService, {} as ContactSyncService);
+    const copyProfile = (
+      svc as unknown as { copyProfile: (o: string, u: string, c: unknown) => Promise<void> }
+    ).copyProfile.bind(svc);
+
+    await copyProfile("org-1", "u-1", {
+      id: "c-1",
+      phone: null,
+      phones: [],
+      address: null,
+      website: null,
+      companyId: null,
+      profileImportedAt: null,
+    });
+
+    expect(txUpdate.mock.calls[0][0].data).toMatchObject({
+      phone: "555",
+      phones: [{ label: "Phone", number: "555" }],
+    });
+  });
+
   it("a failing row is logged and the rest continue", async () => {
     prisma.contact.findMany
       .mockImplementationOnce(() =>

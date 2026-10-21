@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { BadRequestException } from "@nestjs/common";
 import {
+  NAME_PART_MAX,
   createNames,
+  importSocialLinks,
+  normalizeSocialLink,
   normalizeSocialLinks,
+  phonesOf,
   optionalText,
   parseRating,
   readPhones,
@@ -51,6 +55,12 @@ describe("createNames", () => {
 
   it("first wins over name", () => {
     expect(createNames({ name: "Someone Else", firstName: "Ann", lastName: "Lee" }).name).toBe("Ann Lee");
+  });
+
+  it("longest first + last fit the 200-char name", () => {
+    const first = "a".repeat(NAME_PART_MAX);
+    const last = "b".repeat(NAME_PART_MAX);
+    expect(createNames({ firstName: first, lastName: last }).name.length).toBeLessThanOrEqual(200);
   });
 
   it("a blank first name falls back to the name", () => {
@@ -208,14 +218,68 @@ describe("normalizeSocialLinks", () => {
   it("rejects non-http(s), unparseable and over-long links", () => {
     throws400(() => normalizeSocialLinks(["javascript:alert(1)"]));
     throws400(() => normalizeSocialLinks(["ftp://x.com"]));
-    throws400(() => normalizeSocialLinks(["linkedin.com/in/ann"]));
+    throws400(() => normalizeSocialLinks(["acme"]));
+    throws400(() => normalizeSocialLinks(["localhost:3000/x"]));
     throws400(() => normalizeSocialLinks([`https://x.com/${"a".repeat(500)}`]));
+  });
+
+  it("gives a bare domain https:// (API, MCP and Zapier inputs alike)", () => {
+    expect(normalizeSocialLinks(["linkedin.com/in/ann", "https://linkedin.com/in/ann"])).toEqual([
+      "https://linkedin.com/in/ann",
+    ]);
+    expect(normalizeSocialLink(" www.ann.dev ")).toBe("https://www.ann.dev");
+    expect(normalizeSocialLink("javascript:alert(1)")).toBeNull();
+    expect(normalizeSocialLink("mailto:a@b.com")).toBeNull();
+    expect(normalizeSocialLink("acme")).toBeNull();
   });
 
   it("allows at most 10", () => {
     const eleven = Array.from({ length: 11 }, (_, i) => `https://x.com/${i}`);
     throws400(() => normalizeSocialLinks(eleven));
     expect(normalizeSocialLinks(eleven.slice(0, 10))).toHaveLength(10);
+  });
+});
+
+describe("importSocialLinks", () => {
+  it("turns handles under a Twitter or X header into x.com links", () => {
+    expect(
+      importSocialLinks([
+        { header: "Twitter", value: "@acme" },
+        { header: "X", value: "beta_co" },
+      ]),
+    ).toEqual({ links: ["https://x.com/acme", "https://x.com/beta_co"], dropped: [] });
+  });
+
+  it("keeps full links under a Twitter header and doesn't treat handles elsewhere as x.com", () => {
+    expect(importSocialLinks([{ header: "Twitter", value: "https://twitter.com/acme" }]).links).toEqual([
+      "https://twitter.com/acme",
+    ]);
+    expect(importSocialLinks([{ header: "Social", value: "@acme" }])).toEqual({ links: [], dropped: ["@acme"] });
+  });
+
+  it("prefixes bare domains, splits cells, de-duplicates, drops what isn't a link", () => {
+    expect(
+      importSocialLinks([
+        { header: "LinkedIn", value: "linkedin.com/in/ann; https://linkedin.com/in/ann, javascript:alert(1)" },
+        { header: "Social", value: "ann.dev nope" },
+      ]),
+    ).toEqual({
+      links: ["https://linkedin.com/in/ann", "https://ann.dev"],
+      dropped: ["javascript:alert(1)", "nope"],
+    });
+  });
+
+  it("keeps at most 10", () => {
+    const value = Array.from({ length: 12 }, (_, i) => `https://x.com/${i}`).join(" ");
+    expect(importSocialLinks([{ header: "Social", value }]).links).toHaveLength(10);
+  });
+});
+
+describe("phonesOf", () => {
+  it("falls back to the legacy phone while phones is empty", () => {
+    expect(phonesOf([], " 555 ")).toEqual([{ label: "Phone", number: "555" }]);
+    expect(phonesOf([], null)).toEqual([]);
+    expect(phonesOf([{ label: "Work", number: "1" }], "1")).toEqual([{ label: "Work", number: "1" }]);
   });
 });
 

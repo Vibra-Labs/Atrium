@@ -24,6 +24,7 @@ import {
 } from "@atrium/shared";
 import type { ContactRating, ContactStatus } from "@atrium/shared";
 import { PaginationQueryDto } from "../common";
+import { MAX_SOCIAL_LINKS_INPUT, NAME_PART_MAX } from "./contact-fields";
 
 export { CONTACT_RATINGS, CONTACT_STATUSES };
 
@@ -50,13 +51,13 @@ export class UpdateContactDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(NAME_PART_MAX)
   firstName?: string;
 
   @IsOptional()
   @ValidateIf((_, v) => v !== null)
   @IsString()
-  @MaxLength(100)
+  @MaxLength(NAME_PART_MAX)
   lastName?: string | null;
 
   @IsOptional()
@@ -83,6 +84,7 @@ export class UpdateContactDto {
   @IsOptional()
   @ValidateIf((_, v) => v !== null)
   @IsArray()
+  @ArrayMaxSize(MAX_SOCIAL_LINKS_INPUT)
   @IsString({ each: true })
   socialLinks?: string[] | null;
 

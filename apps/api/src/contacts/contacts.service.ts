@@ -15,7 +15,7 @@ import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { ContactRevenueService } from "./contact-revenue.service";
-import { MAX_IMPORT_ROWS, parseCsv, splitLinks } from "./contacts-csv";
+import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
 import type { ImportField, ImportMapping } from "./contacts-csv";
 import { LEAD_SOURCE_NAME_MAX, TIMELINE_MAX_PAGE } from "./contacts.dto";
 import type {
@@ -26,12 +26,13 @@ import type {
 } from "./contacts.dto";
 import { requireName } from "./require-name";
 import {
-  MAX_SOCIAL_LINKS,
+  NAME_PART_MAX,
   createNames,
+  importSocialLinks,
   normalizeSocialLinks,
   optionalText,
   parseRating,
-  readPhones,
+  phonesOf,
   resolvePhones,
   updateNames,
 } from "./contact-fields";
@@ -122,6 +123,7 @@ interface ResolvedLinks {
 
 interface StoredContact {
   profileImportedAt?: Date | null;
+  phone?: string | null;
   phones?: unknown;
   socialLinks?: unknown;
 }
@@ -131,15 +133,16 @@ type ContactResponse<T> = Omit<T, "profileImportedAt" | "phones" | "socialLinks"
   socialLinks: string[];
 };
 
+export type ContactRecord = ContactResponse<Contact>;
+
 /**
  * Drops the import marker and narrows the Json columns: Prisma's JsonValue can't be named
  * across packages, so it would make the controllers' inferred return types unportable.
  */
-export type ContactRecord = ContactResponse<Contact>;
-
 function toResponse<T extends StoredContact>(contact: T): ContactResponse<T> {
   const { profileImportedAt: _imported, phones, socialLinks, ...rest } = contact;
-  return { ...rest, phones: readPhones(phones), socialLinks: readLinks(socialLinks) };
+  // Until the backfill reaches a row, its legacy phone stands in for the phones list.
+  return { ...rest, phones: phonesOf(phones, contact.phone), socialLinks: readLinks(socialLinks) };
 }
 
 type LinkFields = Pick<
@@ -186,7 +189,7 @@ export class ContactsService {
       jobTitle: c.jobTitle,
       department: c.department,
       email: c.email,
-      phones: readPhones(c.phones),
+      phones: phonesOf(c.phones, c.phone),
       socialLinks: readLinks(c.socialLinks),
       rating: c.rating,
       status: c.status,
@@ -232,17 +235,21 @@ export class ContactsService {
     dto: { csv: string; mapping: ImportMapping },
     orgId: string,
     userId: string,
-  ): Promise<{ created: number; skipped: { row: number; reason: string }[] }> {
+  ): Promise<{
+    created: number;
+    skipped: { row: number; reason: string }[];
+    warnings: { row: number; reason: string }[];
+  }> {
     const [headers = [], ...data] = parseCsv(dto.csv);
     if (data.length > MAX_IMPORT_ROWS) throw new BadRequestException(TOO_MANY_ROWS);
 
     const columns = new Map<ImportField, number>();
     // Exports often split links over several columns (LinkedIn, Twitter...), so all are read.
-    const linkColumns: number[] = [];
+    const linkColumns: { header: string; index: number }[] = [];
     headers.forEach((h, i) => {
       if (!Object.hasOwn(dto.mapping, h)) return;
       const field = dto.mapping[h];
-      if (field === "socialLinks") linkColumns.push(i);
+      if (field === "socialLinks") linkColumns.push({ header: h, index: i });
       else if (field !== "skip" && !columns.has(field)) columns.set(field, i);
     });
     const cell = (row: string[], field: ImportField): string => {
@@ -251,6 +258,8 @@ export class ContactsService {
     };
 
     const skipped: { row: number; reason: string }[] = [];
+    // Non-fatal: the contact was imported, but something in the row was left out.
+    const warnings: { row: number; reason: string }[] = [];
     const seen = new Set<string>();
     let created = 0;
 
@@ -267,15 +276,10 @@ export class ContactsService {
         skipped.push({ row: rowNumber, reason: "Invalid rating" });
         continue;
       }
-      let socialLinks: string[];
-      try {
-        // Extra links are dropped, like over-long text fields.
-        const raw = [...new Set(linkColumns.flatMap((i) => splitLinks(row[i] ?? "")))];
-        socialLinks = normalizeSocialLinks(raw.slice(0, MAX_SOCIAL_LINKS));
-      } catch {
-        skipped.push({ row: rowNumber, reason: "Invalid social link" });
-        continue;
-      }
+      // A link never costs the row: unusable ones are dropped with a warning.
+      const { links: socialLinks, dropped } = importSocialLinks(
+        linkColumns.map((c) => ({ header: c.header, value: row[c.index] ?? "" })),
+      );
       const rawEmail = cell(row, "email");
       if (rawEmail && !isEmail(rawEmail)) {
         skipped.push({ row: rowNumber, reason: "Invalid email" });
@@ -291,8 +295,8 @@ export class ContactsService {
         contact = await this.create(
           {
             name: name.slice(0, 200) || undefined,
-            firstName: firstName.slice(0, 100) || undefined,
-            lastName: cell(row, "lastName").slice(0, 100) || undefined,
+            firstName: firstName.slice(0, NAME_PART_MAX) || undefined,
+            lastName: cell(row, "lastName").slice(0, NAME_PART_MAX) || undefined,
             jobTitle: cell(row, "jobTitle").slice(0, 200) || undefined,
             department: cell(row, "department").slice(0, 100) || undefined,
             socialLinks,
@@ -318,6 +322,9 @@ export class ContactsService {
       }
       if (email) seen.add(email);
       created++;
+      for (const link of dropped) {
+        warnings.push({ row: rowNumber, reason: `Social link "${link.slice(0, 100)}" isn't a web address; left out` });
+      }
       try {
         await this.attachTags(contact.id, splitTags(cell(row, "tags")), orgId);
         const notes = cell(row, "notes");
@@ -331,7 +338,7 @@ export class ContactsService {
         this.logger.error(`Contact import row ${rowNumber}: tags/notes failed`, e);
       }
     }
-    return { created, skipped };
+    return { created, skipped, warnings };
   }
 
   async exportCsv(orgId: string, query: ListContactsQueryDto): Promise<string> {
@@ -354,7 +361,7 @@ export class ContactsService {
       { header: "Last name", value: (c) => c.lastName },
       { header: "Email", value: (c) => c.email },
       { header: "Phone", value: (c) => c.phone },
-      { header: "All phones", value: (c) => formatPhones(readPhones(c.phones)) },
+      { header: "All phones", value: (c) => formatPhones(phonesOf(c.phones, c.phone)) },
       { header: "Company", value: (c) => c.company?.name },
       { header: "Job title", value: (c) => c.jobTitle },
       { header: "Department", value: (c) => c.department },
@@ -469,7 +476,7 @@ export class ContactsService {
       throw new BadRequestException("A contact cannot refer themselves");
     }
     const names = updateNames(dto, contact);
-    const phones = resolvePhones(dto, readPhones(contact.phones));
+    const phones = resolvePhones(dto, phonesOf(contact.phones, contact.phone));
     const socialLinks = dto.socialLinks === undefined ? undefined : normalizeSocialLinks(dto.socialLinks);
     const links = await this.resolveLinks(dto, orgId);
 

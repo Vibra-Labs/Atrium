@@ -464,6 +464,34 @@ describe("ContactsService", () => {
       expect(await validate(plainToInstance(ListContactsQueryDto, { rating: "x" }))).not.toHaveLength(0);
     });
 
+    it("a contact the backfill hasn't reached shows its legacy phone, and an edit round trip keeps it", async () => {
+      const legacy = { id: "c-1", name: "Ann", firstName: null, lastName: null, phone: "555", phones: [] };
+      prisma.contact.findFirst.mockImplementation(() =>
+        Promise.resolve({ ...legacy, labels: [], projects: [] }),
+      );
+      const shown = await service.findOne("c-1", "org-1");
+      expect(shown.phones).toEqual([{ label: "Phone", number: "555" }]);
+
+      // The edit form sends back what it was shown, plus an unrelated change.
+      await service.update("c-1", { phones: shown.phones, jobTitle: "CTO" }, "org-1");
+      expect(updateData()).toMatchObject({ phone: "555", phones: [{ label: "Phone", number: "555" }] });
+
+      prisma.contact.findMany.mockImplementation(() =>
+        Promise.resolve([{ ...legacy, company: null, labels: [], status: "lead" }]),
+      );
+      expect((await service.findAll("org-1", {})).data[0].phones).toEqual([{ label: "Phone", number: "555" }]);
+    });
+
+    it("DTOs: first/last names at most 99 chars each (joined name stays within 200), at most 50 links", async () => {
+      const errors = (body: object): Promise<number> =>
+        validate(plainToInstance(UpdateContactDto, body)).then((e) => e.length);
+      expect(await errors({ firstName: "a".repeat(99), lastName: "b".repeat(99) })).toBe(0);
+      expect(await errors({ firstName: "a".repeat(100) })).toBe(1);
+      expect(await errors({ lastName: "b".repeat(100) })).toBe(1);
+      expect(await errors({ socialLinks: Array.from({ length: 50 }, () => "https://x.com/a") })).toBe(0);
+      expect(await errors({ socialLinks: Array.from({ length: 51 }, () => "https://x.com/a") })).toBe(1);
+    });
+
     it("list filters by rating and returns the new fields", async () => {
       prisma.contact.findMany.mockImplementation(() =>
         Promise.resolve([
@@ -653,7 +681,7 @@ describe("ContactsService", () => {
       prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "x" }));
       const csv = "Name,Email\nAnn,ANN@Example.com\n";
       const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
-      expect(res).toEqual({ created: 0, skipped: [{ row: 2, reason: "Email already exists" }] });
+      expect(res).toEqual({ created: 0, skipped: [{ row: 2, reason: "Email already exists" }], warnings: [] });
       expect(prisma.contact.findFirst).toHaveBeenCalledWith({
         where: { organizationId: "org-1", email: "ann@example.com" },
       });
@@ -661,13 +689,13 @@ describe("ContactsService", () => {
       prisma.contact.findFirst.mockImplementation(() => Promise.resolve(null));
       const dup = "Name,Email\nAnn,a@x.com\nAnn2,A@X.com\n";
       const res2 = await service.importCsv({ csv: dup, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
-      expect(res2).toEqual({ created: 1, skipped: [{ row: 3, reason: "Email already exists" }] });
+      expect(res2).toEqual({ created: 1, skipped: [{ row: 3, reason: "Email already exists" }], warnings: [] });
     });
 
     it("import skips rows with no name and keeps going", async () => {
       const csv = "Name,Email\n,a@x.com\nBob,b@x.com\n";
       const res = await service.importCsv({ csv, mapping: { Name: "name", Email: "email" } }, "org-1", "u-1");
-      expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Missing name" }] });
+      expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Missing name" }], warnings: [] });
       expect(prisma.contactEvent.create).toHaveBeenCalledTimes(1);
     });
 
@@ -771,7 +799,7 @@ describe("ContactsService", () => {
         "org-1",
         "u-1",
       );
-      expect(res).toEqual({ created: 2, skipped: [{ row: 4, reason: "Missing name" }] });
+      expect(res).toEqual({ created: 2, skipped: [{ row: 4, reason: "Missing name" }], warnings: [] });
       const rows = prisma.contact.create.mock.calls.map((c) => (c[0] as { data: Record<string, unknown> }).data);
       expect(rows[0]).toMatchObject({ name: "Ann Lee", firstName: "Ann", lastName: "Lee" });
       expect(rows[1]).toMatchObject({ name: "Cher", firstName: "Cher", lastName: null });
@@ -805,7 +833,7 @@ describe("ContactsService", () => {
       });
     });
 
-    it("import skips rows with an invalid rating or social link", async () => {
+    it("import skips a row with an invalid rating, but never one over a social link", async () => {
       const csv = "Name,Rating,Social\nA,lukewarm,\nB,,notaurl\nC,cold,https://c.dev\n";
       const res = await service.importCsv(
         { csv, mapping: { Name: "name", Rating: "rating", Social: "socialLinks" } },
@@ -813,12 +841,36 @@ describe("ContactsService", () => {
         "u-1",
       );
       expect(res).toEqual({
-        created: 1,
-        skipped: [
-          { row: 2, reason: "Invalid rating" },
-          { row: 3, reason: "Invalid social link" },
-        ],
+        created: 2,
+        skipped: [{ row: 2, reason: "Invalid rating" }],
+        warnings: [{ row: 3, reason: `Social link "notaurl" isn't a web address; left out` }],
       });
+      const links = prisma.contact.create.mock.calls.map(
+        (c) => (c[0] as { data: { socialLinks: string[] } }).data.socialLinks,
+      );
+      expect(links).toEqual([[], ["https://c.dev"]]);
+    });
+
+    it("import of a Zoho-style export keeps rows with Twitter handles and bare domains", async () => {
+      const csv = "First Name,Last Name,Twitter,LinkedIn\nAnn,Lee,@acme,linkedin.com/in/ann\nBo,,bo_d,\n";
+      const res = await service.importCsv(
+        {
+          csv,
+          mapping: {
+            "First Name": "firstName",
+            "Last Name": "lastName",
+            Twitter: "socialLinks",
+            LinkedIn: "socialLinks",
+          },
+        },
+        "org-1",
+        "u-1",
+      );
+      expect(res).toEqual({ created: 2, skipped: [], warnings: [] });
+      const links = prisma.contact.create.mock.calls.map(
+        (c) => (c[0] as { data: { socialLinks: string[] } }).data.socialLinks,
+      );
+      expect(links).toEqual([["https://x.com/acme", "https://linkedin.com/in/ann"], ["https://x.com/bo_d"]]);
     });
 
     it("import skips rows with an invalid email and truncates long fields", async () => {
@@ -829,7 +881,7 @@ describe("ContactsService", () => {
         "org-1",
         "u-1",
       );
-      expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Invalid email" }] });
+      expect(res).toEqual({ created: 1, skipped: [{ row: 2, reason: "Invalid email" }], warnings: [] });
       const data = (prisma.contact.create.mock.calls[0][0] as {
         data: { name: string; address: string };
       }).data;

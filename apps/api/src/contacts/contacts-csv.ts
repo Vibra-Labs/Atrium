@@ -23,10 +23,6 @@ export const MAX_IMPORT_ROWS = 5000;
 
 export type ImportMapping = Record<string, ImportField>;
 
-/** Social link cells may hold several links separated by whitespace, commas or semicolons. */
-export function splitLinks(value: string): string[] {
-  return value.split(/[\s,;]+/).filter(Boolean);
-}
 
 /** Parses the `mapping` form field; returns null unless it is a JSON object of header -> valid ImportField. */
 export function parseMapping(raw: unknown): ImportMapping | null {

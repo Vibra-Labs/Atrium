@@ -4,10 +4,12 @@ import { DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { ContactSyncService } from "./contact-sync.service";
-import { LEGACY_PHONE_LABEL, splitName } from "../contacts/contact-fields";
+import { LEGACY_PHONE_LABEL, readPhones, resolvePhones, splitName } from "../contacts/contact-fields";
+import type { ContactPhone } from "@atrium/shared";
 
 interface ProfileFill {
-  phone?: string;
+  phone?: string | null;
+  phones?: ContactPhone[];
   address?: string;
   website?: string;
   companyId?: string;
@@ -128,7 +130,10 @@ export class ContactBackfillService implements OnApplicationBootstrap {
 
     await this.prisma.$transaction(async (tx) => {
       const data: ProfileFill = { profileImportedAt: new Date() };
-      if (contact.phone == null && profile.phone) data.phone = profile.phone;
+      // Phones and their phone mirror are written together, so this needs no later backfill step.
+      if (contact.phone == null && profile.phone?.trim()) {
+        Object.assign(data, resolvePhones({ phone: profile.phone }, readPhones(contact.phones)));
+      }
       if (contact.address == null && profile.address) data.address = profile.address;
       if (contact.website == null && profile.website) data.website = profile.website;
       const companyName = profile.company?.trim();

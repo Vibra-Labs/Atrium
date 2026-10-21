@@ -46,7 +46,7 @@ export function EditContactModal({ contact, onClose, onSaved }: Props) {
   const [rating, setRating] = useState(contact.rating ?? "");
   const [website, setWebsite] = useState(contact.website ?? "");
   const [address, setAddress] = useState(contact.address ?? "");
-  const [description, setDescription] = useState(contact.description ?? "");
+  const [description, setDescription] = useState<string>(contact.description ?? "");
   const [status, setStatus] = useState(contact.status);
   const [companyText, setCompanyText] = useState(contact.company?.name ?? "");
   const [companyId, setCompanyId] = useState<string | null>(contact.company?.id ?? null);

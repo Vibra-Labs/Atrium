@@ -71,8 +71,13 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             if (e.target === e.currentTarget) handleClose(false);
           }}
         >
-          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-sm mx-4 p-6 space-y-4">
-            <h3 className="text-lg font-semibold">{options.title}</h3>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-modal-title"
+            className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-sm mx-4 p-6 space-y-4"
+          >
+            <h3 id="confirm-modal-title" className="text-lg font-semibold">{options.title}</h3>
             <p className="text-sm text-[var(--muted-foreground)]">
               {options.message}
             </p>

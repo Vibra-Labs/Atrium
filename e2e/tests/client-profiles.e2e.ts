@@ -49,11 +49,10 @@ test.describe("Client profiles", () => {
     const { context: clientCtx, page: clientPage } = await signIn(browser, clientEmail, password);
     await clientPage.goto("http://localhost:3000/portal/settings");
     await expect(clientPage.getByText(/your profile/i)).toBeVisible({ timeout: 10000 });
-    const form = clientPage.locator("form").filter({ has: clientPage.getByRole("button", { name: "Save Profile" }) });
-    await form.locator("input").nth(0).fill(company);
-    await form.locator("input").nth(1).fill("555-0199");
-    await form.locator("textarea").fill("We bake bread.");
-    await form.getByRole("button", { name: "Save Profile" }).click();
+    await clientPage.getByLabel("Company", { exact: true }).fill(company);
+    await clientPage.getByLabel("Phone", { exact: true }).fill("555-0199");
+    await clientPage.getByLabel("Description", { exact: true }).fill("We bake bread.");
+    await clientPage.getByRole("button", { name: "Save Profile" }).click();
     await expect(clientPage.getByText("Profile updated")).toBeVisible();
 
     // The API answers with the stored contact fields and nothing else.

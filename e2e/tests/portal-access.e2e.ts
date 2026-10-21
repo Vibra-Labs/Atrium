@@ -42,10 +42,10 @@ test.describe("Portal access on contacts", () => {
     await openClientContact(page, clientEmail);
     await page.getByTestId("portal-access").getByRole("button", { name: "Remove portal access" }).click();
     // The confirm modal is worded as removing access, not deleting the client.
-    await expect(page.getByRole("heading", { name: "Remove portal access" })).toBeVisible();
-    await expect(page.getByText(/contact, notes and history stay/)).toBeVisible();
-    // The modal renders after the page, so its button is the last one with this name.
-    await page.getByRole("button", { name: "Remove portal access" }).last().click();
+    const dialog = page.getByRole("dialog", { name: "Remove portal access" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/contact, notes and history stay/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Remove portal access" }).click();
 
     await expect(page.getByText("Portal access removed")).toBeVisible();
     await expect(page.getByTestId("portal-access")).toHaveCount(0);

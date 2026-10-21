@@ -62,11 +62,17 @@ const TABS: { id: TabId; label: string }[] = [
 
 const LIMIT = 20;
 
-const ACCESS_FILTERS: Record<string, string> = {
+type AccessFilter = "portal" | "pending" | "none";
+
+const ACCESS_FILTERS: Record<AccessFilter, string> = {
   portal: "Has access",
   pending: "Invite pending",
   none: "No access",
 };
+
+function isAccessFilter(value: string): value is AccessFilter {
+  return Object.hasOwn(ACCESS_FILTERS, value);
+}
 
 interface ClientLimit {
   max: number;
@@ -74,7 +80,7 @@ interface ClientLimit {
 }
 
 /** Portal clients used / allowed on the plan (pending invites hold a seat), when billing applies. */
-function ClientLimitNotice({ limit }: { limit: ClientLimit }) {
+function ClientLimitNotice({ limit }: { limit: ClientLimit }): React.ReactElement {
   if (limit.used < limit.max) {
     return (
       <span
@@ -129,7 +135,7 @@ export default function ContactsPage() {
   const { error: showError } = useToast();
   const config = useAppConfig();
   const [clientLimit, setClientLimit] = useState<ClientLimit | null>(null);
-  const [access, setAccess] = useState("");
+  const [access, setAccess] = useState<AccessFilter | "">("");
   const rowLink = useRowLink();
   const [tab, setTab] = useState<TabId>("all");
   const [search, setSearch] = useState("");
@@ -151,8 +157,8 @@ export default function ContactsPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("tab") === "companies") setTab("companies");
-    const deepAccess = params.get("access") ?? "";
-    if (deepAccess in ACCESS_FILTERS) setAccess(deepAccess);
+    const deepAccess: string = params.get("access") ?? "";
+    if (isAccessFilter(deepAccess)) setAccess(deepAccess);
   }, []);
 
   useEffect(() => {
@@ -352,7 +358,7 @@ export default function ContactsPage() {
               aria-label="Filter by portal access"
               value={access}
               onChange={(e) => {
-                setAccess(e.target.value);
+                setAccess(isAccessFilter(e.target.value) ? e.target.value : "");
                 setPage(1);
               }}
               className={selectClass}

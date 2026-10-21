@@ -47,7 +47,7 @@ const roleColor = (role: string): string => {
 };
 
 /** Your staff: owners and admins. Clients are contacts with portal access (Contacts page). */
-export default function TeamPage() {
+export default function TeamPage(): React.ReactElement {
   const config = useAppConfig();
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -55,17 +55,17 @@ export default function TeamPage() {
   const [memberLimit, setMemberLimit] = useState<{ max: number; used: number } | null>(null);
 
   const [members, setMembers] = useState<MemberRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [currentUserId, setCurrentUserId] = useState("");
-  const [currentRole, setCurrentRole] = useState("");
-  const [copied, setCopied] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [currentRole, setCurrentRole] = useState<string>("");
+  const [copied, setCopied] = useState<string>("");
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState<string>("");
   const [inviteRole, setInviteRole] = useState<"admin" | "owner">("admin");
-  const [inviteError, setInviteError] = useState("");
-  const [inviteLink, setInviteLink] = useState("");
-  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string>("");
+  const [inviteLink, setInviteLink] = useState<string>("");
+  const [inviting, setInviting] = useState<boolean>(false);
   const [resendingId, setResendingId] = useState<string>("");
   const [orgLabels, setOrgLabels] = useState<LabelRecord[]>([]);
 
@@ -82,8 +82,14 @@ export default function TeamPage() {
   const loadMembers = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      const res = await apiFetch<PaginatedResponse<MemberRecord>>(`/clients?page=1&limit=100`);
-      setMembers(res.data.filter((m) => m.role !== "member"));
+      // Staff only, every page: clients never crowd staff out of the list.
+      const staff: MemberRecord[] = [];
+      for (let page = 1; ; page++) {
+        const res = await apiFetch<PaginatedResponse<MemberRecord>>(`/clients?role=staff&page=${page}&limit=100`);
+        staff.push(...res.data);
+        if (page >= res.meta.totalPages) break;
+      }
+      setMembers(staff);
     } catch (err) {
       console.error(err);
     } finally {

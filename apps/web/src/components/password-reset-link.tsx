@@ -52,9 +52,15 @@ export function usePasswordReset(): {
   return { resetLink, resettingMemberId, sendReset, closeReset: () => setResetLink(null) };
 }
 
-export function ResetLinkModal({ resetLink, onClose }: { resetLink: ResetLink; onClose: () => void }) {
+export function ResetLinkModal({
+  resetLink,
+  onClose,
+}: {
+  resetLink: ResetLink;
+  onClose: () => void;
+}): React.ReactElement {
   const { error: showError } = useToast();
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean>(false);
 
   async function copy(): Promise<void> {
     if (!(await copyToClipboard(resetLink.url))) {

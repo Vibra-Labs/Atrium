@@ -34,12 +34,12 @@ const actionClass =
  * reset, remove access) or an open invitation (copy link). Nothing when neither; the header
  * offers "Invite to portal" then.
  */
-export function PortalAccess({ contact, pendingInvite, onChanged }: Props) {
+export function PortalAccess({ contact, pendingInvite, onChanged }: Props): React.ReactElement | null {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
   const { resetLink, resettingMemberId, sendReset, closeReset } = usePasswordReset();
-  const [copied, setCopied] = useState(false);
-  const [removing, setRemoving] = useState(false);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [removing, setRemoving] = useState<boolean>(false);
 
   async function copyInviteLink(link: string): Promise<void> {
     if (!(await copyToClipboard(link))) {

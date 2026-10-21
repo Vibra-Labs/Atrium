@@ -162,10 +162,15 @@ export class SettingsService {
    * instances pick the change up when their entry expires.
    */
   getEffectiveEmailConfig(organizationId: string): Promise<EffectiveEmailConfig> {
+    const now = Date.now();
     const cached = this.emailConfigCache.get(organizationId);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (cached && cached.expiresAt > now) return cached.value;
+    // Expired entries hold decrypted secrets: drop them all rather than letting them linger.
+    for (const [key, entry] of this.emailConfigCache) {
+      if (entry.expiresAt <= now) this.emailConfigCache.delete(key);
+    }
     const value = this.loadEffectiveEmailConfig(organizationId);
-    this.emailConfigCache.set(organizationId, { value, expiresAt: Date.now() + EMAIL_CONFIG_TTL_MS });
+    this.emailConfigCache.set(organizationId, { value, expiresAt: now + EMAIL_CONFIG_TTL_MS });
     // Never cache a failure.
     value.catch(() => {
       if (this.emailConfigCache.get(organizationId)?.value === value) this.emailConfigCache.delete(organizationId);

@@ -330,4 +330,31 @@ describe("MailService", () => {
     expect(mockResendSend).toHaveBeenCalledTimes(7);
     expect(peak).toBe(2);
   });
+
+  test("a hung send times out and frees its slot, so later mail still goes out", async () => {
+    const statics = MailService as unknown as { sendTimeoutMs: number };
+    const original = statics.sendTimeoutMs;
+    statics.sendTimeoutMs = 20;
+    try {
+      let calls = 0;
+      mockResendSend.mockImplementation(() => {
+        calls++;
+        // The first two hang forever; later ones succeed.
+        return calls <= 2
+          ? new Promise(() => {})
+          : Promise.resolve({ data: { id: "ok" }, error: null });
+      });
+      const service = new MailService(
+        makeConfig({ RESEND_API_KEY: "re_env" }) as unknown as ConfigService,
+        makeSettingsService() as unknown as SettingsService,
+        mockLogger as unknown as PinoLogger,
+      );
+      const results = await Promise.all(
+        ["a", "b", "c"].map((u) => service.send(`${u}@test.com`, "Hi", "<p>x</p>")),
+      );
+      expect(results.map((r) => r.sent)).toEqual([false, false, true]);
+    } finally {
+      statics.sendTimeoutMs = original;
+    }
+  });
 });

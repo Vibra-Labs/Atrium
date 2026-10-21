@@ -213,6 +213,20 @@ describe("SettingsService", () => {
     expect((await service.getEffectiveEmailConfig("org-1")).from).toBe("new@example.com");
   });
 
+  test("expired cache entries are dropped, not kept with their decrypted secrets", async () => {
+    const realNow = Date.now;
+    const cache = (service as unknown as { emailConfigCache: Map<string, unknown> }).emailConfigCache;
+    try {
+      await service.getEffectiveEmailConfig("org-1");
+      expect(cache.has("org-1")).toBe(true);
+      Date.now = () => realNow() + 61_000;
+      await service.getEffectiveEmailConfig("org-2");
+      expect([...cache.keys()]).toEqual(["org-2"]);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
   test("a failed config load is not cached", async () => {
     prisma.systemSettings.findUnique.mockImplementationOnce(() => Promise.reject(new Error("db down")));
     await expect(service.getEffectiveEmailConfig("org-1")).rejects.toThrow("db down");

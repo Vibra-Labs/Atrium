@@ -837,6 +837,40 @@ test.describe("Company typeahead", () => {
   });
 });
 
+test.describe("Project picker", () => {
+  test("links a project from the contact panel using only the keyboard", async ({ page, request }) => {
+    const stamp = Date.now();
+    const headers = { "x-csrf-token": getCsrfToken() };
+    const project = await (
+      await request.post(`${API}/projects`, { data: { name: `Keyboard project ${stamp}` }, headers })
+    ).json();
+    const contact = await (
+      await request.post(`${API}/contacts`, { data: { name: `Keys ${stamp}` }, headers })
+    ).json();
+
+    await page.goto(`/dashboard/contacts/${contact.id}`);
+    const picker = page.getByRole("combobox", { name: "Link a project" });
+    await picker.focus();
+    await picker.pressSequentially(`Keyboard project ${stamp}`);
+    const option = page.getByRole("option", { name: `Keyboard project ${stamp}` });
+    await expect(option).toBeVisible();
+    await picker.press("ArrowDown");
+    await expect(picker).toHaveAttribute("aria-activedescendant", /.+/);
+    await expect(option).toHaveAttribute("aria-selected", "true");
+    await picker.press("Enter");
+
+    await expect(page.getByRole("link", { name: `Keyboard project ${stamp}` })).toHaveAttribute(
+      "href",
+      `/dashboard/projects/${project.id}`,
+    );
+    // Escape closes an open list without picking.
+    await picker.focus();
+    await expect(page.getByRole("listbox", { name: "Projects" })).toBeVisible();
+    await picker.press("Escape");
+    await expect(page.getByRole("listbox", { name: "Projects" })).toHaveCount(0);
+  });
+});
+
 test.describe("Lead source settings", () => {
   test("rename a lead source in settings", async ({ page, request }) => {
     const stamp = Date.now();

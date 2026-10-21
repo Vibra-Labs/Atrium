@@ -15,24 +15,26 @@ interface SmtpConfig {
 
 const MAX_CONCURRENT_SENDS = 2;
 
-/** Runs at most `max` tasks at once; the rest wait their turn in order. */
+/** Runs at most `max` tasks at once; a finished task hands its slot straight to the next waiter. */
 function createLimiter(max: number): <T>(task: () => Promise<T>) => Promise<T> {
   let active = 0;
   const waiting: (() => void)[] = [];
   return async <T>(task: () => Promise<T>): Promise<T> => {
-    if (active >= max) await new Promise<void>((resolve) => waiting.push(resolve));
-    active++;
+    if (active < max) active++;
+    else await new Promise<void>((resolve) => waiting.push(resolve));
     try {
       return await task();
     } finally {
-      active--;
-      waiting.shift()?.();
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
     }
   };
 }
 
 @Injectable()
 export class MailService {
+  private static sendTimeoutMs = 30_000;
   private readonly limitSend = createLimiter(MAX_CONCURRENT_SENDS);
   private resend: Resend | null;
   private from: string;
@@ -79,7 +81,28 @@ export class MailService {
     html: string,
     organizationId?: string,
   ): Promise<{ sent: boolean; viaOrgConfig: boolean }> {
-    return this.limitSend(() => this.deliver(to, subject, html, organizationId));
+    return this.limitSend(() => this.deliverWithTimeout(to, subject, html, organizationId));
+  }
+
+  /** A hung provider call must not hold a send slot forever: give up on it and free the slot. */
+  private async deliverWithTimeout(
+    to: string,
+    subject: string,
+    html: string,
+    organizationId?: string,
+  ): Promise<{ sent: boolean; viaOrgConfig: boolean }> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<{ sent: boolean; viaOrgConfig: boolean }>((resolve) => {
+      timer = setTimeout(() => {
+        this.logger.error({ to, subject }, `Email send timed out after ${MailService.sendTimeoutMs} ms; giving up`);
+        resolve({ sent: false, viaOrgConfig: false });
+      }, MailService.sendTimeoutMs);
+    });
+    try {
+      return await Promise.race([this.deliver(to, subject, html, organizationId), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async deliver(

@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { Facebook, Instagram, Link as LinkIcon, Linkedin, Phone, Twitter, Youtube } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { socialSite, telHref } from "@/lib/contact-fields";
 import type { SocialSite } from "@/lib/contact-fields";
 import { apiFetch } from "@/lib/api";
-import { useTypeahead } from "@/lib/use-typeahead";
+import { TYPEAHEAD_LIMIT, useListboxKeys, useTypeahead } from "@/lib/use-typeahead";
 import { useToast } from "@/components/toast";
 import { LabelPicker } from "@/components/label-picker";
 import { LabelBadge } from "@/components/label-badge";
@@ -41,10 +41,25 @@ function ProjectsSection({ contact, onChanged }: Props) {
   const [newName, setNewName] = useState("");
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
-  const { items: options } = useTypeahead<ProjectOption>("/projects", search.trim(), searching);
+  // Linked projects are hidden from the results, so ask for enough to still show 10 others.
+  const { items: options } = useTypeahead<ProjectOption>(
+    "/projects",
+    search.trim(),
+    searching,
+    TYPEAHEAD_LIMIT + contact.projects.length,
+  );
 
   const linkedIds = new Set(contact.projects.map((p) => p.id));
-  const available = options.filter((p) => !linkedIds.has(p.id));
+  const available = options.filter((p) => !linkedIds.has(p.id)).slice(0, TYPEAHEAD_LIMIT);
+  const pickerId: string = useId();
+  const keys = useListboxKeys(available.length, searching, setSearching, (i) => void pick(available[i].id));
+
+  async function pick(projectId: string): Promise<void> {
+    if (await link(projectId)) {
+      setSearch("");
+      setSearching(false);
+    }
+  }
 
   async function link(projectId: string): Promise<boolean> {
     try {
@@ -111,39 +126,50 @@ function ProjectsSection({ contact, onChanged }: Props) {
       </ul>
       <div className="relative mb-2">
         <input
+          role="combobox"
           aria-label="Link a project"
+          aria-expanded={searching}
+          aria-controls={`${pickerId}-list`}
+          aria-autocomplete="list"
+          aria-activedescendant={searching && keys.active >= 0 ? `${pickerId}-${keys.active}` : undefined}
           placeholder="Link existing project…"
           value={search}
           autoComplete="off"
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setSearching(true);
+          }}
           onFocus={() => setSearching(true)}
-          onBlur={() => setTimeout(() => setSearching(false), 150)}
+          onBlur={() => setSearching(false)}
+          onKeyDown={keys.onKeyDown}
           className={inputClass}
         />
         {searching && (
           <ul
+            id={`${pickerId}-list`}
             role="listbox"
+            aria-label="Projects"
             className="absolute z-10 mt-1 w-full max-h-60 overflow-auto bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg text-sm"
           >
             {available.length === 0 && (
-              <li className="px-3 py-2 text-[var(--muted-foreground)]">No matching projects</li>
+              <li role="presentation" className="px-3 py-2 text-[var(--muted-foreground)]">
+                No matching projects
+              </li>
             )}
-            {available.map((p) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={false}
-                  onMouseDown={async () => {
-                    if (await link(p.id)) {
-                      setSearch("");
-                      setSearching(false);
-                    }
-                  }}
-                  className="w-full text-left px-3 py-2 hover:bg-[var(--muted)]"
-                >
-                  {p.name}
-                </button>
+            {available.map((p, i) => (
+              <li
+                key={p.id}
+                id={`${pickerId}-${i}`}
+                role="option"
+                aria-selected={i === keys.active}
+                // preventDefault keeps focus in the input, so the list stays open until a pick.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  void pick(p.id);
+                }}
+                className={`px-3 py-2 cursor-pointer hover:bg-[var(--muted)] ${i === keys.active ? "bg-[var(--muted)]" : ""}`}
+              >
+                {p.name}
               </li>
             ))}
           </ul>

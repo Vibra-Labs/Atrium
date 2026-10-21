@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { useTypeahead } from "@/lib/use-typeahead";
+import { useListboxKeys, useTypeahead } from "@/lib/use-typeahead";
 import { ChevronDown, X } from "lucide-react";
 import { NEW_SOURCE, PHONE_LABELS, RATING_LABELS, inputClass, labelClass } from "./shared";
 import type { ContactPhone } from "./shared";
@@ -161,8 +161,16 @@ interface CompanyFieldProps {
 /** Company typeahead: pick an existing company or type a new name to create one. */
 export function CompanyField({ text, onChange }: CompanyFieldProps) {
   const [open, setOpen] = useState(false);
+  const listId: string = useId();
   const term: string = text.trim();
   const { items: matches, loading } = useTypeahead<Option>("/companies", term, open && term !== "");
+  const showList: boolean = open && term !== "";
+
+  function pick(c: Option): void {
+    onChange(c.name, c.id);
+    setOpen(false);
+  }
+  const keys = useListboxKeys(matches.length, showList, setOpen, (i) => pick(matches[i]));
 
   return (
     <div className="relative">
@@ -171,6 +179,11 @@ export function CompanyField({ text, onChange }: CompanyFieldProps) {
       </label>
       <input
         id="contact-company"
+        role="combobox"
+        aria-expanded={showList}
+        aria-controls={`${listId}-list`}
+        aria-autocomplete="list"
+        aria-activedescendant={showList && keys.active >= 0 ? `${listId}-${keys.active}` : undefined}
         value={text}
         autoComplete="off"
         onChange={(e) => {
@@ -178,32 +191,37 @@ export function CompanyField({ text, onChange }: CompanyFieldProps) {
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={keys.onKeyDown}
         className={inputClass}
       />
-      {open && text.trim() && (
+      {showList && (
         <ul
+          id={`${listId}-list`}
           role="listbox"
+          aria-label="Companies"
           className="absolute z-10 mt-1 w-full bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg text-sm overflow-hidden"
         >
-          {matches.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={false}
-                onMouseDown={() => {
-                  onChange(c.name, c.id);
-                  setOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-[var(--muted)]"
-              >
-                {c.name}
-              </button>
+          {matches.map((c, i) => (
+            <li
+              key={c.id}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === keys.active}
+              // preventDefault keeps focus in the input until the pick lands.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(c);
+              }}
+              className={`px-3 py-2 cursor-pointer hover:bg-[var(--muted)] ${i === keys.active ? "bg-[var(--muted)]" : ""}`}
+            >
+              {c.name}
             </li>
           ))}
           {!loading && !matches.some((c) => c.name.toLowerCase() === term.toLowerCase()) && (
-            <li className="px-3 py-2 text-[var(--muted-foreground)]">Create “{term}”</li>
+            <li role="presentation" className="px-3 py-2 text-[var(--muted-foreground)]">
+              Create “{term}”
+            </li>
           )}
         </ul>
       )}

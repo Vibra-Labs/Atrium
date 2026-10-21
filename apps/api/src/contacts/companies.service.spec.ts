@@ -5,7 +5,7 @@ import { CompaniesService } from "./companies.service";
 import type { ContactRevenueService } from "./contact-revenue.service";
 import { validate } from "class-validator";
 import { plainToInstance } from "class-transformer";
-import { UpdateCompanyDto } from "./contacts.dto";
+import { ListCompaniesQueryDto, UpdateCompanyDto } from "./contacts.dto";
 
 const prisma = {
   company: {
@@ -50,6 +50,46 @@ describe("CompaniesService", () => {
     const res = await service.findAll("org-1");
     expect(res.data.map((c: { paidCents: number }) => c.paidCents)).toEqual([1234, 0]);
     expect(revenue.paidTotalsForCompanies).toHaveBeenCalledWith(["co-1", "co-2"], "org-1");
+  });
+
+  it("findAll sorts by name or people count in the database", async () => {
+    const orderByOf = (): unknown =>
+      (prisma.company.findMany.mock.calls.at(-1)?.[0] as { orderBy: unknown }).orderBy;
+    await service.findAll("org-1");
+    expect(orderByOf()).toEqual([{ name: "asc" }, { id: "asc" }]);
+    await service.findAll("org-1", 1, 20, undefined, "name", "desc");
+    expect(orderByOf()).toEqual([{ name: "desc" }, { id: "asc" }]);
+    await service.findAll("org-1", 1, 20, undefined, "people", "desc");
+    expect(orderByOf()).toEqual([{ contacts: { _count: "desc" } }, { name: "asc" }, { id: "asc" }]);
+  });
+
+  it("findAll sorts by paid total across every page", async () => {
+    prisma.company.findMany.mockImplementation((args: unknown) => {
+      const a = args as { select?: unknown; where: { id?: { in: string[] } } };
+      if (a.select) {
+        return Promise.resolve([
+          { id: "co-1", name: "Acme" },
+          { id: "co-2", name: "Beta" },
+          { id: "co-3", name: "Cove" },
+        ]);
+      }
+      const ids = a.where.id?.in ?? [];
+      return Promise.resolve(ids.map((id) => ({ id, name: id, _count: { contacts: 0 } })));
+    });
+    revenue.paidTotalsForCompanies.mockImplementation(() =>
+      Promise.resolve(new Map([["co-3", 99], ["co-1", 10]])),
+    );
+    const res = await service.findAll("org-1", 1, 2, undefined, "paid", "desc");
+    expect(revenue.paidTotalsForCompanies).toHaveBeenLastCalledWith(null, "org-1");
+    expect(res.data.map((c: { id: string }) => c.id)).toEqual(["co-3", "co-1"]);
+    expect(res.data.map((c: { paidCents: number }) => c.paidCents)).toEqual([99, 10]);
+    prisma.company.findMany.mockImplementation(() => Promise.resolve([]));
+    revenue.paidTotalsForCompanies.mockImplementation(() => Promise.resolve(new Map([["co-1", 1234]])));
+  });
+
+  it("ListCompaniesQueryDto accepts only known sorts", async () => {
+    expect(await validate(plainToInstance(ListCompaniesQueryDto, { sort: "people", dir: "asc" }))).toHaveLength(0);
+    expect(await validate(plainToInstance(ListCompaniesQueryDto, { sort: "website" }))).not.toHaveLength(0);
   });
 
   it("findAll filters by name case-insensitively when searching", async () => {

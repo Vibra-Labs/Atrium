@@ -17,6 +17,18 @@ interface InvoiceRow {
 
 const MONTHS = 12;
 
+/** Ids ordered by paid total (missing = 0), ties by name. */
+export function rankByPaid(
+  rows: { id: string; name: string }[],
+  paid: Map<string, number>,
+  dir: "asc" | "desc",
+): string[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...rows]
+    .sort((a, b) => sign * ((paid.get(a.id) ?? 0) - (paid.get(b.id) ?? 0)) || a.name.localeCompare(b.name))
+    .map((r) => r.id);
+}
+
 function monthKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
@@ -37,9 +49,11 @@ export class ContactRevenueService {
     );
   }
 
-  async paidTotals(contactIds: string[], orgId: string): Promise<Map<string, number>> {
+  /** Paid total per contact; `null` ids means every contact in the workspace. */
+  async paidTotals(contactIds: string[] | null, orgId: string): Promise<Map<string, number>> {
     const totals = new Map<string, number>();
-    if (contactIds.length === 0) return totals;
+    if (contactIds?.length === 0) return totals;
+    const only = contactIds ? Prisma.sql`pc."contactId" IN (${Prisma.join(contactIds)})` : Prisma.sql`TRUE`;
     const rows = await this.prisma.$queryRaw<
       Array<{ contactId: string; paid: bigint | number }>
     >`
@@ -47,17 +61,23 @@ export class ContactRevenueService {
       FROM "project_contact" pc
       JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
       JOIN (${this.invoiceTotals(orgId)}) t ON t."projectId" = pc."projectId"
-      WHERE pc."contactId" IN (${Prisma.join(contactIds)}) AND t.status = 'paid'
+      WHERE ${only} AND t.status = 'paid'
       GROUP BY pc."contactId"
     `;
     for (const r of rows) totals.set(r.contactId, Number(r.paid));
     return totals;
   }
 
-  /** Paid total per company; an invoice shared by several of its contacts counts once. */
-  async paidTotalsForCompanies(companyIds: string[], orgId: string): Promise<Map<string, number>> {
+  /**
+   * Paid total per company; an invoice shared by several of its contacts counts once.
+   * `null` ids means every company in the workspace.
+   */
+  async paidTotalsForCompanies(companyIds: string[] | null, orgId: string): Promise<Map<string, number>> {
     const totals = new Map<string, number>();
-    if (companyIds.length === 0) return totals;
+    if (companyIds?.length === 0) return totals;
+    const only = companyIds
+      ? Prisma.sql`c."companyId" IN (${Prisma.join(companyIds)})`
+      : Prisma.sql`c."companyId" IS NOT NULL`;
     const rows = await this.prisma.$queryRaw<
       Array<{ companyId: string; paid: bigint | number }>
     >`
@@ -67,7 +87,7 @@ export class ContactRevenueService {
         FROM "project_contact" pc
         JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
         JOIN (${this.invoiceTotals(orgId)}) t ON t."projectId" = pc."projectId"
-        WHERE c."companyId" IN (${Prisma.join(companyIds)}) AND t.status = 'paid'
+        WHERE ${only} AND t.status = 'paid'
       ) d
       GROUP BY d."companyId"
     `;

@@ -36,6 +36,13 @@ export const PORTAL_ACCESS_FILTERS = ["portal", "pending", "none"] as const;
 export type PortalAccessFilter = (typeof PORTAL_ACCESS_FILTERS)[number];
 export type { ContactRating, ContactStatus };
 
+export const CONTACT_SORTS = ["name", "company", "status", "followUp", "paid"] as const;
+export type ContactSort = (typeof CONTACT_SORTS)[number];
+export const COMPANY_SORTS = ["name", "people", "paid"] as const;
+export type CompanySort = (typeof COMPANY_SORTS)[number];
+export const SORT_DIRECTIONS = ["asc", "desc"] as const;
+export type SortDirection = (typeof SORT_DIRECTIONS)[number];
+
 /** Lengths are checked after trimming, in contact-fields.ts. */
 export class ContactPhoneDto {
   @IsString()
@@ -164,6 +171,14 @@ export class ListCompaniesQueryDto extends PaginationQueryDto {
   @IsString()
   @MaxLength(200)
   search?: string;
+
+  @IsOptional()
+  @IsIn(COMPANY_SORTS)
+  sort?: CompanySort;
+
+  @IsOptional()
+  @IsIn(SORT_DIRECTIONS)
+  dir?: SortDirection;
 }
 
 export class ListContactsQueryDto extends PaginationQueryDto {
@@ -196,6 +211,14 @@ export class ListContactsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(PORTAL_ACCESS_FILTERS)
   access?: PortalAccessFilter;
+
+  @IsOptional()
+  @IsIn(CONTACT_SORTS)
+  sort?: ContactSort;
+
+  @IsOptional()
+  @IsIn(SORT_DIRECTIONS)
+  dir?: SortDirection;
 }
 
 export class CreateContactNoteDto {

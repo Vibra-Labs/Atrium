@@ -132,6 +132,20 @@ describe("ContactRevenueService", () => {
     expect((await revenue.paidTotalsForCompanies([company.id], (await seed()).orgId)).size).toBe(0);
   });
 
+  it("whole-workspace totals (null ids) match the per-id totals and stay in the workspace", async () => {
+    const d = await seed();
+    const company = await prisma.company.create({ data: { organizationId: d.orgId, name: "Co" } });
+    await prisma.contact.update({ where: { id: d.contactId }, data: { companyId: company.id } });
+    await uploaded(d, "paid", 7000, { paidAt: new Date() });
+    const other = await seed();
+    await uploaded(other, "paid", 300, { paidAt: new Date() });
+
+    const all = await revenue.paidTotals(null, d.orgId);
+    expect([...all.entries()]).toEqual([[d.contactId, 7000]]);
+    const allCompanies = await revenue.paidTotalsForCompanies(null, d.orgId);
+    expect([...allCompanies.entries()]).toEqual([[company.id, 7000]]);
+  });
+
   it("invoices without a project are not counted", async () => {
     const d = await seed();
     await uploaded(d, "paid", 50000, { paidAt: new Date(), projectId: null });

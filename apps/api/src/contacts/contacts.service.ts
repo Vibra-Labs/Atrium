@@ -14,14 +14,16 @@ import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
-import { ContactRevenueService } from "./contact-revenue.service";
+import { ContactRevenueService, rankByPaid } from "./contact-revenue.service";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
 import type { ImportField, ImportMapping } from "./contacts-csv";
 import { LEAD_SOURCE_NAME_MAX, TIMELINE_MAX_PAGE } from "./contacts.dto";
 import type {
+  ContactSort,
   CreateContactDto,
   ListContactsQueryDto,
   SetFollowUpDto,
+  SortDirection,
   UpdateContactDto,
 } from "./contacts.dto";
 import { requireName } from "./require-name";
@@ -187,6 +189,21 @@ function toResponse<T extends StoredContact>(contact: T): ContactResponse<T> {
   return { ...rest, phones: phonesOf(phones, contact.phone), socialLinks: readLinks(socialLinks) };
 }
 
+/** Database order for a contacts list sort; name then id keep pages stable. */
+function contactOrderBy(sort: Exclude<ContactSort, "paid">, dir: SortDirection): Prisma.ContactOrderByWithRelationInput[] {
+  const tiebreak: Prisma.ContactOrderByWithRelationInput[] = [{ name: "asc" }, { id: "asc" }];
+  switch (sort) {
+    case "name":
+      return [{ name: dir }, { id: "asc" }];
+    case "company":
+      return [{ company: { name: dir } }, ...tiebreak];
+    case "status":
+      return [{ status: dir }, ...tiebreak];
+    case "followUp":
+      return [{ followUpAt: { sort: dir, nulls: "last" } }, ...tiebreak];
+  }
+}
+
 type LinkFields = Pick<
   UpdateContactDto,
   "companyId" | "companyName" | "leadSourceId" | "leadSourceName" | "referredById"
@@ -206,24 +223,41 @@ export class ContactsService {
     const limit = query.limit ?? 20;
     const pending = await this.pendingInviteEmails(orgId);
     const where = this.buildWhere(orgId, query, pending);
+    const include = {
+      company: { select: { id: true, name: true } },
+      labels: { include: { label: true } },
+    } as const;
 
-    const [contacts, total] = await Promise.all([
-      this.prisma.contact.findMany({
-        where,
-        orderBy: { name: "asc" },
-        include: {
-          company: { select: { id: true, name: true } },
-          labels: { include: { label: true } },
-        },
-        ...paginationArgs(page, limit),
-      }),
-      this.prisma.contact.count({ where }),
-    ]);
-
-    const paid = await this.revenue.paidTotals(
-      contacts.map((c) => c.id),
-      orgId,
-    );
+    let contacts;
+    let total: number;
+    let paid: Map<string, number>;
+    if (query.sort === "paid") {
+      // Paid totals come from invoices, so rank every match here and fetch only this page.
+      const [matches, allPaid] = await Promise.all([
+        this.prisma.contact.findMany({ where, select: { id: true, name: true } }),
+        this.revenue.paidTotals(null, orgId),
+      ]);
+      const pageIds = rankByPaid(matches, allPaid, query.dir ?? "desc").slice((page - 1) * limit, page * limit);
+      const rows = await this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include });
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      contacts = pageIds.flatMap((id) => byId.get(id) ?? []);
+      total = matches.length;
+      paid = allPaid;
+    } else {
+      [contacts, total] = await Promise.all([
+        this.prisma.contact.findMany({
+          where,
+          orderBy: contactOrderBy(query.sort ?? "name", query.dir ?? "asc"),
+          include,
+          ...paginationArgs(page, limit),
+        }),
+        this.prisma.contact.count({ where }),
+      ]);
+      paid = await this.revenue.paidTotals(
+        contacts.map((c) => c.id),
+        orgId,
+      );
+    }
     const pendingSet = new Set(pending);
     const data = contacts.map((c) => ({
       id: c.id,

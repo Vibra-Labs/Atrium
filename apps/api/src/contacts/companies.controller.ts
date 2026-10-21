@@ -26,7 +26,7 @@ export class CompaniesController {
 
   @Get()
   findAll(@CurrentOrg("id") orgId: string, @Query() query: ListCompaniesQueryDto) {
-    return this.companiesService.findAll(orgId, query.page, query.limit, query.search);
+    return this.companiesService.findAll(orgId, query.page, query.limit, query.search, query.sort, query.dir);
   }
 
   @Post()

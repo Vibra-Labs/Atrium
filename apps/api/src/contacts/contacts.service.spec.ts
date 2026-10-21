@@ -655,6 +655,94 @@ describe("ContactsService", () => {
     });
   });
 
+  describe("sorting", () => {
+    const row = (id: string, name: string): Record<string, unknown> => ({
+      id,
+      name,
+      email: null,
+      status: "lead",
+      phones: [],
+      socialLinks: [],
+      company: null,
+      labels: [],
+      userId: null,
+    });
+
+    function orderByOf(): unknown {
+      return (prisma.contact.findMany.mock.calls[0][0] as { orderBy: unknown }).orderBy;
+    }
+
+    it("defaults to name A-Z with id as a tiebreaker", async () => {
+      await service.findAll("org-1", {});
+      expect(orderByOf()).toEqual([{ name: "asc" }, { id: "asc" }]);
+    });
+
+    it("sorts by name, company, status and follow-up in the database", async () => {
+      const cases: [ListContactsQueryDto, unknown][] = [
+        [{ sort: "name", dir: "desc" }, [{ name: "desc" }, { id: "asc" }]],
+        [{ sort: "company", dir: "asc" }, [{ company: { name: "asc" } }, { name: "asc" }, { id: "asc" }]],
+        [{ sort: "status", dir: "desc" }, [{ status: "desc" }, { name: "asc" }, { id: "asc" }]],
+        // Contacts without a follow-up always go last.
+        [
+          { sort: "followUp" },
+          [{ followUpAt: { sort: "asc", nulls: "last" } }, { name: "asc" }, { id: "asc" }],
+        ],
+      ];
+      for (const [query, expected] of cases) {
+        prisma.contact.findMany.mockClear();
+        await service.findAll("org-1", query);
+        expect(orderByOf()).toEqual(expected);
+      }
+    });
+
+    it("sorts by paid total across every page, highest first, ties by name", async () => {
+      prisma.contact.findMany.mockImplementation((args: unknown) => {
+        const a = args as { select?: unknown; where: { id?: { in: string[] } } };
+        if (a.select) {
+          return Promise.resolve([
+            { id: "a", name: "Ann" },
+            { id: "b", name: "Bo" },
+            { id: "c", name: "Cy" },
+            { id: "d", name: "Al" },
+          ]);
+        }
+        const ids = a.where.id?.in ?? [];
+        return Promise.resolve(ids.map((id) => row(id, id)));
+      });
+      revenue.paidTotals.mockImplementation(() =>
+        Promise.resolve(
+          new Map([
+            ["b", 500],
+            ["c", 900],
+          ]),
+        ),
+      );
+      prisma.contact.count.mockImplementation(() => Promise.resolve(4));
+
+      const first = await service.findAll("org-1", { sort: "paid", dir: "desc", limit: 3 });
+      // Whole workspace in one query rather than a huge id list.
+      expect(revenue.paidTotals).toHaveBeenCalledWith(null, "org-1");
+      expect(first.data.map((c) => c.id)).toEqual(["c", "b", "d"]);
+      expect(first.data.map((c) => c.paidCents)).toEqual([900, 500, 0]);
+      expect(first.meta.total).toBe(4);
+
+      const second = await service.findAll("org-1", { sort: "paid", dir: "desc", limit: 3, page: 2 });
+      expect(second.data.map((c) => c.id)).toEqual(["a"]);
+
+      const asc = await service.findAll("org-1", { sort: "paid", dir: "asc", limit: 3 });
+      expect(asc.data.map((c) => c.id)).toEqual(["d", "a", "b"]);
+      prisma.contact.count.mockImplementation(() => Promise.resolve(0));
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+      revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map<string, number>()));
+    });
+
+    it("ListContactsQueryDto accepts only known sorts and directions", async () => {
+      expect(await validate(plainToInstance(ListContactsQueryDto, { sort: "paid", dir: "desc" }))).toHaveLength(0);
+      expect(await validate(plainToInstance(ListContactsQueryDto, { sort: "email" }))).not.toHaveLength(0);
+      expect(await validate(plainToInstance(ListContactsQueryDto, { dir: "up" }))).not.toHaveLength(0);
+    });
+  });
+
   describe("About (description)", () => {
     it("is stored trimmed; blank or null clears it to an empty string", async () => {
       prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", phones: [] }));

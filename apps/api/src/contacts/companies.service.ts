@@ -2,8 +2,9 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "./require-name";
 import { paginationArgs, paginatedResponse } from "../common";
-import { ContactRevenueService } from "./contact-revenue.service";
-import type { CreateCompanyDto, UpdateCompanyDto } from "./contacts.dto";
+import { ContactRevenueService, rankByPaid } from "./contact-revenue.service";
+import type { Prisma } from "@atrium/database";
+import type { CompanySort, CreateCompanyDto, SortDirection, UpdateCompanyDto } from "./contacts.dto";
 
 const DUPLICATE_MESSAGE = "A company with this name already exists";
 
@@ -14,25 +15,50 @@ export class CompaniesService {
     private readonly revenue: ContactRevenueService,
   ) {}
 
-  async findAll(orgId: string, page = 1, limit = 20, search?: string) {
+  async findAll(
+    orgId: string,
+    page = 1,
+    limit = 20,
+    search?: string,
+    sort: CompanySort = "name",
+    dir: SortDirection = sort === "paid" ? "desc" : "asc",
+  ) {
     const term = search?.trim();
     const where = {
       organizationId: orgId,
       ...(term ? { name: { contains: term, mode: "insensitive" as const } } : {}),
     };
-    const [companies, total] = await Promise.all([
-      this.prisma.company.findMany({
-        where,
-        orderBy: { name: "asc" },
-        include: { _count: { select: { contacts: true } } },
-        ...paginationArgs(page, limit),
-      }),
-      this.prisma.company.count({ where }),
-    ]);
-    const paid = await this.revenue.paidTotalsForCompanies(
-      companies.map((c) => c.id),
-      orgId,
-    );
+    const include = { _count: { select: { contacts: true } } } as const;
+
+    let companies;
+    let total: number;
+    let paid: Map<string, number>;
+    if (sort === "paid") {
+      // Paid totals come from invoices, so rank every match here and fetch only this page.
+      const [matches, allPaid] = await Promise.all([
+        this.prisma.company.findMany({ where, select: { id: true, name: true } }),
+        this.revenue.paidTotalsForCompanies(null, orgId),
+      ]);
+      const pageIds = rankByPaid(matches, allPaid, dir).slice((page - 1) * limit, page * limit);
+      const rows = await this.prisma.company.findMany({ where: { id: { in: pageIds } }, include });
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      companies = pageIds.flatMap((id) => byId.get(id) ?? []);
+      total = matches.length;
+      paid = allPaid;
+    } else {
+      const orderBy: Prisma.CompanyOrderByWithRelationInput[] =
+        sort === "people"
+          ? [{ contacts: { _count: dir } }, { name: "asc" }, { id: "asc" }]
+          : [{ name: dir }, { id: "asc" }];
+      [companies, total] = await Promise.all([
+        this.prisma.company.findMany({ where, orderBy, include, ...paginationArgs(page, limit) }),
+        this.prisma.company.count({ where }),
+      ]);
+      paid = await this.revenue.paidTotalsForCompanies(
+        companies.map((c) => c.id),
+        orgId,
+      );
+    }
     const data = companies.map((c) => ({ ...c, paidCents: paid.get(c.id) ?? 0 }));
     return paginatedResponse(data, total, page, limit);
   }

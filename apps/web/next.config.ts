@@ -3,6 +3,7 @@ import { copyFileSync, existsSync } from "fs";
 import { join } from "path";
 import { withSentryConfig } from "@sentry/nextjs";
 import { resolveInternalApiUrl } from "./src/lib/internal-api-url";
+import { shouldBundleSentry } from "./src/lib/sentry-config";
 
 // Copy CHANGELOG.md into the web app directory at config load time so webpack can resolve it
 const changelogSrc = join(__dirname, "../../CHANGELOG.md");
@@ -68,13 +69,23 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
-  // Suppress Sentry CLI output during builds unless a DSN/auth token is set
-  silent: !process.env.SENTRY_AUTH_TOKEN,
-  // Upload source maps only when an auth token is provided (CI/CD or production builds)
-  sourcemaps: {
-    disable: !process.env.SENTRY_AUTH_TOKEN,
-  },
-  // Disable the Sentry telemetry for the SDK itself
-  telemetry: false,
-});
+// Without a build-time DSN the Sentry SDK is neither wrapped nor bundled.
+export default shouldBundleSentry(process.env)
+  ? withSentryConfig(nextConfig, {
+      // Suppress Sentry CLI output during builds unless an auth token is set
+      silent: !process.env.SENTRY_AUTH_TOKEN,
+      // Upload source maps only when an auth token is provided (CI/CD or production builds)
+      sourcemaps: {
+        disable: !process.env.SENTRY_AUTH_TOKEN,
+      },
+      // Drop debug logging and unused replay code from the bundle
+      bundleSizeOptimizations: {
+        excludeDebugStatements: true,
+        excludeReplayShadowDom: true,
+        excludeReplayIframe: true,
+        excludeReplayWorker: true,
+      },
+      // Disable the Sentry telemetry for the SDK itself
+      telemetry: false,
+    })
+  : nextConfig;

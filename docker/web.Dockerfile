@@ -20,6 +20,11 @@ ENV NEXT_PUBLIC_TRACKERS=${NEXT_PUBLIC_TRACKERS}
 # a proxy serves /api from the app's own origin.
 ARG NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# Optional; the Sentry SDK is only bundled when a DSN is set at build time.
+ARG NEXT_PUBLIC_SENTRY_DSN=
+ENV NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}
+ARG NEXT_PUBLIC_SENTRY_ENABLED=false
+ENV NEXT_PUBLIC_SENTRY_ENABLED=${NEXT_PUBLIC_SENTRY_ENABLED}
 RUN bun run --filter @atrium/web build
 
 # Production

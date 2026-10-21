@@ -22,6 +22,8 @@ interface NotificationState {
   setUnreadCount: (v: number | ((prev: number) => number)) => void;
 }
 
+const POLL_INTERVAL_MS = 60_000;
+
 const NotificationContext = createContext<NotificationState | null>(null);
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
@@ -29,13 +31,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     const fetchCount = () => {
+      if (document.hidden) return;
       apiFetch<{ count: number }>("/notifications/unread-count")
         .then((res) => setUnreadCount(res.count))
         .catch(() => {});
     };
     fetchCount();
-    const interval = setInterval(fetchCount, 30_000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchCount, POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", fetchCount);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", fetchCount);
+    };
   }, []);
 
   return (

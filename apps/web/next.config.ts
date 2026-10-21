@@ -17,6 +17,14 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true, // CVE-2026-27980: disable image optimization (not used in this app)
   },
+  // Fixed redirects run before any rendering, so the layouts' server fetches
+  // aren't paid for a page that only redirects.
+  async redirects() {
+    return [
+      { source: "/portal", destination: "/portal/projects", permanent: false },
+      { source: "/dashboard/settings", destination: "/dashboard/settings/account", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

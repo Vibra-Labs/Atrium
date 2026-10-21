@@ -114,26 +114,23 @@ export async function setActiveOrgAndRedirect(
   defaultPath = "/portal",
   preferredOrgId?: string,
 ): Promise<string> {
-  const orgsRes = await fetch(`${API_URL}/api/auth/organization/list`, {
-    credentials: "include",
-  });
+  const [orgsRes, sessionOrgId] = await Promise.all([
+    fetch(`${API_URL}/api/auth/organization/list`, { credentials: "include" }),
+    fetch(`${API_URL}/api/auth/get-session`, { credentials: "include" })
+      .then(async (res): Promise<string | undefined> => {
+        if (!res.ok) return undefined;
+        const session = await res.json();
+        return session?.session?.activeOrganizationId ?? undefined;
+      })
+      .catch((err): undefined => {
+        console.error("Failed to read session active org", err);
+        return undefined;
+      }),
+  ]);
   if (!orgsRes.ok) return defaultPath;
 
   const orgs: { id: string }[] = await orgsRes.json();
   if (!orgs?.length) return defaultPath;
-
-  let sessionOrgId: string | undefined;
-  try {
-    const sessionRes = await fetch(`${API_URL}/api/auth/get-session`, {
-      credentials: "include",
-    });
-    if (sessionRes.ok) {
-      const session = await sessionRes.json();
-      sessionOrgId = session?.session?.activeOrganizationId ?? undefined;
-    }
-  } catch (err) {
-    console.error("Failed to read session active org", err);
-  }
 
   const isMember = (id?: string): id is string =>
     !!id && orgs.some((o) => o.id === id);
@@ -144,12 +141,15 @@ export async function setActiveOrgAndRedirect(
       ? sessionOrgId
       : orgs[0].id;
 
-  await fetch(`${API_URL}/api/auth/organization/set-active`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ organizationId: targetOrgId }),
-    credentials: "include",
-  });
+  // The API stamps an active org at sign-in, so this is usually a no-op.
+  if (targetOrgId !== sessionOrgId) {
+    await fetch(`${API_URL}/api/auth/organization/set-active`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: targetOrgId }),
+      credentials: "include",
+    });
+  }
 
   const memberRes = await fetch(
     `${API_URL}/api/auth/organization/get-active-member`,

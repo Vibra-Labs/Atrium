@@ -3,7 +3,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import Link from "next/link";
 import { SignOutButton } from "./sign-out-button";
 import { getSession } from "@/lib/auth";
-import { NotificationBell } from "@/components/notification-bell";
+import { NotificationBell, NotificationProvider } from "@/components/notification-bell";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
 import { PreviewModeProvider } from "@/lib/preview-mode";
 import { PreviewBanner } from "@/components/preview-banner";
@@ -65,6 +65,7 @@ export default async function PortalLayout({
         role={org?.role ?? ""}
         orgId={org?.id ?? ""}
       >
+      <NotificationProvider>
       <PreviewModeProvider>
         <div
           style={
@@ -112,6 +113,7 @@ export default async function PortalLayout({
           )}
         </div>
       </PreviewModeProvider>
+      </NotificationProvider>
       </SessionProvider>
     </Suspense>
   );

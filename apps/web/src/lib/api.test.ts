@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
-import { fetchAllPages, MAX_PAGE_LIMIT } from "./api";
+import { fetchAllPages, MAX_PAGE_LIMIT, setActiveOrgAndRedirect } from "./api";
 
 const originalFetch = globalThis.fetch;
 
@@ -47,5 +47,49 @@ describe("fetchAllPages", () => {
     const u = new URL(calls[0], "http://localhost");
     expect(u.searchParams.get("archived")).toBe("false");
     expect(u.searchParams.get("page")).toBe("1");
+  });
+});
+
+function mockAuth(opts: { orgs: string[]; sessionOrg: string | null; role: string }): string[] {
+  const calls: string[] = [];
+  globalThis.fetch = mock(async (url: string | URL | Request) => {
+    const path = new URL(String(url), "http://localhost").pathname;
+    calls.push(path);
+    if (path.endsWith("/organization/list")) {
+      return new Response(JSON.stringify(opts.orgs.map((id) => ({ id }))), { status: 200 });
+    }
+    if (path.endsWith("/get-session")) {
+      return new Response(
+        JSON.stringify({ session: { activeOrganizationId: opts.sessionOrg } }),
+        { status: 200 },
+      );
+    }
+    if (path.endsWith("/get-active-member")) {
+      return new Response(JSON.stringify({ role: opts.role }), { status: 200 });
+    }
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  return calls;
+}
+
+describe("setActiveOrgAndRedirect", () => {
+  it("skips set-active when the session already has the target org", async () => {
+    const calls = mockAuth({ orgs: ["a", "b"], sessionOrg: "b", role: "owner" });
+    const path = await setActiveOrgAndRedirect("/portal/projects");
+    expect(path).toBe("/dashboard");
+    expect(calls.some((c) => c.endsWith("/set-active"))).toBe(false);
+  });
+
+  it("sets the preferred org when it differs from the session's", async () => {
+    const calls = mockAuth({ orgs: ["a", "b"], sessionOrg: "a", role: "member" });
+    const path = await setActiveOrgAndRedirect("/portal/projects", "b");
+    expect(path).toBe("/portal/projects");
+    expect(calls.filter((c) => c.endsWith("/set-active"))).toHaveLength(1);
+  });
+
+  it("falls back to the first org and sets it when the session has none", async () => {
+    const calls = mockAuth({ orgs: ["a"], sessionOrg: null, role: "admin" });
+    expect(await setActiveOrgAndRedirect()).toBe("/dashboard");
+    expect(calls.some((c) => c.endsWith("/set-active"))).toBe(true);
   });
 });

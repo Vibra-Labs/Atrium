@@ -7,7 +7,7 @@ import { TimezoneSync } from "./timezone-sync";
 import { TelemetryConsentBanner } from "@/components/telemetry-consent-banner";
 import { MobileNav } from "./mobile-nav";
 import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
-import { NotificationBell } from "@/components/notification-bell";
+import { NotificationBell, NotificationProvider } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -150,6 +150,7 @@ export default async function DashboardLayout({
       role={role}
       orgId={activeOrg?.id ?? ""}
     >
+    <NotificationProvider>
     <div
       className="min-h-screen flex"
       style={
@@ -209,6 +210,7 @@ export default async function DashboardLayout({
         </main>
       </div>
     </div>
+    </NotificationProvider>
     </SessionProvider>
   );
 }

@@ -2,13 +2,27 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "./require-name";
 import { paginationArgs, paginatedResponse } from "../common";
+import type { Paginated } from "../common";
 import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 import { ContactRevenueService } from "./contact-revenue.service";
+import type { Revenue } from "./contact-revenue.service";
 import { rankOrderSql } from "./contacts-sort";
 import { Prisma } from "@atrium/database";
+import type { Company } from "@atrium/database";
 import type { CompanySort, CreateCompanyDto, SortDirection, UpdateCompanyDto } from "./contacts.dto";
 
 const DUPLICATE_MESSAGE = "A company with this name already exists";
+
+const LIST_INCLUDE = { _count: { select: { contacts: true } } } satisfies Prisma.CompanyInclude;
+
+type CompanyWithCount = Prisma.CompanyGetPayload<{ include: typeof LIST_INCLUDE }>;
+
+export type CompanyListItem = CompanyWithCount & { paidCents: number };
+
+export type CompanyDetail = Company & {
+  people: { id: string; name: string; email: string | null; status: string }[];
+  revenue: Revenue;
+};
 
 @Injectable()
 export class CompaniesService {
@@ -24,15 +38,15 @@ export class CompaniesService {
     search?: string,
     sort: CompanySort = "name",
     dir: SortDirection = sort === "paid" ? "desc" : "asc",
-  ) {
+  ): Promise<Paginated<CompanyListItem>> {
     const term = search?.trim();
     const where = {
       organizationId: orgId,
       ...(term ? { name: { contains: term, mode: "insensitive" as const } } : {}),
     };
-    const include = { _count: { select: { contacts: true } } } as const;
+    const include = LIST_INCLUDE;
 
-    let companies;
+    let companies: CompanyWithCount[];
     let total: number;
     let paid: Map<string, number>;
     if (sort === "paid") {
@@ -86,7 +100,7 @@ export class CompaniesService {
     return rows.map((r) => r.id);
   }
 
-  async findOne(id: string, orgId: string) {
+  async findOne(id: string, orgId: string): Promise<CompanyDetail> {
     const company = await this.prisma.company.findFirst({
       where: { id, organizationId: orgId },
       include: {
@@ -105,7 +119,7 @@ export class CompaniesService {
     };
   }
 
-  async create(dto: CreateCompanyDto, orgId: string) {
+  async create(dto: CreateCompanyDto, orgId: string): Promise<Company> {
     const name = requireName(dto.name);
     await this.assertNameFree(name, orgId);
     try {
@@ -124,7 +138,7 @@ export class CompaniesService {
     }
   }
 
-  async update(id: string, dto: UpdateCompanyDto, orgId: string) {
+  async update(id: string, dto: UpdateCompanyDto, orgId: string): Promise<Company> {
     await this.getOrThrow(id, orgId);
     const name = dto.name === undefined ? undefined : requireName(dto.name);
     if (name) await this.assertNameFree(name, orgId, id);
@@ -155,7 +169,7 @@ export class CompaniesService {
     ]);
   }
 
-  private async getOrThrow(id: string, orgId: string) {
+  private async getOrThrow(id: string, orgId: string): Promise<Company> {
     const company = await this.prisma.company.findFirst({
       where: { id, organizationId: orgId },
     });

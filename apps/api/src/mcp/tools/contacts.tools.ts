@@ -3,7 +3,7 @@ import { CONTACT_RATINGS, CONTACT_STATUSES } from "@atrium/shared";
 import { defineTool, paging } from "../tool-kit";
 import type { McpTool } from "../tool-kit";
 import type { ContactsService } from "../../contacts/contacts.service";
-import { PORTAL_ACCESS_FILTERS } from "../../contacts/contacts.dto";
+import { CONTACT_SORTS, PORTAL_ACCESS_FILTERS, SORT_DIRECTIONS } from "../../contacts/contacts.dto";
 
 export function contactTools(deps: { contacts: ContactsService }): McpTool[] {
   const { contacts } = deps;
@@ -11,12 +11,17 @@ export function contactTools(deps: { contacts: ContactsService }): McpTool[] {
     defineTool({
       name: "list_contacts",
       description:
-        "Lists CRM contacts (leads, clients, past clients) with name parts, job title, department, phones, social links, rating and portal access (portalAccess: portal = has a client portal login, pending = invited, null = neither); optionally filtered by search text, status, rating or portal access.",
+        "Lists CRM contacts (leads, clients, past clients) with name parts, job title, department, phones, social links, rating, paidCents (paid all time) and portal access (portalAccess: portal = has a client portal login, pending = invited, null = neither); optionally filtered by search text, status, rating or portal access, and sorted (e.g. sort=paid, dir=desc for top clients by revenue).",
       inputSchema: z.object({
         search: z.string().max(200).optional(),
         status: z.enum(CONTACT_STATUSES).optional(),
         rating: z.enum(CONTACT_RATINGS).optional(),
         access: z.enum(PORTAL_ACCESS_FILTERS).optional().describe("portal, pending (invited) or none"),
+        sort: z
+          .enum(CONTACT_SORTS)
+          .optional()
+          .describe("name (default), company, status (lead → client → past client), followUp (soonest first) or paid"),
+        dir: z.enum(SORT_DIRECTIONS).optional().describe("asc or desc; defaults to desc for paid, asc otherwise"),
         ...paging,
       }),
       handler: async (input, actor) => contacts.findAll(actor.organization.id, input),

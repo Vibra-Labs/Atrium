@@ -678,11 +678,29 @@ describe("ContactsService", () => {
       expect(orderByOf()).toEqual([{ name: "asc" }, { id: "asc" }]);
     });
 
-    it("sorts by name, company, status and follow-up in the database", async () => {
+    it("sorts by status in pipeline order and by company with blanks last, across pages", async () => {
+      const rows = [
+        { id: "p", name: "Pat", status: "past_client", followUpAt: null, company: { name: "Zeta" } },
+        { id: "c", name: "Cy", status: "client", followUpAt: null, company: null },
+        { id: "l", name: "Lu", status: "lead", followUpAt: null, company: { name: "acme" } },
+      ];
+      prisma.contact.findMany.mockImplementation((args: unknown) => {
+        const a = args as { select?: unknown; where: { id?: { in: string[] } } };
+        if (a.select) return Promise.resolve(rows);
+        return Promise.resolve((a.where.id?.in ?? []).map((id) => row(id, id)));
+      });
+      const ids = async (query: ListContactsQueryDto): Promise<string[]> =>
+        (await service.findAll("org-1", query)).data.map((c) => c.id);
+      expect(await ids({ sort: "status" })).toEqual(["l", "c", "p"]);
+      expect(await ids({ sort: "status", dir: "desc" })).toEqual(["p", "c", "l"]);
+      expect(await ids({ sort: "company" })).toEqual(["l", "p", "c"]);
+      expect(await ids({ sort: "company", dir: "desc" })).toEqual(["p", "l", "c"]);
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+    });
+
+    it("sorts by name and follow-up in the database", async () => {
       const cases: [ListContactsQueryDto, unknown][] = [
         [{ sort: "name", dir: "desc" }, [{ name: "desc" }, { id: "asc" }]],
-        [{ sort: "company", dir: "asc" }, [{ company: { name: "asc" } }, { name: "asc" }, { id: "asc" }]],
-        [{ sort: "status", dir: "desc" }, [{ status: "desc" }, { name: "asc" }, { id: "asc" }]],
         // Contacts without a follow-up always go last.
         [
           { sort: "followUp" },
@@ -1236,8 +1254,10 @@ describe("ContactsService", () => {
             userId: "u-1",
             status: "lead",
             followUpAt: new Date("2026-11-01T00:00:00Z"),
-            company: { name: "Acme" },
+            followUpEveryDays: 30,
+            company: { name: "Acme", annualRevenue: 500000, employeeCount: 12 },
             leadSource: { name: "Web" },
+            referredBy: { name: "Bo", email: "bo@x.com" },
             labels: [{ label: { name: "vip" } }, { label: { name: "hot" } }],
           },
         ]),
@@ -1246,14 +1266,30 @@ describe("ContactsService", () => {
       const csv = await service.exportCsv("org-1", {});
       const [header, line] = csv.split("\r\n");
       expect(header).toBe(
-        "Name,First name,Last name,Email,Phone,All phones,Company,Job title,Department,Website,Address,Status,Rating,Source,Tags,Social links,Next follow-up,Paid all time,About,Portal access",
+        "Name,First name,Last name,Email,Phone,All phones,Company,Job title,Department,Website,Address,Status,Rating,Source,Tags,Social links,Next follow-up,Follow-up repeats (days),Paid all time,About,Referred by,Company annual revenue,Company employees,Portal access",
       );
       expect(line.startsWith(`"'=HYPERLINK(""x"")"`)).toBe(true);
       // A leading "+" is neutralised like any formula character.
       expect(line).toContain(",Ann,Lee,a@x.com,'+1 555,Mobile: +1 555; Work: +1 777,Acme,CTO,Eng,");
       expect(line).toContain(
-        ",Lead,Warm,Web,vip; hot,https://linkedin.com/in/ann https://x.com/ann,2026-11-01,1234.56,Bakery,Yes",
+        ",Lead,Warm,Web,vip; hot,https://linkedin.com/in/ann https://x.com/ann,2026-11-01,30,1234.56,Bakery,bo@x.com,500000,12,Yes",
       );
+    });
+
+    it("export follows the list's sort", async () => {
+      const base = { phones: [], socialLinks: [], labels: [], company: null, leadSource: null, referredBy: null };
+      prisma.contact.findMany.mockImplementation(() =>
+        Promise.resolve([
+          { ...base, id: "a", name: "Ann", status: "lead", followUpAt: null },
+          { ...base, id: "b", name: "Bo", status: "lead", followUpAt: null },
+        ]),
+      );
+      revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map([["b", 500]])));
+      const csv = await service.exportCsv("org-1", { sort: "paid" });
+      const names = csv.split("\r\n").slice(1).filter(Boolean).map((l) => l.split(",")[0]);
+      expect(names).toEqual(["Bo", "Ann"]);
+      revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map<string, number>()));
+      prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
     });
 
     it("import joins first + last names and accepts a row with only a first name", async () => {

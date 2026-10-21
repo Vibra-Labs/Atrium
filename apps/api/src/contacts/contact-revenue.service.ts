@@ -17,18 +17,6 @@ interface InvoiceRow {
 
 const MONTHS = 12;
 
-/** Ids ordered by paid total (missing = 0), ties by name. */
-export function rankByPaid(
-  rows: { id: string; name: string }[],
-  paid: Map<string, number>,
-  dir: "asc" | "desc",
-): string[] {
-  const sign = dir === "asc" ? 1 : -1;
-  return [...rows]
-    .sort((a, b) => sign * ((paid.get(a.id) ?? 0) - (paid.get(b.id) ?? 0)) || a.name.localeCompare(b.name))
-    .map((r) => r.id);
-}
-
 function monthKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }

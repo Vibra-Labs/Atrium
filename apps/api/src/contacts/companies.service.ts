@@ -2,7 +2,8 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "./require-name";
 import { paginationArgs, paginatedResponse } from "../common";
-import { ContactRevenueService, rankByPaid } from "./contact-revenue.service";
+import { ContactRevenueService } from "./contact-revenue.service";
+import { rankRows } from "./contacts-sort";
 import type { Prisma } from "@atrium/database";
 import type { CompanySort, CreateCompanyDto, SortDirection, UpdateCompanyDto } from "./contacts.dto";
 
@@ -39,7 +40,7 @@ export class CompaniesService {
         this.prisma.company.findMany({ where, select: { id: true, name: true } }),
         this.revenue.paidTotalsForCompanies(null, orgId),
       ]);
-      const pageIds = rankByPaid(matches, allPaid, dir).slice((page - 1) * limit, page * limit);
+      const pageIds = rankRows(matches, dir, (c) => allPaid.get(c.id) ?? 0).slice((page - 1) * limit, page * limit);
       const rows = await this.prisma.company.findMany({ where: { id: { in: pageIds } }, include });
       const byId = new Map(rows.map((r) => [r.id, r]));
       companies = pageIds.flatMap((id) => byId.get(id) ?? []);

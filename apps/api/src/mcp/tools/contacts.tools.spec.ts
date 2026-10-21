@@ -47,6 +47,15 @@ describe("contact tools", () => {
     expect(await get("get_contact").handler({ contactId: "c1" }, admin)).toEqual(contact);
   });
 
+  it("list_contacts can sort, e.g. top clients by paid total", async () => {
+    const { contacts, get } = build();
+    const schema = get("list_contacts").inputSchema;
+    expect(schema.safeParse({ sort: "email" }).success).toBe(false);
+    expect(schema.safeParse({ dir: "up" }).success).toBe(false);
+    await runTool(get("list_contacts"), schema.parse({ sort: "paid", dir: "desc", limit: 5 }), admin);
+    expect(contacts.findAll).toHaveBeenCalledWith("org1", { sort: "paid", dir: "desc", page: 1, limit: 5 });
+  });
+
   it("list_contacts passes a portal access filter and rejects an unknown one", async () => {
     const { contacts, get } = build();
     const schema = get("list_contacts").inputSchema;

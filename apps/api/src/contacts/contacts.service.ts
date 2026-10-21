@@ -13,7 +13,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
-import { ContactRevenueService, rankByPaid } from "./contact-revenue.service";
+import { ContactRevenueService } from "./contact-revenue.service";
+import { contactSortValue, rankRows } from "./contacts-sort";
+import type { SortableContact } from "./contacts-sort";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
 import type { ImportMapping } from "./contacts-csv";
 import { planImport } from "./contacts-import";
@@ -200,18 +202,28 @@ function toResponse<T extends StoredContact>(contact: T): ContactResponse<T> {
 }
 
 /** Database order for a contacts list sort; name then id keep pages stable. */
-function contactOrderBy(sort: Exclude<ContactSort, "paid">, dir: SortDirection): Prisma.ContactOrderByWithRelationInput[] {
-  const tiebreak: Prisma.ContactOrderByWithRelationInput[] = [{ name: "asc" }, { id: "asc" }];
-  switch (sort) {
-    case "name":
-      return [{ name: dir }, { id: "asc" }];
-    case "company":
-      return [{ company: { name: dir } }, ...tiebreak];
-    case "status":
-      return [{ status: dir }, ...tiebreak];
-    case "followUp":
-      return [{ followUpAt: { sort: dir, nulls: "last" } }, ...tiebreak];
-  }
+function contactOrderBy(sort: "name" | "followUp", dir: SortDirection): Prisma.ContactOrderByWithRelationInput[] {
+  if (sort === "name") return [{ name: dir }, { id: "asc" }];
+  return [{ followUpAt: { sort: dir, nulls: "last" } }, { name: "asc" }, { id: "asc" }];
+}
+
+/** Just what ranking a contact by a list column needs. */
+const SORTABLE_SELECT = {
+  id: true,
+  name: true,
+  status: true,
+  followUpAt: true,
+  company: { select: { name: true } },
+} as const;
+
+function sortableOf(c: {
+  id: string;
+  name: string;
+  status: string;
+  followUpAt: Date | null;
+  company: { name: string } | null;
+}): SortableContact {
+  return { id: c.id, name: c.name, status: c.status, followUpAt: c.followUpAt, companyName: c.company?.name ?? null };
 }
 
 type LinkFields = Pick<
@@ -238,26 +250,32 @@ export class ContactsService {
       labels: { include: { label: true } },
     } as const;
 
+    const sort: ContactSort = query.sort ?? "name";
     let contacts;
     let total: number;
     let paid: Map<string, number>;
-    if (query.sort === "paid") {
-      // Paid totals come from invoices, so rank every match here and fetch only this page.
+    if (sort === "paid" || sort === "status" || sort === "company") {
+      // The database can't order these the way the list shows them (paid comes from invoices,
+      // status follows the pipeline, blank companies go last), so rank every match here.
       const [matches, allPaid] = await Promise.all([
-        this.prisma.contact.findMany({ where, select: { id: true, name: true } }),
-        this.revenue.paidTotals(null, orgId),
+        this.prisma.contact.findMany({ where, select: SORTABLE_SELECT }),
+        sort === "paid" ? this.revenue.paidTotals(null, orgId) : Promise.resolve(new Map<string, number>()),
       ]);
-      const pageIds = rankByPaid(matches, allPaid, query.dir ?? "desc").slice((page - 1) * limit, page * limit);
+      const dir = query.dir ?? (sort === "paid" ? "desc" : "asc");
+      const pageIds = rankRows(matches.map(sortableOf), dir, (r) => contactSortValue(sort, r, allPaid)).slice(
+        (page - 1) * limit,
+        page * limit,
+      );
       const rows = await this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include });
       const byId = new Map(rows.map((r) => [r.id, r]));
       contacts = pageIds.flatMap((id) => byId.get(id) ?? []);
       total = matches.length;
-      paid = allPaid;
+      paid = sort === "paid" ? allPaid : await this.revenue.paidTotals(pageIds, orgId);
     } else {
       [contacts, total] = await Promise.all([
         this.prisma.contact.findMany({
           where,
-          orderBy: contactOrderBy(query.sort ?? "name", query.dir ?? "asc"),
+          orderBy: contactOrderBy(sort, query.dir ?? "asc"),
           include,
           ...paginationArgs(page, limit),
         }),
@@ -526,18 +544,26 @@ export class ContactsService {
 
   async exportCsv(orgId: string, query: ListContactsQueryDto): Promise<string> {
     const pending = await this.pendingInviteEmails(orgId);
-    const contacts = await this.prisma.contact.findMany({
+    const found = await this.prisma.contact.findMany({
       where: this.buildWhere(orgId, query, pending),
       orderBy: { name: "asc" },
       include: {
-        company: { select: { name: true } },
+        company: { select: { name: true, annualRevenue: true, employeeCount: true } },
         leadSource: { select: { name: true } },
+        referredBy: { select: { name: true, email: true } },
         labels: { include: { label: { select: { name: true } } } },
       },
     });
     const paid = await this.revenue.paidTotals(
-      contacts.map((c) => c.id),
+      found.map((c) => c.id),
       orgId,
+    );
+    // Same order as the list the export was started from.
+    const sort: ContactSort = query.sort ?? "name";
+    const dir = query.dir ?? (sort === "paid" ? "desc" : "asc");
+    const byId = new Map(found.map((c) => [c.id, c]));
+    const contacts = rankRows(found.map(sortableOf), dir, (r) => contactSortValue(sort, r, paid)).flatMap(
+      (id) => byId.get(id) ?? [],
     );
     const pendingSet = new Set(pending);
     const columns: CsvColumn<(typeof contacts)[number]>[] = [
@@ -558,8 +584,13 @@ export class ContactsService {
       { header: "Tags", value: (c) => c.labels.map((l) => l.label.name).join("; ") },
       { header: "Social links", value: (c) => readLinks(c.socialLinks).join(" ") },
       { header: "Next follow-up", value: (c) => c.followUpAt?.toISOString().slice(0, 10) },
+      { header: "Follow-up repeats (days)", value: (c) => (c.followUpAt ? c.followUpEveryDays : null) },
       { header: "Paid all time", value: (c) => ((paid.get(c.id) ?? 0) / 100).toFixed(2) },
       { header: "About", value: (c) => c.description },
+      // Email when there is one, so a re-import finds the same person.
+      { header: "Referred by", value: (c) => c.referredBy?.email ?? c.referredBy?.name },
+      { header: "Company annual revenue", value: (c) => c.company?.annualRevenue },
+      { header: "Company employees", value: (c) => c.company?.employeeCount },
       { header: "Portal access", value: (c) => PORTAL_ACCESS_LABELS[portalAccessOf(c, pendingSet) ?? "none"] },
     ];
     return toCsv(columns, contacts);

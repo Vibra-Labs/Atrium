@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Invitation } from "@atrium/database";
-import { presentInvitations } from "./invitations";
+import { isPortalInviteRole, logsInviteLinks, presentInvitations } from "./invitations";
 
 const NOW = new Date("2026-10-14T12:00:00Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -51,5 +51,25 @@ describe("presentInvitations", () => {
     const expired = row({ id: "a", expiresAt: new Date(NOW.getTime() - DAY_MS) });
     const other = row({ id: "b", email: "someone@else.test" });
     expect(presentInvitations([other, expired], WEB_URL, NOW).map((i) => i.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("isPortalInviteRole", () => {
+  it("treats member and a missing role as a portal invite, staff roles as not", () => {
+    expect(isPortalInviteRole("member")).toBe(true);
+    expect(isPortalInviteRole(null)).toBe(true);
+    expect(isPortalInviteRole(undefined)).toBe(true);
+    expect(isPortalInviteRole("admin")).toBe(false);
+    expect(isPortalInviteRole("owner")).toBe(false);
+  });
+});
+
+describe("logsInviteLinks", () => {
+  it("logs invite links only in development", () => {
+    expect(logsInviteLinks("development")).toBe(true);
+    expect(logsInviteLinks("production")).toBe(false);
+    expect(logsInviteLinks("staging")).toBe(false);
+    expect(logsInviteLinks("test")).toBe(false);
+    expect(logsInviteLinks(undefined)).toBe(false);
   });
 });

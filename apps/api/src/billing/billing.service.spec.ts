@@ -174,7 +174,11 @@ describe("BillingService", () => {
       { organizationId: "org-1", role: "member" },
     ]);
     const invites = mockPrisma.invitation.count.mock.calls as unknown as [{ where: Record<string, unknown> }][];
-    expect(invites.map((c) => c[0].where.role)).toEqual([{ not: "member" }, "member"]);
+    // A role-less invite is a portal invite (Better Auth's default), so it takes a client seat.
+    expect(invites.map((c) => [c[0].where.role, c[0].where.AND])).toEqual([
+      [{ not: "member" }, undefined],
+      [undefined, [{ OR: [{ role: "member" }, { role: null }] }]],
+    ]);
   });
 
   it("getUsage does not charge a seat for the workspace creator", async () => {
@@ -201,9 +205,7 @@ describe("BillingService", () => {
 
   it("getUsage counts pending invitations as taken seats", async () => {
     // One pending client invite and one pending admin invite.
-    mockPrisma.invitation.count.mockImplementation(({ where }: { where: { role: unknown } }) =>
-      Promise.resolve(where.role === "member" ? 1 : 1),
-    );
+    mockPrisma.invitation.count.mockImplementation(() => Promise.resolve(1));
     const usage = await service.getUsage("org-1");
     expect(usage.clients).toBe(2);
     expect(usage.members).toBe(1);

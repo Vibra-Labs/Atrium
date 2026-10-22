@@ -8,15 +8,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateLabelDto, UpdateLabelDto, AssignLabelDto } from "./labels.dto";
 import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
-
-function isPrismaUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: string }).code === "P2002"
-  );
-}
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 
 @Injectable()
 export class LabelsService {

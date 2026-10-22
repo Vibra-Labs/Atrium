@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
-    "dev": "nest start --watch",
+    "dev": "NODE_ENV=development nest start --watch",
     "start": "node dist/main",
     "start:prod": "node dist/main",
     "test": "bun test src",

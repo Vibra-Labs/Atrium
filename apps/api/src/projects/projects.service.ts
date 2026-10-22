@@ -11,6 +11,7 @@ import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
+import { lockProjectClients } from "../contact-sync/project-links";
 import { paginationArgs, paginatedResponse } from "../common";
 
 interface ProjectWhereInput {
@@ -44,7 +45,11 @@ export class ProjectsService implements OnApplicationBootstrap {
     private contactSync: ContactSyncService,
   ) {}
 
-  private async syncClients(projectId: string, organizationId: string, userIds: string[]): Promise<void> {
+  private async syncClients(
+    projectId: string,
+    organizationId: string,
+    userIds: string[],
+  ): Promise<void> {
     if (!userIds.length) return;
     try {
       await this.contactSync.linkProjectClients(projectId, organizationId, userIds);
@@ -317,9 +322,13 @@ export class ProjectsService implements OnApplicationBootstrap {
         }
       }
 
-      const [, project] = await this.prisma.$transaction([
-        this.prisma.projectClient.deleteMany({ where: { projectId: id } }),
-        this.prisma.project.update({
+      const project = await this.prisma.$transaction(async (tx) => {
+        // Locked so a concurrent edit can't change the clients between reading and replacing them.
+        const previous: string[] = await lockProjectClients(tx, id);
+        const removed: string[] = previous.filter((u) => !clientUserIds.includes(u));
+
+        await tx.projectClient.deleteMany({ where: { projectId: id } });
+        const updated = await tx.project.update({
           where: { id, organizationId },
           data: {
             ...rest,
@@ -329,8 +338,10 @@ export class ProjectsService implements OnApplicationBootstrap {
             },
           },
           include: { clients: { select: { userId: true } } },
-        }),
-      ]);
+        });
+        await this.contactSync.endProjectClients(id, organizationId, removed, tx);
+        return updated;
+      });
       await this.syncClients(id, organizationId, clientUserIds);
       return project;
     }

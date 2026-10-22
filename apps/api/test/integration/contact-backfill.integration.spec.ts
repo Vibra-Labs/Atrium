@@ -3,7 +3,7 @@ import { Test } from "@nestjs/testing";
 import { assertDisposableDatabase } from "./guard";
 import { PrismaService } from "../../src/prisma/prisma.service";
 import { ContactSyncService } from "../../src/contact-sync/contact-sync.service";
-import { ContactBackfillService } from "../../src/contact-sync/contact-backfill.service";
+import { CONTACTS_BACKFILL_VERSION, ContactBackfillService } from "../../src/contact-sync/contact-backfill.service";
 
 let prisma: PrismaService;
 let backfill: ContactBackfillService;
@@ -95,6 +95,28 @@ describe("ContactBackfillService.run", () => {
 
     await backfill.run();
     expect(await counts()).toEqual(first);
+  });
+
+  it("two instances booting together run a workspace's pass once", async () => {
+    const s = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orgId = (await prisma.organization.create({ data: { id: `cb9-org-${s}`, name: `cb9-${s}`, slug: `cb9-${s}` } })).id;
+    orgIds.push(orgId);
+    userIds.push(`cb9-client-${s}`);
+    const client = await prisma.user.create({ data: { id: `cb9-client-${s}`, name: "Cleo", email: `c9-${s}@x.com`, emailVerified: true } });
+    await prisma.member.create({ data: { id: `cb9-m-${s}`, organizationId: orgId, userId: client.id, role: "member" } });
+    const project = await prisma.project.create({ data: { name: "P", organizationId: orgId } });
+    await prisma.projectClient.create({ data: { projectId: project.id, userId: client.id } });
+    await prisma.invoice.create({
+      data: { organizationId: orgId, projectId: project.id, invoiceNumber: `INV9-${s}`, type: "uploaded", status: "paid", amount: 100 },
+    });
+    const other = new ContactBackfillService(prisma, new ContactSyncService(prisma));
+
+    await Promise.all([backfill.run(), other.run()]);
+
+    expect(await prisma.contact.count({ where: { organizationId: orgId } })).toBe(1);
+    expect(await prisma.contactEvent.count({ where: { organizationId: orgId, type: "invoice_paid" } })).toBe(1);
+    const org = await prisma.organization.findUniqueOrThrow({ where: { id: orgId } });
+    expect([org.contactsBackfillVersion, org.contactsBackfillClaimedAt]).toEqual([CONTACTS_BACKFILL_VERSION, null]);
   });
 
   it("splits names and seeds phones from the legacy phone, once, keeping updatedAt", async () => {

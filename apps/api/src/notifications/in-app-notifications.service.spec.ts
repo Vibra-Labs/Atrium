@@ -77,6 +77,14 @@ describe("InAppNotificationsService", () => {
     expect(prisma.notification.createMany.mock.calls[0][0]).toEqual({ data: notifications });
   });
 
+  test("createMany writes through a given transaction instead", async () => {
+    const tx = { notification: { createMany: mock(() => Promise.resolve({ count: 1 })) } };
+    const notifications = [{ userId: "user-1", organizationId: "org-1", type: "test", title: "A", message: "a" }];
+    await service.createMany(notifications, tx as never);
+    expect(tx.notification.createMany.mock.calls[0]).toEqual([{ data: notifications }] as never);
+    expect(prisma.notification.createMany).not.toHaveBeenCalled();
+  });
+
   test("createMany does nothing for empty array", async () => {
     await service.createMany([]);
     expect(prisma.notification.createMany).not.toHaveBeenCalled();

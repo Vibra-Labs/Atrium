@@ -1,8 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
-import type { Contact } from "@atrium/database";
+import type { Contact, Prisma } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
+import { lockProjectClients, linksPaidAt, reopenProjectLinks } from "./project-links";
+import type { EndedLink } from "./project-links";
+import { isPortalInviteRole } from "../clients/invitations";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { splitName } from "../contacts/contact-fields";
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
+import { addContactEvent } from "./contact-events";
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -20,18 +25,6 @@ export class ContactSyncService {
   private readonly logger = new Logger(ContactSyncService.name);
 
   constructor(private readonly prisma: PrismaService) {}
-
-  private async addEvent(
-    contactId: string,
-    organizationId: string,
-    type: string,
-    detail: string,
-    refId?: string,
-  ): Promise<void> {
-    await this.prisma.contactEvent.create({
-      data: { contactId, organizationId, type, detail, ...(refId ? { refId } : {}) },
-    });
-  }
 
   /**
    * Gives a portal client (role "member") a contact linked to their user. Staff and non-members
@@ -68,7 +61,7 @@ export class ContactSyncService {
         where: { id: byEmail.id },
         data: { userId, status: "client", ...named },
       });
-      await this.addEvent(byEmail.id, orgId, "portal_joined", "Joined the client portal");
+      await addContactEvent(this.prisma, byEmail.id, orgId, "portal_joined", "Joined the client portal");
       return updated;
     }
 
@@ -85,7 +78,7 @@ export class ContactSyncService {
         },
       });
     } catch (err) {
-      if ((err as { code?: string })?.code !== "P2002") throw err;
+      if (!isPrismaUniqueViolation(err)) throw err;
       // A concurrent call created it first; return what won.
       const winner =
         (await this.prisma.contact.findFirst({ where: { organizationId: orgId, userId } })) ??
@@ -93,7 +86,7 @@ export class ContactSyncService {
       if (winner?.userId && winner.userId !== userId) return this.refuseTaken(winner, userId);
       return winner;
     }
-    await this.addEvent(created.id, orgId, "contact_created", "Contact created");
+    await addContactEvent(this.prisma, created.id, orgId, "contact_created", "Contact created");
     return created;
   }
 
@@ -123,17 +116,17 @@ export class ContactSyncService {
   async linkProjectClients(projectId: string, orgId: string, userIds: string[]): Promise<void> {
     if (userIds.length === 0) return;
     // Two queries for the whole list; ensureForMember (3 queries each) only for clients with no contact yet.
-    const clients = await this.prisma.member.findMany({
+    const clients: { userId: string }[] = await this.prisma.member.findMany({
       where: { organizationId: orgId, userId: { in: userIds }, role: "member" },
       select: { userId: true },
     });
-    const clientIds = clients.map((m) => m.userId);
+    const clientIds: string[] = clients.map((m) => m.userId);
     if (clientIds.length === 0) return;
-    const linked = await this.prisma.contact.findMany({
+    const linked: Contact[] = await this.prisma.contact.findMany({
       where: { organizationId: orgId, userId: { in: clientIds } },
     });
     const contacts: Contact[] = [...linked];
-    const haveContact = new Set(linked.map((c) => c.userId));
+    const haveContact: Set<string | null> = new Set(linked.map((c) => c.userId));
     for (const userId of clientIds) {
       if (haveContact.has(userId)) continue;
       const contact = await this.ensureForMember(orgId, userId);
@@ -141,16 +134,27 @@ export class ContactSyncService {
     }
     if (contacts.length === 0) return;
 
-    const existing = await this.prisma.projectContact.findMany({
-      where: { projectId, contactId: { in: contacts.map((c) => c.id) } },
-      select: { contactId: true },
-    });
-    const alreadyLinked = new Set(existing.map((l) => l.contactId));
-    const fresh = contacts.filter((c) => !alreadyLinked.has(c.id));
+    const fresh: Contact[] = await this.prisma.$transaction(async (tx): Promise<Contact[]> => {
+      // Project edits take the same lock (see ProjectsService.update), so a client removed by a
+      // concurrent edit isn't linked again here: only current clients are linked.
+      const current: Set<string> = new Set(await lockProjectClients(tx, projectId));
+      const toLink: Contact[] = contacts.filter((c) => c.userId !== null && current.has(c.userId));
+      if (toLink.length === 0) return [];
 
-    await this.prisma.projectContact.createMany({
-      data: contacts.map((c) => ({ projectId, contactId: c.id })),
-      skipDuplicates: true,
+      const existing: { id: string; contactId: string; endedAt: Date | null }[] = await tx.projectContact.findMany({
+        where: { projectId, contactId: { in: toLink.map((c) => c.id) } },
+        select: { id: true, contactId: true, endedAt: true },
+      });
+      const open: Set<string> = new Set(existing.filter((l) => !l.endedAt).map((l) => l.contactId));
+      const ended: EndedLink[] = existing.flatMap((l) => (l.endedAt ? [{ id: l.id, endedAt: l.endedAt }] : []));
+
+      await tx.projectContact.createMany({
+        data: toLink.map((c) => ({ projectId, contactId: c.id })),
+        skipDuplicates: true,
+      });
+      await reopenProjectLinks(tx, ended, new Date());
+      // A client put back on the project gets an event again, like a first-time client.
+      return toLink.filter((c) => !open.has(c.id));
     });
 
     if (fresh.length === 0) return;
@@ -169,11 +173,35 @@ export class ContactSyncService {
     });
   }
 
-  async detachMember(orgId: string, userId: string): Promise<void> {
-    await this.prisma.contact.updateMany({
-      where: { organizationId: orgId, userId },
-      data: { userId: null, status: "past_client" },
+  /**
+   * Ends the project links of clients taken off a project, so invoices paid after this no longer
+   * count toward them. Earlier invoices still do.
+   */
+  async endProjectClients(
+    projectId: string,
+    orgId: string,
+    userIds: string[],
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    if (userIds.length === 0) return;
+    await db.projectContact.updateMany({
+      where: { projectId, endedAt: null, contact: { organizationId: orgId, userId: { in: userIds } } },
+      data: { endedAt: new Date() },
     });
+  }
+
+  /** A client who leaves the workspace is a past client: their project links end, then the user link goes. */
+  async detachMember(orgId: string, userId: string): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.projectContact.updateMany({
+        where: { endedAt: null, contact: { organizationId: orgId, userId } },
+        data: { endedAt: new Date() },
+      }),
+      this.prisma.contact.updateMany({
+        where: { organizationId: orgId, userId },
+        data: { userId: null, status: "past_client" },
+      }),
+    ]);
   }
 
   /**
@@ -192,10 +220,16 @@ export class ContactSyncService {
   }
 
   async detachUserEverywhere(userId: string): Promise<void> {
-    await this.prisma.contact.updateMany({
-      where: { userId },
-      data: { userId: null, status: "past_client" },
-    });
+    await this.prisma.$transaction([
+      this.prisma.projectContact.updateMany({
+        where: { endedAt: null, contact: { userId } },
+        data: { endedAt: new Date() },
+      }),
+      this.prisma.contact.updateMany({
+        where: { userId },
+        data: { userId: null, status: "past_client" },
+      }),
+    ]);
   }
 
   /**
@@ -203,10 +237,9 @@ export class ContactSyncService {
    * new lead named after the email until they accept. Staff invitations are not contacts.
    */
   async recordInvited(orgId: string, email: string, role: string | null | undefined): Promise<void> {
-    // Better Auth's default invitation role is "member".
-    if ((role ?? "member") !== "member") return;
+    if (!isPortalInviteRole(role)) return;
     const contact = await this.ensureForInvitee(orgId, email);
-    await this.addEvent(contact.id, orgId, "portal_invited", "Invited to the client portal");
+    await addContactEvent(this.prisma, contact.id, orgId, "portal_invited", "Invited to the client portal");
   }
 
   /** Finds the contact for an invitee's email, creating a lead if there is none. Status is left alone. */
@@ -221,13 +254,13 @@ export class ContactSyncService {
         data: { organizationId: orgId, name: email, email, status: "lead" },
       });
     } catch (err) {
-      if ((err as { code?: string })?.code !== "P2002") throw err;
+      if (!isPrismaUniqueViolation(err)) throw err;
       // A concurrent call created it first.
       const winner = await this.prisma.contact.findFirst({ where: { organizationId: orgId, email } });
       if (!winner) throw err;
       return winner;
     }
-    await this.addEvent(created.id, orgId, "contact_created", "Contact created");
+    await addContactEvent(this.prisma, created.id, orgId, "contact_created", "Contact created");
     return created;
   }
 
@@ -238,8 +271,8 @@ export class ContactSyncService {
     });
     if (!invoice?.projectId) return;
 
-    const links = await this.prisma.projectContact.findMany({
-      where: { projectId: invoice.projectId },
+    const links: { contactId: string }[] = await this.prisma.projectContact.findMany({
+      where: { projectId: invoice.projectId, ...linksPaidAt(invoice.paidAt) },
       select: { contactId: true },
     });
     if (links.length === 0) return;
@@ -258,7 +291,7 @@ export class ContactSyncService {
 
     for (const { contactId } of links) {
       if (skip.has(contactId)) continue;
-      await this.addEvent(contactId, invoice.organizationId, "invoice_paid", detail, invoice.id);
+      await addContactEvent(this.prisma, contactId, invoice.organizationId, "invoice_paid", detail, invoice.id);
     }
   }
 }

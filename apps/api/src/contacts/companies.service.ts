@@ -2,12 +2,27 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "./require-name";
 import { paginationArgs, paginatedResponse } from "../common";
+import type { Paginated } from "../common";
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 import { ContactRevenueService } from "./contact-revenue.service";
+import type { Revenue } from "./contact-revenue.service";
 import { rankOrderSql } from "./contacts-sort";
 import { Prisma } from "@atrium/database";
+import type { Company } from "@atrium/database";
 import type { CompanySort, CreateCompanyDto, SortDirection, UpdateCompanyDto } from "./contacts.dto";
 
 const DUPLICATE_MESSAGE = "A company with this name already exists";
+
+const LIST_INCLUDE = { _count: { select: { contacts: true } } } satisfies Prisma.CompanyInclude;
+
+type CompanyWithCount = Prisma.CompanyGetPayload<{ include: typeof LIST_INCLUDE }>;
+
+export type CompanyListItem = CompanyWithCount & { paidCents: number };
+
+export type CompanyDetail = Company & {
+  people: { id: string; name: string; email: string | null; status: string }[];
+  revenue: Revenue;
+};
 
 @Injectable()
 export class CompaniesService {
@@ -23,15 +38,13 @@ export class CompaniesService {
     search?: string,
     sort: CompanySort = "name",
     dir: SortDirection = sort === "paid" ? "desc" : "asc",
-  ) {
+  ): Promise<Paginated<CompanyListItem>> {
     const term = search?.trim();
     const where = {
       organizationId: orgId,
       ...(term ? { name: { contains: term, mode: "insensitive" as const } } : {}),
     };
-    const include = { _count: { select: { contacts: true } } } as const;
-
-    let companies;
+    let companies: CompanyWithCount[];
     let total: number;
     let paid: Map<string, number>;
     if (sort === "paid") {
@@ -39,7 +52,7 @@ export class CompaniesService {
       const matchIds = (await this.prisma.company.findMany({ where, select: { id: true } })).map((c) => c.id);
       const pageIds = await this.rankedByPaid(orgId, matchIds, dir, page, limit);
       const [rows, pagePaid] = await Promise.all([
-        this.prisma.company.findMany({ where: { id: { in: pageIds } }, include }),
+        this.prisma.company.findMany({ where: { id: { in: pageIds } }, include: LIST_INCLUDE }),
         this.revenue.paidTotalsForCompanies(pageIds, orgId),
       ]);
       const byId = new Map(rows.map((r) => [r.id, r]));
@@ -52,7 +65,7 @@ export class CompaniesService {
           ? [{ contacts: { _count: dir } }, { name: "asc" }, { id: "asc" }]
           : [{ name: dir }, { id: "asc" }];
       [companies, total] = await Promise.all([
-        this.prisma.company.findMany({ where, orderBy, include, ...paginationArgs(page, limit) }),
+        this.prisma.company.findMany({ where, orderBy, include: LIST_INCLUDE, ...paginationArgs(page, limit) }),
         this.prisma.company.count({ where }),
       ]);
       paid = await this.revenue.paidTotalsForCompanies(
@@ -85,7 +98,7 @@ export class CompaniesService {
     return rows.map((r) => r.id);
   }
 
-  async findOne(id: string, orgId: string) {
+  async findOne(id: string, orgId: string): Promise<CompanyDetail> {
     const company = await this.prisma.company.findFirst({
       where: { id, organizationId: orgId },
       include: {
@@ -104,7 +117,7 @@ export class CompaniesService {
     };
   }
 
-  async create(dto: CreateCompanyDto, orgId: string) {
+  async create(dto: CreateCompanyDto, orgId: string): Promise<Company> {
     const name = requireName(dto.name);
     await this.assertNameFree(name, orgId);
     try {
@@ -123,7 +136,7 @@ export class CompaniesService {
     }
   }
 
-  async update(id: string, dto: UpdateCompanyDto, orgId: string) {
+  async update(id: string, dto: UpdateCompanyDto, orgId: string): Promise<Company> {
     await this.getOrThrow(id, orgId);
     const name = dto.name === undefined ? undefined : requireName(dto.name);
     if (name) await this.assertNameFree(name, orgId, id);
@@ -154,7 +167,7 @@ export class CompaniesService {
     ]);
   }
 
-  private async getOrThrow(id: string, orgId: string) {
+  private async getOrThrow(id: string, orgId: string): Promise<Company> {
     const company = await this.prisma.company.findFirst({
       where: { id, organizationId: orgId },
     });
@@ -174,6 +187,6 @@ export class CompaniesService {
   }
 
   private mapDuplicate(e: unknown): unknown {
-    return (e as { code?: string })?.code === "P2002" ? new ConflictException(DUPLICATE_MESSAGE) : e;
+    return isPrismaUniqueViolation(e) ? new ConflictException(DUPLICATE_MESSAGE) : e;
   }
 }

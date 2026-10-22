@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { Prisma } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { paginationArgs, paginatedResponse } from "../common";
 
@@ -19,9 +20,10 @@ export class InAppNotificationsService {
     return this.prisma.notification.create({ data });
   }
 
-  async createMany(notifications: CreateNotificationData[]) {
+  /** `db` lets a caller write the notifications inside its own transaction. */
+  async createMany(notifications: CreateNotificationData[], db: Prisma.TransactionClient = this.prisma): Promise<void> {
     if (notifications.length === 0) return;
-    await this.prisma.notification.createMany({ data: notifications });
+    await db.notification.createMany({ data: notifications });
   }
 
   async findByUser(userId: string, orgId: string, page = 1, limit = 10) {

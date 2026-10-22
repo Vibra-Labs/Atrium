@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
 import { DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { PORTAL_INVITATION_ROLE } from "../clients/invitations";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { ContactSyncService } from "./contact-sync.service";
 import { LEGACY_PHONE_LABEL, readPhones, resolvePhones, splitName } from "../contacts/contact-fields";
@@ -23,12 +24,20 @@ interface ProfileFill {
  */
 export const CONTACTS_BACKFILL_VERSION = 1;
 
+/**
+ * How long a workspace's backfill claim holds without renewal. A running pass renews it, so only
+ * a crashed instance's claim lapses, and the workspace is free again this long after the crash.
+ */
+export const BACKFILL_LEASE_MS: number = 2 * 60 * 1000;
+
 /** Turns existing clients, project links, labels and paid invoices into contact data. Idempotent. */
 @Injectable()
 export class ContactBackfillService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ContactBackfillService.name);
   /** Row-level failures in the current workspace's pass (workspaces run one after another). */
   private failures = 0;
+  /** How often a running pass renews its claim; well inside the lease. */
+  protected heartbeatMs: number = 30 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -58,15 +67,69 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     }
   }
 
-  /** Stamps the version only when every step succeeded, so a failed pass is retried on the next boot. */
+  /**
+   * Claims the workspace first, so instances booting together don't run the same pass at once.
+   * Stamps the version only when every step succeeded; otherwise releases the claim so the next
+   * boot retries.
+   */
   private async backfillOrg(orgId: string): Promise<void> {
+    const claimedAt: Date = new Date();
+    if (!(await this.claim(orgId, claimedAt))) return;
+    let token: Date = claimedAt;
+    // The last renewal, awaited before the claim is released so `token` is final by then.
+    let renewing: Promise<void> = Promise.resolve();
+    const heartbeat: ReturnType<typeof setInterval> = setInterval(() => {
+      const now: Date = new Date();
+      renewing = renewing
+        .then(() => this.renew(orgId, token, now))
+        .then((renewed: boolean) => {
+          if (renewed) token = now;
+        })
+        .catch((err: unknown) => this.logger.error(`Failed to renew the backfill claim for organization ${orgId}`, err));
+    }, this.heartbeatMs);
     this.failures = 0;
-    await this.backfillOrgSteps(orgId);
-    if (this.failures > 0) return;
-    await this.prisma.organization.update({
-      where: { id: orgId },
-      data: { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION },
+    let done: boolean = false;
+    try {
+      await this.backfillOrgSteps(orgId);
+      done = this.failures === 0;
+    } finally {
+      clearInterval(heartbeat);
+      await renewing;
+      // Only while still ours: a claim lost to another instance is theirs to release.
+      await this.prisma.organization.updateMany({
+        where: { id: orgId, contactsBackfillClaimedAt: token },
+        data: done
+          ? { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION, contactsBackfillClaimedAt: null }
+          : { contactsBackfillClaimedAt: null },
+      });
+    }
+  }
+
+  /** True when this instance now holds the workspace's backfill claim. A claim older than the lease is taken over. */
+  private async claim(orgId: string, now: Date): Promise<boolean> {
+    const { count } = await this.prisma.organization.updateMany({
+      where: {
+        id: orgId,
+        contactsBackfillVersion: { lt: CONTACTS_BACKFILL_VERSION },
+        OR: [
+          { contactsBackfillClaimedAt: null },
+          { contactsBackfillClaimedAt: { lt: new Date(now.getTime() - BACKFILL_LEASE_MS) } },
+        ],
+      },
+      data: { contactsBackfillClaimedAt: now },
     });
+    return count === 1;
+  }
+
+  /** Moves this instance's claim from `token` to `now`; false when the claim no longer holds `token`. */
+  private async renew(orgId: string, token: Date, now: Date): Promise<boolean> {
+    const { count } = await this.prisma.organization.updateMany({
+      where: { id: orgId, contactsBackfillClaimedAt: token },
+      data: { contactsBackfillClaimedAt: now },
+    });
+    if (count === 1) return true;
+    this.logger.warn(`Lost the backfill claim for organization ${orgId}`);
+    return false;
   }
 
   private async backfillOrgSteps(orgId: string): Promise<void> {
@@ -147,7 +210,7 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     });
     if (!org || org.inviteesBackfilledAt) return;
     const invitations = await this.prisma.invitation.findMany({
-      where: { organizationId: orgId, role: "member", status: "pending", expiresAt: { gt: now } },
+      where: { organizationId: orgId, AND: [PORTAL_INVITATION_ROLE], status: "pending", expiresAt: { gt: now } },
       select: { id: true, email: true },
     });
     let failed: boolean = false;

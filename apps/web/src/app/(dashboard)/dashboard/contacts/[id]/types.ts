@@ -25,7 +25,8 @@ export interface ContactDetail {
   leadSource: { id: string; name: string } | null;
   referredBy: { id: string; name: string } | null;
   labels: { id: string; name: string; color: string }[];
-  projects: { id: string; name: string; status: string }[];
+  /** `endedAt` is set once they're off the project; picking it again reopens the link. */
+  projects: { id: string; name: string; status: string; endedAt: string | null }[];
   followUpAt: string | null;
   followUpEveryDays: number | null;
   revenue: Revenue;

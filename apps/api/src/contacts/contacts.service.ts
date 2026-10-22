@@ -6,14 +6,20 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@atrium/database";
-import type { Contact } from "@atrium/database";
+import type { Contact, ContactNote } from "@atrium/database";
 import { CONTACT_STATUSES, keepMentions, mentionedContactIds } from "@atrium/shared";
 import type { ContactPhone, ContactRating, ContactStatus } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { PORTAL_INVITATION_ROLE } from "../clients/invitations";
 import { paginationArgs, paginatedResponse, toCsv } from "../common";
-import type { CsvColumn } from "../common";
+import type { CsvColumn, Paginated } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
+import { addContactEvent } from "../contact-sync/contact-events";
+import { reopenProjectLinks } from "../contact-sync/project-links";
+import type { EndedLink } from "../contact-sync/project-links";
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 import { ContactRevenueService } from "./contact-revenue.service";
+import type { Revenue } from "./contact-revenue.service";
 import { contactSortValue, rankOrderSql, rankRows } from "./contacts-sort";
 import type { SortableContact } from "./contacts-sort";
 import { MAX_IMPORT_ROWS, parseCsv } from "./contacts-csv";
@@ -181,6 +187,59 @@ type ContactResponse<T> = Omit<T, "profileImportedAt" | "phones" | "socialLinks"
 
 export type ContactRecord = ContactResponse<Contact>;
 
+export interface LabelChip {
+  id: string;
+  name: string;
+  color: string;
+}
+
+const LIST_INCLUDE = {
+  company: { select: { id: true, name: true } },
+  labels: { include: { label: true } },
+} satisfies Prisma.ContactInclude;
+
+type ListedContact = Prisma.ContactGetPayload<{ include: typeof LIST_INCLUDE }>;
+
+export interface ContactListItem {
+  id: string;
+  name: string;
+  firstName: string | null;
+  lastName: string | null;
+  jobTitle: string | null;
+  department: string | null;
+  email: string | null;
+  phones: ContactPhone[];
+  socialLinks: string[];
+  rating: string | null;
+  status: string;
+  company: { id: string; name: string } | null;
+  followUpAt: Date | null;
+  followUpEveryDays: number | null;
+  paidCents: number;
+  labels: LabelChip[];
+  hasLogin: boolean;
+  portalAccess: PortalAccess | null;
+}
+
+const DETAIL_INCLUDE = {
+  company: { select: { id: true, name: true } },
+  leadSource: { select: { id: true, name: true } },
+  referredBy: { select: { id: true, name: true } },
+  labels: { include: { label: true } },
+  projects: { include: { project: { select: { id: true, name: true, status: true } } } },
+} satisfies Prisma.ContactInclude;
+
+type DetailedContact = Omit<Prisma.ContactGetPayload<{ include: typeof DETAIL_INCLUDE }>, "labels" | "projects">;
+
+export type ContactDetail = ContactResponse<DetailedContact> & {
+  hasLogin: boolean;
+  portal: { memberId: string; joinedAt: Date; lastSeenAt: Date | null } | null;
+  labels: LabelChip[];
+  /** `endedAt` is set once the contact is off the project; invoices paid until then still count. */
+  projects: { id: string; name: string; status: string; endedAt: Date | null }[];
+  revenue: Revenue;
+};
+
 /**
  * Drops the import marker and narrows the Json columns: Prisma's JsonValue can't be named
  * across packages, so it would make the controllers' inferred return types unportable.
@@ -222,18 +281,14 @@ export class ContactsService {
     private readonly revenue: ContactRevenueService,
   ) {}
 
-  async findAll(orgId: string, query: ListContactsQueryDto) {
+  async findAll(orgId: string, query: ListContactsQueryDto): Promise<Paginated<ContactListItem>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const pending = await this.pendingInviteEmails(orgId);
     const where = this.buildWhere(orgId, query, pending);
-    const include = {
-      company: { select: { id: true, name: true } },
-      labels: { include: { label: true } },
-    } as const;
 
     const sort: ContactSort = query.sort ?? "name";
-    let contacts;
+    let contacts: ListedContact[];
     let total: number;
     let paid: Map<string, number>;
     if (sort === "paid" || sort === "status" || sort === "company") {
@@ -243,7 +298,7 @@ export class ContactsService {
       const dir = query.dir ?? (sort === "paid" ? "desc" : "asc");
       const pageIds = await this.rankedPage(orgId, matchIds, sort, dir, page, limit);
       const [rows, pagePaid] = await Promise.all([
-        this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include }),
+        this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include: LIST_INCLUDE }),
         this.revenue.paidTotals(pageIds, orgId),
       ]);
       const byId = new Map(rows.map((r) => [r.id, r]));
@@ -255,7 +310,7 @@ export class ContactsService {
         this.prisma.contact.findMany({
           where,
           orderBy: contactOrderBy(sort, query.dir ?? "asc"),
-          include,
+          include: LIST_INCLUDE,
           ...paginationArgs(page, limit),
         }),
         this.prisma.contact.count({ where }),
@@ -266,7 +321,7 @@ export class ContactsService {
       );
     }
     const pendingSet = new Set(pending);
-    const data = contacts.map((c) => ({
+    const data = contacts.map((c): ContactListItem => ({
       id: c.id,
       name: c.name,
       firstName: c.firstName,
@@ -333,7 +388,7 @@ export class ContactsService {
    */
   async pendingInviteEmails(orgId: string, now: Date = new Date()): Promise<string[]> {
     const rows = await this.prisma.invitation.findMany({
-      where: { organizationId: orgId, role: "member", status: "pending", expiresAt: { gt: now } },
+      where: { organizationId: orgId, AND: [PORTAL_INVITATION_ROLE], status: "pending", expiresAt: { gt: now } },
       select: { email: true },
     });
     return [...new Set(rows.map((r) => normalizeEmail(r.email)))];
@@ -490,7 +545,7 @@ export class ContactsService {
         labels: { include: { label: { select: { name: true } } } },
       },
     });
-    const paid = await this.revenue.paidTotals(
+    const paid: Map<string, number> = await this.revenue.paidTotals(
       found.map((c) => c.id),
       orgId,
     );
@@ -532,18 +587,10 @@ export class ContactsService {
     return toCsv(columns, contacts);
   }
 
-  async findOne(id: string, orgId: string) {
+  async findOne(id: string, orgId: string): Promise<ContactDetail> {
     const contact = await this.prisma.contact.findFirst({
       where: { id, organizationId: orgId },
-      include: {
-        company: { select: { id: true, name: true } },
-        leadSource: { select: { id: true, name: true } },
-        referredBy: { select: { id: true, name: true } },
-        labels: { include: { label: true } },
-        projects: {
-          include: { project: { select: { id: true, name: true, status: true } } },
-        },
-      },
+      include: DETAIL_INCLUDE,
     });
     if (!contact) throw new NotFoundException("Contact not found");
 
@@ -564,7 +611,7 @@ export class ContactsService {
         name: l.label.name,
         color: l.label.color,
       })),
-      projects: projects.map((p) => p.project),
+      projects: projects.map((p) => ({ ...p.project, endedAt: p.endedAt })),
       revenue: await this.revenue.forContact(id, orgId, new Date()),
     };
   }
@@ -575,7 +622,7 @@ export class ContactsService {
     if (email) await this.assertEmailFree(email, orgId);
     const links = await this.resolveLinks(dto, orgId);
 
-    let contact;
+    let contact: Contact;
     try {
       contact = await this.prisma.contact.create({
         data: { organizationId: orgId, ...fields, email, ...links },
@@ -583,7 +630,7 @@ export class ContactsService {
     } catch (e) {
       throw this.mapDuplicate(e);
     }
-    await this.addEvent(contact.id, orgId, "contact_created", "Contact created");
+    await addContactEvent(this.prisma, contact.id, orgId, "contact_created", "Contact created");
     return toResponse(contact);
   }
 
@@ -635,7 +682,7 @@ export class ContactsService {
     await this.prisma.contact.delete({ where: { id } });
   }
 
-  async timeline(id: string, orgId: string, page = 1, limit = 20) {
+  async timeline(id: string, orgId: string, page: number = 1, limit: number = 20): Promise<Paginated<TimelineItem>> {
     // Each source is fetched up to page * limit rows, so the page must stay bounded.
     if (page > TIMELINE_MAX_PAGE) {
       throw new BadRequestException(`page must not be greater than ${TIMELINE_MAX_PAGE}`);
@@ -685,7 +732,7 @@ export class ContactsService {
    * Adds a note. "@[Name](contact:id)" mentions stay links only for contacts in this workspace
    * (others become plain "@Name"), and each mentioned contact gets a timeline entry pointing back.
    */
-  async addNote(id: string, content: string, orgId: string, authorId: string) {
+  async addNote(id: string, content: string, orgId: string, authorId: string): Promise<ContactNote> {
     const contact = await this.getOrThrow(id, orgId);
     const ids = mentionedContactIds(content);
     const known = ids.length
@@ -704,7 +751,7 @@ export class ContactsService {
     for (const mentionedId of ids) {
       if (mentionedId === id || !known.has(mentionedId)) continue;
       try {
-        await this.addEvent(mentionedId, orgId, "mentioned", `Mentioned in a note on ${contact.name}`, id);
+        await addContactEvent(this.prisma, mentionedId, orgId, "mentioned", `Mentioned in a note on ${contact.name}`, id);
       } catch (e) {
         // The note is saved; a missing back-reference shouldn't fail it.
         this.logger.error(`Mention event for contact ${mentionedId} failed`, e);
@@ -731,16 +778,23 @@ export class ContactsService {
     const existing = await this.prisma.projectContact.findUnique({
       where: { projectId_contactId: { projectId, contactId: id } },
     });
-    if (existing) return;
+    if (existing && !existing.endedAt) return;
 
     try {
-      await this.prisma.projectContact.create({ data: { projectId, contactId: id } });
+      if (existing?.endedAt) {
+        // Linking again reopens an ended link; the time it was ended stays out of their revenue.
+        const ended: EndedLink = { id: existing.id, endedAt: existing.endedAt };
+        await this.prisma.$transaction((tx) => reopenProjectLinks(tx, [ended], new Date()));
+      } else {
+        await this.prisma.projectContact.create({ data: { projectId, contactId: id } });
+      }
     } catch (e) {
       // A concurrent request linked it first; the link exists, which is the goal.
-      if ((e as { code?: string })?.code === "P2002") return;
+      if (isPrismaUniqueViolation(e)) return;
       throw e;
     }
-    await this.addEvent(
+    await addContactEvent(
+      this.prisma,
       id,
       orgId,
       "project_linked",
@@ -844,7 +898,7 @@ export class ContactsService {
     return this.portalProfile(id, orgId);
   }
 
-  private async getOrThrow(id: string, orgId: string) {
+  private async getOrThrow(id: string, orgId: string): Promise<Contact> {
     const contact = await this.prisma.contact.findFirst({
       where: { id, organizationId: orgId },
     });
@@ -860,7 +914,7 @@ export class ContactsService {
   }
 
   private mapDuplicate(e: unknown): unknown {
-    if ((e as { code?: string })?.code === "P2002") {
+    if (isPrismaUniqueViolation(e)) {
       return new ConflictException("A contact with this email already exists");
     }
     return e;
@@ -945,23 +999,11 @@ export class ContactsService {
       return await create({ organizationId: orgId, name });
     } catch (e) {
       // Lost a race with a concurrent create of the same name.
-      if ((e as { code?: string })?.code === "P2002") {
+      if (isPrismaUniqueViolation(e)) {
         const winner = await find(where);
         if (winner) return winner;
       }
       throw e;
     }
-  }
-
-  private async addEvent(
-    contactId: string,
-    organizationId: string,
-    type: string,
-    detail: string,
-    refId?: string,
-  ): Promise<void> {
-    await this.prisma.contactEvent.create({
-      data: { contactId, organizationId, type, detail, ...(refId ? { refId } : {}) },
-    });
   }
 }

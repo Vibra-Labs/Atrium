@@ -14,7 +14,8 @@ import { planHasFeature } from "../common/helpers/plan-feature";
 import { PLAN_FEATURES, type PlanFeature } from "@atrium/shared";
 import type { PlanLimitResource } from "../common/decorators/plan-limit.decorator";
 import type Stripe from "stripe";
-import type { Subscription, SubscriptionPlan } from "@atrium/database";
+import type { Prisma, Subscription, SubscriptionPlan } from "@atrium/database";
+import { PORTAL_INVITATION_ROLE } from "../clients/invitations";
 
 type SubscriptionWithPlan = Subscription & { plan: SubscriptionPlan };
 
@@ -68,9 +69,9 @@ export class BillingService {
   async getUsage(orgId: string) {
     // A pending invite reserves a seat, so inviting five clients then having them
     // all accept can't slip past the limit.
-    const pendingInvites = (role: string | { not: string }): Promise<number> =>
+    const pendingInvites = (roleFilter: Prisma.InvitationWhereInput): Promise<number> =>
       this.prisma.invitation.count({
-        where: { organizationId: orgId, role, status: "pending", expiresAt: { gt: new Date() } },
+        where: { organizationId: orgId, ...roleFilter, status: "pending", expiresAt: { gt: new Date() } },
       });
 
     const [projectCount, storageBytes, memberCount, clientCount, pendingTeam, pendingClients] =
@@ -92,8 +93,9 @@ export class BillingService {
         this.prisma.member.count({
           where: { organizationId: orgId, role: "member" },
         }),
-        pendingInvites({ not: "member" }),
-        pendingInvites("member"),
+        // `not: "member"` also skips a null role, which is a portal invite.
+        pendingInvites({ role: { not: "member" } }),
+        pendingInvites({ AND: [PORTAL_INVITATION_ROLE] }),
       ]);
 
     // The owner who created the workspace always holds a staff row and does not use a seat.

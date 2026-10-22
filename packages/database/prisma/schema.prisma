@@ -102,6 +102,8 @@ model Organization {
   inviteesBackfilledAt DateTime?
   // Version of the contacts boot backfill that last finished without failures; boots re-run it while this is below CONTACTS_BACKFILL_VERSION.
   contactsBackfillVersion Int @default(0)
+  // Set while an API instance runs the contacts backfill for this workspace, so a second instance booting at the same time skips it. Stale after an hour (a crashed run).
+  contactsBackfillClaimedAt DateTime?
 
   members          Member[]
   invitations      Invitation[]
@@ -1100,13 +1102,31 @@ model ProjectContact {
   projectId String
   contactId String
   createdAt DateTime @default(now())
+  // Set when the client is taken off the project or leaves the workspace. The link stays so
+  // invoices paid until then still count toward the contact; later ones don't.
+  endedAt   DateTime?
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contact Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  gaps    ProjectContactGap[]
 
   @@unique([projectId, contactId])
   @@index([contactId])
   @@map("project_contact")
+}
+
+/// When a link that had ended is reopened, the time it was ended is kept here; invoices paid
+/// strictly inside a gap don't count toward the contact.
+model ProjectContactGap {
+  id               String   @id @default(cuid())
+  projectContactId String
+  startedAt        DateTime
+  endedAt          DateTime
+
+  projectContact ProjectContact @relation(fields: [projectContactId], references: [id], onDelete: Cascade)
+
+  @@index([projectContactId])
+  @@map("project_contact_gap")
 }
 
 // ─── Time Tracking ───

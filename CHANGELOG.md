@@ -11,6 +11,15 @@ All notable changes to Atrium will be documented in this file.
 ### Changed
 
 - **People splits into Contacts and Settings → Team** — The sidebar's People page is gone: your staff are managed under Settings → Team (`/dashboard/settings/team`; `/dashboard/team` redirects), and everyone outside your company is in Contacts. Portal clients are contacts with portal access: filter Contacts by "Portal access", and invite, view as client, send a password reset link or remove access from the contact page. A client's portal profile is their contact (company, phone, address, website and a new "About"), every client invitation gets a contact, and search lists clients once. `/dashboard/clients` redirects; the People CSV export and `/clients/:id/profile` are replaced by the Contacts export and contact page.
+- **Postgres needs the `pg_trgm` extension** for the new search indexes. The Docker image and `bun run db:push` create it before the schema push; if your database user isn't allowed to, run `CREATE EXTENSION IF NOT EXISTS pg_trgm;` as a superuser or enable it in your managed database's settings before upgrading.
+- **Faster across the app** — New database and search indexes, HTTP caching for files and logos, and uploads streamed to storage instead of held in memory.
+
+### Fixed
+
+- **Portal clients could open draft or cancelled invoices by id, and list the workspace's members and invitations.** Both are now refused.
+- Workspaces with more than 100 members could lose the roles of members past the first 100.
+- Generating an invoice from the same time entries twice at once could bill them twice.
+- Switching workspaces could show the previous workspace's cached data.
 
 ## [1.11.1] — 2026-10-19
 

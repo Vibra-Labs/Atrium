@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "./require-name";
+import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 import { ContactsService } from "./contacts.service";
 import type { LeadSourceDto } from "./contacts.dto";
 
@@ -40,7 +41,7 @@ export class LeadSourcesService {
     try {
       return await this.prisma.leadSource.update({ where: { id }, data: { name } });
     } catch (err: unknown) {
-      if ((err as { code?: string })?.code === "P2002") {
+      if (isPrismaUniqueViolation(err)) {
         throw new ConflictException("A lead source with this name already exists");
       }
       throw err;

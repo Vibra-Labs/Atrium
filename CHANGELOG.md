@@ -2,6 +2,18 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.12.1] — 2026-10-22
+
+### Security
+
+- **Dependency updates close every critical advisory** (129 known vulnerabilities down to 16, none critical; the rest are build-time tooling). Fixes include Next.js image-optimization remote code execution, Better Auth OAuth refresh-token replay on the MCP login, `proxy-addr` IP spoofing through trusted-proxy checks, a `sanitize-html` XSS bypass, and denial-of-service issues in `path-to-regexp`, `fast-uri`, `brace-expansion`, `multer`, `body-parser` and `qs`. Also updates NestJS, the MCP SDK, Sentry, Prisma and Turbo.
+
+### Fixed
+
+- **Signing in on plain-HTTP installs** (e.g. a LAN IP) returned success and then logged you out. Cookies are no longer forced to Secure when your public URL is `http://`; `SECURE_COOKIES` overrides it. Owners see a dismissible notice on plain-HTTP installs.
+- **SMTP test email failed with `WRONG_VERSION_NUMBER`** on the default settings. "Use TLS/SSL" is now a Security mode (STARTTLS, SSL/TLS, None) and the port follows it. Existing settings are converted automatically.
+- A `WEB_URL`, `API_URL` or `BETTER_AUTH_URL` without `http://` or `https://` now stops the API at startup with a message naming the variable, instead of crashing with "Invalid URL".
+
 ## [1.12.0] — 2026-10-21
 
 ### Added

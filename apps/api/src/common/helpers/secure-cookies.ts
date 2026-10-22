@@ -15,13 +15,15 @@ function configuredUrl(env: Env): string {
  * Browsers drop Secure cookies on plain http:// (except localhost), so a
  * production install opened at http://<host>:<port> could sign in but never
  * stay signed in (#94). Order:
- *   1. SECURE_COOKIES, when set, always wins.
+ *   1. SECURE_COOKIES, when set to a non-blank value, always wins. A blank
+ *      value (e.g. an empty field in Portainer) counts as unset.
  *   2. An explicit http:// URL turns Secure off.
  *   3. Otherwise Secure in production, as before. This covers an unset URL,
  *      https://, and anything malformed.
  */
 export function secureCookies(env: Env = process.env): boolean {
-  if (env.SECURE_COOKIES !== undefined) return env.SECURE_COOKIES === "true";
+  const explicit: string = (env.SECURE_COOKIES ?? "").trim();
+  if (explicit) return explicit === "true";
   if (configuredUrl(env).startsWith("http://")) return false;
   return env.NODE_ENV === "production";
 }

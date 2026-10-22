@@ -2,6 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { cookieUrlWarning, insecureCookiesInProduction, secureCookies } from "./secure-cookies";
 
 describe("secureCookies", () => {
+  it("treats a blank SECURE_COOKIES as unset", () => {
+    expect(secureCookies({ SECURE_COOKIES: "", NODE_ENV: "production" })).toBe(true);
+    expect(secureCookies({ SECURE_COOKIES: "  ", WEB_URL: "https://atrium.example.com", NODE_ENV: "production" })).toBe(true);
+    expect(secureCookies({ SECURE_COOKIES: "", WEB_URL: "http://10.0.0.5:8192", NODE_ENV: "production" })).toBe(false);
+  });
+
   it("lets an explicit SECURE_COOKIES win over the URL", () => {
     expect(secureCookies({ SECURE_COOKIES: "true", WEB_URL: "http://10.0.0.5:8192", NODE_ENV: "production" })).toBe(true);
     expect(secureCookies({ SECURE_COOKIES: "false", WEB_URL: "https://atrium.example.com", NODE_ENV: "production" })).toBe(false);

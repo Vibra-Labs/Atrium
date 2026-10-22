@@ -67,10 +67,6 @@ describe("insecureCookiesInProduction", () => {
 });
 
 describe("cookieUrlWarning", () => {
-  it("warns when the URL has no http:// or https:// scheme", () => {
-    expect(cookieUrlWarning({ WEB_URL: "10.0.0.5:8192", NODE_ENV: "production" })).toContain("no http:// or https://");
-  });
-
   it("warns when production cookies are not Secure", () => {
     expect(cookieUrlWarning({ WEB_URL: "http://10.0.0.5:8192", NODE_ENV: "production" })).toContain("plain HTTP");
   });

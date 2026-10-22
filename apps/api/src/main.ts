@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { initSentry } from "./instrument";
+import { publicUrlError } from "./common/helpers/public-url";
 
 // Load root .env before NestJS bootstraps (Turbo runs from apps/api/)
 function loadEnv(filePath: string) {
@@ -38,6 +39,12 @@ for (const key of required) {
     console.error(`Missing required environment variable: ${key}`);
     process.exit(1);
   }
+}
+
+const urlError: string | null = publicUrlError();
+if (urlError) {
+  console.error(`FATAL: ${urlError}`);
+  process.exit(1);
 }
 
 // Auth secret validation

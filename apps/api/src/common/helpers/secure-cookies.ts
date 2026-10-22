@@ -35,10 +35,6 @@ export function insecureCookiesInProduction(env: Env = process.env): boolean {
 
 /** A startup warning about the cookie setup, or null when there is nothing to say. */
 export function cookieUrlWarning(env: Env = process.env): string | null {
-  const url: string = configuredUrl(env);
-  if (url && !/^https?:\/\//.test(url)) {
-    return `The public URL "${url}" has no http:// or https:// scheme. Set WEB_URL to the full address users open, e.g. http://192.168.1.10:8080 or https://atrium.example.com.`;
-  }
   if (insecureCookiesInProduction(env)) {
     return "Sign-in cookies are not Secure because Atrium is served over plain HTTP. Logins and sessions travel unencrypted. Use HTTPS (a Cloudflare tunnel or a reverse proxy) for anything beyond a trusted local network.";
   }

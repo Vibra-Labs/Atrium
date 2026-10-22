@@ -83,7 +83,8 @@ The database schema is automatically applied on startup. To skip this (e.g. when
 ## Public URL
 
 Set `WEB_URL` to the address people actually open in a browser, with its scheme
-and without a trailing slash:
+and without a trailing slash. A value without `http://` or `https://`, such as
+`192.168.1.10:8080`, stops the API at startup with an error naming the variable:
 
 ```
 WEB_URL=https://atrium.example.com

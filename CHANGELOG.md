@@ -11,6 +11,25 @@ All notable changes to Atrium will be documented in this file.
 ### Changed
 
 - **People splits into Contacts and Settings → Team** — The sidebar's People page is gone: your staff are managed under Settings → Team (`/dashboard/settings/team`; `/dashboard/team` redirects), and everyone outside your company is in Contacts. Portal clients are contacts with portal access: filter Contacts by "Portal access", and invite, view as client, send a password reset link or remove access from the contact page. A client's portal profile is their contact (company, phone, address, website and a new "About"), every client invitation gets a contact, and search lists clients once. `/dashboard/clients` redirects; the People CSV export and `/clients/:id/profile` are replaced by the Contacts export and contact page.
+- **Postgres needs the `pg_trgm` extension** for the new search indexes. The Docker image and `bun run db:push` create it before the schema push; if your database user isn't allowed to, run `CREATE EXTENSION IF NOT EXISTS pg_trgm;` as a superuser or enable it in your managed database's settings before upgrading.
+- **Faster across the app** — Missing database indexes and trigram search indexes, HTTP caching for logos, downloads and attachments, and uploads streamed to storage instead of held in memory (up to 200 MB). Dashboard pages load in one parallel round, notifications poll every 60 s only while the tab is visible, and invoicing from time entries and duplicating projects run in bulk.
+- Task descriptions are searched from 3 characters.
+- At most 2 emails are sent at once, and each workspace's email settings are cached for 60 s (cleared on save).
+- Expired sessions and verification tokens are cleaned up daily.
+- The web image bundles Sentry only when `NEXT_PUBLIC_SENTRY_DSN` is set at build time.
+- The bundled Caddy config no longer overrides a `Cache-Control` header the app sets.
+
+### Fixed
+
+- **Portal clients could open draft or cancelled invoices** (detail, PDF or checkout) by id. They now get "not found".
+- **Portal clients could list the workspace's members and invitations** through the auth API. Those lists are now staff-only.
+- **Workspaces with more than 100 members** could lose the roles of members past the first 100.
+- A request path starting with `//` could get past the workspace route check.
+- Generating an invoice from the same time entries twice at once returns a conflict instead of billing them twice.
+- A failed document version upload no longer leaves its file behind.
+- Switching workspaces no longer shows the previous workspace's cached data.
+- A replaced logo shows up right away instead of the old cached one.
+- Typeahead pickers work from the keyboard.
 
 ## [1.11.1] — 2026-10-19
 

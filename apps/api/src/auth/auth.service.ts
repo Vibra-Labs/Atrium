@@ -159,6 +159,8 @@ export class AuthService {
       });
     });
 
+    // Cast: better-auth >=1.6 makes Auth<Options> invariant, so the concrete
+    // instance no longer assigns to the default-typed field.
     this.auth = betterAuth({
       database: prismaAdapter(this.prisma, { provider: "postgresql" }),
       secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
@@ -420,7 +422,7 @@ export class AuthService {
             ]
           : []),
       ],
-    });
+    }) as unknown as ReturnType<typeof betterAuth>;
   }
 
   /**

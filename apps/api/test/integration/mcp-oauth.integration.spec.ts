@@ -469,12 +469,11 @@ describe("Better Auth mcp plugin on Atrium's schema", () => {
       `/mcp/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=x&code_challenge=notahash&code_challenge_method=plain`,
     );
 
-    // authorize.mjs reports an unusable challenge method rather than
-    // downgrading. Its `redirectErrorURL` helper is buggy — it returns only the
-    // query fragment and drops the redirect_uri — so Location is relative.
+    // authorize.mjs reports an unusable challenge method to the client's
+    // redirect_uri rather than downgrading.
     expect(res.status).toBe(302);
     const location: string = res.headers.get("location")!;
-    expect(location).toStartWith("?error=invalid_request");
+    expect(location).toStartWith(`${REDIRECT_URI}?error=invalid_request`);
     expect(location).toContain("invalid code_challenge method");
     // Neither a code nor a consent prompt: the request dies before either.
     expect(location).not.toContain("consent");

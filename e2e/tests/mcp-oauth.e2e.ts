@@ -38,8 +38,13 @@ async function startFlow(request: APIRequestContext, name: string): Promise<Flow
   return { clientId, verifier, authorizeUrl: `${API_URL}/api/auth/mcp/authorize?${query}` };
 }
 
-/** Nothing listens on the redirect URI, so capture the navigation instead of loading it. */
+/**
+ * Nothing listens on the redirect URI, so capture the navigation and answer it
+ * ourselves. Letting it fail leaves the page on chrome-error://, which races
+ * with the test's next page.goto.
+ */
 async function captureCallback(page: Page, action: () => Promise<void>): Promise<URL> {
+  await page.route(`${REDIRECT_URI}**`, (route) => route.fulfill({ status: 200, body: "ok" }));
   const [request] = await Promise.all([
     page.waitForRequest((r) => r.url().startsWith(REDIRECT_URI), { timeout: 15_000 }),
     action(),

@@ -60,7 +60,9 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       cwd: "../",
       // integrations.e2e.ts points a webhook at a capture server on 127.0.0.1.
-      env: { INTEGRATIONS_ALLOW_PRIVATE_URLS: "true" },
+      // Blank STRIPE_CONNECT_CLIENT_ID so a developer's root .env can't flip the
+      // payments tests into Connect mode.
+      env: { INTEGRATIONS_ALLOW_PRIVATE_URLS: "true", STRIPE_CONNECT_CLIENT_ID: "" },
     },
     {
       command: process.env.CI

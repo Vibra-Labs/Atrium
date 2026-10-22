@@ -15,10 +15,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@prisma/client": "^6.4.0",
+    "@prisma/client": "^6.19.3",
     "@atrium/shared": "workspace:*"
   },
   "devDependencies": {
-    "prisma": "^6.4.0"
+    "prisma": "^6.19.3"
   }
 }

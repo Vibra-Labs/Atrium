@@ -12,25 +12,25 @@
   },
   "dependencies": {
     "@atrium/shared": "workspace:*",
-    "autoprefixer": "^10.4.24",
+    "autoprefixer": "^10.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.474.0",
-    "next": "^15.5.14",
+    "next": "^15.5.28",
     "next-themes": "^0.4.6",
     "pdfjs-dist": "4.8.69",
-    "postcss": "^8.5.6",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-pdf": "9",
+    "postcss": "^8.5.31",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-pdf": "^9.2.1",
     "server-only": "^0.0.1",
-    "tailwind-merge": "^3.0.0",
-    "tailwindcss": "3"
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.0"
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^5.9.3"
   }
 }

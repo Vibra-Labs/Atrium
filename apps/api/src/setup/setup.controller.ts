@@ -53,6 +53,7 @@ export class SetupController {
       smtpUser: dto.smtpUser ?? undefined,
       smtpPass: dto.smtpPass ?? undefined,
       smtpSecure: dto.smtpSecure ?? undefined,
+      smtpSecurity: dto.smtpSecurity ?? undefined,
     });
 
     return { success: true, message: "Email settings saved" };

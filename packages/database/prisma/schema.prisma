@@ -595,7 +595,8 @@ model SystemSettings {
   smtpPort       Int?
   smtpUser       String?
   smtpPass       String?  // encrypted
-  smtpSecure     Boolean  @default(true)
+  smtpSecure     Boolean  @default(true) // legacy "Use TLS/SSL" checkbox, only read while smtpSecurity is null
+  smtpSecurity   String?  // "tls" | "starttls" | "none"
 
   // Payment settings
   paymentInstructions String?  // Displayed on invoices in the portal

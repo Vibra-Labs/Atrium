@@ -12,6 +12,8 @@ import {
   Matches,
 } from "class-validator";
 import { Type, Transform } from "class-transformer";
+import { SMTP_SECURITY_VALUES } from "@atrium/shared";
+import type { SmtpSecurity } from "@atrium/shared";
 
 export class UpdateSettingsDto {
   // IANA zone the workspace's scheduled emails follow; null clears it (UTC).
@@ -60,6 +62,10 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsBoolean()
   smtpSecure?: boolean;
+
+  @IsOptional()
+  @IsIn(SMTP_SECURITY_VALUES)
+  smtpSecurity?: SmtpSecurity;
 
   @IsOptional()
   @Type(() => Number)

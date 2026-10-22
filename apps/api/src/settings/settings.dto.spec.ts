@@ -149,6 +149,21 @@ describe("UpdateSettingsDto validation", () => {
     expect(errors.length).toBe(0);
   });
 
+  // --- smtpSecurity field ---
+
+  test("smtpSecurity accepts tls, starttls and none", async () => {
+    for (const smtpSecurity of ["tls", "starttls", "none"]) {
+      const { errors } = await validateDto({ smtpSecurity });
+      expect(errors.length).toBe(0);
+    }
+  });
+
+  test("smtpSecurity rejects other values", async () => {
+    const { errors } = await validateDto({ smtpSecurity: "ssl" });
+
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
   // --- plainHttpNoticeDismissed field ---
 
   test("plainHttpNoticeDismissed: true passes validation", async () => {

@@ -125,6 +125,20 @@ describe("SetupController", () => {
     );
   });
 
+  test("updateEmailSettings passes the SMTP security mode to SettingsService", async () => {
+    await controller.updateEmailSettings(orgId, {
+      provider: "smtp" as const,
+      smtpHost: "smtp.example.com",
+      smtpPort: 465,
+      smtpSecurity: "tls" as const,
+    });
+
+    expect(settingsService.updateSettings).toHaveBeenCalledWith(
+      orgId,
+      expect.objectContaining({ smtpSecurity: "tls" }),
+    );
+  });
+
   test("updateEmailSettings returns success message on completion", async () => {
     const dto = { provider: "resend" as const };
     const result = await controller.updateEmailSettings(orgId, dto);

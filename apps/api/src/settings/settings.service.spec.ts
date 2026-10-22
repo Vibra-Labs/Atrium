@@ -39,6 +39,7 @@ function baseSettings(extra: Record<string, unknown> = {}) {
     smtpUser: null,
     smtpPass: null,
     smtpSecure: true,
+    smtpSecurity: null,
     maxFileSizeMb: null,
     setupCompleted: false,
     createdAt: new Date(),
@@ -327,6 +328,60 @@ describe("SettingsService", () => {
     const result = await service.getEffectiveEmailConfig("org-1");
 
     expect(result.from).toBe("noreply@atrium.local");
+  });
+
+  // --- SMTP security mode ---
+
+  test("updateSettings stores the chosen smtpSecurity", async () => {
+    await service.updateSettings("org-1", { smtpSecurity: "tls" });
+
+    const args = prisma.systemSettings.upsert.mock.calls[0][0] as UpsertArgs;
+    expect(args.update?.smtpSecurity).toBe("tls");
+  });
+
+  test("updateSettings with only the old smtpSecure checkbox clears the stored mode", async () => {
+    await service.updateSettings("org-1", { smtpSecure: false });
+
+    const args = prisma.systemSettings.upsert.mock.calls[0][0] as UpsertArgs;
+    expect(args.update?.smtpSecure).toBe(false);
+    expect(args.update?.smtpSecurity).toBeNull();
+  });
+
+  test("updateSettings prefers smtpSecurity when both are sent", async () => {
+    await service.updateSettings("org-1", { smtpSecurity: "starttls", smtpSecure: false });
+
+    const args = prisma.systemSettings.upsert.mock.calls[0][0] as UpsertArgs;
+    expect(args.update?.smtpSecurity).toBe("starttls");
+  });
+
+  test("getSettings returns a resolved smtpSecurity for rows that only have the old checkbox", async () => {
+    prisma.systemSettings.upsert.mockImplementation(() =>
+      Promise.resolve(baseSettings({ smtpPort: 587, smtpSecure: true, smtpSecurity: null })),
+    );
+
+    expect((await service.getSettings("org-1")).smtpSecurity).toBe("starttls");
+  });
+
+  test("getEffectiveEmailConfig fixes a saved 587 + ticked checkbox by using STARTTLS", async () => {
+    prisma.systemSettings.findUnique.mockImplementation(() =>
+      Promise.resolve(baseSettings({ emailProvider: "smtp", smtpHost: "mail.example.com", smtpPort: 587, smtpSecure: true })),
+    );
+
+    const result = await service.getEffectiveEmailConfig("org-1");
+
+    expect(result.smtp?.security).toBe("starttls");
+    expect(result.smtp?.port).toBe(587);
+  });
+
+  test("getEffectiveEmailConfig uses the default port of the chosen mode when no port is saved", async () => {
+    prisma.systemSettings.findUnique.mockImplementation(() =>
+      Promise.resolve(baseSettings({ emailProvider: "smtp", smtpHost: "mail.example.com", smtpPort: null, smtpSecurity: "tls" })),
+    );
+
+    const result = await service.getEffectiveEmailConfig("org-1");
+
+    expect(result.smtp?.security).toBe("tls");
+    expect(result.smtp?.port).toBe(465);
   });
 
   // --- getEffectiveMaxFileSize ---

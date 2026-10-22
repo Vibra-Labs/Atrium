@@ -8,6 +8,9 @@ import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto"
 import dns from "node:dns/promises";
 import { isValidTimeZone } from "../common/helpers/local-time";
 import { insecureCookiesInProduction } from "../common/helpers/secure-cookies";
+import { SMTP_DEFAULT_PORTS } from "@atrium/shared";
+import { resolveSmtpSecurity, smtpErrorMessage, smtpTransportOptions } from "../mail/smtp-security";
+import type { SmtpConfig } from "../mail/smtp-security";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const EMAIL_CONFIG_TTL_MS = 60_000;
@@ -17,7 +20,7 @@ export interface EffectiveEmailConfig {
   apiKey: string | null;
   from: string;
   isOrgConfigured: boolean;
-  smtp: { host: string | null; port: number; user: string | null; pass: string | null; secure: boolean } | null;
+  smtp: SmtpConfig | null;
 }
 
 @Injectable()
@@ -83,6 +86,7 @@ export class SettingsService {
       ...settings,
       resendApiKey: settings.resendApiKey ? "••••••••" : null,
       smtpPass: settings.smtpPass ? "••••••••" : null,
+      smtpSecurity: resolveSmtpSecurity(settings.smtpSecurity, settings.smtpSecure, settings.smtpPort),
       paymentDetails: settings.paymentDetails ? "••••••••" : null,
       stripeSecretKey: settings.stripeSecretKey ? "••••••••" : null,
       stripeWebhookSecret: settings.stripeWebhookSecret ? "••••••••" : null,
@@ -101,7 +105,13 @@ export class SettingsService {
     if (dto.smtpHost !== undefined) data.smtpHost = dto.smtpHost;
     if (dto.smtpPort !== undefined) data.smtpPort = dto.smtpPort;
     if (dto.smtpUser !== undefined) data.smtpUser = dto.smtpUser;
-    if (dto.smtpSecure !== undefined) data.smtpSecure = dto.smtpSecure;
+    if (dto.smtpSecurity !== undefined) {
+      data.smtpSecurity = dto.smtpSecurity;
+    } else if (dto.smtpSecure !== undefined) {
+      // An older client sent only the checkbox: let it decide again.
+      data.smtpSecure = dto.smtpSecure;
+      data.smtpSecurity = null;
+    }
     if (dto.maxFileSizeMb !== undefined) data.maxFileSizeMb = dto.maxFileSizeMb;
     if (dto.paymentInstructions !== undefined) data.paymentInstructions = dto.paymentInstructions;
     if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
@@ -143,6 +153,7 @@ export class SettingsService {
       ...settings,
       resendApiKey: settings.resendApiKey ? "••••••••" : null,
       smtpPass: settings.smtpPass ? "••••••••" : null,
+      smtpSecurity: resolveSmtpSecurity(settings.smtpSecurity, settings.smtpSecure, settings.smtpPort),
       paymentDetails: settings.paymentDetails ? "••••••••" : null,
       stripeSecretKey: settings.stripeSecretKey ? "••••••••" : null,
       stripeWebhookSecret: settings.stripeWebhookSecret ? "••••••••" : null,
@@ -206,17 +217,20 @@ export class SettingsService {
       apiKey,
       from,
       isOrgConfigured: !!settings?.emailProvider,
-      smtp: provider === "smtp"
-        ? {
-            host: settings?.smtpHost ?? null,
-            port: settings?.smtpPort ?? 587,
-            user: settings?.smtpUser ?? null,
-            pass: settings?.smtpPass
-              ? this.decrypt(settings.smtpPass)
-              : null,
-            secure: settings?.smtpSecure ?? true,
-          }
-        : null,
+      smtp: provider === "smtp" ? this.smtpConfig(settings) : null,
+    };
+  }
+
+  private smtpConfig(
+    settings: { smtpHost: string | null; smtpPort: number | null; smtpUser: string | null; smtpPass: string | null; smtpSecure: boolean; smtpSecurity: string | null } | null,
+  ): SmtpConfig {
+    const security = resolveSmtpSecurity(settings?.smtpSecurity, settings?.smtpSecure, settings?.smtpPort);
+    return {
+      host: settings?.smtpHost ?? null,
+      port: settings?.smtpPort ?? SMTP_DEFAULT_PORTS[security],
+      user: settings?.smtpUser ?? null,
+      pass: settings?.smtpPass ? this.decrypt(settings.smtpPass) : null,
+      security,
     };
   }
 
@@ -319,18 +333,7 @@ export class SettingsService {
         });
       } else if (emailConfig.provider === "smtp") {
         const nodemailer = await import("nodemailer");
-        const transporter = nodemailer.createTransport({
-          host: emailConfig.smtp!.host ?? undefined,
-          port: emailConfig.smtp!.port,
-          secure: emailConfig.smtp!.secure,
-          auth:
-            emailConfig.smtp!.user && emailConfig.smtp!.pass
-              ? {
-                  user: emailConfig.smtp!.user,
-                  pass: emailConfig.smtp!.pass,
-                }
-              : undefined,
-        });
+        const transporter = nodemailer.createTransport(smtpTransportOptions(emailConfig.smtp!));
         await transporter.sendMail({
           from: emailConfig.from,
           to: recipientEmail,
@@ -342,8 +345,10 @@ export class SettingsService {
       this.logger.info({ recipientEmail }, "Test email sent successfully");
       return { success: true, message: "Test email sent" };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      this.logger.warn({ recipientEmail, error: message }, "Test email failed");
+      const raw: string = err instanceof Error ? err.message : "Unknown error";
+      const smtp: SmtpConfig | null = emailConfig.smtp;
+      const message: string = smtp ? smtpErrorMessage(err, smtp.security, smtp.port) : raw;
+      this.logger.warn({ recipientEmail, error: raw }, "Test email failed");
       return { success: false, message: `Failed to send test email: ${message}` };
     }
   }

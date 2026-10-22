@@ -1,3 +1,21 @@
+/** How Atrium secures the connection to an SMTP server. */
+export const SMTP_SECURITY = {
+  TLS: "tls",
+  STARTTLS: "starttls",
+  NONE: "none",
+} as const;
+
+export type SmtpSecurity = (typeof SMTP_SECURITY)[keyof typeof SMTP_SECURITY];
+
+export const SMTP_SECURITY_VALUES: SmtpSecurity[] = Object.values(SMTP_SECURITY);
+
+/** The port each mode normally uses; shown when no port is set. */
+export const SMTP_DEFAULT_PORTS: Record<SmtpSecurity, number> = {
+  tls: 465,
+  starttls: 587,
+  none: 25,
+};
+
 export const PROJECT_STATUSES = {
   NOT_STARTED: "not_started",
   IN_PROGRESS: "in_progress",

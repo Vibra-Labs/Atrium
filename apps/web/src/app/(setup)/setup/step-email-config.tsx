@@ -4,6 +4,8 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { track } from "@/lib/track";
 import { Mail, Send, CheckCircle, XCircle } from "lucide-react";
+import { SMTP_DEFAULT_PORTS } from "@atrium/shared";
+import type { SmtpSecurity } from "@atrium/shared";
 
 interface StepEmailConfigProps {
   onNext: () => void;
@@ -19,7 +21,7 @@ export function StepEmailConfig({ onNext, onBack }: StepEmailConfigProps) {
   const [smtpPort, setSmtpPort] = useState("587");
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpPass, setSmtpPass] = useState("");
-  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpSecurity, setSmtpSecurity] = useState<SmtpSecurity>("starttls");
   const [fromEmail, setFromEmail] = useState("");
   const [testEmail, setTestEmail] = useState("");
   const [testStatus, setTestStatus] = useState<
@@ -28,6 +30,14 @@ export function StepEmailConfig({ onNext, onBack }: StepEmailConfigProps) {
   const [testMessage, setTestMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Moves the port to the new mode's usual one, unless it was changed by hand.
+  const changeSecurity = (next: SmtpSecurity) => {
+    if (smtpPort === "" || smtpPort === String(SMTP_DEFAULT_PORTS[smtpSecurity])) {
+      setSmtpPort(String(SMTP_DEFAULT_PORTS[next]));
+    }
+    setSmtpSecurity(next);
+  };
 
   const handleSendTest = async () => {
     if (!testEmail) return;
@@ -76,7 +86,7 @@ export function StepEmailConfig({ onNext, onBack }: StepEmailConfigProps) {
         payload.smtpPort = parseInt(smtpPort, 10);
         payload.smtpUser = smtpUser;
         payload.smtpPass = smtpPass;
-        payload.smtpSecure = smtpSecure;
+        payload.smtpSecurity = smtpSecurity;
       }
 
       await apiFetch("/setup/email", {
@@ -243,17 +253,20 @@ export function StepEmailConfig({ onNext, onBack }: StepEmailConfigProps) {
               />
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              id="setup-smtp-secure"
-              type="checkbox"
-              checked={smtpSecure}
-              onChange={(e) => setSmtpSecure(e.target.checked)}
-              className="w-4 h-4 rounded"
-            />
-            <label htmlFor="setup-smtp-secure" className="text-sm">
-              Use SSL/TLS
+          <div className="space-y-2">
+            <label htmlFor="setup-smtp-security" className="text-sm font-medium">
+              Security
             </label>
+            <select
+              id="setup-smtp-security"
+              value={smtpSecurity}
+              onChange={(e) => changeSecurity(e.target.value as SmtpSecurity)}
+              className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            >
+              <option value="starttls">STARTTLS (587)</option>
+              <option value="tls">SSL/TLS (465)</option>
+              <option value="none">None (25)</option>
+            </select>
           </div>
           <div className="space-y-2">
             <label

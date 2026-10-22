@@ -4,14 +4,8 @@ import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { Resend } from "resend";
 import * as nodemailer from "nodemailer";
 import { SettingsService } from "../settings/settings.service";
-
-interface SmtpConfig {
-  host: string | null;
-  port: number;
-  user: string | null;
-  pass: string | null;
-  secure: boolean;
-}
+import { smtpTransportOptions } from "./smtp-security";
+import type { SmtpConfig } from "./smtp-security";
 
 const MAX_CONCURRENT_SENDS = 2;
 
@@ -53,7 +47,7 @@ export class MailService {
   }
 
   private getSmtpTransporter(smtp: SmtpConfig, organizationId?: string): nodemailer.Transporter {
-    const key = `${organizationId ?? "default"}:${smtp.host}:${smtp.port}:${smtp.user}`;
+    const key = `${organizationId ?? "default"}:${smtp.host}:${smtp.port}:${smtp.user}:${smtp.security}`;
     const cached = this.smtpTransporters.get(key);
     if (cached && Date.now() - cached.createdAt < MailService.SMTP_CACHE_TTL_MS) {
       return cached.transporter;
@@ -61,15 +55,7 @@ export class MailService {
     if (cached) {
       this.smtpTransporters.delete(key);
     }
-    const transporter = nodemailer.createTransport({
-      host: smtp.host ?? undefined,
-      port: smtp.port,
-      secure: smtp.secure,
-      auth:
-        smtp.user && smtp.pass
-          ? { user: smtp.user, pass: smtp.pass }
-          : undefined,
-    });
+    const transporter = nodemailer.createTransport(smtpTransportOptions(smtp));
     this.smtpTransporters.set(key, { transporter, createdAt: Date.now() });
     return transporter;
   }

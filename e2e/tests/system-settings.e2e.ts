@@ -49,6 +49,28 @@ test.describe("System Settings", () => {
     await expect(page.getByText(/smtp host/i)).not.toBeVisible();
   });
 
+  test("SMTP security dropdown sets the usual port and keeps a port typed by hand", async ({ page }) => {
+    await page.goto("/dashboard/settings/workspace");
+    await page.locator("select").first().selectOption("smtp");
+
+    const security = page.getByLabel("Security");
+    const port = page.getByLabel("Port", { exact: true });
+
+    // A real value, not a placeholder, so people see what will be used.
+    await expect(security).toHaveValue("starttls");
+    await expect(port).toHaveValue("587");
+
+    await security.selectOption("tls");
+    await expect(port).toHaveValue("465");
+
+    await security.selectOption("none");
+    await expect(port).toHaveValue("25");
+
+    await port.fill("2465");
+    await security.selectOption("tls");
+    await expect(port).toHaveValue("2465");
+  });
+
   test("save settings button exists and is clickable", async ({ page }) => {
     await page.goto("/dashboard/settings/workspace");
     await expect(page.getByText(/maximum file size/i)).toBeVisible();

@@ -6,6 +6,8 @@ import { useToast } from "@/components/toast";
 import { Mail, HardDrive, Send, Globe, BarChart2, Clock } from "lucide-react";
 import { enableSentry } from "@/lib/sentry";
 import { CustomDomainSection } from "../system/custom-domain-section";
+import { SMTP_DEFAULT_PORTS } from "@atrium/shared";
+import type { SmtpSecurity } from "@atrium/shared";
 
 interface SystemSettings {
   emailProvider: string | null;
@@ -15,7 +17,7 @@ interface SystemSettings {
   smtpPort: number | null;
   smtpUser: string | null;
   smtpPass: string | null;
-  smtpSecure: boolean;
+  smtpSecurity: SmtpSecurity;
   maxFileSizeMb: number;
   setupCompleted: boolean;
   telemetryEnabled: boolean | null;
@@ -30,12 +32,29 @@ const defaultSettings: SystemSettings = {
   smtpPort: null,
   smtpUser: null,
   smtpPass: null,
-  smtpSecure: true,
+  smtpSecurity: "starttls",
   maxFileSizeMb: 50,
   setupCompleted: false,
   telemetryEnabled: null,
   timezone: null,
 };
+
+const SMTP_SECURITY_OPTIONS: { value: SmtpSecurity; label: string }[] = [
+  { value: "starttls", label: "STARTTLS (587)" },
+  { value: "tls", label: "SSL/TLS (465)" },
+  { value: "none", label: "None (25)" },
+];
+
+/** The port in use: the one typed, or the usual port of the chosen security mode. */
+function smtpPort(settings: SystemSettings): number {
+  return settings.smtpPort ?? SMTP_DEFAULT_PORTS[settings.smtpSecurity];
+}
+
+/** Picking a security mode moves the port to that mode's usual one, unless the port was changed by hand. */
+function withSmtpSecurity(settings: SystemSettings, smtpSecurity: SmtpSecurity): SystemSettings {
+  const wasUsual: boolean = settings.smtpPort === null || settings.smtpPort === SMTP_DEFAULT_PORTS[settings.smtpSecurity];
+  return { ...settings, smtpSecurity, smtpPort: wasUsual ? SMTP_DEFAULT_PORTS[smtpSecurity] : settings.smtpPort };
+}
 
 function timezoneOptions(browserZone: string): string[] {
   const zones: string[] = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
@@ -81,9 +100,9 @@ export function GeneralSection(): React.ReactElement {
         emailProvider: settings.emailProvider,
         emailFrom: settings.emailFrom || null,
         smtpHost: settings.smtpHost || null,
-        smtpPort: settings.smtpPort,
+        smtpPort: settings.emailProvider === "smtp" ? smtpPort(settings) : settings.smtpPort,
         smtpUser: settings.smtpUser || null,
-        smtpSecure: settings.smtpSecure,
+        smtpSecurity: settings.smtpSecurity,
         maxFileSizeMb: settings.maxFileSizeMb,
         timezone: settings.timezone,
       };
@@ -218,11 +237,24 @@ export function GeneralSection(): React.ReactElement {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Port</label>
+                  <label htmlFor="smtp-security" className="text-sm font-medium">Security</label>
+                  <select
+                    id="smtp-security"
+                    value={settings.smtpSecurity}
+                    onChange={(e) => setSettings(withSmtpSecurity(settings, e.target.value as SmtpSecurity))}
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                  >
+                    {SMTP_SECURITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="smtp-port" className="text-sm font-medium">Port</label>
                   <input
+                    id="smtp-port"
                     type="number"
-                    placeholder="587"
-                    value={settings.smtpPort ?? ""}
+                    value={smtpPort(settings)}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
@@ -232,18 +264,10 @@ export function GeneralSection(): React.ReactElement {
                     className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
                   />
                 </div>
-                <div className="space-y-2 flex items-end">
-                  <label className="flex items-center gap-2 px-3 py-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={settings.smtpSecure}
-                      onChange={(e) => setSettings({ ...settings, smtpSecure: e.target.checked })}
-                      className="rounded"
-                    />
-                    <span className="text-sm font-medium">Use TLS/SSL</span>
-                  </label>
-                </div>
               </div>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Most providers use STARTTLS on port 587 or SSL/TLS on port 465. Change the port if yours differs.
+              </p>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Username</label>
                 <input

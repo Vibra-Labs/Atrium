@@ -5,10 +5,13 @@ import {
   IsEnum,
   IsBoolean,
   IsInt,
+  IsIn,
   Min,
   Max,
   ValidateIf,
 } from "class-validator";
+import { SMTP_SECURITY_VALUES } from "@atrium/shared";
+import type { SmtpSecurity } from "@atrium/shared";
 
 export class UpdateEmailSettingsDto {
   @IsEnum(["none", "resend", "smtp"])
@@ -42,6 +45,11 @@ export class UpdateEmailSettingsDto {
   @IsBoolean()
   @IsOptional()
   smtpSecure?: boolean;
+
+  @ValidateIf((o) => o.provider === "smtp")
+  @IsIn(SMTP_SECURITY_VALUES)
+  @IsOptional()
+  smtpSecurity?: SmtpSecurity;
 
   @IsEmail()
   @IsOptional()

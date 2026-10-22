@@ -79,7 +79,7 @@ describe("MailService", () => {
       port: 587,
       user: "user@example.com",
       pass: "secret",
-      secure: false,
+      security: "starttls",
     };
 
     const settings = makeSettingsService({
@@ -104,11 +104,37 @@ describe("MailService", () => {
     expect(mockSendMail).toHaveBeenCalledTimes(2);
   });
 
+  test("changing only the SMTP security mode builds a new transporter with the new TLS options", async () => {
+    let security: "starttls" | "tls" = "starttls";
+    const settings = makeSettingsService();
+    settings.getEffectiveEmailConfig.mockImplementation(() =>
+      Promise.resolve({
+        provider: "smtp",
+        from: "noreply@example.com",
+        smtp: { host: "smtp.example.com", port: 587, user: "u", pass: "p", security },
+        isOrgConfigured: true,
+      }),
+    );
+    const service = new MailService(
+      makeConfig() as unknown as ConfigService,
+      settings as unknown as SettingsService,
+      mockLogger as unknown as PinoLogger,
+    );
+
+    await service.send("a@test.com", "One", "<p>1</p>", "org-1");
+    security = "tls";
+    await service.send("a@test.com", "Two", "<p>2</p>", "org-1");
+
+    expect(createdTransporters.length).toBe(2);
+    expect(createdTransporters[0]._config).toMatchObject({ secure: false, requireTLS: true });
+    expect(createdTransporters[1]._config).toMatchObject({ secure: true, requireTLS: false });
+  });
+
   test("different SMTP configs get different transporters", async () => {
     let callCount = 0;
     const smtpConfigs = [
-      { host: "smtp1.example.com", port: 587, user: "user1", pass: "pass1", secure: false },
-      { host: "smtp2.example.com", port: 465, user: "user2", pass: "pass2", secure: true },
+      { host: "smtp1.example.com", port: 587, user: "user1", pass: "pass1", security: "starttls" },
+      { host: "smtp2.example.com", port: 465, user: "user2", pass: "pass2", security: "tls" },
     ];
 
     const settings = makeSettingsService();

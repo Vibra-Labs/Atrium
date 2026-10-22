@@ -2,7 +2,7 @@
 
 All notable changes to Atrium will be documented in this file.
 
-## Unreleased
+## [1.12.0] — 2026-10-21
 
 ### Added
 

@@ -19,12 +19,22 @@ const MONTHS = 12;
 
 const PAID_ONLY = Prisma.sql`i.status = 'paid'`;
 
+/** True when invoice `inv` was paid inside one of link `linkId`'s gaps (time it was ended, then reopened). */
+function paidInGap(linkId: Prisma.Sql, inv: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`EXISTS (
+    SELECT 1 FROM "project_contact_gap" g
+    WHERE g."projectContactId" = ${linkId} AND ${inv}."paidAt" > g."startedAt" AND ${inv}."paidAt" < g."endedAt"
+  )`;
+}
+
 /**
  * Joins a link (`sel`) to a paid invoice (`t`) on its project. An ended link only counts
- * invoices paid until it ended; a paid invoice with no date predates link ends, so it counts.
+ * invoices paid until it ended, and no link counts one paid inside a gap; a paid invoice with
+ * no date predates link ends, so it counts. Same rule as `linksPaidAt` in contact-sync.
  */
 const PAID_WHILE_LINKED = Prisma.sql`t."projectId" = sel."projectId"
-  AND (sel."endedAt" IS NULL OR t."paidAt" IS NULL OR t."paidAt" <= sel."endedAt")`;
+  AND (sel."endedAt" IS NULL OR t."paidAt" IS NULL OR t."paidAt" <= sel."endedAt")
+  AND NOT ${paidInGap(Prisma.sql`sel."linkId"`, Prisma.sql`t`)}`;
 
 function monthKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -50,7 +60,8 @@ export class ContactRevenueService {
   async paidTotals(contactIds: string[] | null, orgId: string): Promise<Map<string, number>> {
     const totals = new Map<string, number>();
     if (contactIds?.length === 0) return totals;
-    const only = contactIds ? Prisma.sql`pc."contactId" IN (${Prisma.join(contactIds)})` : undefined;
+    // One array parameter, so any number of ids stays under Postgres's bind-parameter limit.
+    const only = contactIds ? Prisma.sql`pc."contactId" = ANY(${contactIds}::text[])` : undefined;
     const rows = await this.prisma.$queryRaw<Array<{ contactId: string; paid: bigint | number }>>(
       this.paidPerContactSql(orgId, only),
     );
@@ -65,7 +76,7 @@ export class ContactRevenueService {
   async paidTotalsForCompanies(companyIds: string[] | null, orgId: string): Promise<Map<string, number>> {
     const totals = new Map<string, number>();
     if (companyIds?.length === 0) return totals;
-    const only = companyIds ? Prisma.sql`c."companyId" IN (${Prisma.join(companyIds)})` : undefined;
+    const only = companyIds ? Prisma.sql`c."companyId" = ANY(${companyIds}::text[])` : undefined;
     const rows = await this.prisma.$queryRaw<Array<{ companyId: string; paid: bigint | number }>>(
       this.paidPerCompanySql(orgId, only),
     );
@@ -114,7 +125,7 @@ export class ContactRevenueService {
     const linked = restrict ? Prisma.sql`AND i."projectId" IN (SELECT "projectId" FROM sel)` : Prisma.empty;
     return Prisma.sql`
       WITH sel AS (
-        SELECT DISTINCT ${owner}, pc."projectId", pc."endedAt"
+        SELECT DISTINCT ${owner}, pc.id AS "linkId", pc."projectId", pc."endedAt"
         FROM "project_contact" pc
         JOIN "contact" c ON c.id = pc."contactId" AND c."organizationId" = ${orgId}
         WHERE ${where}
@@ -151,6 +162,7 @@ export class ContactRevenueService {
       JOIN "invoice" i2 ON i2."projectId" = pc."projectId" AND i2."organizationId" = ${orgId}
       WHERE ${contactFilter}
         AND (pc."endedAt" IS NULL OR (i2.status = 'paid' AND (i2."paidAt" IS NULL OR i2."paidAt" <= pc."endedAt")))
+        AND NOT ${paidInGap(Prisma.sql`pc.id`, Prisma.sql`i2`)}
     )`;
     const rows = await this.prisma.$queryRaw<InvoiceRow[]>`
       WITH t AS MATERIALIZED (${this.invoiceTotals(orgId, linked)})

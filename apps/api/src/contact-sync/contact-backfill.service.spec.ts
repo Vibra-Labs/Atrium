@@ -1,7 +1,7 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { ContactSyncService } from "./contact-sync.service";
-import { CONTACTS_BACKFILL_VERSION, ContactBackfillService } from "./contact-backfill.service";
+import { BACKFILL_LEASE_MS, CONTACTS_BACKFILL_VERSION, ContactBackfillService } from "./contact-backfill.service";
 
 const updatedAt = new Date("2026-01-01T00:00:00Z");
 const prisma = {
@@ -276,6 +276,14 @@ describe("ContactBackfillService.run", () => {
     return { svc, db, calls };
   }
 
+  type OrgUpdate = { where: { id: string; contactsBackfillClaimedAt?: Date }; data: Record<string, unknown> };
+
+  /** When the pass claimed the workspace, and the last write, which releases the claim. */
+  function claimAndRelease(db: ReturnType<typeof build>["db"]): { claimedAt: Date; release: OrgUpdate } {
+    const calls = db.organization.updateMany.mock.calls as unknown as [OrgUpdate][];
+    return { claimedAt: calls[0][0].data.contactsBackfillClaimedAt as Date, release: calls[calls.length - 1][0] };
+  }
+
   it("only visits workspaces below the current backfill version, and stamps the version when the pass succeeds", async () => {
     const { svc, db, calls } = build([{ id: "org-1" }]);
     await svc.run();
@@ -285,8 +293,10 @@ describe("ContactBackfillService.run", () => {
       select: { id: true },
     });
     expect(calls).toEqual(["backfillOrgSteps:org-1"]);
-    expect(db.organization.update.mock.calls[0][0]).toEqual({
-      where: { id: "org-1" },
+    const { claimedAt, release } = claimAndRelease(db);
+    // Only while the claim is still this instance's: one lost to another instance is left alone.
+    expect(release).toEqual({
+      where: { id: "org-1", contactsBackfillClaimedAt: claimedAt },
       data: { contactsBackfillVersion: CONTACTS_BACKFILL_VERSION, contactsBackfillClaimedAt: null },
     });
   });
@@ -304,19 +314,57 @@ describe("ContactBackfillService.run", () => {
     expect(claim.data.contactsBackfillClaimedAt).toBeInstanceOf(Date);
   });
 
+  it("only takes over a claim that hasn't been renewed within the short lease", async () => {
+    const { svc, db } = build([{ id: "org-1" }]);
+    const before: number = Date.now();
+    await svc.run();
+    const claim = db.organization.updateMany.mock.calls[0][0] as {
+      where: { OR: [unknown, { contactsBackfillClaimedAt: { lt: Date } }] };
+    };
+    const cutoff: number = claim.where.OR[1].contactsBackfillClaimedAt.lt.getTime();
+    expect(BACKFILL_LEASE_MS).toBeLessThanOrEqual(5 * 60 * 1000);
+    expect(before - cutoff).toBeGreaterThanOrEqual(BACKFILL_LEASE_MS - 50);
+    expect(before - cutoff).toBeLessThanOrEqual(BACKFILL_LEASE_MS + 50);
+  });
+
+  it("renews its claim while a pass runs, so a long pass isn't taken over", async () => {
+    const { svc, db } = build([{ id: "org-1" }]);
+    (svc as unknown as { heartbeatMs: number }).heartbeatMs = 5;
+    (svc as unknown as Steps).backfillOrgSteps = mock(() => new Promise<void>((resolve) => setTimeout(resolve, 40)));
+    await svc.run();
+    const calls = db.organization.updateMany.mock.calls as unknown as [
+      { where: { id: string; contactsBackfillClaimedAt?: Date }; data: { contactsBackfillClaimedAt: Date } },
+    ][];
+    const claimedAt: Date = calls[0][0].data.contactsBackfillClaimedAt;
+    const renewals = calls.slice(1, -1);
+    expect(renewals.length).toBeGreaterThan(1);
+    // Each renewal only extends the claim this instance holds, and moves it forward.
+    expect(renewals[0][0].where).toEqual({ id: "org-1", contactsBackfillClaimedAt: claimedAt });
+    expect(renewals[1][0].where.contactsBackfillClaimedAt).toEqual(renewals[0][0].data.contactsBackfillClaimedAt);
+    // The release names the latest renewal, not the original claim.
+    const { release } = claimAndRelease(db);
+    expect(release.where.contactsBackfillClaimedAt).toEqual(renewals[renewals.length - 1][0].data.contactsBackfillClaimedAt);
+    const writesAtEnd: number = calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(db.organization.updateMany.mock.calls.length).toBe(writesAtEnd);
+  });
+
   it("skips a workspace another instance has claimed", async () => {
     const { svc, db, calls } = build([{ id: "org-1" }], undefined, 0);
     await svc.run();
     expect(calls).toEqual([]);
-    expect(db.organization.update).not.toHaveBeenCalled();
+    // Only the failed claim attempt; nothing released.
+    expect(db.organization.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it("leaves the version unchanged and releases the claim when a step throws, so the next boot retries", async () => {
     const { svc, db } = build([{ id: "org-1" }], "backfillOrgSteps");
     await svc.run();
-    expect(db.organization.update.mock.calls).toEqual([
-      [{ where: { id: "org-1" }, data: { contactsBackfillClaimedAt: null } }],
-    ]);
+    const { claimedAt, release } = claimAndRelease(db);
+    expect(release).toEqual({
+      where: { id: "org-1", contactsBackfillClaimedAt: claimedAt },
+      data: { contactsBackfillClaimedAt: null },
+    });
   });
 
   it("leaves the version unchanged when a single row failed", async () => {
@@ -325,8 +373,6 @@ describe("ContactBackfillService.run", () => {
       (svc as unknown as { logFailure: (m: string, e: unknown) => void }).logFailure("row failed", new Error("x"));
     });
     await svc.run();
-    expect(db.organization.update.mock.calls).toEqual([
-      [{ where: { id: "org-1" }, data: { contactsBackfillClaimedAt: null } }],
-    ]);
+    expect(claimAndRelease(db).release.data).toEqual({ contactsBackfillClaimedAt: null });
   });
 });

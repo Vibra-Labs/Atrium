@@ -707,6 +707,47 @@ test.describe("Contact page", () => {
     await expect(page.getByRole("button", { name: "Invite to portal" })).toHaveCount(0);
     await context.close();
   });
+
+  test("a client taken off a project shows as ended and can be linked again", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "contact-ended-link");
+    const headers = { "x-csrf-token": (await context.cookies()).find((c) => c.name === "csrf-token")?.value ?? "" };
+    const stamp = Date.now();
+    const email = `ended-${stamp}@test.local`;
+    const { id } = await (await page.request.post(`${API}/contacts`, { data: { name: "Ended Person", email }, headers })).json();
+    await page.goto(`/dashboard/contacts/${id}`);
+    await page.getByRole("button", { name: "Invite to portal" }).click();
+    await expect(page.getByText("Invitation created")).toBeVisible();
+    const invitations = await (await page.request.get(`${API}/clients/invitations`)).json();
+    const { inviteLink } = invitations.find((i: { email: string }) => i.email === email);
+
+    const clientCtx = await browser.newContext({ storageState: undefined });
+    const clientPage = await clientCtx.newPage();
+    await clientPage.goto(inviteLink);
+    await clientPage.locator("#name").fill("Ended Person");
+    await clientPage.locator("#email").fill(email);
+    await clientPage.locator("#password").fill("Client123!");
+    await clientPage.getByRole("button", { name: /create account & join/i }).click();
+    await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+    await clientCtx.close();
+
+    const { userId } = await (await page.request.get(`${API}/contacts/${id}`)).json();
+    const name = `Ended project ${stamp}`;
+    const project = await (
+      await page.request.post(`${API}/projects`, { data: { name, clientUserIds: [userId] }, headers })
+    ).json();
+    const removed = await page.request.put(`${API}/projects/${project.id}`, { data: { clientUserIds: [] }, headers });
+    expect(removed.ok()).toBeTruthy();
+
+    await page.goto(`/dashboard/contacts/${id}`);
+    const row = page.getByRole("listitem").filter({ has: page.getByRole("link", { name }) });
+    await expect(row).toContainText("ended");
+
+    const picker = page.getByRole("combobox", { name: "Link a project" });
+    await picker.fill(name);
+    await page.getByRole("option", { name }).click();
+    await expect(row).not.toContainText("ended");
+    await context.close();
+  });
 });
 
 test.describe("Company page", () => {

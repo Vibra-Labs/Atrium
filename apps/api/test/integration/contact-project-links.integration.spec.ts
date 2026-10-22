@@ -4,10 +4,14 @@ import { assertDisposableDatabase } from "./guard";
 import { PrismaService } from "../../src/prisma/prisma.service";
 import { ContactSyncService } from "../../src/contact-sync/contact-sync.service";
 import { ContactRevenueService } from "../../src/contacts/contact-revenue.service";
+import { ContactsService } from "../../src/contacts/contacts.service";
+import { ProjectsService } from "../../src/projects/projects.service";
 
 let prisma: PrismaService;
 let sync: ContactSyncService;
 let revenue: ContactRevenueService;
+let contacts: ContactsService;
+let projects: ProjectsService;
 const orgIds: string[] = [];
 const userIds: string[] = [];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -15,11 +19,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 beforeAll(async () => {
   assertDisposableDatabase();
   const mod = await Test.createTestingModule({
-    providers: [ContactSyncService, ContactRevenueService, PrismaService],
+    providers: [ContactSyncService, ContactRevenueService, ContactsService, ProjectsService, PrismaService],
   }).compile();
   prisma = mod.get(PrismaService);
   sync = mod.get(ContactSyncService);
   revenue = mod.get(ContactRevenueService);
+  contacts = mod.get(ContactsService);
+  projects = mod.get(ProjectsService);
 });
 
 afterAll(async () => {
@@ -50,7 +56,7 @@ async function seed(): Promise<Seed> {
 }
 
 let n = 0;
-async function paid(d: Seed, amount: number, paidAt: Date): Promise<string> {
+async function paid(d: Seed, amount: number, paidAt: Date | null): Promise<string> {
   const invoice = await prisma.invoice.create({
     data: {
       organizationId: d.orgId,
@@ -68,6 +74,12 @@ async function paid(d: Seed, amount: number, paidAt: Date): Promise<string> {
 
 async function contactOf(d: Seed): Promise<{ id: string; userId: string | null }> {
   return prisma.contact.findFirstOrThrow({ where: { organizationId: d.orgId }, select: { id: true, userId: true } });
+}
+
+/** Ends the client's link as if they were taken off the project at `at`. */
+async function endAt(d: Seed, at: Date): Promise<void> {
+  await sync.endProjectClients(d.projectId, d.orgId, [d.userId]);
+  await prisma.projectContact.updateMany({ where: { projectId: d.projectId }, data: { endedAt: at } });
 }
 
 async function paidEvents(contactId: string): Promise<number> {
@@ -117,5 +129,90 @@ describe("contact project links", () => {
     await paid(d, 400, new Date(Date.now() - DAY_MS));
     expect(await paidEvents(contact.id)).toBe(1);
     expect((await revenue.forContact(contact.id, d.orgId, new Date())).paidCents).toBe(400);
+  });
+
+  it("a client put back on a project doesn't get invoices paid while they were off it", async () => {
+    const d = await seed();
+    const contact = await contactOf(d);
+    const company = await prisma.company.create({ data: { organizationId: d.orgId, name: `Co ${d.s}` } });
+    await prisma.contact.update({ where: { id: contact.id }, data: { companyId: company.id } });
+    const now = Date.now();
+    await paid(d, 1000, new Date(now - 5 * DAY_MS));
+    await endAt(d, new Date(now - 3 * DAY_MS));
+    await paid(d, 500, new Date(now - 2 * DAY_MS));
+
+    await sync.linkProjectClients(d.projectId, d.orgId, [d.userId]);
+    await paid(d, 300, new Date(now + 1000));
+    // Backdated into the gap after the link reopened: still not theirs.
+    await paid(d, 200, new Date(now - 2.5 * DAY_MS));
+
+    const later = new Date(now + 2000);
+    expect((await revenue.forContact(contact.id, d.orgId, later)).paidCents).toBe(1300);
+    expect((await revenue.paidTotals(null, d.orgId)).get(contact.id)).toBe(1300);
+    expect((await revenue.paidTotals([contact.id], d.orgId)).get(contact.id)).toBe(1300);
+    expect((await revenue.paidTotalsForCompanies([company.id], d.orgId)).get(company.id)).toBe(1300);
+    expect((await revenue.forCompany(company.id, d.orgId, later)).paidCents).toBe(1300);
+    expect(await paidEvents(contact.id)).toBe(2);
+  });
+
+  it("re-linking a contact by hand keeps the gap too", async () => {
+    const d = await seed();
+    const contact = await contactOf(d);
+    const now = Date.now();
+    await paid(d, 1000, new Date(now - 5 * DAY_MS));
+    await endAt(d, new Date(now - 3 * DAY_MS));
+    await paid(d, 500, new Date(now - 2 * DAY_MS));
+
+    await contacts.linkProject(contact.id, d.projectId, d.orgId);
+    await paid(d, 300, new Date(now + 1000));
+
+    expect((await revenue.forContact(contact.id, d.orgId, new Date(now + 2000))).paidCents).toBe(1300);
+    const link = await prisma.projectContact.findFirstOrThrow({ where: { contactId: contact.id } });
+    expect(link.endedAt).toBeNull();
+  });
+
+  it("the contact page shows when a project link ended", async () => {
+    const d = await seed();
+    const contact = await contactOf(d);
+    const at = new Date(Date.now() - DAY_MS);
+    await endAt(d, at);
+
+    const detail = await contacts.findOne(contact.id, d.orgId);
+    expect(detail.projects).toEqual([expect.objectContaining({ id: d.projectId, endedAt: at })]);
+  });
+
+  it("a paid invoice with no date counts toward an ended link and lands on its timeline", async () => {
+    const d = await seed();
+    const contact = await contactOf(d);
+    await endAt(d, new Date(Date.now() - DAY_MS));
+    await paid(d, 400, null);
+
+    expect((await revenue.forContact(contact.id, d.orgId, new Date())).paidCents).toBe(400);
+    expect(await paidEvents(contact.id)).toBe(1);
+  });
+
+  it("concurrent client edits leave each client's link open exactly when they're on the project", async () => {
+    const d = await seed();
+    const other = `pl-client2-${d.s}`;
+    userIds.push(other);
+    await prisma.user.create({ data: { id: other, name: "Bo", email: `bo-${d.s}@x.com`, emailVerified: true } });
+    await prisma.member.create({ data: { id: `pl-m2-${d.s}`, organizationId: d.orgId, userId: other, role: "member" } });
+
+    for (let i = 0; i < 5; i++) {
+      await Promise.all([
+        projects.update(d.projectId, { clientUserIds: [d.userId, other] }, d.orgId),
+        projects.update(d.projectId, { clientUserIds: [d.userId] }, d.orgId),
+      ]);
+      const onProject: string[] = (
+        await prisma.projectClient.findMany({ where: { projectId: d.projectId }, select: { userId: true } })
+      ).map((c) => c.userId);
+      const open: string[] = (
+        await prisma.projectContact.findMany({
+          where: { projectId: d.projectId, endedAt: null },
+          select: { contact: { select: { userId: true } } },
+        })
+      ).flatMap((l) => (l.contact.userId ? [l.contact.userId] : []));
+      expect(open.sort()).toEqual(onProject.sort());
+    }
   });
 });

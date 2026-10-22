@@ -44,8 +44,6 @@ export class CompaniesService {
       organizationId: orgId,
       ...(term ? { name: { contains: term, mode: "insensitive" as const } } : {}),
     };
-    const include = LIST_INCLUDE;
-
     let companies: CompanyWithCount[];
     let total: number;
     let paid: Map<string, number>;
@@ -54,7 +52,7 @@ export class CompaniesService {
       const matchIds = (await this.prisma.company.findMany({ where, select: { id: true } })).map((c) => c.id);
       const pageIds = await this.rankedByPaid(orgId, matchIds, dir, page, limit);
       const [rows, pagePaid] = await Promise.all([
-        this.prisma.company.findMany({ where: { id: { in: pageIds } }, include }),
+        this.prisma.company.findMany({ where: { id: { in: pageIds } }, include: LIST_INCLUDE }),
         this.revenue.paidTotalsForCompanies(pageIds, orgId),
       ]);
       const byId = new Map(rows.map((r) => [r.id, r]));
@@ -67,7 +65,7 @@ export class CompaniesService {
           ? [{ contacts: { _count: dir } }, { name: "asc" }, { id: "asc" }]
           : [{ name: dir }, { id: "asc" }];
       [companies, total] = await Promise.all([
-        this.prisma.company.findMany({ where, orderBy, include, ...paginationArgs(page, limit) }),
+        this.prisma.company.findMany({ where, orderBy, include: LIST_INCLUDE, ...paginationArgs(page, limit) }),
         this.prisma.company.count({ where }),
       ]);
       paid = await this.revenue.paidTotalsForCompanies(

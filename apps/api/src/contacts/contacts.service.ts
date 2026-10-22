@@ -15,6 +15,8 @@ import { paginationArgs, paginatedResponse, toCsv } from "../common";
 import type { CsvColumn, Paginated } from "../common";
 import { normalizeEmail } from "../contact-sync/contact-sync.service";
 import { addContactEvent } from "../contact-sync/contact-events";
+import { reopenProjectLinks } from "../contact-sync/project-links";
+import type { EndedLink } from "../contact-sync/project-links";
 import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
 import { ContactRevenueService } from "./contact-revenue.service";
 import type { Revenue } from "./contact-revenue.service";
@@ -233,7 +235,8 @@ export type ContactDetail = ContactResponse<DetailedContact> & {
   hasLogin: boolean;
   portal: { memberId: string; joinedAt: Date; lastSeenAt: Date | null } | null;
   labels: LabelChip[];
-  projects: { id: string; name: string; status: string }[];
+  /** `endedAt` is set once the contact is off the project; invoices paid until then still count. */
+  projects: { id: string; name: string; status: string; endedAt: Date | null }[];
   revenue: Revenue;
 };
 
@@ -283,7 +286,6 @@ export class ContactsService {
     const limit = query.limit ?? 20;
     const pending = await this.pendingInviteEmails(orgId);
     const where = this.buildWhere(orgId, query, pending);
-    const include = LIST_INCLUDE;
 
     const sort: ContactSort = query.sort ?? "name";
     let contacts: ListedContact[];
@@ -296,7 +298,7 @@ export class ContactsService {
       const dir = query.dir ?? (sort === "paid" ? "desc" : "asc");
       const pageIds = await this.rankedPage(orgId, matchIds, sort, dir, page, limit);
       const [rows, pagePaid] = await Promise.all([
-        this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include }),
+        this.prisma.contact.findMany({ where: { id: { in: pageIds } }, include: LIST_INCLUDE }),
         this.revenue.paidTotals(pageIds, orgId),
       ]);
       const byId = new Map(rows.map((r) => [r.id, r]));
@@ -308,7 +310,7 @@ export class ContactsService {
         this.prisma.contact.findMany({
           where,
           orderBy: contactOrderBy(sort, query.dir ?? "asc"),
-          include,
+          include: LIST_INCLUDE,
           ...paginationArgs(page, limit),
         }),
         this.prisma.contact.count({ where }),
@@ -543,9 +545,10 @@ export class ContactsService {
         labels: { include: { label: { select: { name: true } } } },
       },
     });
-    // The whole workspace in one aggregate: binding every exported id would pass Postgres's
-    // bind-parameter limit (~32k) on a large export.
-    const paid = await this.revenue.paidTotals(null, orgId);
+    const paid: Map<string, number> = await this.revenue.paidTotals(
+      found.map((c) => c.id),
+      orgId,
+    );
     // Same order as the list the export was started from.
     const sort: ContactSort = query.sort ?? "name";
     const dir = query.dir ?? (sort === "paid" ? "desc" : "asc");
@@ -608,7 +611,7 @@ export class ContactsService {
         name: l.label.name,
         color: l.label.color,
       })),
-      projects: projects.map((p) => p.project),
+      projects: projects.map((p) => ({ ...p.project, endedAt: p.endedAt })),
       revenue: await this.revenue.forContact(id, orgId, new Date()),
     };
   }
@@ -778,9 +781,10 @@ export class ContactsService {
     if (existing && !existing.endedAt) return;
 
     try {
-      if (existing) {
-        // Linking again reopens an ended link.
-        await this.prisma.projectContact.update({ where: { id: existing.id }, data: { endedAt: null } });
+      if (existing?.endedAt) {
+        // Linking again reopens an ended link; the time it was ended stays out of their revenue.
+        const ended: EndedLink = { id: existing.id, endedAt: existing.endedAt };
+        await this.prisma.$transaction((tx) => reopenProjectLinks(tx, [ended], new Date()));
       } else {
         await this.prisma.projectContact.create({ data: { projectId, contactId: id } });
       }

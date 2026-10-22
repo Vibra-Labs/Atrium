@@ -11,6 +11,7 @@ import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
+import { lockProjectClients } from "../contact-sync/project-links";
 import { paginationArgs, paginatedResponse } from "../common";
 
 interface ProjectWhereInput {
@@ -48,12 +49,10 @@ export class ProjectsService implements OnApplicationBootstrap {
     projectId: string,
     organizationId: string,
     userIds: string[],
-    removedUserIds: string[] = [],
   ): Promise<void> {
-    if (!userIds.length && !removedUserIds.length) return;
+    if (!userIds.length) return;
     try {
-      if (removedUserIds.length) await this.contactSync.endProjectClients(projectId, organizationId, removedUserIds);
-      if (userIds.length) await this.contactSync.linkProjectClients(projectId, organizationId, userIds);
+      await this.contactSync.linkProjectClients(projectId, organizationId, userIds);
     } catch (err) {
       Sentry.captureException(err);
       this.logger.error("Failed to link project contacts", err);
@@ -323,15 +322,13 @@ export class ProjectsService implements OnApplicationBootstrap {
         }
       }
 
-      const previous = await this.prisma.projectClient.findMany({
-        where: { projectId: id, project: { organizationId } },
-        select: { userId: true },
-      });
-      const removed: string[] = previous.map((c) => c.userId).filter((u) => !clientUserIds.includes(u));
+      const project = await this.prisma.$transaction(async (tx) => {
+        // Locked so a concurrent edit can't change the clients between reading and replacing them.
+        const previous: string[] = await lockProjectClients(tx, id);
+        const removed: string[] = previous.filter((u) => !clientUserIds.includes(u));
 
-      const [, project] = await this.prisma.$transaction([
-        this.prisma.projectClient.deleteMany({ where: { projectId: id } }),
-        this.prisma.project.update({
+        await tx.projectClient.deleteMany({ where: { projectId: id } });
+        const updated = await tx.project.update({
           where: { id, organizationId },
           data: {
             ...rest,
@@ -341,9 +338,11 @@ export class ProjectsService implements OnApplicationBootstrap {
             },
           },
           include: { clients: { select: { userId: true } } },
-        }),
-      ]);
-      await this.syncClients(id, organizationId, clientUserIds, removed);
+        });
+        await this.contactSync.endProjectClients(id, organizationId, removed, tx);
+        return updated;
+      });
+      await this.syncClients(id, organizationId, clientUserIds);
       return project;
     }
 

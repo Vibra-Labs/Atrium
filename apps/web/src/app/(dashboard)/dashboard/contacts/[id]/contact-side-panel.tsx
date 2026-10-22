@@ -32,6 +32,10 @@ interface Props {
   onChanged: () => void;
 }
 
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 const headingClass =
   "text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-2";
 
@@ -49,7 +53,8 @@ function ProjectsSection({ contact, onChanged }: Props) {
     TYPEAHEAD_LIMIT + contact.projects.length,
   );
 
-  const linkedIds = new Set(contact.projects.map((p) => p.id));
+  // A project whose link ended stays pickable: linking it again reopens the link.
+  const linkedIds: Set<string> = new Set(contact.projects.filter((p) => !p.endedAt).map((p) => p.id));
   const available = options.filter((p) => !linkedIds.has(p.id)).slice(0, TYPEAHEAD_LIMIT);
   const pickerId: string = useId();
   const keys = useListboxKeys(available.length, searching, setSearching, (i) => void pick(available[i].id), `${search}|${available.map((p) => p.id).join(",")}`);
@@ -112,7 +117,9 @@ function ProjectsSection({ contact, onChanged }: Props) {
               <Link href={`/dashboard/projects/${p.id}`} className="hover:underline">
                 {p.name}
               </Link>{" "}
-              <span className="text-xs text-[var(--muted-foreground)]">({p.status})</span>
+              <span className="text-xs text-[var(--muted-foreground)]">
+                ({p.status}){p.endedAt ? ` · ended ${formatShortDate(p.endedAt)}` : ""}
+              </span>
             </span>
             <button
               onClick={() => unlink(p.id)}

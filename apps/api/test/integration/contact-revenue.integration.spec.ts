@@ -207,6 +207,15 @@ describe("ContactRevenueService", () => {
     expect([...allCompanies.entries()]).toEqual([[company.id, 7000]]);
   });
 
+  it("totals for more ids than Postgres allows bind parameters (a large export) still work", async () => {
+    const d = await seed();
+    await uploaded(d, "paid", 7000, { paidAt: new Date() });
+    const ids: string[] = [d.contactId, ...Array.from({ length: 40_000 }, (_, i) => `missing-${i}`)];
+
+    expect([...(await revenue.paidTotals(ids, d.orgId)).entries()]).toEqual([[d.contactId, 7000]]);
+    expect((await revenue.paidTotalsForCompanies(ids, d.orgId)).size).toBe(0);
+  });
+
   it("an ended link counts invoices paid until it ended, and nothing outstanding", async () => {
     const d = await seed();
     const day = 24 * 60 * 60 * 1000;

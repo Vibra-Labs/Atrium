@@ -51,6 +51,7 @@ const mockPrisma = {
   member: {
     count: mock(() => Promise.resolve(2)),
   },
+  $queryRaw: mock(() => Promise.resolve([] as unknown[])),
   $transaction: mock((arg: unknown) => {
     if (typeof arg === "function") {
       return (arg as (tx: typeof mockPrisma) => Promise<unknown>)(mockPrisma);
@@ -84,6 +85,7 @@ describe("ProjectsService", () => {
     mockPrisma.taskLabel.createMany.mockClear();
     mockPrisma.decisionOption.createMany.mockClear();
     mockPrisma.$transaction.mockClear();
+    mockPrisma.$queryRaw.mockClear();
   });
 
   it("findAll returns projects for organization", async () => {
@@ -209,7 +211,9 @@ describe("ProjectsService", () => {
 
     await service.update("p1", { clientUserIds: ["u1"] }, "org-1");
 
-    expect(mockContactSync.endProjectClients).toHaveBeenCalledWith("p1", "org-1", ["u2"]);
+    // Inside the edit's transaction, after locking the project, so the client list can't be stale.
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(mockContactSync.endProjectClients).toHaveBeenCalledWith("p1", "org-1", ["u2"], mockPrisma);
     expect(mockContactSync.linkProjectClients).toHaveBeenCalledWith("p1", "org-1", ["u1"]);
   });
 
@@ -221,7 +225,7 @@ describe("ProjectsService", () => {
 
     await service.update("p1", { clientUserIds: [] }, "org-1");
 
-    expect(mockContactSync.endProjectClients).toHaveBeenCalledWith("p1", "org-1", ["u1"]);
+    expect(mockContactSync.endProjectClients).toHaveBeenCalledWith("p1", "org-1", ["u1"], mockPrisma);
     expect(mockContactSync.linkProjectClients).not.toHaveBeenCalled();
   });
 

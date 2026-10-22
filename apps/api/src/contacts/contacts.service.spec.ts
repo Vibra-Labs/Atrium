@@ -1663,8 +1663,8 @@ describe("ContactsService", () => {
       const csv = await service.exportCsv("org-1", { sort: "paid" });
       const names = csv.split("\r\n").slice(1).filter(Boolean).map((l) => l.split(",")[0]);
       expect(names).toEqual(["Bo", "Ann"]);
-      // Totals the whole workspace rather than binding every exported id (Postgres caps bind params).
-      expect(revenue.paidTotals).toHaveBeenLastCalledWith(null, "org-1");
+      // Only the exported contacts are totalled.
+      expect(revenue.paidTotals).toHaveBeenLastCalledWith(["a", "b"], "org-1");
       revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map<string, number>()));
       prisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
     });

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { FollowUpTask } from "./follow-up.task";
+import { InAppNotificationsService } from "../notifications/in-app-notifications.service";
 
 const NOW = new Date("2026-10-20T10:00:00Z");
 
@@ -80,7 +81,8 @@ function build(opts: { contacts?: FakeContact[]; adminIds?: string[]; ownerIds?:
       }
     }),
   };
-  const task = new FollowUpTask(prisma as never);
+  // The real service, so reminders are shown to go through it inside the claim's transaction.
+  const task = new FollowUpTask(prisma as never, new InAppNotificationsService(prisma as never));
   return { task, prisma, createMany, contacts, sent };
 }
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
+import { InAppNotificationsService } from "../notifications/in-app-notifications.service";
 
 const BATCH_SIZE = 500;
 
@@ -19,7 +20,10 @@ function formatDate(date: Date): string {
 export class FollowUpTask {
   private readonly logger = new Logger(FollowUpTask.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private inApp: InAppNotificationsService,
+  ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
   async run(): Promise<void> {
@@ -53,18 +57,17 @@ export class FollowUpTask {
             data: { followUpNotifiedAt: now },
           });
           if (count === 0) return false;
-          if (recipients.length > 0) {
-            await tx.notification.createMany({
-              data: recipients.map((userId) => ({
-                userId,
-                organizationId: contact.organizationId,
-                type: "contact_follow_up",
-                title: `Follow up with ${contact.name}`,
-                message: `Follow-up due ${formatDate(contact.followUpAt as Date)}`,
-                link: `/dashboard/contacts/${contact.id}`,
-              })),
-            });
-          }
+          await this.inApp.createMany(
+            recipients.map((userId) => ({
+              userId,
+              organizationId: contact.organizationId,
+              type: "contact_follow_up",
+              title: `Follow up with ${contact.name}`,
+              message: `Follow-up due ${formatDate(contact.followUpAt as Date)}`,
+              link: `/dashboard/contacts/${contact.id}`,
+            })),
+            tx,
+          );
           return true;
         });
         if (!claimed) continue;

@@ -1,6 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
-import type { Contact } from "@atrium/database";
+import type { Contact, Prisma } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
+import { lockProjectClients, linksPaidAt, reopenProjectLinks } from "./project-links";
+import type { EndedLink } from "./project-links";
 import { isPortalInviteRole } from "../clients/invitations";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { splitName } from "../contacts/contact-fields";
@@ -114,17 +116,17 @@ export class ContactSyncService {
   async linkProjectClients(projectId: string, orgId: string, userIds: string[]): Promise<void> {
     if (userIds.length === 0) return;
     // Two queries for the whole list; ensureForMember (3 queries each) only for clients with no contact yet.
-    const clients = await this.prisma.member.findMany({
+    const clients: { userId: string }[] = await this.prisma.member.findMany({
       where: { organizationId: orgId, userId: { in: userIds }, role: "member" },
       select: { userId: true },
     });
-    const clientIds = clients.map((m) => m.userId);
+    const clientIds: string[] = clients.map((m) => m.userId);
     if (clientIds.length === 0) return;
-    const linked = await this.prisma.contact.findMany({
+    const linked: Contact[] = await this.prisma.contact.findMany({
       where: { organizationId: orgId, userId: { in: clientIds } },
     });
     const contacts: Contact[] = [...linked];
-    const haveContact = new Set(linked.map((c) => c.userId));
+    const haveContact: Set<string | null> = new Set(linked.map((c) => c.userId));
     for (const userId of clientIds) {
       if (haveContact.has(userId)) continue;
       const contact = await this.ensureForMember(orgId, userId);
@@ -132,25 +134,28 @@ export class ContactSyncService {
     }
     if (contacts.length === 0) return;
 
-    const existing = await this.prisma.projectContact.findMany({
-      where: { projectId, contactId: { in: contacts.map((c) => c.id) } },
-      select: { contactId: true, endedAt: true },
-    });
-    const alreadyLinked = new Set(existing.filter((l) => !l.endedAt).map((l) => l.contactId));
-    const ended = existing.filter((l) => l.endedAt).map((l) => l.contactId);
-    // A client put back on the project gets a fresh link (and event), like a first-time client.
-    const fresh = contacts.filter((c) => !alreadyLinked.has(c.id));
+    const fresh: Contact[] = await this.prisma.$transaction(async (tx): Promise<Contact[]> => {
+      // Project edits take the same lock (see ProjectsService.update), so a client removed by a
+      // concurrent edit isn't linked again here: only current clients are linked.
+      const current: Set<string> = new Set(await lockProjectClients(tx, projectId));
+      const toLink: Contact[] = contacts.filter((c) => c.userId !== null && current.has(c.userId));
+      if (toLink.length === 0) return [];
 
-    await this.prisma.projectContact.createMany({
-      data: contacts.map((c) => ({ projectId, contactId: c.id })),
-      skipDuplicates: true,
-    });
-    if (ended.length > 0) {
-      await this.prisma.projectContact.updateMany({
-        where: { projectId, contactId: { in: ended } },
-        data: { endedAt: null },
+      const existing: { id: string; contactId: string; endedAt: Date | null }[] = await tx.projectContact.findMany({
+        where: { projectId, contactId: { in: toLink.map((c) => c.id) } },
+        select: { id: true, contactId: true, endedAt: true },
       });
-    }
+      const open: Set<string> = new Set(existing.filter((l) => !l.endedAt).map((l) => l.contactId));
+      const ended: EndedLink[] = existing.flatMap((l) => (l.endedAt ? [{ id: l.id, endedAt: l.endedAt }] : []));
+
+      await tx.projectContact.createMany({
+        data: toLink.map((c) => ({ projectId, contactId: c.id })),
+        skipDuplicates: true,
+      });
+      await reopenProjectLinks(tx, ended, new Date());
+      // A client put back on the project gets an event again, like a first-time client.
+      return toLink.filter((c) => !open.has(c.id));
+    });
 
     if (fresh.length === 0) return;
     const project = await this.prisma.project.findUnique({
@@ -172,9 +177,14 @@ export class ContactSyncService {
    * Ends the project links of clients taken off a project, so invoices paid after this no longer
    * count toward them. Earlier invoices still do.
    */
-  async endProjectClients(projectId: string, orgId: string, userIds: string[]): Promise<void> {
+  async endProjectClients(
+    projectId: string,
+    orgId: string,
+    userIds: string[],
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
     if (userIds.length === 0) return;
-    await this.prisma.projectContact.updateMany({
+    await db.projectContact.updateMany({
       where: { projectId, endedAt: null, contact: { organizationId: orgId, userId: { in: userIds } } },
       data: { endedAt: new Date() },
     });
@@ -261,12 +271,8 @@ export class ContactSyncService {
     });
     if (!invoice?.projectId) return;
 
-    const links = await this.prisma.projectContact.findMany({
-      // Same rule as revenue: an ended link only gets invoices paid until it ended.
-      where: {
-        projectId: invoice.projectId,
-        OR: [{ endedAt: null }, ...(invoice.paidAt ? [{ endedAt: { gte: invoice.paidAt } }] : [])],
-      },
+    const links: { contactId: string }[] = await this.prisma.projectContact.findMany({
+      where: { projectId: invoice.projectId, ...linksPaidAt(invoice.paidAt) },
       select: { contactId: true },
     });
     if (links.length === 0) return;

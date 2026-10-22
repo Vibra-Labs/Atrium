@@ -2,6 +2,9 @@ import { describe, expect, it, mock, beforeEach } from "bun:test";
 import type { PrismaService } from "../prisma/prisma.service";
 import { ContactSyncService, normalizeEmail } from "./contact-sync.service";
 
+/** Who is on the project when linkProjectClients takes its lock. */
+const CURRENT_CLIENTS: { userId: string }[] = [{ userId: "u-1" }, { userId: "u-2" }, { userId: "u-3" }];
+
 const mockPrisma = {
   user: { findUnique: mock(() => Promise.resolve(null as unknown)) },
   member: {
@@ -25,6 +28,8 @@ const mockPrisma = {
     createMany: mock(() => Promise.resolve({ count: 0 })),
     updateMany: mock((a: unknown) => Promise.resolve({ count: 0, a })),
   },
+  projectContactGap: { createMany: mock((a: unknown) => Promise.resolve({ count: 0, a })) },
+  projectClient: { findMany: mock(() => Promise.resolve(CURRENT_CLIENTS as unknown[])) },
   project: { findUnique: mock(() => Promise.resolve({ id: "p-1", name: "Site" } as unknown)) },
   invoice: { findUnique: mock(() => Promise.resolve(null as unknown)) },
   memberLabel: {
@@ -32,12 +37,16 @@ const mockPrisma = {
     deleteMany: mock((a: unknown) => Promise.resolve({ count: 0, a })),
   },
   contactLabel: { createMany: mock((a: unknown) => Promise.resolve({ count: 0, a })) },
-  $transaction: mock((ops: unknown[]) => Promise.all(ops)),
+  $queryRaw: mock(() => Promise.resolve([] as unknown[])),
+  $transaction: mock((arg: unknown): Promise<unknown> =>
+    typeof arg === "function" ? (arg as (tx: unknown) => Promise<unknown>)(mockPrisma) : Promise.all(arg as unknown[]),
+  ),
 };
 
 function reset(): void {
-  const { $transaction, ...models } = mockPrisma;
+  const { $transaction, $queryRaw, ...models } = mockPrisma;
   $transaction.mockClear();
+  $queryRaw.mockClear();
   const groups = Object.values(models) as Array<Record<string, ReturnType<typeof mock>>>;
   for (const group of groups) for (const fn of Object.values(group)) fn.mockClear();
   mockPrisma.memberLabel.findMany.mockImplementation(() => Promise.resolve([]));
@@ -49,6 +58,7 @@ function reset(): void {
   mockPrisma.projectContact.findMany.mockImplementation(() => Promise.resolve([]));
   mockPrisma.member.findMany.mockImplementation(() => Promise.resolve([]));
   mockPrisma.contact.findMany.mockImplementation(() => Promise.resolve([]));
+  mockPrisma.projectClient.findMany.mockImplementation(() => Promise.resolve(CURRENT_CLIENTS));
 }
 
 const bob = { id: "u-1", name: "Bob", email: "bob@x.com" };
@@ -278,6 +288,7 @@ describe("ContactSyncService", () => {
     it("creates a contact only for clients that have none", async () => {
       mockPrisma.member.findMany.mockImplementation(() => Promise.resolve([{ userId: "u-1" }, { userId: "u-2" }]));
       mockPrisma.user.findUnique.mockImplementation(() => Promise.resolve({ id: "u-2", name: "Cy", email: "cy@x.com" }));
+      mockPrisma.contact.create.mockImplementation(() => Promise.resolve({ id: "c-new", userId: "u-2" }));
 
       await service.linkProjectClients("p-1", "org-1", ["u-1", "u-2"]);
 
@@ -306,18 +317,33 @@ describe("ContactSyncService", () => {
       expect(mockPrisma.projectContact.updateMany).not.toHaveBeenCalled();
     });
 
-    it("reopens an ended link and logs it like a new one", async () => {
+    it("reopens an ended link, keeps the time it was ended as a gap, and logs it like a new one", async () => {
+      const endedAt = new Date("2026-01-01");
       mockPrisma.projectContact.findMany.mockImplementation(() =>
-        Promise.resolve([{ contactId: "c-1", endedAt: new Date("2026-01-01") }]),
+        Promise.resolve([{ id: "pc-1", contactId: "c-1", endedAt }]),
       );
 
       await service.linkProjectClients("p-1", "org-1", ["u-1"]);
 
+      const gap = mockPrisma.projectContactGap.createMany.mock.calls[0] as unknown as [
+        { data: { projectContactId: string; startedAt: Date; endedAt: Date }[] },
+      ];
+      expect(gap[0].data).toEqual([{ projectContactId: "pc-1", startedAt: endedAt, endedAt: expect.any(Date) }]);
       expect(mockPrisma.projectContact.updateMany).toHaveBeenCalledWith({
-        where: { projectId: "p-1", contactId: { in: ["c-1"] } },
+        where: { id: { in: ["pc-1"] }, endedAt: { not: null } },
         data: { endedAt: null },
       });
       expect(mockPrisma.contactEvent.createMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("locks the project and skips a client a concurrent edit has taken off it", async () => {
+      mockPrisma.projectClient.findMany.mockImplementation(() => Promise.resolve([]));
+
+      await service.linkProjectClients("p-1", "org-1", ["u-1"]);
+
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.projectContact.createMany).not.toHaveBeenCalled();
+      expect(mockPrisma.contactEvent.createMany).not.toHaveBeenCalled();
     });
   });
 

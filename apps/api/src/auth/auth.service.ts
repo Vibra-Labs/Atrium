@@ -17,6 +17,7 @@ import { DEFAULT_STATUSES, DEFAULT_BRANDING, DEFAULT_LEAD_SOURCES } from "@atriu
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
 import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS, logsInviteLinks } from "../clients/invitations";
+import { cookieUrlWarning, secureCookies } from "../common/helpers/secure-cookies";
 import { publicApiUrl } from "../common/helpers/public-api-url";
 
 interface AdminResetContext {
@@ -44,13 +45,10 @@ export class AuthService {
     const mcpOAuthEnabled: boolean =
       this.config.get("MCP_OAUTH_ENABLED", "true") !== "false";
 
-    // Determine cookie security: explicit SECURE_COOKIES env var takes
-    // precedence, otherwise default to secure in production.
-    const secureCookiesEnv = this.config.get("SECURE_COOKIES");
-    const secureCookies =
-      secureCookiesEnv !== undefined
-        ? secureCookiesEnv === "true"
-        : process.env.NODE_ENV === "production";
+    // Shared with the CSRF guard so both cookies agree. See secure-cookies.ts.
+    const useSecure: boolean = secureCookies();
+    const cookieWarning: string | null = cookieUrlWarning();
+    if (cookieWarning) this.logger.warn(cookieWarning);
 
     // Hardening applied to the mcp plugin's endpoints before they run.
     //
@@ -237,7 +235,7 @@ export class AuthService {
           }
         : {
             advanced: {
-              useSecureCookies: secureCookies,
+              useSecureCookies: useSecure,
             },
           }),
       emailAndPassword: {

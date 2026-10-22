@@ -15,6 +15,8 @@ services:
 
   atrium:
     image: vibralabs/atrium:latest
+    # Behind a tunnel or HTTPS proxy on the same machine, use "127.0.0.1:8080:8080"
+    # so Atrium isn't reachable directly over plain HTTP (Docker bypasses ufw).
     ports:
       - "8080:8080"
     environment:
@@ -23,8 +25,9 @@ services:
       # The public URL users open Atrium at. Required: sign-in breaks without it
       # behind any domain or reverse proxy (Coolify, Cloudflare, Nginx, ...).
       WEB_URL: "${WEB_URL:-http://localhost:8080}"
-      # SECURE_COOKIES: "false"  # Only if accessing over plain HTTP (no HTTPS).
-      #                          # A reverse proxy with HTTPS is strongly recommended.
+      # Include the scheme. An http:// URL turns off Secure cookies so plain-HTTP
+      # sign-in works; the owner sees a notice that logins are unencrypted.
+      # A reverse proxy with HTTPS is strongly recommended.
     volumes:
       - uploads:/app/uploads
     depends_on:

@@ -147,6 +147,28 @@ describe("SettingsService", () => {
     expect(emailConfig.smtp?.pass).toBe("super-secret-password");
   });
 
+  // --- getSettings insecureCookies flag (#94) ---
+
+  test("getSettings flags insecure cookies on a plain-HTTP production install", async () => {
+    const keys: string[] = ["SECURE_COOKIES", "NODE_ENV", "API_URL", "BETTER_AUTH_URL", "WEB_URL"];
+    const saved: Record<string, string | undefined> = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    for (const k of keys) delete process.env[k];
+    prisma.systemSettings.upsert.mockImplementation(() => Promise.resolve(baseSettings({})));
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.WEB_URL = "http://192.168.1.10:8192";
+      expect((await service.getSettings("org-1")).insecureCookies).toBe(true);
+
+      process.env.WEB_URL = "https://atrium.example.com";
+      expect((await service.getSettings("org-1")).insecureCookies).toBe(false);
+    } finally {
+      for (const k of keys) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  });
+
   // --- getSettings masked values ---
 
   test("getSettings masks resendApiKey with bullet characters", async () => {
@@ -192,6 +214,18 @@ describe("SettingsService", () => {
     });
 
     expect(result.resendApiKey).toBe("••••••••");
+  });
+
+  test("updateSettings saves plainHttpNoticeDismissed", async () => {
+    let saved: Record<string, unknown> = {};
+    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+      saved = args.update ?? {};
+      return Promise.resolve(baseSettings({}));
+    });
+
+    await service.updateSettings("org-1", { plainHttpNoticeDismissed: true });
+
+    expect(saved.plainHttpNoticeDismissed).toBe(true);
   });
 
   // --- getEffectiveEmailConfig cache ---

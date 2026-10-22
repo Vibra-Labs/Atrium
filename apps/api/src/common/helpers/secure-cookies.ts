@@ -1,0 +1,44 @@
+type Env = Record<string, string | undefined>;
+
+/**
+ * The public URL the operator set, read raw: no localhost default, so an
+ * unset URL can never be mistaken for plain HTTP. Same order as publicApiUrl,
+ * which is Better Auth's base URL. In the Docker image API_URL = WEB_URL.
+ */
+function configuredUrl(env: Env): string {
+  return (env.API_URL || env.BETTER_AUTH_URL || env.WEB_URL || "").trim().toLowerCase();
+}
+
+/**
+ * Whether auth and CSRF cookies get the Secure flag.
+ *
+ * Browsers drop Secure cookies on plain http:// (except localhost), so a
+ * production install opened at http://<host>:<port> could sign in but never
+ * stay signed in (#94). Order:
+ *   1. SECURE_COOKIES, when set, always wins.
+ *   2. An explicit http:// URL turns Secure off.
+ *   3. Otherwise Secure in production, as before. This covers an unset URL,
+ *      https://, and anything malformed.
+ */
+export function secureCookies(env: Env = process.env): boolean {
+  if (env.SECURE_COOKIES !== undefined) return env.SECURE_COOKIES === "true";
+  if (configuredUrl(env).startsWith("http://")) return false;
+  return env.NODE_ENV === "production";
+}
+
+/** True when a production install sends cookies without the Secure flag. */
+export function insecureCookiesInProduction(env: Env = process.env): boolean {
+  return env.NODE_ENV === "production" && !secureCookies(env);
+}
+
+/** A startup warning about the cookie setup, or null when there is nothing to say. */
+export function cookieUrlWarning(env: Env = process.env): string | null {
+  const url: string = configuredUrl(env);
+  if (url && !/^https?:\/\//.test(url)) {
+    return `The public URL "${url}" has no http:// or https:// scheme. Set WEB_URL to the full address users open, e.g. http://192.168.1.10:8080 or https://atrium.example.com.`;
+  }
+  if (insecureCookiesInProduction(env)) {
+    return "Sign-in cookies are not Secure because Atrium is served over plain HTTP. Logins and sessions travel unencrypted. Use HTTPS (a Cloudflare tunnel or a reverse proxy) for anything beyond a trusted local network.";
+  }
+  return null;
+}

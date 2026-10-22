@@ -63,7 +63,6 @@ volumes:
 4. Add the following **Environment Variables**:
    - `BETTER_AUTH_SECRET` — a random string of at least 32 characters (generate one with `openssl rand -base64 32` in the terminal)
    - `WEB_URL` — the address you open Atrium at, e.g. `http://192.168.1.10:4747`
-   - `SECURE_COOKIES` — set to `false` (required when accessing over plain HTTP without an HTTPS reverse proxy)
 5. Add the following **Volume Mappings** (set the host paths to your appdata directory):
    - `/mnt/user/appdata/atrium/db` → `/var/lib/postgresql/data`
    - `/mnt/user/appdata/atrium/uploads` → `/app/uploads`
@@ -72,7 +71,7 @@ volumes:
 
 Open `http://your-unraid-ip:4747` and create your account.
 
-> **Note:** If you later add an HTTPS reverse proxy (e.g., Nginx Proxy Manager, Caddy, Traefik), remove the `SECURE_COOKIES=false` variable or set it to `true` for better security.
+> **Note:** Over plain HTTP, logins travel unencrypted and Atrium shows the owner a notice saying so. If you later add an HTTPS reverse proxy (e.g., Nginx Proxy Manager, Caddy, Traefik), change `WEB_URL` to the `https://` address.
 
 ## Using an External Database
 
@@ -103,7 +102,7 @@ environment:
 | `RESEND_API_KEY` | No | — | Resend API key for email |
 | `EMAIL_FROM` | No | `noreply@yourdomain.com` | Sender address |
 | `MAX_FILE_SIZE_MB` | No | `50` | Max upload size in MB |
-| `SECURE_COOKIES` | No | `true` | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. **A reverse proxy with HTTPS (Caddy, nginx, Traefik) is strongly recommended.** |
+| `SECURE_COOKIES` | No | from `WEB_URL` | Cookies are `Secure` unless `WEB_URL` starts with `http://`. Set this to force either way. **A reverse proxy with HTTPS (Caddy, nginx, Traefik) is strongly recommended.** |
 | `SKIP_DB_PUSH` | No | `false` | Skip schema sync on startup |
 
 ## Volumes

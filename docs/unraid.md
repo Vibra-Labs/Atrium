@@ -30,7 +30,6 @@ When adding environment variables in Unraid, make sure both the **Name/Key** fie
 | Variable | Value | Notes |
 |---|---|---|
 | `BETTER_AUTH_SECRET` | *(random string, min 32 chars)* | Generate with `openssl rand -base64 32` in the Unraid terminal |
-| `SECURE_COOKIES` | `false` | Required when accessing over plain HTTP. Remove this if you add an HTTPS reverse proxy later. |
 
 ### Volume Mappings
 
@@ -43,13 +42,11 @@ When adding environment variables in Unraid, make sure both the **Name/Key** fie
 
 Click **Apply** and open `http://your-unraid-ip:PORT` to create your account.
 
-## Why SECURE_COOKIES=false?
+## Plain HTTP and cookies
 
-By default, Atrium sets cookies with the `Secure` flag, which tells browsers to only send them over HTTPS. If you're accessing Atrium over plain HTTP (common on local networks), the browser silently ignores these cookies and you'll get 403 "Invalid or missing CSRF token" errors.
+When `WEB_URL` starts with `http://`, Atrium turns off the cookie `Secure` flag so sign-in works without HTTPS (browsers drop `Secure` cookies over plain HTTP). Logins then travel unencrypted, and the workspace owner sees a notice in the dashboard saying so. See [Running over plain HTTP](docker.md#running-over-plain-http) for what that exposes and when it's reasonable.
 
-Setting `SECURE_COOKIES=false` disables the `Secure` flag so cookies work over HTTP.
-
-**If you add an HTTPS reverse proxy** (e.g., Nginx Proxy Manager, Caddy, Traefik), remove `SECURE_COOKIES=false` or set it to `true` for better security.
+**If you add an HTTPS reverse proxy** (e.g., Nginx Proxy Manager, Caddy, Traefik), change `WEB_URL` to the `https://` address and cookies become `Secure` again. Older installs with `SECURE_COOKIES=false` keep working; remove it once you're on HTTPS.
 
 ## Optional: External Database
 
@@ -96,7 +93,7 @@ You can remove the `/app/uploads` volume mapping when using S3 storage.
 ## Troubleshooting
 
 ### 403 "Invalid or missing CSRF token"
-Make sure `SECURE_COOKIES` is set to `false` if you're accessing over plain HTTP.
+Make sure `WEB_URL` is the full address you open, including `http://` (e.g. `http://192.168.1.10:4747`). If you set `SECURE_COOKIES=true`, remove it when accessing over plain HTTP.
 
 ### "Missing required environment variable: BETTER_AUTH_SECRET"
 The API won't start without this. Check that the env var has both the **Key** (`BETTER_AUTH_SECRET`) and **Value** filled in within the Unraid container config. If the Key field is empty, Unraid silently drops the variable.

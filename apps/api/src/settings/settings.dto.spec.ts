@@ -148,4 +148,18 @@ describe("UpdateSettingsDto validation", () => {
 
     expect(errors.length).toBe(0);
   });
+
+  // --- plainHttpNoticeDismissed field ---
+
+  test("plainHttpNoticeDismissed: true passes validation", async () => {
+    const { errors } = await validateDto({ plainHttpNoticeDismissed: true });
+
+    expect(errors.length).toBe(0);
+  });
+
+  test("plainHttpNoticeDismissed: a string fails validation", async () => {
+    const { errors } = await validateDto({ plainHttpNoticeDismissed: "yes" });
+
+    expect(errors.find((e) => e.property === "plainHttpNoticeDismissed")).toBeDefined();
+  });
 });

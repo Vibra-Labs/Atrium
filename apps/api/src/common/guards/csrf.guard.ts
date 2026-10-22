@@ -9,6 +9,7 @@ import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import { randomBytes } from "crypto";
 import { isMcpPath } from "../helpers/mcp-path";
 import { bearerToken } from "../helpers/bearer-token";
+import { secureCookies } from "../helpers/secure-cookies";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_COOKIE = "csrf-token";
@@ -61,10 +62,7 @@ export class CsrfGuard implements CanActivate {
       response.cookie(CSRF_COOKIE, token, {
         httpOnly: false, // Must be readable by JS
         sameSite: "lax",
-        secure:
-        process.env.SECURE_COOKIES !== undefined
-          ? process.env.SECURE_COOKIES === "true"
-          : process.env.NODE_ENV === "production",
+        secure: secureCookies(),
         path: "/",
       });
       // Also store on the request so validation works on this same request cycle

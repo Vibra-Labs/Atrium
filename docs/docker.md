@@ -110,6 +110,91 @@ Nothing else is needed. The image serves the web app and the API from one origin
 so `API_URL` defaults to `WEB_URL`, and Atrium does not read
 `TRUSTED_PROXY_HEADERS`.
 
+### Running over plain HTTP
+
+If `WEB_URL` starts with `http://`, Atrium works, but nothing between the browser
+and the server is encrypted. Browsers refuse `Secure` cookies over plain HTTP, so
+Atrium turns that flag off to let sign-in work, and the workspace owner sees a
+notice in the dashboard.
+
+What that exposes, to anyone who can see the traffic (someone on the same Wi-Fi,
+a compromised router, anyone along the route if the port is open to the internet):
+
+- **Passwords.** Every sign-in sends the email and password in readable form.
+- **Sessions.** The sign-in cookie can be copied and used to act as that person,
+  with no password needed. For the owner, that means full control of the workspace.
+- **Client data.** Files, invoices, messages and project details can be read as
+  they load.
+- **Tampering.** Pages can be changed in transit, for example to swap the payment
+  details shown on an invoice.
+- **Your clients too.** If clients sign in to the portal over the same address,
+  their passwords and sessions are exposed the same way.
+
+Some features also need HTTPS: browser push notifications and MCP sign-in for AI
+clients won't work, and browsers mark the site "Not secure".
+
+**When plain HTTP is reasonable:** a home or office network you trust, or a private
+VPN such as Tailscale or WireGuard, with the port not forwarded to the internet and
+no clients signing in from outside.
+
+**Moving to HTTPS** (Cloudflare Tunnel, Nginx Proxy Manager, Caddy, Traefik, ...;
+for a tunnel, see [Cloudflare Tunnel](#cloudflare-tunnel)):
+
+1. Point the proxy or tunnel at port 8080.
+2. Set `WEB_URL` to the `https://` address, and remove `SECURE_COOKIES=false` if you
+   set it.
+3. Redeploy the container (`docker compose up -d`, or Redeploy in Portainer or
+   Coolify). A plain `docker restart` keeps the old settings.
+4. From then on, sign in only through the `https://` address. Plain `http://`
+   addresses stop keeping you signed in, and everyone signs in once more.
+
+### Cloudflare Tunnel
+
+If you reach Atrium through a Cloudflare Tunnel, set `WEB_URL` to the `https://`
+tunnel address. Atrium then treats the install as HTTPS and cookies are `Secure`.
+
+**How secure is it?** Traffic from people's browsers is encrypted to Cloudflare,
+then through the tunnel to `cloudflared`. Only the last hop, from `cloudflared` to
+Atrium on port 8080, is plain HTTP:
+
+- **`cloudflared` on the same machine or Docker network:** that hop never leaves
+  the machine. This is as secure as any HTTPS setup.
+- **`cloudflared` on another machine on your network:** that hop crosses your
+  local network unencrypted. Someone already on that network could read it. Fine
+  on a home network you trust, weaker on a shared one.
+
+**Port 8080 stays open on your network.** Unless you remove the port mapping,
+anyone on your local network can still open `http://<server-ip>:8080`:
+
+- Signing in there doesn't stick (the browser drops the `Secure` cookies), but the
+  password is still sent unencrypted before that happens. Use the tunnel address
+  everywhere, including at home.
+- It skips anything you set up in Cloudflare, such as Access rules.
+- **On a VPS or any server with a public IP**, `8080:8080` exposes Atrium over
+  plain HTTP to the whole internet, skipping Cloudflare. Docker's port mappings
+  bypass firewalls like `ufw`, so a closed firewall port doesn't protect you.
+- To close it, run `cloudflared` on the same Docker network and drop the `ports:`
+  line, or bind it to the machine only with `127.0.0.1:8080:8080`. Never forward
+  8080 on your router.
+
+**Pros:** no ports opened to the internet, your home IP stays hidden, certificates
+are handled for you, and Cloudflare filters attacks before they reach you.
+
+**Cons:**
+
+- Cloudflare decrypts the traffic in the middle, so it can see what passes through,
+  including client files and invoices.
+- If Cloudflare or your tunnel is down, nobody can use Atrium, you included. The
+  local address won't keep you signed in while `WEB_URL` is `https://`.
+- Uploads over 100 MB are rejected on Cloudflare's Free and Pro plans, even if
+  `MAX_FILE_SIZE_MB` allows them.
+- At home, traffic goes out to Cloudflare and back, so large files load slower
+  than a direct connection would.
+- If you put Cloudflare Access in front, your clients must pass it to reach the
+  portal, and AI tools connecting over MCP can't. Bypass `/api/mcp`,
+  `/api/auth/mcp/` and `/.well-known/` if you use MCP. Atrium still requires an
+  API key or an approved sign-in before an MCP client can read anything.
+
 ### Custom client domains
 
 The container also listens on 443 with on-demand TLS, used when a client's own domain points straight at Atrium rather than through your proxy. Publish `-p 443:443` as well if you offer that; otherwise 8080 is all you need.
@@ -168,7 +253,7 @@ That's all you need. Everything below is optional.
 | Variable | Default | Description |
 |---|---|---|
 | `API_URL` | same as `WEB_URL` | Public URL of the API. Only set this if the API is reachable at a different address than the app. |
-| `SECURE_COOKIES` | `true` | Set to `false` only if accessing over plain HTTP with no HTTPS reverse proxy. See [Unraid](unraid.md). |
+| `SECURE_COOKIES` | from `WEB_URL` | Cookies are `Secure` unless `WEB_URL` (or `API_URL`) starts with `http://`. Set this to force either way. |
 
 Running the web app and API as separate containers? See [Required for split deployments](configuration.md#required-for-split-deployments).
 

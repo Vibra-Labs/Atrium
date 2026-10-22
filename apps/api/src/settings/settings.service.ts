@@ -7,6 +7,7 @@ import { setSentryEnabled } from "../instrument";
 import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto";
 import dns from "node:dns/promises";
 import { isValidTimeZone } from "../common/helpers/local-time";
+import { insecureCookiesInProduction } from "../common/helpers/secure-cookies";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const EMAIL_CONFIG_TTL_MS = 60_000;
@@ -85,6 +86,9 @@ export class SettingsService {
       paymentDetails: settings.paymentDetails ? "••••••••" : null,
       stripeSecretKey: settings.stripeSecretKey ? "••••••••" : null,
       stripeWebhookSecret: settings.stripeWebhookSecret ? "••••••••" : null,
+      // Instance-wide, not stored: lets the dashboard warn an owner that
+      // sign-in cookies travel over plain HTTP.
+      insecureCookies: insecureCookiesInProduction(),
     };
   }
 
@@ -101,6 +105,7 @@ export class SettingsService {
     if (dto.maxFileSizeMb !== undefined) data.maxFileSizeMb = dto.maxFileSizeMb;
     if (dto.paymentInstructions !== undefined) data.paymentInstructions = dto.paymentInstructions;
     if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
+    if (dto.plainHttpNoticeDismissed !== undefined) data.plainHttpNoticeDismissed = dto.plainHttpNoticeDismissed;
     if (dto.timezone !== undefined) {
       if (dto.timezone !== null && !isValidTimeZone(dto.timezone)) {
         throw new BadRequestException("timezone must be an IANA zone such as Europe/Berlin");

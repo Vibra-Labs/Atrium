@@ -3,6 +3,7 @@ import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { TrialBanner } from "./trial-banner";
+import { PlainHttpNotice } from "./plain-http-notice";
 import { TimezoneSync } from "./timezone-sync";
 import { TelemetryConsentBanner } from "@/components/telemetry-consent-banner";
 import { MobileNav } from "./mobile-nav";
@@ -46,6 +47,8 @@ async function getBranding() {
 async function getSettings(): Promise<{
   timezone?: string | null;
   telemetryEnabled?: boolean | null;
+  insecureCookies?: boolean;
+  plainHttpNoticeDismissed?: boolean;
 } | null> {
   try {
     const res: Response = await serverFetch("/api/settings");
@@ -202,6 +205,9 @@ export default async function DashboardLayout({
             <EmailVerificationBanner email={session.user?.email} />
           )}
           {role === "owner" && <TrialBanner />}
+          {role === "owner" && settings?.insecureCookies && !settings.plainHttpNoticeDismissed && (
+            <PlainHttpNotice />
+          )}
           {timezoneMissing && <TimezoneSync />}
           {role === "owner" && telemetryEnabled === null && (
             <TelemetryConsentBanner />

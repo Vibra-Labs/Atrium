@@ -64,7 +64,7 @@ Use **Recreate** on the container with **Pull latest image** enabled. Database m
 
 ## Troubleshooting
 
-**403 "Invalid or missing CSRF token".** You are accessing Atrium over plain HTTP with `SECURE_COOKIES=true`. The browser silently drops the `Secure` cookies. Set `SECURE_COOKIES=false`, or put an HTTPS reverse proxy in front.
+**403 "Invalid or missing CSRF token", or signed out right after signing in.** The browser is dropping `Secure` cookies over plain HTTP. Set `WEB_URL` to the full `http://` address you open (scheme included) and remove any `SECURE_COOKIES=true`, or put an HTTPS reverse proxy in front.
 
 **Container exits immediately.** Check the logs for `Missing required environment variable: BETTER_AUTH_SECRET`. Portainer passes empty env vars through, so a blank auth secret fails the same way a missing one does.
 

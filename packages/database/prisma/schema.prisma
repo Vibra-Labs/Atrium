@@ -620,6 +620,9 @@ model SystemSettings {
   // Telemetry
   telemetryEnabled Boolean?  // null = not yet asked, true = opted in, false = opted out
 
+  // Owner dismissed the "running over plain HTTP" dashboard notice
+  plainHttpNoticeDismissed Boolean @default(false)
+
   // General
   setupCompleted Boolean  @default(false)
   timezone       String?  // IANA name, e.g. "Australia/Sydney"; scheduled emails use it (UTC when unset)

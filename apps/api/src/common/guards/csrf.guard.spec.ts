@@ -352,9 +352,43 @@ describe("CsrfGuard", () => {
     }
   });
 
+  it("sets non-secure csrf cookie in production when the public URL is http:// (#94)", () => {
+    const keys: string[] = ["SECURE_COOKIES", "NODE_ENV", "API_URL", "BETTER_AUTH_URL", "WEB_URL"];
+    const saved: Record<string, string | undefined> = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    for (const k of keys) delete process.env[k];
+    process.env.NODE_ENV = "production";
+    process.env.WEB_URL = "http://192.168.1.10:8192";
+    try {
+      const guard = new CsrfGuard(new Reflector());
+      let cookieOptions: Record<string, unknown> = {};
+      const response = {
+        cookie: (_name: string, _val: string, opts: Record<string, unknown>) => {
+          cookieOptions = opts;
+        },
+      };
+      const request = { method: "GET", cookies: {}, headers: {}, originalUrl: "/api/projects" };
+      const context = {
+        switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      } as unknown as ExecutionContext;
+
+      guard.canActivate(context);
+      expect(cookieOptions.secure).toBe(false);
+    } finally {
+      for (const k of keys) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  });
+
   it("falls back to NODE_ENV when SECURE_COOKIES is not set", () => {
     const originalSecure = process.env.SECURE_COOKIES;
     const originalNode = process.env.NODE_ENV;
+    const urlKeys: string[] = ["API_URL", "BETTER_AUTH_URL", "WEB_URL"];
+    const savedUrls: Record<string, string | undefined> = Object.fromEntries(urlKeys.map((k) => [k, process.env[k]]));
+    for (const k of urlKeys) delete process.env[k];
     delete process.env.SECURE_COOKIES;
     process.env.NODE_ENV = "production";
     try {
@@ -390,6 +424,10 @@ describe("CsrfGuard", () => {
       else process.env.SECURE_COOKIES = originalSecure;
       if (originalNode === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = originalNode;
+      for (const k of urlKeys) {
+        if (savedUrls[k] === undefined) delete process.env[k];
+        else process.env[k] = savedUrls[k];
+      }
     }
   });
 

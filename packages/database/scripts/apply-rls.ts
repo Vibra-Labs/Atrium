@@ -1,29 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "fs";
 import { resolve } from "path";
+import { rlsStatements } from "../rls/rls-statements";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  const sqlPath = resolve(__dirname, "../rls/enable-rls.sql");
-  const sql = readFileSync(sqlPath, "utf-8");
-
-  // Split into individual statements — required for PgBouncer/pooled connections
-  // which don't support multiple commands in a single prepared statement.
-  const statements = sql
-    .split(";")
-    .map((s) => s.trim())
-    .filter(
-      (s) =>
-        s.length > 0 &&
-        !s.startsWith("--") &&
-        s !== "BEGIN" &&
-        s !== "COMMIT",
-    );
+async function main(): Promise<void> {
+  const sqlPath: string = resolve(__dirname, "../rls/enable-rls.sql");
+  const statements: string[] = rlsStatements(readFileSync(sqlPath, "utf-8"));
 
   console.log("Applying Row Level Security policies...");
   await prisma.$transaction(
-    statements.map((stmt) => prisma.$executeRawUnsafe(stmt)),
+    statements.map((stmt: string) => prisma.$executeRawUnsafe(stmt)),
   );
   console.log("RLS applied successfully on all tables.");
 }

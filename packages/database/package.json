@@ -11,6 +11,7 @@
     "db:migrate:deploy": "bunx prisma migrate deploy",
     "db:seed": "bun run src/seed.ts",
     "db:rls": "bun run scripts/apply-rls.ts",
+    "test": "bun test rls",
     "build": "tsc",
     "clean": "rm -rf dist"
   },

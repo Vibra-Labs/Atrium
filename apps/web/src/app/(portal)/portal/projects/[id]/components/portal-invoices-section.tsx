@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import { useCurrency } from "@/lib/app-config";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import { Receipt, Download, CreditCard, Eye } from "lucide-react";
@@ -49,6 +50,7 @@ export function PortalInvoicesSection({
 }: {
   projectId: string;
 }) {
+  const currency = useCurrency();
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -227,7 +229,7 @@ export function PortalInvoicesSection({
                     <span className="text-sm font-medium">{inv.invoiceNumber}</span>
                     <div className="flex items-center gap-4">
                       <span className="text-sm font-medium">
-                        {formatCurrency(total)}
+                        {formatCurrency(total, currency)}
                       </span>
                       {inv.dueDate && (
                         <span className="text-xs text-[var(--muted-foreground)]">
@@ -315,7 +317,7 @@ export function PortalInvoicesSection({
                       <div className="border border-[var(--border)] rounded-lg p-4 bg-[var(--muted)]">
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-[var(--muted-foreground)]">Total Amount</span>
-                          <span className="text-lg font-bold">{formatCurrency(total)}</span>
+                          <span className="text-lg font-bold">{formatCurrency(total, currency)}</span>
                         </div>
                       </div>
                     ) : (
@@ -335,10 +337,10 @@ export function PortalInvoicesSection({
                                 <td className="px-4 py-2">{li.description}</td>
                                 <td className="px-4 py-2 text-right">{li.quantity}</td>
                                 <td className="px-4 py-2 text-right">
-                                  {formatCurrency(li.unitPrice)}
+                                  {formatCurrency(li.unitPrice, currency)}
                                 </td>
                                 <td className="px-4 py-2 text-right font-medium">
-                                  {formatCurrency(li.quantity * li.unitPrice)}
+                                  {formatCurrency(li.quantity * li.unitPrice, currency)}
                                 </td>
                               </tr>
                             ))}
@@ -349,7 +351,7 @@ export function PortalInvoicesSection({
                                 Total
                               </td>
                               <td className="px-4 py-2 text-right font-bold">
-                                {formatCurrency(total)}
+                                {formatCurrency(total, currency)}
                               </td>
                             </tr>
                           </tfoot>

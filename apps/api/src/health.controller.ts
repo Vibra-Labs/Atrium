@@ -3,6 +3,7 @@ import { SkipThrottle } from "@nestjs/throttler";
 import { ConfigService } from "@nestjs/config";
 import type { Request, Response } from "express";
 import { Public } from "./common";
+import { getCurrency } from "./common/helpers/currency";
 import { PrismaService } from "./prisma/prisma.service";
 import { BillingService } from "./billing/billing.service";
 
@@ -23,6 +24,7 @@ export class HealthController {
     return {
       billingEnabled: this.config.get("BILLING_ENABLED") === "true",
       signupEnabled: this.config.get("ALLOW_SIGNUPS") !== "false",
+      currency: getCurrency(this.config),
       mcpOAuthEnabled: this.config.get("MCP_OAUTH_ENABLED", "true") !== "false",
     };
   }

@@ -20,6 +20,8 @@ import { InAppNotificationsService } from "./in-app-notifications.service";
 import { PushService } from "./push.service";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
 import { IntegrationDispatcher } from "../integrations/integration-dispatcher.service";
+import { getCurrency } from "../common/helpers/currency";
+import { formatMoney } from "@atrium/shared";
 
 /**
  * Tab ids on the two project pages in apps/web. These mirror the `tabs` arrays
@@ -226,7 +228,7 @@ export class NotificationsService {
     if (!invoice) return;
 
     const totalCents = calculateInvoiceTotal(invoice);
-    const amount = `$${(totalCents / 100).toFixed(2)}`;
+    const amount = formatMoney(totalCents, getCurrency(this.config));
     const projectName = invoice.project?.name ?? "Unknown project";
 
     this.integrations.dispatch({
@@ -570,7 +572,7 @@ export class NotificationsService {
     if (!invoice) return;
 
     const totalCents = calculateInvoiceTotal(invoice);
-    const amount = `$${(totalCents / 100).toFixed(2)}`;
+    const amount = formatMoney(totalCents, getCurrency(this.config));
 
     this.integrations.dispatch({
       event: "invoice.sent",

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { DEFAULT_CURRENCY } from "@atrium/shared";
 
 export interface AppConfig {
   billingEnabled: boolean;
   signupEnabled: boolean;
+  currency: string;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -21,7 +23,7 @@ function fetchConfig(): Promise<AppConfig> {
       })
       .catch(() => {
         pending = null; // allow retry on next mount
-        return { billingEnabled: false, signupEnabled: true };
+        return { billingEnabled: false, signupEnabled: true, currency: DEFAULT_CURRENCY };
       });
   }
   return pending;
@@ -36,4 +38,9 @@ export function useAppConfig(): AppConfig | null {
   }, []);
 
   return config;
+}
+
+/** The instance currency (ISO 4217, lowercase); USD until the config loads. */
+export function useCurrency(): string {
+  return useAppConfig()?.currency ?? DEFAULT_CURRENCY;
 }

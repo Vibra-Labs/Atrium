@@ -1,11 +1,17 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { formatMoney } from "@atrium/shared";
+import { getCurrency } from "../common/helpers/currency";
 import { PrismaService } from "../prisma/prisma.service";
 import PDFDocument from "pdfkit";
 import { PassThrough } from "stream";
 
 @Injectable()
 export class InvoicePdfService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
 
   async generate(invoiceId: string, orgId: string): Promise<{ stream: PassThrough; filename: string }> {
     const invoice = await this.prisma.invoice.findFirst({
@@ -30,6 +36,8 @@ export class InvoicePdfService {
     const primaryColor = branding?.primaryColor || "#2563eb";
     const orgName = org?.name || "Organization";
 
+    const currency: string = getCurrency(this.config);
+    const money = (cents: number): string => formatMoney(cents, currency);
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     const stream = new PassThrough();
     doc.pipe(stream);
@@ -88,8 +96,8 @@ export class InvoicePdfService {
       doc.fontSize(10).fillColor("#111827");
       doc.text(item.description, 50, y, { width: 280 });
       doc.text(String(item.quantity), 340, y, { width: 50, align: "right" });
-      doc.text(formatCents(item.unitPrice), 400, y, { width: 70, align: "right" });
-      doc.text(formatCents(lineTotal), 475, y, { width: 70, align: "right" });
+      doc.text(money(item.unitPrice), 400, y, { width: 70, align: "right" });
+      doc.text(money(lineTotal), 475, y, { width: 70, align: "right" });
 
       y += 20;
     }
@@ -99,7 +107,7 @@ export class InvoicePdfService {
     y += 15;
     doc.fontSize(11).fillColor("#111827").font("Helvetica-Bold");
     doc.text("Total", 350, y, { width: 120, align: "right" });
-    doc.text(formatCents(grandTotal), 475, y, { width: 70, align: "right" });
+    doc.text(money(grandTotal), 475, y, { width: 70, align: "right" });
     doc.font("Helvetica");
 
     // Notes
@@ -115,8 +123,4 @@ export class InvoicePdfService {
     const filename = `${invoice.invoiceNumber}.pdf`;
     return { stream, filename };
   }
-}
-
-function formatCents(cents: number): string {
-  return "$" + (cents / 100).toFixed(2);
 }

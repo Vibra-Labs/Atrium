@@ -3,6 +3,7 @@ import { InvoicePdfService } from "./invoice-pdf.service";
 import { NotFoundException } from "@nestjs/common";
 import { PassThrough, Writable } from "stream";
 import type { PrismaService } from "../prisma/prisma.service";
+import type { ConfigService } from "@nestjs/config";
 
 // ---------------------------------------------------------------------------
 // PDFDocument mock — avoids real PDF generation in unit tests.
@@ -93,7 +94,7 @@ describe("InvoicePdfService", () => {
 
   beforeEach(() => {
     prisma = makeBasePrisma();
-    service = new InvoicePdfService(prisma as unknown as PrismaService);
+    service = new InvoicePdfService(prisma as unknown as PrismaService, { get: () => undefined } as unknown as ConfigService);
   });
 
   // --- Not-found guard ---

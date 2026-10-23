@@ -397,7 +397,7 @@ export default function ContactsPage() {
                     </td>
                     <td className="px-4 py-3">{c._count.contacts}</td>
                     <td className="px-4 py-3 text-right">
-                      {c.paidCents > 0 ? formatCurrency(c.paidCents) : "—"}
+                      {c.paidCents > 0 ? formatCurrency(c.paidCents, config?.currency) : "—"}
                     </td>
                   </tr>
                 ))}
@@ -473,7 +473,7 @@ export default function ContactsPage() {
                     <FollowUp at={c.followUpAt} everyDays={c.followUpEveryDays} />
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {c.paidCents > 0 ? formatCurrency(c.paidCents) : "—"}
+                    {c.paidCents > 0 ? formatCurrency(c.paidCents, config?.currency) : "—"}
                   </td>
                 </tr>
               ))}

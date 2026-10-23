@@ -1,11 +1,13 @@
 "use client";
 
 import { formatCurrency } from "@/lib/format";
+import { useCurrency } from "@/lib/app-config";
 import type { Revenue } from "./types";
 
 const MIN_BAR_PERCENT = 6;
 
 export function RevenueStrip({ revenue }: { revenue: Revenue }) {
+  const currency = useCurrency();
   if (revenue.paidCents === 0) return null;
 
   const max = Math.max(...revenue.monthly.map((m) => m.paidCents));
@@ -18,10 +20,10 @@ export function RevenueStrip({ revenue }: { revenue: Revenue }) {
     >
       <div className="min-w-[9rem]">
         <p className="text-xs text-[var(--muted-foreground)]">Paid, all time</p>
-        <p className="text-2xl font-semibold">{formatCurrency(revenue.paidCents)}</p>
+        <p className="text-2xl font-semibold">{formatCurrency(revenue.paidCents, currency)}</p>
         {revenue.outstandingCents > 0 && (
           <p className="text-xs text-[var(--muted-foreground)]">
-            {formatCurrency(revenue.outstandingCents)} outstanding
+            {formatCurrency(revenue.outstandingCents, currency)} outstanding
           </p>
         )}
       </div>
@@ -33,7 +35,7 @@ export function RevenueStrip({ revenue }: { revenue: Revenue }) {
             return (
               <div key={m.month} className="flex-1 h-full flex items-end">
                 <div
-                  title={`${m.month}: ${formatCurrency(m.paidCents)}`}
+                  title={`${m.month}: ${formatCurrency(m.paidCents, currency)}`}
                   className="w-full rounded-sm bg-[var(--primary)] opacity-70"
                   style={{ height: `${percent}%` }}
                 />

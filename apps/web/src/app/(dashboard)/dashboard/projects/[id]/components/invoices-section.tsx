@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { currencySymbol, formatCurrency } from "@/lib/format";
+import { useCurrency } from "@/lib/app-config";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
@@ -71,6 +72,7 @@ export function InvoicesSection({
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
+  const currency = useCurrency();
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [paidDate, setPaidDate] = useState("");
@@ -508,7 +510,7 @@ export function InvoicesSection({
       {invoices.length > 0 && (
         <p className="text-xs text-[var(--muted-foreground)] mb-3">
           {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
-          {outstandingAmount > 0 && ` \u2014 ${formatCurrency(outstandingAmount)} outstanding`}
+          {outstandingAmount > 0 && ` \u2014 ${formatCurrency(outstandingAmount, currency)} outstanding`}
         </p>
       )}
 
@@ -600,7 +602,7 @@ export function InvoicesSection({
                         className="w-16 px-2 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                       />
                       <div className="relative flex-1 min-w-0">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">{currencySymbol(currency)}</span>
                         <input
                           type="number"
                           value={item.unitPrice / 100 || ""}
@@ -614,7 +616,7 @@ export function InvoicesSection({
                         />
                       </div>
                       <span className="text-sm font-medium shrink-0">
-                        {formatCurrency(item.quantity * item.unitPrice)}
+                        {formatCurrency(item.quantity * item.unitPrice, currency)}
                       </span>
                     </div>
                   </div>
@@ -633,7 +635,7 @@ export function InvoicesSection({
             <div className="flex justify-end">
               <div className="text-right">
                 <span className="text-sm text-[var(--muted-foreground)]">Total</span>
-                <p className="text-xl font-bold">{formatCurrency(newTotal)}</p>
+                <p className="text-xl font-bold">{formatCurrency(newTotal, currency)}</p>
               </div>
             </div>
 
@@ -700,7 +702,7 @@ export function InvoicesSection({
             <div>
               <label className="text-sm text-[var(--muted-foreground)]">Amount</label>
               <div className="relative mt-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">{currencySymbol(currency)}</span>
                 <input
                   type="number"
                   value={uploadAmount}
@@ -801,7 +803,7 @@ export function InvoicesSection({
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm font-medium">{formatCurrency(total)}</span>
+                    <span className="text-sm font-medium">{formatCurrency(total, currency)}</span>
                     <span
                       className="text-xs px-2 py-1 rounded-full font-medium capitalize"
                       style={{ backgroundColor: colors.bg, color: colors.text }}
@@ -937,7 +939,7 @@ export function InvoicesSection({
                                   className="w-16 px-2 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                                 />
                                 <div className="relative flex-1 min-w-0">
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">$</span>
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">{currencySymbol(currency)}</span>
                                   <input
                                     type="number"
                                     value={item.unitPrice / 100 || ""}
@@ -951,7 +953,7 @@ export function InvoicesSection({
                                   />
                                 </div>
                                 <span className="text-sm font-medium shrink-0">
-                                  {formatCurrency(item.quantity * item.unitPrice)}
+                                  {formatCurrency(item.quantity * item.unitPrice, currency)}
                                 </span>
                               </div>
                             </div>
@@ -1012,7 +1014,7 @@ export function InvoicesSection({
                             </div>
                             <div className="pt-2 border-t border-[var(--border)]">
                               <span className="text-sm text-[var(--muted-foreground)]">Amount</span>
-                              <p className="text-xl font-bold">{formatCurrency(total)}</p>
+                              <p className="text-xl font-bold">{formatCurrency(total, currency)}</p>
                             </div>
                           </div>
                         ) : (
@@ -1031,9 +1033,9 @@ export function InvoicesSection({
                                   <tr key={li.id || idx} className="border-t border-[var(--border)]">
                                     <td className="px-3 py-2">{li.description}</td>
                                     <td className="px-3 py-2 text-right">{li.quantity}</td>
-                                    <td className="px-3 py-2 text-right">{formatCurrency(li.unitPrice)}</td>
+                                    <td className="px-3 py-2 text-right">{formatCurrency(li.unitPrice, currency)}</td>
                                     <td className="px-3 py-2 text-right font-medium">
-                                      {formatCurrency(li.quantity * li.unitPrice)}
+                                      {formatCurrency(li.quantity * li.unitPrice, currency)}
                                     </td>
                                   </tr>
                                 ))}
@@ -1041,7 +1043,7 @@ export function InvoicesSection({
                               <tfoot>
                                 <tr className="border-t border-[var(--border)] bg-[var(--muted)]">
                                   <td colSpan={3} className="px-3 py-2 text-right font-medium">Total</td>
-                                  <td className="px-3 py-2 text-right font-bold">{formatCurrency(total)}</td>
+                                  <td className="px-3 py-2 text-right font-bold">{formatCurrency(total, currency)}</td>
                                 </tr>
                               </tfoot>
                             </table>
@@ -1068,7 +1070,7 @@ export function InvoicesSection({
                             </span>
                             {inv.paidAmount != null && inv.paidAmount !== total && (
                               <span className="text-green-600">
-                                Received: {formatCurrency(inv.paidAmount)}
+                                Received: {formatCurrency(inv.paidAmount, currency)}
                               </span>
                             )}
                           </div>

@@ -72,6 +72,15 @@ describe("HealthController", () => {
       );
       expect(controller.getConfig().signupEnabled).toBe(false);
     });
+
+    it("reports the configured currency, defaulting to usd", () => {
+      const make = (vals: Record<string, string>) => new HealthController(
+        makePrisma({ dbOk: true }) as unknown as PrismaService,
+        makeConfig(vals), makeBilling(),
+      );
+      expect(make({}).getConfig().currency).toBe("usd");
+      expect(make({ STRIPE_CURRENCY: "EUR" }).getConfig().currency).toBe("eur");
+    });
   });
 
   describe("domainCheck", () => {

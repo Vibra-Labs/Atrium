@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import { useCurrency } from "@/lib/app-config";
 import { StatCardSkeleton } from "@/components/skeletons";
 import { FolderKanban, TrendingUp, CheckCircle, Receipt } from "lucide-react";
 import { WeeklyUpdatesCard } from "./weekly-updates-card";
@@ -34,6 +35,7 @@ interface PaginatedResponse<T> {
 }
 
 export default function DashboardPage() {
+  const currency = useCurrency();
   const [stats, setStats] = useState<Stats | null>(null);
   const [invoiceStats, setInvoiceStats] = useState<InvoiceStats | null>(null);
   const [recent, setRecent] = useState<Project[]>([]);
@@ -96,7 +98,7 @@ export default function DashboardPage() {
                 Outstanding
               </div>
               <p className="text-3xl font-bold mt-1">
-                {invoiceStats ? formatCurrency(invoiceStats.outstandingAmount) : "$0.00"}
+                {invoiceStats ? formatCurrency(invoiceStats.outstandingAmount, currency) : formatCurrency(0, currency)}
               </p>
             </div>
           </>

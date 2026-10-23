@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { apiFetch, fetchAllPages } from "@/lib/api";
 import { downloadCsv } from "@/lib/download";
 import { formatHours } from "@/lib/format-duration";
+import { formatCurrency } from "@/lib/format";
+import { useCurrency } from "@/lib/app-config";
 import { Download } from "lucide-react";
 
 interface ReportRow {
@@ -38,9 +40,9 @@ interface Project {
   name: string;
 }
 
-const fmtMoney = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
-
 export default function TimeReportPage() {
+  const currency = useCurrency();
+  const fmtMoney = (cents: number): string => formatCurrency(cents, currency);
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [projects, setProjects] = useState<Project[]>([]);

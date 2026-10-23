@@ -17,6 +17,7 @@ import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { calculateInvoiceTotal } from "./invoice-total";
 import { CLIENT_HIDDEN_STATUSES } from "../invoices/invoices.service";
 import { publicApiUrl } from "../common/helpers/public-api-url";
+import { getCurrency } from "../common/helpers/currency";
 
 interface StripeConfig {
   stripe: Stripe;
@@ -64,7 +65,7 @@ export class PaymentsService {
     this.webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     this.apiUrl = publicApiUrl(this.config);
     this.appOrigin = new URL(this.webUrl).origin;
-    this.currency = this.config.get("STRIPE_CURRENCY", "usd").toLowerCase();
+    this.currency = getCurrency(this.config);
     this.hmacSecret = this.config.getOrThrow<string>("BETTER_AUTH_SECRET");
   }
 

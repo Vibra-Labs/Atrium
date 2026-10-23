@@ -29,7 +29,7 @@ const buttonClass =
   "px-3 py-2 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors";
 const fieldLabelClass = "block text-sm text-[var(--muted-foreground)] mb-1";
 
-// The workspace currency isn't known here, so revenue is shown as a plain number.
+// Annual revenue is a rough figure the user types, so it's shown as a plain number.
 const numberFormat = new Intl.NumberFormat();
 
 /** "" = clear (null); otherwise the whole number typed. */

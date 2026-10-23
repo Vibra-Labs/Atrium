@@ -135,7 +135,9 @@ Set `STRIPE_CURRENCY` to any [ISO 4217](https://en.wikipedia.org/wiki/ISO_4217) 
 STRIPE_CURRENCY="eur"
 ```
 
-This applies to all invoices across the platform.
+This applies to all invoices across the platform: amounts shown in the dashboard and client portal, invoice PDFs, and payment notifications and emails use the same currency, not just the Stripe charge. Atrium's own subscription plan prices are always in USD.
+
+Bank transfer (ACH) is only offered when the currency is `usd`.
 
 ---
 

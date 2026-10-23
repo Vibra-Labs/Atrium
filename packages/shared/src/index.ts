@@ -264,12 +264,5 @@ export const DEFAULT_CURRENCY = "usd";
 
 /** Formats an amount in minor units (cents) as a localized currency string. */
 export function formatMoney(cents: number, currency: string = DEFAULT_CURRENCY): string {
-  const format = (code: string): string =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(cents / 100);
-  try {
-    return format(currency);
-  } catch (err) {
-    console.error(`Invalid currency code "${currency}", falling back to USD`, err);
-    return format(DEFAULT_CURRENCY);
-  }
+  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }

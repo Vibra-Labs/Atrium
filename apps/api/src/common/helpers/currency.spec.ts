@@ -14,6 +14,10 @@ describe("getCurrency", () => {
     expect(getCurrency(makeConfig("EUR"))).toBe("eur");
   });
 
+  it("falls back to usd for an invalid code", () => {
+    expect(getCurrency(makeConfig("euro"))).toBe("usd");
+  });
+
   it("treats a blank value as unset", () => {
     expect(getCurrency(makeConfig("  "))).toBe("usd");
   });

@@ -14,10 +14,6 @@ describe("formatCurrency", () => {
   it("accepts upper or lower case codes", () => {
     expect(formatCurrency(100, "EUR")).toBe(formatCurrency(100, "eur"));
   });
-
-  it("falls back to USD for an invalid code", () => {
-    expect(formatCurrency(100, "not-a-code")).toBe("$1.00");
-  });
 });
 
 describe("currencySymbol", () => {

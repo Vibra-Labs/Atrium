@@ -33,9 +33,9 @@ jobs:
       WEB_URL: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:3001
       INTERNAL_API_URL: http://localhost:3001
-      # Read at request time by the auth routes; the e2e assertion checks the
-      # tag reaches the served HTML.
-      NEXT_PUBLIC_TRACKERS: '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]'
+      # Read at request time by every page; the e2e assertion checks the tag
+      # reaches the served HTML.
+      ATRIUM_TRACKERS: '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]'
       STORAGE_PROVIDER: local
       UPLOAD_DIR: ./uploads
 

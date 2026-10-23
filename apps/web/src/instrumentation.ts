@@ -1,6 +1,7 @@
 import type { Instrumentation } from "next";
 import { resolveInternalApiUrl } from "./lib/internal-api-url";
 import { shouldInitServerSentry } from "./lib/sentry-config";
+import { trackersDeprecationWarning } from "./lib/trackers";
 
 /**
  * Runs once when the server starts. Exits on a missing INTERNAL_API_URL, as
@@ -19,6 +20,8 @@ export async function register(): Promise<void> {
       console.error((err as Error).message);
       process.exit(1);
     }
+    const trackersWarning: string | null = trackersDeprecationWarning(process.env);
+    if (trackersWarning) console.warn(trackersWarning);
   }
 
   if (!shouldInitServerSentry(process.env)) return;

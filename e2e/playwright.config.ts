@@ -23,13 +23,12 @@ if (existsSync(rootEnvPath)) {
 }
 
 // Shared by the test runner and the web server it starts, so assertions read
-// the same value the page was built with. CI sets this at the job level so the
-// build step inlines it into prerendered routes; this default covers local runs
-// against the dev server, which reads it at startup.
+// the same value the server renders. The web app reads it per request, so it
+// only needs to be in the server's runtime environment, not the build's.
 const TRACKERS: string =
-  process.env.NEXT_PUBLIC_TRACKERS ??
+  process.env.ATRIUM_TRACKERS ??
   '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]';
-process.env.NEXT_PUBLIC_TRACKERS = TRACKERS;
+process.env.ATRIUM_TRACKERS = TRACKERS;
 
 export default defineConfig({
   testDir: "./tests",
@@ -71,7 +70,7 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
-      env: { NEXT_PUBLIC_TRACKERS: TRACKERS },
+      env: { ATRIUM_TRACKERS: TRACKERS },
     },
   ],
 });

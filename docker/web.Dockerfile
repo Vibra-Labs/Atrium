@@ -13,9 +13,6 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
-# Optional; analytics is normally configured at runtime. See docs/telemetry.md.
-ARG NEXT_PUBLIC_TRACKERS=
-ENV NEXT_PUBLIC_TRACKERS=${NEXT_PUBLIC_TRACKERS}
 # Where browsers reach the API, e.g. https://api.example.com. Leave empty when
 # a proxy serves /api from the app's own origin.
 ARG NEXT_PUBLIC_API_URL=

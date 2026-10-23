@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 /**
  * Analytics instrumentation.
  *
- * The real tracker is only loaded when NEXT_PUBLIC_TRACKERS is set, and
+ * The real tracker is only loaded when ATRIUM_TRACKERS is set, and
  * `track()` no-ops when `window.umami` is missing. These tests install a stub
  * before any page script runs and assert on what the app tried to send, so
  * they verify the call sites without needing a live Umami instance.
@@ -94,21 +94,28 @@ test.describe("Analytics instrumentation", () => {
 test.describe("Tracker injection", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  // Regression guard: these routes were statically prerendered, which resolved
-  // NEXT_PUBLIC_TRACKERS at build time and left them permanently untracked in
-  // any image built without it. Assert on the raw HTML response, NOT the DOM --
-  // a client-injected tag shows up in the DOM even when the served HTML has no
-  // tag at all, which is what made the first version of this test useless.
-  const PRERENDERED: string[] = ["/signup", "/accept-invite", "/forgot-password"];
+  // Regression guard: trackers are read from the server's runtime environment.
+  // Static prerendering, or Next inlining a NEXT_PUBLIC_ value at build time,
+  // has twice left pages untracked in production. Assert on the raw HTML
+  // response, NOT the DOM -- a client-injected tag shows up in the DOM even
+  // when the served HTML has no tag at all.
+  const PAGES: string[] = [
+    "/",
+    "/changelog",
+    "/login",
+    "/signup",
+    "/accept-invite",
+    "/forgot-password",
+  ];
 
-  for (const path of PRERENDERED) {
+  for (const path of PAGES) {
     test(`${path} is served with the tracker tag in its HTML`, async ({ request }) => {
       const trackers: Array<{ src: string }> = JSON.parse(
-        process.env.NEXT_PUBLIC_TRACKERS ?? "[]",
+        process.env.ATRIUM_TRACKERS ?? "[]",
       );
       expect(
         trackers.length,
-        "NEXT_PUBLIC_TRACKERS must be set for the server under test",
+        "ATRIUM_TRACKERS must be set for the server under test",
       ).toBeGreaterThan(0);
 
       const html: string = await (await request.get(path)).text();

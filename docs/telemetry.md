@@ -77,30 +77,33 @@ Error reports are stored in Sentry and accessible only to the Atrium maintainers
 # Product Analytics
 
 Separate from error reporting, Atrium supports optional web analytics via the
-`NEXT_PUBLIC_TRACKERS` environment variable. This is **off by default and
+`ATRIUM_TRACKERS` environment variable. This is **off by default and
 self-directed**: nothing loads unless you configure it, and the data goes to
 *your* analytics instance, never to the Atrium maintainers.
 
 ## Enabling it
 
 ```bash
-NEXT_PUBLIC_TRACKERS='[{"src":"https://umami.example.com/script.js","data-website-id":"your-id"}]'
+ATRIUM_TRACKERS='[{"src":"https://umami.example.com/script.js","data-website-id":"your-id"}]'
 ```
 
-Set it as a normal runtime environment variable on your container. Every route
-that can report is rendered per request, so the running container's environment
-is read directly — no rebuild required, and changing the value takes effect on
-restart.
+Set it as a normal runtime environment variable on your container. The script
+tags are rendered on the server for every page, per request, from the running
+container's environment — no rebuild required, and changing the value takes
+effect on restart. `NEXT_PUBLIC_TRACKERS` is still read as a fallback, also at
+runtime, so existing setups keep working. It is deprecated (see
+[deprecations.md](deprecations.md)): rename it to `ATRIUM_TRACKERS`.
 
 The published `vibralabs/atrium` image ships with **no** tracker configured, and
 this is deliberate: because analytics is runtime configuration, the image the
 maintainers publish is the same one everyone runs, and it reports nowhere by
 default. A self-hosted Atrium never sends anything to the maintainers.
 
-> Historical note: the auth pages (`/signup`, `/accept-invite`, ...) used to be
-> statically prerendered, which resolved this variable at build time and left
-> them permanently untracked in any image built without it. They are now
-> rendered per request (`apps/web/src/app/(auth)/layout.tsx`).
+> Historical note: trackers used to be read from `NEXT_PUBLIC_TRACKERS` directly.
+> Next.js replaces `NEXT_PUBLIC_*` with its build-time value, even in server
+> code, so images built without it (or with it empty) ignored the runtime value
+> entirely. See `apps/web/src/lib/trackers.ts` and
+> `apps/web/src/components/trackers.tsx`.
 
 ## Identifiers are stripped before sending
 

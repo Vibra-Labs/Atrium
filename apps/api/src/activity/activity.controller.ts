@@ -8,7 +8,7 @@ export class ActivityController {
   constructor(private readonly activityService: ActivityService) {}
 
   @Get()
-  @Roles("owner", "admin", "member")
+  @Roles("owner", "admin")
   findAll(
     @CurrentOrg("id") orgId: string,
     @Query("limit") limit?: string,

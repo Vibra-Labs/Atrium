@@ -4,14 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Plus,
-  ArrowRight,
   Eye,
   AlertCircle,
-  FileSignature,
-  Calendar,
   CheckCircle2,
-  Clock,
-  Sparkles,
   ChevronRight,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -422,7 +417,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <Link
-                      href={`/dashboard/invoices`}
+                      href={inv.projectId ? `/dashboard/projects/${inv.projectId}?tab=invoices` : "/dashboard/projects"}
                       className="text-xs font-semibold text-[var(--primary)] hover:underline shrink-0 flex items-center gap-1"
                     >
                       <span>View invoice</span>

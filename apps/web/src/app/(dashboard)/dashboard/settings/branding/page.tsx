@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { Check, Upload, Trash2, ExternalLink, Globe, Sparkles } from "lucide-react";
+import { Check, Upload, Trash2, ExternalLink } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { startPreview } from "@/lib/preview-mode";
 import { useToast } from "@/components/toast";
 import { useSession } from "@/lib/session-context";
 
@@ -48,7 +48,6 @@ export default function BrandingSettingsPage(): React.ReactElement {
   const [initialColor, setInitialColor] = useState("#006B68");
   const [initialDomain, setInitialDomain] = useState("");
   const [branding, setBranding] = useState<Branding>({ primaryColor: "#006B68" });
-  const [customDomain, setCustomDomain] = useState("");
 
   // Working state
   const [currentColor, setCurrentColor] = useState("#006B68");
@@ -456,14 +455,22 @@ export default function BrandingSettingsPage(): React.ReactElement {
 
           {/* Full preview link */}
           <div className="pt-1">
-            <Link
-              href="/portal"
-              target="_blank"
+            <button
+              type="button"
+              onClick={() =>
+                startPreview(
+                  session?.user?.id || "",
+                  session?.user?.name || "Client Preview",
+                  session?.user?.email || "client@preview.local",
+                  "/dashboard/settings/branding",
+                  "/portal",
+                )
+              }
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--primary)] hover:underline"
             >
               <span>Open the full portal preview</span>
               <ExternalLink size={12} />
-            </Link>
+            </button>
           </div>
         </div>
       </div>

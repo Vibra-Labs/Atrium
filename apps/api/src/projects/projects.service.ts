@@ -150,45 +150,48 @@ export class ProjectsService implements OnApplicationBootstrap {
       ? {}
       : { clients: { some: { userId: clientUserId } } };
 
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id,
-        organizationId,
-        archivedAt: null,
-        ...clientFilter,
-      },
-      include: {
-        files: { where: STANDALONE_FILES, orderBy: { createdAt: "desc" } },
-        organization: {
-          select: {
-            name: true,
-            members: {
-              where: { role: "owner" },
-              select: {
-                user: { select: { id: true, name: true, email: true, image: true } },
-              },
-              take: 1,
-            },
-          },
+    const [project, org] = await Promise.all([
+      this.prisma.project.findFirst({
+        where: {
+          id,
+          organizationId,
+          archivedAt: null,
+          ...clientFilter,
         },
-        // Counted server-side so the portal banner isn't limited to the task page it has loaded.
-        _count: {
-          select: {
-            tasks: {
-              where: {
-                type: "decision",
-                closedAt: null,
-                status: { notIn: ["done", "cancelled"] },
-                votes: { none: { userId: clientUserId } },
+        include: {
+          files: { where: STANDALONE_FILES, orderBy: { createdAt: "desc" } },
+          // Counted server-side so the portal banner isn't limited to the task page it has loaded.
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  type: "decision",
+                  closedAt: null,
+                  status: { notIn: ["done", "cancelled"] },
+                  votes: { none: { userId: clientUserId } },
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: {
+          name: true,
+          members: {
+            where: { role: "owner" },
+            select: {
+              user: { select: { id: true, name: true, email: true, image: true } },
+            },
+            take: 1,
+          },
+        },
+      }),
+    ]);
     if (!project) throw new NotFoundException("Project not found");
     const { _count, ...rest } = project;
-    return { ...rest, openVotes: _count?.tasks ?? 0 };
+    return { ...rest, organization: org ?? undefined, openVotes: _count?.tasks ?? 0 };
   }
 
   async findByClient(

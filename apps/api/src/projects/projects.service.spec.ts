@@ -51,6 +51,9 @@ const mockPrisma = {
   member: {
     count: mock(() => Promise.resolve(2)),
   },
+  organization: {
+    findUnique: mock(() => Promise.resolve({ name: "Acme", members: [] })),
+  },
   $queryRaw: mock(() => Promise.resolve([] as unknown[])),
   $transaction: mock((arg: unknown) => {
     if (typeof arg === "function") {
@@ -325,7 +328,11 @@ describe("ProjectsService", () => {
 
     const result = await service.findOneByClient("proj-active", "user-client", "org-1");
 
-    expect(result).toEqual({ ...project, openVotes: 0 });
+    expect(result).toEqual({
+      ...project,
+      organization: { name: "Acme", members: [] },
+      openVotes: 0,
+    });
     expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({
@@ -350,7 +357,12 @@ describe("ProjectsService", () => {
 
     const result = await service.findOneByClient("p1", "user-client", "org-1");
 
-    expect(result).toEqual({ id: "p1", files: [], openVotes: 3 });
+    expect(result).toEqual({
+      id: "p1",
+      files: [],
+      organization: { name: "Acme", members: [] },
+      openVotes: 3,
+    });
     expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({

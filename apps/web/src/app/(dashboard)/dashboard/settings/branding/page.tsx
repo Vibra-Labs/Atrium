@@ -40,7 +40,7 @@ function getContrastColor(hexcolor: string): "black" | "white" {
 }
 
 export default function BrandingSettingsPage(): React.ReactElement {
-  const { session } = useSession();
+  const { userId, userName } = useSession();
   const { success, error: showError } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -48,6 +48,7 @@ export default function BrandingSettingsPage(): React.ReactElement {
   const [initialColor, setInitialColor] = useState("#006B68");
   const [initialDomain, setInitialDomain] = useState("");
   const [branding, setBranding] = useState<Branding>({ primaryColor: "#006B68" });
+  const [orgName, setOrgName] = useState("Your Studio");
 
   // Working state
   const [currentColor, setCurrentColor] = useState("#006B68");
@@ -61,8 +62,9 @@ export default function BrandingSettingsPage(): React.ReactElement {
     Promise.all([
       apiFetch<Branding>("/branding").catch(() => ({ primaryColor: "#006B68" })),
       apiFetch<CustomDomainData>("/settings/custom-domain").catch(() => ({ customDomain: null })),
+      apiFetch<{ name?: string }>("/organization/current").catch(() => null),
     ])
-      .then(([bData, dData]) => {
+      .then(([bData, dData, orgData]) => {
         const color = bData.primaryColor || "#006B68";
         const domain = dData?.customDomain || "";
         setBranding(bData);
@@ -70,6 +72,7 @@ export default function BrandingSettingsPage(): React.ReactElement {
         setCurrentColor(color);
         setInitialDomain(domain);
         setCurrentDomain(domain);
+        if (orgData?.name) setOrgName(orgData.name);
         setLoading(false);
       })
       .catch((err) => {
@@ -182,10 +185,9 @@ export default function BrandingSettingsPage(): React.ReactElement {
     ? `${API_URL}/api/branding/logo/${branding.organizationId}?v=${cacheBust}`
     : branding.logoUrl || null;
 
-  const orgName = session?.organization?.name || "Your Studio";
   const orgInitials = orgName
     .split(" ")
-    .map((n) => n[0])
+    .map((n: string) => n[0])
     .join("")
     .slice(0, 2)
     .toUpperCase() || "AT";
@@ -459,9 +461,9 @@ export default function BrandingSettingsPage(): React.ReactElement {
               type="button"
               onClick={() =>
                 startPreview(
-                  session?.user?.id || "",
-                  session?.user?.name || "Client Preview",
-                  session?.user?.email || "client@preview.local",
+                  userId || "",
+                  userName || "Client Preview",
+                  "client@preview.local",
                   "/dashboard/settings/branding",
                   "/portal",
                 )

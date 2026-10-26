@@ -95,7 +95,7 @@ interface PaginatedResponse<T> {
 
 export default function DashboardPage() {
   const currency = useCurrency();
-  const { session } = useSession();
+  const { userName } = useSession();
 
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [invoiceStats, setInvoiceStats] = useState<InvoiceStats | null>(null);
@@ -108,7 +108,7 @@ export default function DashboardPage() {
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const firstName = session?.user?.name ? session.user.name.split(" ")[0] : "there";
+  const firstName = userName ? userName.split(" ")[0] : "there";
   const formattedToday = now.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",

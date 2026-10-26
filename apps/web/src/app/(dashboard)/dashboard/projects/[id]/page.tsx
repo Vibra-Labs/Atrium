@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
@@ -22,6 +23,8 @@ import { NotesSection } from "./components/notes-section";
 import { TimeTab } from "./time-tab";
 import { useSession } from "@/lib/session-context";
 import { useCachedApi } from "@/lib/cached";
+import { formatCurrency } from "@/lib/format";
+import { useCurrency } from "@/lib/app-config";
 
 interface FileRecord {
   id: string;
@@ -181,6 +184,27 @@ export default function ProjectDetailPage() {
       .then(setProject)
       .catch((err) => setError(err.message || "Failed to load project"));
   }, [id]);
+
+  const [billingStats, setBillingStats] = useState<{
+    totalAmount: number;
+    paidAmount: number;
+    outstandingAmount: number;
+  } | null>(null);
+  const currency = useCurrency();
+
+  const loadBillingStats = useCallback(() => {
+    apiFetch<{
+      totalAmount: number;
+      paidAmount: number;
+      outstandingAmount: number;
+    }>(`/invoices/stats?projectId=${id}`)
+      .then(setBillingStats)
+      .catch(() => {});
+  }, [id]);
+
+  useEffect(() => {
+    loadBillingStats();
+  }, [loadBillingStats]);
 
   useEffect(() => {
     loadProject();
@@ -393,152 +417,36 @@ export default function ProjectDetailPage() {
   if (!project) return <ProjectDetailSkeleton />;
 
   const assignedIds = new Set((project.clients ?? []).map((c) => c.userId));
-
+  const assignedClients = clients.filter((c) => assignedIds.has(c.userId));
   const projectLabelIds = (project.labels ?? []).map((l) => l.label.id);
-
-  const sidebarDetails = (
-    <>
-      {/* Labels */}
-      <div className="space-y-1.5 pt-2 pb-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] flex items-center gap-1.5">
-            <Tag size={12} />
-            Labels
-          </h2>
-          <LabelPicker
-            labels={orgLabels}
-            assigned={projectLabelIds}
-            onToggle={handleLabelToggle}
-            disabled={isArchived}
-          />
-        </div>
-        {projectLabelIds.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {(project.labels ?? []).map((l) => (
-              <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <ClientAssignment
-        clients={clients}
-        assignedIds={assignedIds}
-        onToggle={handleClientToggle}
-        onRemove={handleRemoveClient}
-        onPreview={
-          currentRole === "owner" || currentRole === "admin"
-            ? handlePreviewAsClient
-            : undefined
-        }
-        disabled={isArchived}
-      />
-
-      <div className="space-y-2 pt-4">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] flex items-center gap-1.5">
-          <Calendar size={12} />
-          Timeline
-        </h2>
-        <DateField
-          label="Start"
-          value={project.startDate ? project.startDate.slice(0, 10) : ""}
-          onChange={(val) => handleDateChange("startDate", val)}
-          disabled={isArchived}
-        />
-        <DateField
-          label="End"
-          value={project.endDate ? project.endDate.slice(0, 10) : ""}
-          onChange={(val) => handleDateChange("endDate", val)}
-          disabled={isArchived}
-        />
-        {project.endDate && !isArchived && (() => {
-          const now = new Date();
-          const end = new Date(project.endDate);
-          const diffMs = end.getTime() - now.getTime();
-          const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-          if (diffDays < 0) {
-            return (
-              <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-                {Math.abs(diffDays)} day{Math.abs(diffDays) !== 1 ? "s" : ""} overdue
-              </p>
-            );
-          }
-          if (diffDays === 0) {
-            return <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Due today</p>;
-          }
-          return (
-            <p className={`text-xs font-medium ${diffDays <= 7 ? "text-amber-600 dark:text-amber-400" : "text-[var(--muted-foreground)]"}`}>
-              {diffDays} day{diffDays !== 1 ? "s" : ""} left
-            </p>
-          );
-        })()}
-      </div>
-
-      {(currentRole === "owner" || currentRole === "admin") && (
-        <div id="default-rate" className="space-y-2 pt-4 scroll-mt-24">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-            Default rate
-          </h2>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-[var(--muted-foreground)] shrink-0">$/hour</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              placeholder="Member rate"
-              defaultValue={
-                project.hourlyRateCents != null
-                  ? (project.hourlyRateCents / 100).toString()
-                  : ""
-              }
-              key={project.hourlyRateCents ?? "empty"}
-              onBlur={(e) => handleRateChange(e.target.value)}
-              disabled={isArchived}
-              className="w-[140px] sm:w-[170px] text-sm bg-transparent border border-[var(--border)] rounded px-2 py-1 text-right disabled:opacity-50"
-            />
-          </div>
-          <p className="text-xs text-[var(--muted-foreground)]">
-            Overrides each member&apos;s default rate for time on this project.
-          </p>
-        </div>
-      )}
-
-      {isOwner && (
-        <>
-          <div className="border-t border-[var(--border)] mt-1" />
-          <button
-            onClick={handleDelete}
-            className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 transition-colors pt-1"
-          >
-            <Trash2 size={13} />
-            Delete project
-          </button>
-        </>
-      )}
-    </>
-  );
 
   const currentStatusObj = statuses.find((s) => s.slug === project.status);
 
   const tabBar = (
-    <div className="relative mb-6 -mx-1">
-      <div className="flex overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            data-testid={`project-tab-${tab.id}`}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors relative after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:rounded-full ${
-              activeTab === tab.id
-                ? "text-[var(--primary)] after:bg-[var(--primary)]"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] after:bg-transparent"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+    <div className="relative border-b border-[var(--border)] -mx-1">
+      <div className="flex overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] gap-1">
+        {tabs.map((tab) => {
+          const count =
+            tab.id === "files" && project.files?.length
+              ? ` (${project.files.length})`
+              : "";
+          return (
+            <button
+              key={tab.id}
+              data-testid={`project-tab-${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors relative after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:rounded-full ${
+                activeTab === tab.id
+                  ? "text-[var(--primary)] after:bg-[var(--primary)] font-semibold"
+                  : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] after:bg-transparent"
+              }`}
+            >
+              {tab.label}
+              {count}
+            </button>
+          );
+        })}
       </div>
-      <div className="absolute bottom-0 left-0 right-0 h-px bg-[var(--border)] -z-10" />
     </div>
   );
 
@@ -551,7 +459,10 @@ export default function ProjectDetailPage() {
         <UpdatesSection
           projectId={id}
           isArchived={isArchived}
-          onFileChange={loadProject}
+          onFileChange={() => {
+            loadProject();
+            loadBillingStats();
+          }}
           currentUserId={currentUserId}
           currentRole={currentRole}
         />
@@ -561,7 +472,10 @@ export default function ProjectDetailPage() {
           projectId={id}
           isArchived={isArchived}
           files={project.files}
-          onFileChange={loadProject}
+          onFileChange={() => {
+            loadProject();
+            loadBillingStats();
+          }}
           projectClients={clients.filter((c) => assignedIds.has(c.userId))}
           currentRole={currentRole}
         />
@@ -579,138 +493,311 @@ export default function ProjectDetailPage() {
   );
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-8 items-start">
-      {/* Left sidebar — project metadata */}
-      <aside className="w-full lg:w-72 lg:shrink-0 lg:sticky lg:top-8 space-y-5 lg:space-y-6">
-        {error && (
-          <div className="p-3 text-sm text-rose-700 dark:text-rose-300 bg-rose-500/15 rounded-lg">{error}</div>
-        )}
+    <div className="space-y-6">
+      {error && (
+        <div className="p-3 text-sm text-rose-700 dark:text-rose-300 bg-rose-500/15 rounded-lg">{error}</div>
+      )}
 
-        {isArchived && (
-          <div className="p-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-            <Archive size={14} />
-            Archived. Editing disabled.
-          </div>
-        )}
-
-        <div className="flex items-start justify-between gap-2">
-          <h1 className="text-lg font-bold leading-tight">{project.name}</h1>
-          <div className="shrink-0 flex items-center gap-1.5 flex-wrap">
-            {(currentRole === "owner" || currentRole === "admin") && (
-              <button
-                type="button"
-                onClick={() => {
-                  const assigned = clients.filter((c) => assignedIds.has(c.userId));
-                  if (assigned.length > 0) {
-                    handlePreviewAsClient(
-                      assigned[0].userId,
-                      assigned[0].user?.name || "Client",
-                      assigned[0].user?.email || "",
-                    );
-                  } else {
-                    handlePreviewAsClient(
-                      currentUserId || "",
-                      "Client Preview",
-                      "client@preview.local",
-                    );
-                  }
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted)] hover:border-[var(--primary)] transition-colors"
-                title="Preview this project as a client"
-              >
-                <Eye size={13} className="text-[var(--primary)]" />
-                Preview Portal
-              </button>
-            )}
-            {(currentRole === "owner" || currentRole === "admin") && (
-              <button
-                onClick={openDuplicateModal}
-                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
-              >
-                <Copy size={13} />
-                Duplicate
-              </button>
-            )}
-            {isArchived ? (
-              <button
-                onClick={handleUnarchive}
-                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs hover:bg-[var(--muted)] transition-colors"
-              >
-                <ArchiveRestore size={13} />
-                Unarchive
-              </button>
-            ) : (
-              <button
-                onClick={handleArchive}
-                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
-              >
-                <Archive size={13} />
-                Archive
-              </button>
-            )}
-          </div>
+      {isArchived && (
+        <div className="p-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+          <Archive size={14} />
+          Archived. Editing disabled.
         </div>
-        {project.description && (
-          <p className="text-xs text-[var(--muted-foreground)] leading-relaxed -mt-1">
-            {project.description}
-          </p>
-        )}
+      )}
 
-        {/* Mobile: collapsible details card */}
-        <div className="lg:hidden">
-          <details className="group border border-[var(--border)] rounded-xl">
-            <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
-              <div className="flex items-center gap-2">
-                {currentStatusObj && (
-                  <span
-                    className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-                    style={{ backgroundColor: currentStatusObj.color, color: "#fff" }}
-                  >
-                    {currentStatusObj.name}
-                  </span>
-                )}
-                <span className="text-xs text-[var(--muted-foreground)]">Details</span>
-              </div>
-              <ChevronDown
-                size={14}
-                className="text-[var(--muted-foreground)] transition-transform group-open:rotate-180 shrink-0"
-              />
-            </summary>
-            <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)] pt-3">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-2">
-                  Status
+      {/* Breadcrumb */}
+      <nav aria-label="Breadcrumb" className="text-xs text-[var(--muted-foreground)] flex items-center gap-1.5">
+        <Link href="/dashboard/projects" className="hover:text-[var(--foreground)] transition-colors">
+          Projects
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span className="text-[var(--foreground)] font-medium truncate">{project.name}</span>
+      </nav>
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)]">
+            {project.name}
+          </h1>
+          <p className="text-xs sm:text-sm text-[var(--muted-foreground)] mt-1">
+            {assignedClients.length > 0 && (
+              <span>{assignedClients.map((c) => c.user.name).join(", ")} &middot; </span>
+            )}
+            {project.startDate && (
+              <span>Started {formatDateDisplay(project.startDate.slice(0, 10))} &middot; </span>
+            )}
+            {project.endDate && (
+              <span>Due {formatDateDisplay(project.endDate.slice(0, 10))}</span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {(currentRole === "owner" || currentRole === "admin") && (
+            <button
+              type="button"
+              onClick={() => {
+                if (assignedClients.length > 0) {
+                  handlePreviewAsClient(
+                    assignedClients[0].userId,
+                    assignedClients[0].user?.name || "Client",
+                    assignedClients[0].user?.email || "",
+                  );
+                } else {
+                  handlePreviewAsClient(
+                    currentUserId || "",
+                    "Client Preview",
+                    "client@preview.local",
+                  );
+                }
+              }}
+              className="inline-flex items-center gap-2 px-3.5 py-2 border border-[var(--border)] rounded-lg text-xs sm:text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] hover:border-[var(--primary)] transition-all shadow-sm"
+              title="Preview this project as a client"
+            >
+              <Eye size={15} className="text-[var(--primary)]" />
+              <span>View as client</span>
+            </button>
+          )}
+          {(currentRole === "owner" || currentRole === "admin") && (
+            <button
+              type="button"
+              onClick={openDuplicateModal}
+              className="inline-flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-xs sm:text-sm font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
+            >
+              <Copy size={14} />
+              <span>Duplicate</span>
+            </button>
+          )}
+          {isArchived ? (
+            <button
+              type="button"
+              onClick={handleUnarchive}
+              className="inline-flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-xs sm:text-sm font-medium hover:bg-[var(--muted)] transition-colors"
+            >
+              <ArchiveRestore size={14} />
+              <span>Unarchive</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleArchive}
+              className="inline-flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-xs sm:text-sm font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
+            >
+              <Archive size={14} />
+              <span>Archive</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Status Pipeline */}
+      <div>
+        <StatusPipeline
+          statuses={statuses}
+          currentStatus={project.status}
+          onStatusChange={handleStatusChange}
+          disabled={isArchived}
+        />
+      </div>
+
+      {/* Tab Navigation */}
+      {tabBar}
+
+      {/* Main 2-Column Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Left Column (2 cols) */}
+        <div className="lg:col-span-2 min-w-0 space-y-6">
+          {tabContent}
+        </div>
+
+        {/* Right Column (1 col) */}
+        <aside className="space-y-6 lg:sticky lg:top-6 min-w-0">
+          {/* Clients Card */}
+          <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+              Clients{assignedIds.size > 0 && ` (${assignedIds.size})`}
+            </h2>
+            <ClientAssignment
+              clients={clients}
+              assignedIds={assignedIds}
+              onToggle={handleClientToggle}
+              onRemove={handleRemoveClient}
+              onPreview={
+                currentRole === "owner" || currentRole === "admin"
+                  ? handlePreviewAsClient
+                  : undefined
+              }
+              disabled={isArchived}
+            />
+            <p className="text-xs text-[var(--muted-foreground)]">
+              They see this project in their client portal
+            </p>
+          </section>
+
+          {/* Timeline Card */}
+          <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] flex items-center gap-1.5">
+              <Calendar size={13} />
+              Timeline
+            </h2>
+            <DateField
+              label="Start"
+              value={project.startDate ? project.startDate.slice(0, 10) : ""}
+              onChange={(val) => handleDateChange("startDate", val)}
+              disabled={isArchived}
+            />
+            <DateField
+              label="Due"
+              value={project.endDate ? project.endDate.slice(0, 10) : ""}
+              onChange={(val) => handleDateChange("endDate", val)}
+              disabled={isArchived}
+            />
+            {project.startDate && project.endDate && (() => {
+              const start = new Date(project.startDate).getTime();
+              const end = new Date(project.endDate).getTime();
+              const now = Date.now();
+              const total = Math.max(1, end - start);
+              const elapsed = Math.min(total, Math.max(0, now - start));
+              const pct = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+              return (
+                <div className="w-full bg-[var(--muted)] rounded-full h-1.5 overflow-hidden my-1">
+                  <div
+                    className="bg-[var(--primary)] h-full rounded-full transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              );
+            })()}
+            {project.endDate && !isArchived && (() => {
+              const now = new Date();
+              const end = new Date(project.endDate);
+              const diffMs = end.getTime() - now.getTime();
+              const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+              if (diffDays < 0) {
+                return (
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                    {Math.abs(diffDays)} day{Math.abs(diffDays) !== 1 ? "s" : ""} overdue
+                  </p>
+                );
+              }
+              if (diffDays === 0) {
+                return <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Due today</p>;
+              }
+              return (
+                <p className={`text-xs font-medium ${diffDays <= 7 ? "text-amber-600 dark:text-amber-400" : "text-[var(--muted-foreground)]"}`}>
+                  {diffDays} day{diffDays !== 1 ? "s" : ""} left
                 </p>
-                <StatusPipeline
-                  statuses={statuses}
-                  currentStatus={project.status}
-                  onStatusChange={handleStatusChange}
+              );
+            })()}
+          </section>
+
+          {/* Billing Card */}
+          {(currentRole === "owner" || currentRole === "admin") && (
+            <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-2.5">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                Billing
+              </h2>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-[var(--muted-foreground)]">Invoiced</span>
+                <span className="font-semibold text-[var(--foreground)]">
+                  {formatCurrency(billingStats?.totalAmount ?? 0, currency)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-[var(--muted-foreground)]">Paid</span>
+                <span className="text-[var(--foreground)]">
+                  {formatCurrency(billingStats?.paidAmount ?? 0, currency)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center px-2.5 py-1.5 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 font-medium text-sm">
+                <span>Outstanding</span>
+                <span className="font-bold">
+                  {formatCurrency(billingStats?.outstandingAmount ?? 0, currency)}
+                </span>
+              </div>
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("invoices")}
+                  className="text-xs font-semibold text-[var(--primary)] hover:underline"
+                >
+                  + New invoice
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* Project Details Card */}
+          <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+              Project Details
+            </h2>
+
+            {/* Labels */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--muted-foreground)] flex items-center gap-1.5">
+                  <Tag size={12} />
+                  Labels
+                </span>
+                <LabelPicker
+                  labels={orgLabels}
+                  assigned={projectLabelIds}
+                  onToggle={handleLabelToggle}
                   disabled={isArchived}
                 />
               </div>
-              {sidebarDetails}
+              {projectLabelIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {(project.labels ?? []).map((l) => (
+                    <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                  ))}
+                </div>
+              )}
             </div>
-          </details>
-        </div>
 
-        {/* Desktop: show status + details inline */}
-        <div className="hidden lg:block">
-          <StatusPipeline
-            statuses={statuses}
-            currentStatus={project.status}
-            onStatusChange={handleStatusChange}
-            disabled={isArchived}
-          />
-        </div>
-        <div className="hidden lg:contents">
-          {sidebarDetails}
-        </div>
-      </aside>
+            {/* Default Rate */}
+            {(currentRole === "owner" || currentRole === "admin") && (
+              <div className="space-y-1.5 pt-2 border-t border-[var(--border)]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-[var(--muted-foreground)]">Default rate ($/hr)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="Member rate"
+                    defaultValue={
+                      project.hourlyRateCents != null
+                        ? (project.hourlyRateCents / 100).toString()
+                        : ""
+                    }
+                    key={project.hourlyRateCents ?? "empty"}
+                    onBlur={(e) => handleRateChange(e.target.value)}
+                    disabled={isArchived}
+                    className="w-24 text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 text-right disabled:opacity-50"
+                  />
+                </div>
+                <p className="text-[11px] text-[var(--muted-foreground)]">
+                  Overrides each member&apos;s default rate for this project.
+                </p>
+              </div>
+            )}
 
-      {/* Tabbed content area */}
-      <div className="flex-1 min-w-0">
-        {tabBar}
-        {tabContent}
+            {/* Delete Project */}
+            {isOwner && (
+              <div className="pt-2 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="flex items-center gap-1.5 text-xs text-rose-600 hover:text-rose-700 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  Delete project
+                </button>
+              </div>
+            )}
+          </section>
+        </aside>
       </div>
 
       {duplicateOpen && (

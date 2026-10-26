@@ -281,65 +281,45 @@ export function UpdatesSection({
   return (
     <div>
       {!isArchived && (
-        <div className="mb-4">
-          <button
-            onClick={() => setShowCompose(true)}
-            className="flex items-center gap-2 px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90"
-          >
-            <Plus size={14} />
-            Add Update
-          </button>
-        </div>
-      )}
-
-      {showCompose && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowCompose(false);
-              setNewContent("");
-              setNewAttachment(null);
-              setDraftStats(null);
-            }
-          }}
-        >
-          <div className="bg-[var(--background)] rounded-xl shadow-lg w-full max-w-lg mx-4 p-6 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold">Post Update</h3>
-              {isPrivileged && !newContent.trim() && (
-                <button
-                  type="button"
-                  onClick={() => void loadWeeklyDraft()}
-                  disabled={drafting}
-                  className="flex items-center gap-1.5 text-sm text-[var(--primary)] hover:underline disabled:opacity-50"
-                >
-                  <Sparkles size={14} />
-                  {drafting ? "Drafting..." : "Draft from this week"}
-                </button>
-              )}
-            </div>
-            <textarea
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              placeholder="Write a status update..."
-              maxLength={5000}
-              rows={draftStats ? 10 : 4}
-              autoFocus
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
-            />
-            {draftStats && (
-              <p className="text-xs text-[var(--muted-foreground)]" data-testid="weekly-draft-hint">
-                Drafted from {draftStats.completedTasks} finished {draftStats.completedTasks === 1 ? "task" : "tasks"} and{" "}
-                {draftStats.newFiles} new {draftStats.newFiles === 1 ? "file" : "files"}. Edit it before posting: every
-                client on this project gets it by email.
-                {draftStats.hoursLogged > 0 && ` The ${draftStats.hoursLogged}h logged this week is left out.`}
-              </p>
+        <div className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-4 sm:p-5 space-y-3 mb-6 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="update-content" className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+              Write an update
+            </label>
+            {isPrivileged && !newContent.trim() && (
+              <button
+                type="button"
+                onClick={() => void loadWeeklyDraft()}
+                disabled={drafting}
+                className="flex items-center gap-1.5 text-xs text-[var(--primary)] hover:underline disabled:opacity-50 font-medium"
+              >
+                <Sparkles size={13} />
+                {drafting ? "Drafting..." : "Draft from this week"}
+              </button>
             )}
+          </div>
+          <textarea
+            id="update-content"
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            placeholder="Write an update for your client…"
+            maxLength={5000}
+            rows={draftStats ? 8 : 3}
+            className="w-full px-3.5 py-2.5 border border-[var(--border)] rounded-xl bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+          />
+          {draftStats && (
+            <p className="text-xs text-[var(--muted-foreground)]" data-testid="weekly-draft-hint">
+              Drafted from {draftStats.completedTasks} finished {draftStats.completedTasks === 1 ? "task" : "tasks"} and{" "}
+              {draftStats.newFiles} new {draftStats.newFiles === 1 ? "file" : "files"}. Edit it before posting: every
+              client on this project gets it by email.
+              {draftStats.hoursLogged > 0 && ` The ${draftStats.hoursLogged}h logged this week is left out.`}
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">
             <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-sm cursor-pointer hover:bg-[var(--muted)] transition-colors">
-                <Paperclip size={14} />
-                Attach File
+              <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs cursor-pointer hover:bg-[var(--muted)] transition-colors">
+                <Paperclip size={13} />
+                Attach file
                 <input
                   type="file"
                   className="hidden"
@@ -359,24 +339,14 @@ export function UpdatesSection({
                 </span>
               )}
             </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowCompose(false);
-                  setNewContent("");
-                  setNewAttachment(null);
-                  setDraftStats(null);
-                }}
-                className="px-4 py-1.5 border border-[var(--border)] rounded-lg text-sm hover:bg-[var(--muted)] transition-colors"
-              >
-                Cancel
-              </button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-[var(--muted-foreground)]">Visible to client</span>
               <button
                 onClick={handlePost}
                 disabled={posting || !newContent.trim()}
-                className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs sm:text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {posting ? "Posting..." : "Post"}
+                {posting ? "Posting…" : "Post Update"}
               </button>
             </div>
           </div>

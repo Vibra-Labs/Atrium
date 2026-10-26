@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en"><head><style data-dc-design-system-vars="">@layer{:root{--primary:#006b68;--primary-hover:#005654;--on-primary:#ffffff;--primary-subtle:#e2f0ee;--primary-subtle-foreground:#005654;--ring:#006b68;--brass:#c99a3c;--on-brass:#2a1e05;--brass-text:#7f5d0c;--brass-surface:#f7efdc;--background:#ffffff;--surface-raised:#ffffff;--muted:#f6f5f1;--muted-strong:#eceae4;--foreground:#15201f;--muted-foreground:#5c6664;--border:#e3e1da;--input-border:#8e9593;--danger:#c4321f;--danger-surface:#fde8e6;--success:#167347;--success-surface:#dff3e8;--pro:#7f5d0c;--pro-surface:#f7efdc;--status-not-started:#8a9290;--status-not-started-surface:#eceae4;--status-not-started-foreground:#4f5755;--status-in-progress:#2f6fe4;--status-in-progress-surface:#e5edfd;--status-in-progress-foreground:#1d4ed8;--status-in-review:#7c4ddb;--status-in-review-surface:#efe9fc;--status-in-review-foreground:#5b2bc2;--status-completed:#1f9d63;--status-completed-surface:#dff3e8;--status-completed-foreground:#166a45;--status-cancelled:#d9452f;--status-cancelled-surface:#fde8e6;--status-cancelled-foreground:#b42318;--color-primary:#006b68;--color-primary-light:#005654;--color-accent:#c99a3c;--color-accent-dark:#7f5d0c;--color-background:#ffffff;--color-background-secondary:#f6f5f1;--color-background-card:#ffffff;--color-foreground:#15201f;--color-foreground-secondary:#5c6664;--color-border:#e3e1da;--blog-pros:#167347;--blog-cons:#7f5d0c;--stripe:#635bff;--shadow-sm:0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);--shadow-md:0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);--shadow-lg:0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);--shadow-xl:0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--space-24:96px;--space-32:128px;--container:1152px;--radius-sm:4px;--radius-md:6px;--radius:0.5rem;--radius-xl:12px;--radius-2xl:16px;--radius-full:9999px;--font-site:"Inter", system-ui, -apple-system, sans-serif;--font-app:system-ui, -apple-system, sans-serif;--font-mono:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;--text-display:800 72px/1.25 var(--font-site);--text-heading-2:700 36px/40px var(--font-site);--text-heading-3:700 20px/28px var(--font-site);--text-price:700 36px/40px var(--font-site);--text-lead:400 20px/1.625 var(--font-site);--text-body-lg:400 18px/28px var(--font-site);--text-body-sm:400 14px/1.625 var(--font-site);--text-eyebrow:600 12px/16px var(--font-site);--text-app-title:600 20px/28px var(--font-app);--text-app-body:400 14px/20px var(--font-app);--text-app-label:500 12px/16px var(--font-app);--text-app-micro:600 10px/16px var(--font-app);}}</style>
+
+
+<meta charset="utf-8">
+<title>Atrium · Overview</title>
+<script src="9aae31a1-9f83-42e9-b521-b45fbdb2fddb"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("c3d76a94-1b6e-46c4-93ef-2801651f22e1") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("e82f9862-1e9c-470b-a489-fb9e932483e9") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("42cbf0a8-e41b-4465-a982-7aed2b9aae77") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("99aea48b-0cc2-43c8-bb7e-ebd3e516b59a") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("1332f0d6-a7d6-440d-a534-521b74567fe7") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("bd6238cc-d9ac-4d00-b822-ffe2ca994942") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("88439104-4017-4095-aab6-7d8936180b31") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("c3d76a94-1b6e-46c4-93ef-2801651f22e1") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("e82f9862-1e9c-470b-a489-fb9e932483e9") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("42cbf0a8-e41b-4465-a982-7aed2b9aae77") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("99aea48b-0cc2-43c8-bb7e-ebd3e516b59a") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("1332f0d6-a7d6-440d-a534-521b74567fe7") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("bd6238cc-d9ac-4d00-b822-ffe2ca994942") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("88439104-4017-4095-aab6-7d8936180b31") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("c3d76a94-1b6e-46c4-93ef-2801651f22e1") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("e82f9862-1e9c-470b-a489-fb9e932483e9") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("42cbf0a8-e41b-4465-a982-7aed2b9aae77") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("99aea48b-0cc2-43c8-bb7e-ebd3e516b59a") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("1332f0d6-a7d6-440d-a534-521b74567fe7") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("bd6238cc-d9ac-4d00-b822-ffe2ca994942") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("88439104-4017-4095-aab6-7d8936180b31") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("c3d76a94-1b6e-46c4-93ef-2801651f22e1") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("e82f9862-1e9c-470b-a489-fb9e932483e9") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("42cbf0a8-e41b-4465-a982-7aed2b9aae77") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("99aea48b-0cc2-43c8-bb7e-ebd3e516b59a") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("1332f0d6-a7d6-440d-a534-521b74567fe7") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("bd6238cc-d9ac-4d00-b822-ffe2ca994942") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("88439104-4017-4095-aab6-7d8936180b31") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("c3d76a94-1b6e-46c4-93ef-2801651f22e1") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("e82f9862-1e9c-470b-a489-fb9e932483e9") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("42cbf0a8-e41b-4465-a982-7aed2b9aae77") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("99aea48b-0cc2-43c8-bb7e-ebd3e516b59a") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("1332f0d6-a7d6-440d-a534-521b74567fe7") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("bd6238cc-d9ac-4d00-b822-ffe2ca994942") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("88439104-4017-4095-aab6-7d8936180b31") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+body{margin:0;background:#ffffff;color:#15201f}
+*{box-sizing:border-box}
+a{color:#2449c9}a:hover{color:#1a3696}
+.nav:hover{background:#eceae4 !important}
+.row:hover{background:#f6f5f1 !important}
+.btn-primary:hover{background:#1a3696 !important}
+button:focus-visible,a:focus-visible{outline:2px solid #2449c9;outline-offset:2px}
+</style>
+</helmet>
+
+<div style="width: 100%; min-height: 1000px; display: flex; flex-wrap: wrap; background: #ffffff; color: #15201f; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px;">
+
+<!-- SIDEBAR -->
+<aside style="flex: 1 1 248px; max-width: 264px; min-height: 1000px; padding: 16px 12px; background: #f6f5f1; border-right: 1px solid #e3e1da; display: flex; flex-direction: column; gap: 4px;">
+<button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 10px; background: transparent; font: inherit; color: #15201f; cursor: pointer; text-align: left;">
+<span style="width: 32px; height: 32px; border-radius: 8px; background: #2449c9; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">NS</span>
+<span style="flex: 1; min-width: 0;"><span style="display: block; font-weight: 600;">Northwind Studio</span><span style="display: block; font-size: 12px; color: #5c6664;">Agency workspace</span></span>
+<svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="#5c6664" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+</button>
+
+<button type="button" style="margin: 12px 0 8px; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid #8e9593; border-radius: 8px; background: #ffffff; font: inherit; color: #5c6664; cursor: pointer;">
+<svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+<span style="flex: 1; text-align: left;">Search</span>
+<span style="font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #eceae4; color: #4f5755;">⌘K</span>
+</button>
+
+<a class="nav" href="#" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; background: #e9edfa; color: #1a3696; font-weight: 600; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Overview</a>
+<a class="nav" href="Project.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path><path d="M8 10v4"></path><path d="M12 10v2"></path><path d="M16 10v6"></path></svg>Projects<span style="margin-left: auto; font-size: 12px; color: #5c6664;">12</span></a>
+<a class="nav" href="#" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M3 10h18"></path></svg>Calendar</a>
+<a class="nav" href="#" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Contacts</a>
+<a class="nav" href="#" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>Reports</a>
+<a class="nav" href="Branding.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Settings</a>
+
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 12px;">
+<div style="padding: 14px; border-radius: 12px; background: #ffffff; border: 1px solid #e3e1da;">
+<div style="display: flex; align-items: center; gap: 8px;">
+<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 6px; background: #f7efdc; color: #7f5d0c; font-size: 10px; font-weight: 600; letter-spacing: 0.03em;"><svg aria-hidden="true" width="9" height="9" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"></path></svg>PRO</span>
+<span style="font-size: 13px; font-weight: 600;">Trial · 9 days left</span>
+</div>
+<p style="margin: 6px 0 0; font-size: 12px; line-height: 18px; color: #5c6664;">Custom domain and unlimited projects stay on with Pro.</p>
+<a href="#" style="display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none;">Upgrade to Pro</a>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px;">
+<span style="width: 32px; height: 32px; border-radius: 50%; background: #eceae4; color: #4f5755; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px;">EC</span>
+<span style="flex: 1; min-width: 0;"><span style="display: block; font-weight: 600;">Ed Cotto</span><span style="display: block; font-size: 12px; color: #5c6664;">Owner</span></span>
+</div>
+</div>
+</aside>
+
+<!-- MAIN -->
+<main style="flex: 999 1 560px; min-width: 0; padding: 28px 40px 48px; display: flex; flex-direction: column; gap: 28px;">
+
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+<div>
+<p style="margin: 0; font-size: 13px; color: #5c6664;">Friday, October 23</p>
+<h1 style="margin: 4px 0 0; font-size: 26px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em;">Good evening, Ed</h1>
+</div>
+<div style="display: flex; align-items: center; gap: 10px;">
+<button type="button" aria-label="Notifications" style="position: relative; width: 40px; height: 40px; border: 1px solid #8e9593; border-radius: 8px; background: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #4f5755;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg><span style="position: absolute; top: 8px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: #c4321f; box-shadow: 0 0 0 2px #ffffff;"></span></button>
+<button class="btn-primary" type="button" style="display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 16px; border: 0; border-radius: 8px; background: #2449c9; color: #ffffff; font: inherit; font-weight: 600; cursor: pointer;"><svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>New Project</button>
+</div>
+</div>
+
+<!-- stats -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+<div style="padding: 18px 20px; border: 1px solid #e3e1da; border-radius: 12px;">
+<p style="margin: 0; font-size: 13px; color: #5c6664;">Active projects</p>
+<p style="margin: 6px 0 0; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">12</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #5c6664;">5 in progress · 2 in review</p>
+</div>
+<div style="padding: 18px 20px; border: 1px solid #e3e1da; border-radius: 12px;">
+<p style="margin: 0; font-size: 13px; color: #5c6664;">Waiting on clients</p>
+<p style="margin: 6px 0 0; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">3</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #5c6664;">2 reviews · 1 signature</p>
+</div>
+<div style="padding: 18px 20px; border: 1px solid #e3e1da; border-radius: 12px;">
+<p style="margin: 0; font-size: 13px; color: #5c6664;">Completed this month</p>
+<p style="margin: 6px 0 0; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">4</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #167347;">+2 vs September</p>
+</div>
+<div style="padding: 18px 20px; border-radius: 12px; background: #f7efdc;">
+<p style="margin: 0; font-size: 13px; color: #735409;">Outstanding</p>
+<p style="margin: 6px 0 0; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">$8,450</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #735409;">4 open invoices · 1 overdue</p>
+</div>
+</div>
+
+<div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+<!-- left column -->
+<div style="flex: 2 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 24px;">
+
+<section style="border: 1px solid #e3e1da; border-radius: 12px;">
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #e3e1da;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Needs your attention</h2>
+<span style="font-size: 12px; color: #5c6664;">3 items</span>
+</div>
+<div class="row" style="display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid #e3e1da;">
+<span style="width: 36px; height: 36px; flex: none; border-radius: 9999px; background: #efe9fc; color: #5b2bc2; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
+<div style="flex: 1; min-width: 0;"><p style="margin: 0; font-weight: 500;">Homepage v2 is waiting on Harbor &amp; Co's review</p><p style="margin: 2px 0 0; font-size: 12px; color: #5c6664;">Website redesign · sent 2 days ago</p></div>
+<a href="#" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none; white-space: nowrap;">Send reminder</a>
+</div>
+<div class="row" style="display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid #e3e1da;">
+<span style="width: 36px; height: 36px; flex: none; border-radius: 9999px; background: #fde8e6; color: #b42318; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg></span>
+<div style="flex: 1; min-width: 0;"><p style="margin: 0; font-weight: 500;">Invoice #1039 is 6 days overdue</p><p style="margin: 2px 0 0; font-size: 12px; color: #5c6664;">Lumen Bakery · $1,200.00</p></div>
+<a href="#" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none; white-space: nowrap;">View invoice</a>
+</div>
+<div class="row" style="display: flex; align-items: center; gap: 14px; padding: 14px 20px;">
+<span style="width: 36px; height: 36px; flex: none; border-radius: 9999px; background: #e5edfd; color: #1d4ed8; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.38 3.62a1 1 0 0 1 3 3L7.37 18.64a2 2 0 0 1-.86.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.86z"></path></svg></span>
+<div style="flex: 1; min-width: 0;"><p style="margin: 0; font-weight: 500;">Statement of work not signed yet</p><p style="margin: 2px 0 0; font-size: 12px; color: #5c6664;">Brand refresh · Ofield Dental</p></div>
+<a href="#" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none; white-space: nowrap;">Resend</a>
+</div>
+</section>
+
+<section style="border: 1px solid #e3e1da; border-radius: 12px; overflow: hidden;">
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #e3e1da;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Recent projects</h2>
+<a href="Project.dc.html" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none;">View all</a>
+</div>
+<div style="overflow-x: auto;">
+<sc-raw-table style="width: 100%; min-width: 560px; border-collapse: collapse; font-size: 14px;">
+<sc-raw-thead><sc-raw-tr style="text-align: left; color: #5c6664; font-size: 12px;">
+<sc-raw-th style="padding: 10px 20px; font-weight: 500;">Project</sc-raw-th><sc-raw-th style="padding: 10px 12px; font-weight: 500;">Client</sc-raw-th><sc-raw-th style="padding: 10px 12px; font-weight: 500;">Status</sc-raw-th><sc-raw-th style="padding: 10px 12px; font-weight: 500;">Progress</sc-raw-th><sc-raw-th style="padding: 10px 20px; font-weight: 500; text-align: right;">Due</sc-raw-th>
+</sc-raw-tr></sc-raw-thead>
+<sc-raw-tbody>
+<sc-raw-tr class="row" style="border-top: 1px solid #e3e1da;"><sc-raw-td style="padding: 12px 20px; font-weight: 600;"><a href="Project.dc.html" style="color: #15201f; text-decoration: none;">Website redesign</a></sc-raw-td><sc-raw-td style="padding: 12px; color: #4f5755;">Harbor &amp; Co</sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; background: #e5edfd; color: #1d4ed8; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2f6fe4;"></span>In Progress</span></sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: block; width: 120px; height: 6px; border-radius: 9999px; background: #eceae4;"><span style="display: block; width: 72px; height: 6px; border-radius: 9999px; background: #2449c9;"></span></span></sc-raw-td><sc-raw-td style="padding: 12px 20px; text-align: right; color: #4f5755;">Nov 19</sc-raw-td></sc-raw-tr>
+<sc-raw-tr class="row" style="border-top: 1px solid #e3e1da;"><sc-raw-td style="padding: 12px 20px; font-weight: 600;">Brand refresh</sc-raw-td><sc-raw-td style="padding: 12px; color: #4f5755;">Ofield Dental</sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; background: #efe9fc; color: #5b2bc2; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7c4ddb;"></span>In Review</span></sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: block; width: 120px; height: 6px; border-radius: 9999px; background: #eceae4;"><span style="display: block; width: 96px; height: 6px; border-radius: 9999px; background: #2449c9;"></span></span></sc-raw-td><sc-raw-td style="padding: 12px 20px; text-align: right; color: #4f5755;">Nov 4</sc-raw-td></sc-raw-tr>
+<sc-raw-tr class="row" style="border-top: 1px solid #e3e1da;"><sc-raw-td style="padding: 12px 20px; font-weight: 600;">Online ordering</sc-raw-td><sc-raw-td style="padding: 12px; color: #4f5755;">Lumen Bakery</sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; background: #e5edfd; color: #1d4ed8; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2f6fe4;"></span>In Progress</span></sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: block; width: 120px; height: 6px; border-radius: 9999px; background: #eceae4;"><span style="display: block; width: 40px; height: 6px; border-radius: 9999px; background: #2449c9;"></span></span></sc-raw-td><sc-raw-td style="padding: 12px 20px; text-align: right; color: #4f5755;">Dec 12</sc-raw-td></sc-raw-tr>
+<sc-raw-tr class="row" style="border-top: 1px solid #e3e1da;"><sc-raw-td style="padding: 12px 20px; font-weight: 600;">Q4 campaign</sc-raw-td><sc-raw-td style="padding: 12px; color: #4f5755;">Sable Outdoor</sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; background: #eceae4; color: #4f5755; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #8a9290;"></span>Not Started</span></sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: block; width: 120px; height: 6px; border-radius: 9999px; background: #eceae4;"></span></sc-raw-td><sc-raw-td style="padding: 12px 20px; text-align: right; color: #4f5755;">Jan 8</sc-raw-td></sc-raw-tr>
+<sc-raw-tr class="row" style="border-top: 1px solid #e3e1da;"><sc-raw-td style="padding: 12px 20px; font-weight: 600;">Annual report</sc-raw-td><sc-raw-td style="padding: 12px; color: #4f5755;">Kite Foundation</sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; background: #dff3e8; color: #166a45; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #1f9d63;"></span>Completed</span></sc-raw-td><sc-raw-td style="padding: 12px;"><span style="display: block; width: 120px; height: 6px; border-radius: 9999px; background: #1f9d63;"></span></sc-raw-td><sc-raw-td style="padding: 12px 20px; text-align: right; color: #4f5755;">Oct 20</sc-raw-td></sc-raw-tr>
+</sc-raw-tbody>
+</sc-raw-table>
+</div>
+</section>
+</div>
+
+<!-- right column -->
+<div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 24px;">
+<section style="border: 1px solid #e3e1da; border-radius: 12px; padding: 16px 20px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Client activity</h2>
+<ol style="margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 16px;">
+<li style="display: flex; gap: 12px;"><span style="width: 28px; height: 28px; flex: none; border-radius: 50%; background: #eceae4; color: #4f5755; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">JL</span><div><p style="margin: 0;"><strong style="font-weight: 600;">Jordan Lee</strong> commented on <strong style="font-weight: 600;">homepage-v2.pdf</strong></p><p style="margin: 2px 0 0; font-size: 12px; color: #5c6664;">Harbor &amp; Co · 14 min ago</p></div></li>
+<li style="display: flex; gap: 12px;"><span style="width: 28px; height: 28px; flex: none; border-radius: 50%; background: #dff3e8; color: #166a45; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><div><p style="margin: 0;"><strong style="font-weight: 600;">Kite Foundation</strong> paid <strong style="font-weight: 600;">Invoice #1036</strong></p><p style="margin: 2px 0 0; font-size: 12px; color: #5c6664;">$3,200.00 via Stripe · 2 h ago</p></div></li>
+<li style="display: flex; gap: 12px;"><span style="width: 28px; height: 28px; flex: none; border-radius: 50%; background: #eceae4; color: #4f5755; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">MR</span><div><p style="margin: 0;"><strong style="font-weight: 600;">Maya Ruiz</strong> approved <strong style="font-weight: 600;">Logo directions</strong></p><p style="margin: 2px 0 0; font-size: 12px; color: #5c6664;">Ofield Dental · yesterday</p></div></li>
+<li style="display: flex; gap: 12px;"><span style="width: 28px; height: 28px; flex: none; border-radius: 50%; background: #eceae4; color: #4f5755; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">TP</span><div><p style="margin: 0;"><strong style="font-weight: 600;">Theo Park</strong> opened the portal for the first time</p><p style="margin: 2px 0 0; font-size: 12px; color: #5c6664;">Sable Outdoor · yesterday</p></div></li>
+</ol>
+</section>
+
+<section style="border: 1px solid #e3e1da; border-radius: 12px; padding: 16px 20px;">
+<div style="display: flex; align-items: center; justify-content: space-between;"><h2 style="margin: 0; font-size: 15px; font-weight: 600;">This week</h2><a href="#" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none;">Calendar</a></div>
+<ul style="margin: 14px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px;">
+<li style="display: flex; gap: 12px; align-items: center;"><span style="width: 44px; flex: none; text-align: center; padding: 4px 0; border-radius: 8px; background: #f6f5f1;"><span style="display: block; font-size: 11px; color: #5c6664;">MON</span><span style="display: block; font-weight: 700;">26</span></span><span><span style="display: block; font-weight: 500;">Design review call</span><span style="display: block; font-size: 12px; color: #5c6664;">Harbor &amp; Co · 10:00 AM</span></span></li>
+<li style="display: flex; gap: 12px; align-items: center;"><span style="width: 44px; flex: none; text-align: center; padding: 4px 0; border-radius: 8px; background: #f6f5f1;"><span style="display: block; font-size: 11px; color: #5c6664;">WED</span><span style="display: block; font-weight: 700;">28</span></span><span><span style="display: block; font-weight: 500;">Brand refresh due for review</span><span style="display: block; font-size: 12px; color: #5c6664;">Ofield Dental</span></span></li>
+</ul>
+</section>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+
+
+</body></html>

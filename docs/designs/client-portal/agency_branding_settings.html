@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en"><head><style data-dc-design-system-vars="">@layer{:root{--primary:#006b68;--primary-hover:#005654;--on-primary:#ffffff;--primary-subtle:#e2f0ee;--primary-subtle-foreground:#005654;--ring:#006b68;--brass:#c99a3c;--on-brass:#2a1e05;--brass-text:#7f5d0c;--brass-surface:#f7efdc;--background:#ffffff;--surface-raised:#ffffff;--muted:#f6f5f1;--muted-strong:#eceae4;--foreground:#15201f;--muted-foreground:#5c6664;--border:#e3e1da;--input-border:#8e9593;--danger:#c4321f;--danger-surface:#fde8e6;--success:#167347;--success-surface:#dff3e8;--pro:#7f5d0c;--pro-surface:#f7efdc;--status-not-started:#8a9290;--status-not-started-surface:#eceae4;--status-not-started-foreground:#4f5755;--status-in-progress:#2f6fe4;--status-in-progress-surface:#e5edfd;--status-in-progress-foreground:#1d4ed8;--status-in-review:#7c4ddb;--status-in-review-surface:#efe9fc;--status-in-review-foreground:#5b2bc2;--status-completed:#1f9d63;--status-completed-surface:#dff3e8;--status-completed-foreground:#166a45;--status-cancelled:#d9452f;--status-cancelled-surface:#fde8e6;--status-cancelled-foreground:#b42318;--color-primary:#006b68;--color-primary-light:#005654;--color-accent:#c99a3c;--color-accent-dark:#7f5d0c;--color-background:#ffffff;--color-background-secondary:#f6f5f1;--color-background-card:#ffffff;--color-foreground:#15201f;--color-foreground-secondary:#5c6664;--color-border:#e3e1da;--blog-pros:#167347;--blog-cons:#7f5d0c;--stripe:#635bff;--shadow-sm:0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);--shadow-md:0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);--shadow-lg:0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);--shadow-xl:0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--space-24:96px;--space-32:128px;--container:1152px;--radius-sm:4px;--radius-md:6px;--radius:0.5rem;--radius-xl:12px;--radius-2xl:16px;--radius-full:9999px;--font-site:"Inter", system-ui, -apple-system, sans-serif;--font-app:system-ui, -apple-system, sans-serif;--font-mono:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;--text-display:800 72px/1.25 var(--font-site);--text-heading-2:700 36px/40px var(--font-site);--text-heading-3:700 20px/28px var(--font-site);--text-price:700 36px/40px var(--font-site);--text-lead:400 20px/1.625 var(--font-site);--text-body-lg:400 18px/28px var(--font-site);--text-body-sm:400 14px/1.625 var(--font-site);--text-eyebrow:600 12px/16px var(--font-site);--text-app-title:600 20px/28px var(--font-app);--text-app-body:400 14px/20px var(--font-app);--text-app-label:500 12px/16px var(--font-app);--text-app-micro:600 10px/16px var(--font-app);}}</style>
+
+
+<meta charset="utf-8">
+<title>Atrium · Branding settings</title>
+<script src="3010b84d-4017-4f66-b1fa-dc8cea5ca258"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("3480217e-87f1-4024-bd5f-61ca3ea96737") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("ec461e18-db4f-4a01-aa1a-dd726a8f9929") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("31b136c3-3b1d-467c-9161-0544f3e7c549") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("4ff54669-9456-463c-8721-897bbb96732e") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("5b739057-152b-447e-ad97-ddbaeaca18e0") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("3cb54fbb-b0c2-4ceb-82b6-3ca1eef0cdbf") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("70f00e63-1bdf-45e5-8f29-37d5ab635c66") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("3480217e-87f1-4024-bd5f-61ca3ea96737") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("ec461e18-db4f-4a01-aa1a-dd726a8f9929") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("31b136c3-3b1d-467c-9161-0544f3e7c549") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("4ff54669-9456-463c-8721-897bbb96732e") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("5b739057-152b-447e-ad97-ddbaeaca18e0") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("3cb54fbb-b0c2-4ceb-82b6-3ca1eef0cdbf") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("70f00e63-1bdf-45e5-8f29-37d5ab635c66") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("3480217e-87f1-4024-bd5f-61ca3ea96737") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("ec461e18-db4f-4a01-aa1a-dd726a8f9929") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("31b136c3-3b1d-467c-9161-0544f3e7c549") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("4ff54669-9456-463c-8721-897bbb96732e") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("5b739057-152b-447e-ad97-ddbaeaca18e0") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("3cb54fbb-b0c2-4ceb-82b6-3ca1eef0cdbf") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("70f00e63-1bdf-45e5-8f29-37d5ab635c66") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("3480217e-87f1-4024-bd5f-61ca3ea96737") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("ec461e18-db4f-4a01-aa1a-dd726a8f9929") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("31b136c3-3b1d-467c-9161-0544f3e7c549") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("4ff54669-9456-463c-8721-897bbb96732e") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("5b739057-152b-447e-ad97-ddbaeaca18e0") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("3cb54fbb-b0c2-4ceb-82b6-3ca1eef0cdbf") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("70f00e63-1bdf-45e5-8f29-37d5ab635c66") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("3480217e-87f1-4024-bd5f-61ca3ea96737") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("ec461e18-db4f-4a01-aa1a-dd726a8f9929") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("31b136c3-3b1d-467c-9161-0544f3e7c549") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("4ff54669-9456-463c-8721-897bbb96732e") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("5b739057-152b-447e-ad97-ddbaeaca18e0") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("3cb54fbb-b0c2-4ceb-82b6-3ca1eef0cdbf") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("70f00e63-1bdf-45e5-8f29-37d5ab635c66") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+body{margin:0;background:#ffffff;color:#15201f}
+*{box-sizing:border-box}
+a{color:#2449c9}a:hover{color:#1a3696}
+.nav:hover{background:#eceae4 !important}
+.sub:hover{color:#15201f !important}
+.btn-primary:hover{background:#1a3696 !important}
+.btn-outline:hover{border-color:#5c6664 !important}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #2449c9;outline-offset:2px}
+</style>
+</helmet>
+
+<div style="width: 100%; min-height: 1000px; display: flex; flex-wrap: wrap; background: #ffffff; color: #15201f; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px;">
+
+<!-- SIDEBAR -->
+<aside style="flex: 1 1 248px; max-width: 264px; min-height: 1000px; padding: 16px 12px; background: #f6f5f1; border-right: 1px solid #e3e1da; display: flex; flex-direction: column; gap: 4px;">
+<button type="button" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 10px; background: transparent; font: inherit; color: #15201f; cursor: pointer; text-align: left;">
+<span style="width: 32px; height: 32px; border-radius: 8px; background: #2449c9; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">NS</span>
+<span style="flex: 1; min-width: 0;"><span style="display: block; font-weight: 600;">Northwind Studio</span><span style="display: block; font-size: 12px; color: #5c6664;">Agency workspace</span></span>
+<svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="#5c6664" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+</button>
+<button type="button" style="margin: 12px 0 8px; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid #8e9593; border-radius: 8px; background: #ffffff; font: inherit; color: #5c6664; cursor: pointer;">
+<svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+<span style="flex: 1; text-align: left;">Search</span>
+<span style="font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #eceae4; color: #4f5755;">⌘K</span>
+</button>
+<a class="nav" href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Overview</a>
+<a class="nav" href="Project.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path><path d="M8 10v4"></path><path d="M12 10v2"></path><path d="M16 10v6"></path></svg>Projects<span style="margin-left: auto; font-size: 12px; color: #5c6664;">12</span></a>
+<a class="nav" href="#" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M3 10h18"></path></svg>Calendar</a>
+<a class="nav" href="#" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Contacts</a>
+<a class="nav" href="#" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #4f5755; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>Reports</a>
+<a class="nav" href="#" aria-current="page" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; background: #e9edfa; color: #1a3696; font-weight: 600; text-decoration: none;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>Settings</a>
+<div style="margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 8px;">
+<span style="width: 32px; height: 32px; border-radius: 50%; background: #eceae4; color: #4f5755; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px;">EC</span>
+<span style="flex: 1; min-width: 0;"><span style="display: block; font-weight: 600;">Ed Cotto</span><span style="display: block; font-size: 12px; color: #5c6664;">Owner</span></span>
+</div>
+</aside>
+
+<!-- MAIN -->
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+<div style="padding: 24px 40px 0;">
+<h1 style="margin: 0; font-size: 26px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em;">Settings</h1>
+<nav aria-label="Settings sections" style="margin-top: 16px; display: flex; gap: 4px; border-bottom: 1px solid #e3e1da; overflow-x: auto;">
+<a class="sub" href="#" style="padding: 10px 14px; color: #5c6664; text-decoration: none; white-space: nowrap;">General</a>
+<a class="sub" href="#" aria-current="page" style="padding: 10px 14px; border-bottom: 2px solid #2449c9; margin-bottom: -1px; color: #1a3696; font-weight: 600; text-decoration: none; white-space: nowrap;">Branding</a>
+<a class="sub" href="#" style="padding: 10px 14px; color: #5c6664; text-decoration: none; white-space: nowrap;">Team</a>
+<a class="sub" href="#" style="padding: 10px 14px; color: #5c6664; text-decoration: none; white-space: nowrap;">Billing</a>
+<a class="sub" href="#" style="padding: 10px 14px; color: #5c6664; text-decoration: none; white-space: nowrap;">Payments</a>
+<a class="sub" href="#" style="padding: 10px 14px; color: #5c6664; text-decoration: none; white-space: nowrap;">Integrations</a>
+<a class="sub" href="#" style="padding: 10px 14px; color: #5c6664; text-decoration: none; white-space: nowrap;">API keys</a>
+</nav>
+</div>
+
+<div style="flex: 1; padding: 28px 40px 32px; display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start;">
+
+<!-- form -->
+<div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 28px;">
+<div>
+<h2 style="margin: 0; font-size: 18px; font-weight: 700;">Your client portal</h2>
+<p style="margin: 4px 0 0; color: #5c6664;">Clients see your logo, color and domain. Atrium stays out of sight.</p>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 10px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Logo</h3>
+<div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+<span style="width: 64px; height: 64px; border-radius: 14px; background: #2449c9; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800;">NS</span>
+<div style="display: flex; gap: 8px;">
+<button class="btn-outline" type="button" style="min-height: 40px; padding: 8px 14px; border: 1px solid #8e9593; border-radius: 8px; background: #ffffff; font: inherit; font-weight: 500; color: #15201f; cursor: pointer;">Upload new</button>
+<button type="button" style="min-height: 40px; padding: 8px 10px; border: 0; background: transparent; font: inherit; color: #c4321f; cursor: pointer;">Remove</button>
+</div>
+</div>
+<p style="margin: 0; font-size: 12px; color: #5c6664;">SVG or PNG, square, at least 256 px. Also used as the portal favicon.</p>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 10px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Brand color</h3>
+<div role="radiogroup" aria-label="Brand color" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+<button type="button" role="radio" aria-checked="false" aria-label="Atrium teal" style="width: 32px; height: 32px; border: 0; border-radius: 50%; background: #006B68; cursor: pointer;"></button>
+<button type="button" role="radio" aria-checked="true" aria-label="Cobalt" style="width: 32px; height: 32px; border: 0; border-radius: 50%; background: #2449c9; box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #15201f; cursor: pointer;"></button>
+<button type="button" role="radio" aria-checked="false" aria-label="Plum" style="width: 32px; height: 32px; border: 0; border-radius: 50%; background: #7a2e8e; cursor: pointer;"></button>
+<button type="button" role="radio" aria-checked="false" aria-label="Burnt orange" style="width: 32px; height: 32px; border: 0; border-radius: 50%; background: #c2410c; cursor: pointer;"></button>
+<button type="button" role="radio" aria-checked="false" aria-label="Charcoal" style="width: 32px; height: 32px; border: 0; border-radius: 50%; background: #1f2937; cursor: pointer;"></button>
+<span aria-hidden="true" style="width: 1px; height: 24px; background: #e3e1da; margin: 0 4px;"></span>
+<label style="display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 12px 4px 6px; border: 1px solid #8e9593; border-radius: 8px;"><span style="width: 26px; height: 26px; border-radius: 6px; background: #2449c9;"></span><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Hex value</span><input value="#2449C9" style="width: 80px; border: 0; padding: 0; font: inherit; font-family: ui-monospace, Menlo, monospace; color: #15201f; background: transparent;"></label>
+</div>
+<p style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #166a45;"><svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>White text reads clearly on this color. We pick black or white for you.</p>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 10px;">
+<div style="display: flex; align-items: center; gap: 8px;">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600;">Custom domain</h3>
+<span style="display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 6px; background: #f7efdc; color: #7f5d0c; font-size: 10px; font-weight: 600; letter-spacing: 0.03em;">PRO</span>
+</div>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #5c6664;">Portal address
+<input value="portal.northwind.studio" style="min-height: 40px; padding: 8px 12px; border: 1px solid #8e9593; border-radius: 8px; font: inherit; font-size: 14px; color: #15201f;">
+</label>
+<div style="padding: 12px 14px; border-radius: 10px; background: #f6f5f1; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 22px; overflow-x: auto;">
+<div style="color: #5c6664;">Type   Name     Value</div>
+<div>CNAME  portal   [your Atrium host]</div>
+</div>
+<p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px;"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 9999px; background: #dff3e8; color: #166a45; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #1f9d63;"></span>Verified</span><span style="color: #5c6664;">SSL certificate active</span></p>
+</section>
+</div>
+
+<!-- live preview -->
+<div style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+<p style="margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: #5c6664;">Preview · what clients see</p>
+<div style="border: 1px solid #e3e1da; border-radius: 14px; overflow: hidden; background: #f6f5f1; font-family: system-ui, -apple-system, sans-serif;">
+<div style="display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: #eceae4;">
+<span style="width: 9px; height: 9px; border-radius: 50%; background: #d9d7cf;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #d9d7cf;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #d9d7cf;"></span>
+<span style="margin-left: 8px; flex: 1; padding: 2px 8px; border-radius: 5px; background: #ffffff; font-size: 11px; color: #5c6664;">portal.northwind.studio</span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #ffffff; border-bottom: 1px solid #e3e1da;">
+<span style="display: flex; align-items: center; gap: 8px; font-weight: 700;"><span style="width: 24px; height: 24px; border-radius: 6px; background: #2449c9; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800;">NS</span>Northwind Studio</span>
+<span style="width: 24px; height: 24px; border-radius: 50%; background: #eceae4;"></span>
+</div>
+<div style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+<div style="padding: 14px; border-radius: 10px; background: #ffffff; border: 1px solid #e3e1da;">
+<p style="margin: 0; font-weight: 700;">Website redesign</p>
+<div style="margin-top: 10px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;"><span style="height: 5px; border-radius: 9999px; background: #2449c9;"></span><span style="height: 5px; border-radius: 9999px; background: #2449c9;"></span><span style="height: 5px; border-radius: 9999px; background: #2449c9;"></span><span style="height: 5px; border-radius: 9999px; background: #d9d7cf;"></span></div>
+</div>
+<div style="padding: 14px; border-radius: 10px; background: #ffffff; border: 2px solid #2449c9;">
+<p style="margin: 0; font-size: 12px; font-weight: 600; color: #1a3696;">Needs your review</p>
+<p style="margin: 4px 0 10px; font-weight: 600;">Homepage designs, version 2</p>
+<span style="display: inline-flex; padding: 7px 14px; border-radius: 7px; background: #2449c9; color: #ffffff; font-size: 13px; font-weight: 600;">Approve</span>
+</div>
+</div>
+</div>
+<a href="Portal.dc.html" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none;">Open the full portal preview</a>
+</div>
+</div>
+
+<!-- save bar -->
+<div style="position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 40px; border-top: 1px solid #e3e1da; background: #ffffff;">
+<span style="display: flex; align-items: center; gap: 8px; color: #4f5755;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #5c6664;"></span>Unsaved changes: portal address</span>
+<div style="display: flex; gap: 10px;">
+<button class="btn-outline" type="button" style="min-height: 40px; padding: 8px 16px; border: 1px solid #8e9593; border-radius: 8px; background: #ffffff; font: inherit; font-weight: 500; color: #15201f; cursor: pointer;">Discard</button>
+<button class="btn-primary" type="button" style="min-height: 40px; padding: 8px 18px; border: 0; border-radius: 8px; background: #2449c9; color: #ffffff; font: inherit; font-weight: 600; cursor: pointer;">Save Changes</button>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+
+
+</body></html>

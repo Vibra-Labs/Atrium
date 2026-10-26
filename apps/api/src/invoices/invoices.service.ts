@@ -441,6 +441,10 @@ export class InvoicesService {
       }
     }
 
-    return { totalInvoices, totalAmount, paidAmount, outstandingAmount };
+    const overdueCount = counts.find((c) => c.status === "overdue")?._count ?? 0;
+    const sentCount = counts.find((c) => c.status === "sent")?._count ?? 0;
+    const openCount = sentCount + overdueCount;
+
+    return { totalInvoices, totalAmount, paidAmount, outstandingAmount, openCount, overdueCount };
   }
 }

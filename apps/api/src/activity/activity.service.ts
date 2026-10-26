@@ -63,4 +63,28 @@ export class ActivityService {
 
     return paginatedResponse(enriched, total, page, limit);
   }
+
+  async findByOrg(organizationId: string, limit = 10) {
+    const where = { organizationId };
+    const data = await this.prisma.activityLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: {
+        project: { select: { id: true, name: true } },
+      },
+    });
+
+    const actorIds = [...new Set(data.map((a) => a.actorId))];
+    const actors = await this.prisma.user.findMany({
+      where: { id: { in: actorIds } },
+      select: { id: true, name: true, image: true },
+    });
+    const actorMap = new Map(actors.map((a) => [a.id, a]));
+
+    return data.map((a) => ({
+      ...a,
+      actor: actorMap.get(a.actorId) ?? { id: a.actorId, name: "Client" },
+    }));
+  }
 }

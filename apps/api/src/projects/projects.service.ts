@@ -114,8 +114,14 @@ export class ProjectsService implements OnApplicationBootstrap {
       this.prisma.project.findMany({
         where,
         include: {
-          clients: { select: { userId: true } },
+          clients: {
+            select: {
+              userId: true,
+              user: { select: { id: true, name: true, email: true } },
+            },
+          },
           labels: { include: { label: true } },
+          tasks: { select: { id: true, status: true } },
         },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
@@ -504,7 +510,7 @@ export class ProjectsService implements OnApplicationBootstrap {
   }
 
   async getStats(organizationId: string) {
-    const [total, inProgress, completed] = await Promise.all([
+    const [total, inProgress, inReview, completed, waitingReviews, waitingSignatures] = await Promise.all([
       this.prisma.project.count({
         where: { organizationId, archivedAt: null, status: { not: PROJECT_STATUSES.CANCELLED } },
       }),
@@ -512,10 +518,27 @@ export class ProjectsService implements OnApplicationBootstrap {
         where: { organizationId, archivedAt: null, status: "in_progress" },
       }),
       this.prisma.project.count({
+        where: { organizationId, archivedAt: null, status: "in_review" },
+      }),
+      this.prisma.project.count({
         where: { organizationId, archivedAt: null, status: "completed" },
       }),
+      this.prisma.document.count({
+        where: { project: { organizationId }, type: "deliverable", status: "pending" },
+      }),
+      this.prisma.document.count({
+        where: { project: { organizationId }, requiresSignature: true, status: "pending" },
+      }),
     ]);
-    return { total, inProgress, completed };
+    return {
+      total,
+      inProgress,
+      inReview,
+      completed,
+      waitingOnClients: waitingReviews + waitingSignatures,
+      waitingReviews,
+      waitingSignatures,
+    };
   }
 
   async exportAll(organizationId: string) {

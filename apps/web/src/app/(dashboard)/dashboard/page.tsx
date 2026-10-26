@@ -263,48 +263,88 @@ export default function DashboardPage() {
         ) : (
           <>
             {/* Active projects */}
-            <div className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-1">
-              <p className="text-xs sm:text-sm text-[var(--muted-foreground)] font-medium">Active projects</p>
+            <Link
+              href="/dashboard/projects"
+              className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-1 block hover:border-[var(--primary)] hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs sm:text-sm text-[var(--muted-foreground)] font-medium group-hover:text-[var(--primary)] transition-colors">
+                  Active projects
+                </p>
+                <ChevronRight size={14} className="text-[var(--muted-foreground)] group-hover:text-[var(--primary)] transition-colors" />
+              </div>
               <p className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)]">
                 {stats.total}
               </p>
               <p className="text-xs text-[var(--muted-foreground)] pt-0.5">
                 {stats.inProgress} in progress · {stats.inReview} in review
               </p>
-            </div>
+            </Link>
 
             {/* Waiting on clients */}
-            <div className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-1">
-              <p className="text-xs sm:text-sm text-[var(--muted-foreground)] font-medium">Waiting on clients</p>
+            <a
+              href="#attention"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById("attention")?.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-1 block hover:border-[var(--primary)] hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs sm:text-sm text-[var(--muted-foreground)] font-medium group-hover:text-[var(--primary)] transition-colors">
+                  Waiting on clients
+                </p>
+                <ChevronRight size={14} className="text-[var(--muted-foreground)] group-hover:text-[var(--primary)] transition-colors" />
+              </div>
               <p className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)]">
                 {stats.waitingOnClients}
               </p>
               <p className="text-xs text-[var(--muted-foreground)] pt-0.5">
                 {stats.waitingReviews} {stats.waitingReviews === 1 ? "review" : "reviews"} · {stats.waitingSignatures} {stats.waitingSignatures === 1 ? "signature" : "signatures"}
               </p>
-            </div>
+            </a>
 
             {/* Completed */}
-            <div className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-1">
-              <p className="text-xs sm:text-sm text-[var(--muted-foreground)] font-medium">Completed</p>
+            <Link
+              href="/dashboard/projects"
+              className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-1 block hover:border-[var(--primary)] hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs sm:text-sm text-[var(--muted-foreground)] font-medium group-hover:text-[var(--primary)] transition-colors">
+                  Completed
+                </p>
+                <ChevronRight size={14} className="text-[var(--muted-foreground)] group-hover:text-[var(--primary)] transition-colors" />
+              </div>
               <p className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)]">
                 {stats.completed}
               </p>
               <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium pt-0.5">
                 Total delivered
               </p>
-            </div>
+            </Link>
 
             {/* Outstanding (Highlighted Brass / Amber Card) */}
-            <div className="p-4 sm:p-5 border border-amber-500/20 bg-amber-500/10 dark:bg-amber-950/30 dark:border-amber-800/40 rounded-2xl space-y-1">
-              <p className="text-xs sm:text-sm text-amber-900 dark:text-amber-200 font-medium">Outstanding</p>
+            <a
+              href="#attention"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById("attention")?.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="p-4 sm:p-5 border border-amber-500/20 bg-amber-500/10 dark:bg-amber-950/30 dark:border-amber-800/40 rounded-2xl space-y-1 block hover:border-amber-500/50 hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs sm:text-sm text-amber-900 dark:text-amber-200 font-medium group-hover:text-amber-700 dark:group-hover:text-amber-100 transition-colors">
+                  Outstanding
+                </p>
+                <ChevronRight size={14} className="text-amber-700/60 dark:text-amber-400/60 group-hover:text-amber-900 dark:group-hover:text-amber-100 transition-colors" />
+              </div>
               <p className="text-2xl sm:text-3xl font-bold tracking-tight text-amber-950 dark:text-amber-100">
                 {formatCurrency(invoiceStats?.outstandingAmount ?? 0, currency)}
               </p>
               <p className="text-xs text-amber-800/80 dark:text-amber-300/80 pt-0.5">
                 {invoiceStats?.openCount ?? 0} open invoices · {invoiceStats?.overdueCount ?? 0} overdue
               </p>
-            </div>
+            </a>
           </>
         )}
       </div>
@@ -315,8 +355,9 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-6 min-w-0">
           {/* Needs your attention Card */}
           <section
+            id="attention"
             data-testid="pending-approvals-card"
-            className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm"
+            className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm scroll-mt-6"
           >
             <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[var(--border)]">
               <h2 className="text-sm sm:text-base font-semibold text-[var(--foreground)]">Needs your attention</h2>

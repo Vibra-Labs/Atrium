@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
+import { useSession } from "@/lib/session-context";
 import { SidebarNav } from "./sidebar-nav";
 import { SignOutButton } from "./sign-out-button";
 import { NotificationBell } from "@/components/notification-bell";
@@ -25,6 +27,7 @@ export function MobileNav({
   orgs,
   activeOrgId,
 }: MobileNavProps) {
+  const { userName, role } = useSession();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -105,7 +108,29 @@ export function MobileNav({
           </button>
         </div>
         <SidebarNav onNavigate={() => setOpen(false)} />
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-4 border-t border-[var(--border)] space-y-1">
+          <Link
+            href="/dashboard/settings/account"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-[var(--muted)] transition-colors group"
+          >
+            <div className="w-8 h-8 rounded-full bg-[var(--muted)] text-[var(--foreground)] border border-[var(--border)] flex items-center justify-center font-semibold text-xs shrink-0">
+              {(userName || "U")
+                .split(" ")
+                .map((n: string) => n[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-xs font-semibold text-[var(--foreground)] truncate group-hover:text-[var(--primary)] transition-colors">
+                {userName || "My Account"}
+              </p>
+              <p className="text-[11px] text-[var(--muted-foreground)] capitalize truncate">
+                {role || "Member"}
+              </p>
+            </div>
+          </Link>
           <SignOutButton />
         </div>
       </div>

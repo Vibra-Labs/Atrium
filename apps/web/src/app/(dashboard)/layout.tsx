@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
@@ -175,7 +176,34 @@ export default async function DashboardLayout({
           />
         </div>
         <SidebarNav />
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-4 border-t border-[var(--border)] space-y-1">
+          <Link
+            href="/dashboard/settings/account"
+            className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-[var(--muted)] transition-colors group"
+            title="Account settings"
+          >
+            <div className="w-8 h-8 rounded-full bg-[var(--muted)] text-[var(--foreground)] border border-[var(--border)] flex items-center justify-center font-semibold text-xs shrink-0 overflow-hidden">
+              {session.user?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={session.user.image} alt="" className="w-full h-full object-cover" />
+              ) : (
+                (session.user?.name || "U")
+                  .split(" ")
+                  .map((n: string) => n[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()
+              )}
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-xs font-semibold text-[var(--foreground)] truncate group-hover:text-[var(--primary)] transition-colors">
+                {session.user?.name || "My Account"}
+              </p>
+              <p className="text-[11px] text-[var(--muted-foreground)] capitalize truncate">
+                {role || "Member"}
+              </p>
+            </div>
+          </Link>
           <SignOutButton />
         </div>
       </aside>

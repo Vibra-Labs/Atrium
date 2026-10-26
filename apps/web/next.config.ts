@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/portal", destination: "/portal/projects", permanent: false },
-      { source: "/dashboard/settings", destination: "/dashboard/settings/account", permanent: false },
+      { source: "/dashboard/settings", destination: "/dashboard/settings/workspace", permanent: false },
     ];
   },
   async headers() {

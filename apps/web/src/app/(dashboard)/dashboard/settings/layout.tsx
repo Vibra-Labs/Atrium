@@ -9,24 +9,27 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
-  { href: "/dashboard/settings/account", label: "Account" },
   { href: "/dashboard/settings/workspace", label: "General" },
   { href: "/dashboard/settings/branding", label: "Branding" },
   { href: "/dashboard/settings/team", label: "Team" },
-  { href: "/dashboard/settings/organizations", label: "Organizations" },
-  { href: "/dashboard/settings/billing", label: "Billing" },
-  { href: "/dashboard/settings/payments", label: "Payments" },
+  { href: "/dashboard/settings/billing", label: "Billing & Payments" },
   { href: "/dashboard/settings/integrations", label: "Integrations" },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }): React.ReactElement {
   const pathname = usePathname();
+  const isPersonalAccount = pathname === "/dashboard/settings/account";
+
+  // When visiting personal profile from avatar, show Account tab so they know where they are
+  const sections = isPersonalAccount
+    ? [...SECTIONS, { href: "/dashboard/settings/account", label: "Account" }]
+    : SECTIONS;
 
   return (
     <div className="space-y-6">
       {/* Scrolls sideways on a phone instead of pushing the page wider. */}
       <nav aria-label="Settings" className="flex gap-1 border-b border-[var(--border)] overflow-x-auto">
-        {SECTIONS.map((s) => {
+        {sections.map((s) => {
           const isActive = pathname === s.href;
           return (
             <Link

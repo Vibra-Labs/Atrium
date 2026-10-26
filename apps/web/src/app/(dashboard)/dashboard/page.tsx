@@ -301,7 +301,7 @@ export default function DashboardPage() {
 
             {/* Completed */}
             <Link
-              href="/dashboard/projects"
+              href="/dashboard/projects?status=completed"
               className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-1 block hover:border-[var(--primary)] hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer"
             >
               <div className="flex items-center justify-between">
@@ -320,10 +320,11 @@ export default function DashboardPage() {
 
             {/* Outstanding (Highlighted Brass / Amber Card) */}
             <a
-              href="#attention"
+              href="#overdue-invoices"
               onClick={(e) => {
                 e.preventDefault();
-                document.getElementById("attention")?.scrollIntoView({ behavior: "smooth" });
+                const target = document.getElementById("overdue-invoices") || document.getElementById("attention");
+                target?.scrollIntoView({ behavior: "smooth" });
               }}
               className="p-4 sm:p-5 border border-amber-500/20 bg-amber-500/10 dark:bg-amber-950/30 dark:border-amber-800/40 rounded-2xl space-y-1 block hover:border-amber-500/50 hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer"
             >
@@ -400,31 +401,35 @@ export default function DashboardPage() {
                 ))}
 
                 {/* Overdue invoices */}
-                {overdueInvoices.map((inv) => (
-                  <div
-                    key={`invoice-${inv.id}`}
-                    className="flex items-center gap-3.5 p-4 sm:p-5 hover:bg-[var(--muted)]/40 transition-colors"
-                  >
-                    <span className="w-9 h-9 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0">
-                      <AlertCircle size={18} />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[var(--foreground)] truncate">
-                        Invoice #{inv.invoiceNumber} is overdue
-                      </p>
-                      <p className="text-xs text-[var(--muted-foreground)] truncate mt-0.5">
-                        {inv.project?.name || inv.client?.name || "Client"} · {formatCurrency(inv.amount, currency)}
-                      </p>
-                    </div>
-                    <Link
-                      href={inv.projectId ? `/dashboard/projects/${inv.projectId}?tab=invoices` : "/dashboard/projects"}
-                      className="text-xs font-semibold text-[var(--primary)] hover:underline shrink-0 flex items-center gap-1"
-                    >
-                      <span>View invoice</span>
-                      <ChevronRight size={13} />
-                    </Link>
+                {overdueInvoices.length > 0 && (
+                  <div id="overdue-invoices" className="scroll-mt-6 divide-y divide-[var(--border)]">
+                    {overdueInvoices.map((inv) => (
+                      <div
+                        key={`invoice-${inv.id}`}
+                        className="flex items-center gap-3.5 p-4 sm:p-5 hover:bg-[var(--muted)]/40 transition-colors"
+                      >
+                        <span className="w-9 h-9 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0">
+                          <AlertCircle size={18} />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[var(--foreground)] truncate">
+                            Invoice #{inv.invoiceNumber} is overdue
+                          </p>
+                          <p className="text-xs text-[var(--muted-foreground)] truncate mt-0.5">
+                            {inv.project?.name || inv.client?.name || "Client"} · {formatCurrency(inv.amount, currency)}
+                          </p>
+                        </div>
+                        <Link
+                          href={inv.projectId ? `/dashboard/projects/${inv.projectId}?tab=invoices` : "/dashboard/projects"}
+                          className="text-xs font-semibold text-[var(--primary)] hover:underline shrink-0 flex items-center gap-1"
+                        >
+                          <span>View invoice</span>
+                          <ChevronRight size={13} />
+                        </Link>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
           </section>

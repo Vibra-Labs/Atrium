@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
@@ -51,6 +52,10 @@ export default function ProjectsPage() {
   const [error, setError] = useState("");
   const [planLimits, setPlanLimits] = useState<{ maxProjects: number; projectsUsed: number } | null>(null);
 
+  const searchParams = useSearchParams();
+  const initialStatus = searchParams.get("status") || "";
+  const initialArchived = searchParams.get("archived") === "true";
+
   // Pagination & filters
   // The page belongs to the filters it was chosen under, so changing a filter
   // falls back to page 1 in the same render instead of in a follow-up effect.
@@ -59,8 +64,20 @@ export default function ProjectsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
-  const [statusFilter, setStatusFilter] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
+  const [showArchived, setShowArchived] = useState(initialArchived);
+
+  // Keep state in sync if query parameters change (e.g. back/forward navigation or link click)
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (status !== null) {
+      setStatusFilter(status);
+    }
+    const archived = searchParams.get("archived");
+    if (archived !== null) {
+      setShowArchived(archived === "true");
+    }
+  }, [searchParams]);
   const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
   const orgLabels: LabelRecord[] = useCachedApi<LabelRecord[]>("/labels") ?? [];
   const [labelFilter, setLabelFilter] = useState<string[]>([]);

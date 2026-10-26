@@ -38,6 +38,7 @@ export function startPreview(
   clientName: string,
   clientEmail: string,
   returnPath?: string,
+  targetUrl: string = "/portal",
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -54,8 +55,9 @@ export function startPreview(
   } catch (err) {
     console.error("preview-mode handoff write failed", err);
   }
-  const params = new URLSearchParams({ previewAs: clientUserId });
-  window.open(`/portal?${params.toString()}`, "_blank", "noopener");
+  const url = new URL(targetUrl, window.location.origin);
+  url.searchParams.set("previewAs", clientUserId);
+  window.open(url.toString(), "_blank", "noopener");
 }
 
 function readHandoff(clientUserId: string): PreviewHandoff | null {
@@ -128,7 +130,9 @@ export function PreviewModeProvider({ children }: { children: ReactNode }) {
     setPreview(state);
 
     if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", "/portal");
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("previewAs");
+      window.history.replaceState(null, "", cleanUrl.pathname + cleanUrl.search);
     }
   }, [searchParams]);
 

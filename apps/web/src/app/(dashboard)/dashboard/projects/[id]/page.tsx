@@ -7,7 +7,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag, Copy } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag, Copy, Eye } from "lucide-react";
 import { track } from "@/lib/track";
 import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
@@ -243,7 +243,13 @@ export default function ProjectDetailPage() {
     clientEmail: string,
   ) => {
     track("client_viewed_as", { from: "project" });
-    startPreview(clientUserId, clientName, clientEmail);
+    startPreview(
+      clientUserId,
+      clientName,
+      clientEmail,
+      `/dashboard/projects/${id}`,
+      `/portal/projects/${id}`,
+    );
   };
 
   const handleDateChange = async (field: "startDate" | "endDate", value: string) => {
@@ -589,7 +595,33 @@ export default function ProjectDetailPage() {
 
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-lg font-bold leading-tight">{project.name}</h1>
-          <div className="shrink-0 flex items-center gap-1.5">
+          <div className="shrink-0 flex items-center gap-1.5 flex-wrap">
+            {(currentRole === "owner" || currentRole === "admin") && (
+              <button
+                type="button"
+                onClick={() => {
+                  const assigned = clients.filter((c) => assignedIds.has(c.userId));
+                  if (assigned.length > 0) {
+                    handlePreviewAsClient(
+                      assigned[0].userId,
+                      assigned[0].user?.name || "Client",
+                      assigned[0].user?.email || "",
+                    );
+                  } else {
+                    handlePreviewAsClient(
+                      currentUserId || "",
+                      "Client Preview",
+                      "client@preview.local",
+                    );
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 border border-[var(--border)] rounded-lg text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted)] hover:border-[var(--primary)] transition-colors"
+                title="Preview this project as a client"
+              >
+                <Eye size={13} className="text-[var(--primary)]" />
+                Preview Portal
+              </button>
+            )}
             {(currentRole === "owner" || currentRole === "admin") && (
               <button
                 onClick={openDuplicateModal}

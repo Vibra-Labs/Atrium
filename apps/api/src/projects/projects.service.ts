@@ -144,16 +144,33 @@ export class ProjectsService implements OnApplicationBootstrap {
     id: string,
     clientUserId: string,
     organizationId: string,
+    isPrivileged = false,
   ) {
+    const clientFilter = isPrivileged
+      ? {}
+      : { clients: { some: { userId: clientUserId } } };
+
     const project = await this.prisma.project.findFirst({
       where: {
         id,
         organizationId,
         archivedAt: null,
-        clients: { some: { userId: clientUserId } },
+        ...clientFilter,
       },
       include: {
-        files: { where: STANDALONE_FILES },
+        files: { where: STANDALONE_FILES, orderBy: { createdAt: "desc" } },
+        organization: {
+          select: {
+            name: true,
+            members: {
+              where: { role: "owner" },
+              select: {
+                user: { select: { id: true, name: true, email: true, image: true } },
+              },
+              take: 1,
+            },
+          },
+        },
         // Counted server-side so the portal banner isn't limited to the task page it has loaded.
         _count: {
           select: {
@@ -178,12 +195,17 @@ export class ProjectsService implements OnApplicationBootstrap {
     clientUserId: string,
     organizationId: string,
     query: { page?: number; limit?: number; search?: string },
+    isPrivileged = false,
   ) {
     const { page = 1, limit = 20, search } = query;
+    const clientFilter = isPrivileged
+      ? {}
+      : { clients: { some: { userId: clientUserId } } };
+
     const where: ProjectWhereInput = {
       organizationId,
       archivedAt: null,
-      clients: { some: { userId: clientUserId } },
+      ...clientFilter,
     };
 
     if (search) {

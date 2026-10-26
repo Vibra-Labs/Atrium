@@ -304,12 +304,15 @@ export class UpdatesService {
     organizationId: string,
     page = 1,
     limit = 20,
+    isPrivileged = false,
   ) {
-    const assignment = await this.prisma.projectClient.findFirst({
-      where: { projectId, userId: clientUserId },
-    });
-    if (!assignment) {
-      throw new ForbiddenException("Not assigned to this project");
+    if (!isPrivileged) {
+      const assignment = await this.prisma.projectClient.findFirst({
+        where: { projectId, userId: clientUserId },
+      });
+      if (!assignment) {
+        throw new ForbiddenException("Not assigned to this project");
+      }
     }
 
     return this.findTimeline(projectId, organizationId, page, limit);

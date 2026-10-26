@@ -158,7 +158,9 @@ describe("ProjectsService", () => {
     expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({
-          files: { where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } } },
+          files: expect.objectContaining({
+            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } },
+          }),
         }),
       }),
     );
@@ -327,7 +329,9 @@ describe("ProjectsService", () => {
     expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({
-          files: { where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } } },
+          files: expect.objectContaining({
+            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } },
+          }),
         }),
         where: expect.objectContaining({
           id: "proj-active",

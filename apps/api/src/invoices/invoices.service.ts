@@ -195,20 +195,34 @@ export class InvoicesService {
     return invoice;
   }
 
-  async findMine(userId: string, orgId: string, page = 1, limit = 20, projectId?: string) {
-    const clientProjectsWhere: { userId: string; project: { organizationId: string; id?: string } } = {
-      userId,
-      project: { organizationId: orgId },
-    };
-    if (projectId) {
-      clientProjectsWhere.project.id = projectId;
-    }
+  async findMine(userId: string, orgId: string, page = 1, limit = 20, projectId?: string, isPrivileged = false) {
+    let projectIds: string[];
 
-    const clientProjects = await this.prisma.projectClient.findMany({
-      where: clientProjectsWhere,
-      select: { projectId: true },
-    });
-    const projectIds = clientProjects.map((pc) => pc.projectId);
+    if (isPrivileged) {
+      if (projectId) {
+        projectIds = [projectId];
+      } else {
+        const orgProjects = await this.prisma.project.findMany({
+          where: { organizationId: orgId, archivedAt: null },
+          select: { id: true },
+        });
+        projectIds = orgProjects.map((p) => p.id);
+      }
+    } else {
+      const clientProjectsWhere: { userId: string; project: { organizationId: string; id?: string } } = {
+        userId,
+        project: { organizationId: orgId },
+      };
+      if (projectId) {
+        clientProjectsWhere.project.id = projectId;
+      }
+
+      const clientProjects = await this.prisma.projectClient.findMany({
+        where: clientProjectsWhere,
+        select: { projectId: true },
+      });
+      projectIds = clientProjects.map((pc) => pc.projectId);
+    }
 
     const where = {
       organizationId: orgId,
@@ -228,7 +242,7 @@ export class InvoicesService {
     return paginatedResponse(data, total, page, limit);
   }
 
-  async findOneMine(id: string, userId: string, orgId: string) {
+  async findOneMine(id: string, userId: string, orgId: string, isPrivileged = false) {
     const invoice = await this.prisma.invoice.findFirst({
       // Same visibility as findMine: clients never see drafts or cancelled invoices.
       where: { id, organizationId: orgId, status: { notIn: CLIENT_HIDDEN_STATUSES } },
@@ -240,15 +254,17 @@ export class InvoicesService {
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
 
-    if (invoice.projectId) {
-      const assignment = await this.prisma.projectClient.findFirst({
-        where: { projectId: invoice.projectId, userId },
-      });
-      if (!assignment) {
+    if (!isPrivileged) {
+      if (invoice.projectId) {
+        const assignment = await this.prisma.projectClient.findFirst({
+          where: { projectId: invoice.projectId, userId },
+        });
+        if (!assignment) {
+          throw new ForbiddenException("Not assigned to this project");
+        }
+      } else {
         throw new ForbiddenException("Not assigned to this project");
       }
-    } else {
-      throw new ForbiddenException("Not assigned to this project");
     }
 
     return invoice;

@@ -186,12 +186,15 @@ export class TasksService {
     orgId: string,
     page = 1,
     limit = 20,
+    isPrivileged = false,
   ) {
-    const assignment = await this.prisma.projectClient.findFirst({
-      where: { projectId, userId, project: { organizationId: orgId } },
-    });
-    if (!assignment) {
-      throw new ForbiddenException("Not assigned to this project");
+    if (!isPrivileged) {
+      const assignment = await this.prisma.projectClient.findFirst({
+        where: { projectId, userId, project: { organizationId: orgId } },
+      });
+      if (!assignment) {
+        throw new ForbiddenException("Not assigned to this project");
+      }
     }
 
     const where = { projectId, organizationId: orgId };

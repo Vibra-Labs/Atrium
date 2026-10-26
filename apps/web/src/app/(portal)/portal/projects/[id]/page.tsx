@@ -31,6 +31,9 @@ import {
   Link as LinkIcon,
   Pencil,
   ArrowLeft,
+  Send,
+  CreditCard,
+  CheckCircle2,
 } from "lucide-react";
 import { PortalDeliverableReview, type PortalDeliverable } from "./components/portal-deliverable-review";
 import { deliverableStatus } from "@/lib/deliverable";
@@ -46,6 +49,9 @@ import { CommentsSection } from "@/components/comments-section";
 import { Avatar } from "@/components/avatar";
 import { TaskDetailModal } from "@/components/task-detail-modal";
 import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
+import { formatCurrency } from "@/lib/format";
+import { useCurrency } from "@/lib/app-config";
+import { usePreviewMode } from "@/lib/preview-mode";
 
 interface FileRecord {
   id: string;
@@ -68,6 +74,21 @@ interface Project {
   files: FileRecord[];
   /** Open decision tasks this client hasn't voted on, across all task pages. */
   openVotes?: number;
+  organization?: {
+    name: string;
+    members?: { user: { id: string; name: string; email: string; image?: string | null } }[];
+  };
+}
+
+interface InvoiceSummary {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  type: string;
+  amount?: number | null;
+  dueDate?: string | null;
+  notes?: string | null;
+  lineItems: { id: string; description: string; quantity: number; unitPrice: number }[];
 }
 
 interface TimelineEntry {
@@ -259,6 +280,60 @@ export default function PortalProjectDetailPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState<boolean>(false);
+  const currency = useCurrency();
+  const { preview } = usePreviewMode();
+  const session = useSession();
+  const [latestInvoice, setLatestInvoice] = useState<InvoiceSummary | null>(null);
+  const [quickReplyText, setQuickReplyText] = useState("");
+  const [sendingQuickReply, setSendingQuickReply] = useState(false);
+
+  useEffect(() => {
+    apiFetch<PaginatedResponse<InvoiceSummary>>(`/invoices/mine?projectId=${id}&limit=5`)
+      .then((res) => {
+        if (res.data && res.data.length > 0) {
+          const unpaid = res.data.find((i) => i.status === "sent" || i.status === "overdue");
+          setLatestInvoice(unpaid || res.data[0]);
+        }
+      })
+      .catch(() => {});
+  }, [id]);
+
+  const handleSendQuickReply = async () => {
+    if (!quickReplyText.trim() || sendingQuickReply) return;
+    setSendingQuickReply(true);
+    try {
+      await apiFetch("/updates", {
+        method: "POST",
+        body: JSON.stringify({ projectId: id, content: quickReplyText.trim() }),
+      });
+      setQuickReplyText("");
+      loadUpdates();
+      toast.success("Reply sent");
+    } catch {
+      toast.error("Failed to post reply");
+    } finally {
+      setSendingQuickReply(false);
+    }
+  };
+
+  const handleDownloadInvoicePdf = async (invoiceId: string, invoiceNumber: string) => {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/invoices/mine/${invoiceId}/pdf`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Invoice-${invoiceNumber}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to download invoice PDF");
+    }
+  };
 
   // Deep-link sync for task modal
   useEffect(() => {
@@ -559,114 +634,245 @@ export default function PortalProjectDetailPage() {
   if (!project) return <ProjectDetailSkeleton />;
 
   const currentStatus = statuses.find((s) => s.slug === project.status);
+  const clientName = preview?.clientName || session.userName || "there";
+  const clientFirstName = clientName.split(" ")[0] || "there";
+  const agencyName = project.organization?.name || "your team";
+  const projectLead = project.organization?.members?.[0]?.user;
+  const projectLeadName = projectLead?.name || agencyName;
+  const projectLeadInitials = projectLeadName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const highlightedReviewItem = needsReview[0] || null;
+
+  const defaultPhases = [
+    { key: "discovery", label: "Discovery" },
+    { key: "in_progress", label: "Execution" },
+    { key: "review", label: "Review" },
+    { key: "completed", label: "Launch" },
+  ];
+
+  const phases =
+    statuses.length >= 3
+      ? statuses.slice(0, 4).map((s) => ({ key: s.slug, label: s.name }))
+      : defaultPhases;
+
+  const currentStatusIndex = Math.max(
+    0,
+    phases.findIndex(
+      (p) =>
+        p.key === project.status ||
+        p.label.toLowerCase() === project.status?.toLowerCase(),
+    ),
+  );
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+    <div className="space-y-6">
       {error && (
         <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{error}</div>
       )}
 
-      {/* Left sidebar */}
-      <aside className="w-full lg:w-72 lg:shrink-0 lg:sticky lg:top-8 space-y-4">
+      {/* Top Greeting & Back Button */}
+      <div>
         <button
           type="button"
           onClick={() => router.back()}
-          className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors -mb-1"
+          className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors mb-2"
         >
           <ArrowLeft size={14} />
-          Back
+          All projects
         </button>
-        <h1 className="text-lg font-bold leading-tight">{project.name}</h1>
-        {project.description && (
-          <p className="text-xs text-[var(--muted-foreground)] leading-relaxed -mt-1">
-            {project.description}
-          </p>
-        )}
+        <p className="text-sm text-[var(--muted-foreground)]">Hi {clientFirstName},</p>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)] mt-0.5">
+          Here&apos;s where your {project.name} stands
+        </h1>
+      </div>
 
-        {/* Current status */}
-        {currentStatus && (
-          <div
-            className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
-            style={{
-              backgroundColor: currentStatus.color,
-              color: "#fff",
-            }}
-          >
-            {currentStatus.name}
-          </div>
-        )}
-
-        {/* Timeline */}
-        {(project.startDate || project.endDate) && (
-          <>
-            <div className="border-t border-[var(--border)]" />
-            <div className="space-y-1.5">
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] flex items-center gap-1.5 mb-2">
-                <Calendar size={12} />
-                Timeline
-              </h2>
-              {project.startDate && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-[var(--muted-foreground)]">Start</span>
-                  <span>{formatDateDisplay(project.startDate)}</span>
-                </div>
-              )}
-              {project.endDate && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-[var(--muted-foreground)]">End</span>
-                  <span>{formatDateDisplay(project.endDate)}</span>
-                </div>
-              )}
-              {project.endDate && (() => {
-                const end = new Date(project.endDate);
-                const diffDays = Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                if (diffDays < 0) {
-                  return (
-                    <p className="text-xs text-red-500 font-medium">
-                      {Math.abs(diffDays)} day{Math.abs(diffDays) !== 1 ? "s" : ""} overdue
-                    </p>
-                  );
-                }
-                if (diffDays === 0) {
-                  return <p className="text-xs text-amber-600 font-medium">Due today</p>;
-                }
-                return (
-                  <p className={`text-xs font-medium ${diffDays <= 7 ? "text-amber-600" : "text-[var(--muted-foreground)]"}`}>
-                    {diffDays} day{diffDays !== 1 ? "s" : ""} left
-                  </p>
-                );
-              })()}
-            </div>
-          </>
-        )}
-      </aside>
-
-      {/* Right content area -- tabbed sections */}
-      <div className="flex-1 min-w-0">
-        {/* Pending actions banner */}
-        {(() => {
-          if (actionTotal === 0) return null;
-          const parts: string[] = [];
-          if (toApproveCount > 0) parts.push(`${toApproveCount} to approve`);
-          if (toSignCount > 0) parts.push(`${toSignCount} to sign`);
-          if (openVoteCount > 0) parts.push(`${openVoteCount} ${openVoteCount === 1 ? "vote" : "votes"}`);
-          return (
-            <button
-              onClick={() => setActiveTab(toApproveCount + toSignCount === 0 ? "tasks" : "files")}
-              className="w-full mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"
-            >
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-bold shrink-0">
-                {actionTotal}
+      {/* Project Status & Milestone Track Card */}
+      <section className="p-5 sm:p-6 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-lg font-bold text-[var(--foreground)]">{project.name}</h2>
+            {currentStatus && (
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                style={{
+                  backgroundColor: `color-mix(in srgb, ${currentStatus.color} 15%, transparent)`,
+                  color: currentStatus.color,
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: currentStatus.color }}
+                />
+                {currentStatus.name}
               </span>
-              <div>
-                <p className="text-sm font-medium text-amber-900">
-                  {actionTotal === 1 ? "1 item to review" : `${actionTotal} items to review`}
-                </p>
-                <p className="text-xs text-amber-700">{parts.join(" · ")}</p>
+            )}
+          </div>
+          {project.endDate && (
+            <span className="text-xs sm:text-sm text-[var(--muted-foreground)]">
+              Launch planned for{" "}
+              <strong className="text-[var(--foreground)] font-semibold">
+                {new Date(project.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </strong>
+            </span>
+          )}
+        </div>
+
+        <ol className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+          {phases.map((phase, idx) => {
+            const isDone = idx < currentStatusIndex;
+            const isCurrent = idx === currentStatusIndex;
+            return (
+              <li key={phase.key} className="flex flex-col gap-2">
+                <span
+                  className={`h-1.5 rounded-full ${
+                    isDone
+                      ? "bg-[var(--primary)]"
+                      : isCurrent
+                        ? "bg-gradient-to-r from-[var(--primary)] to-[var(--border)]"
+                        : "bg-[var(--border)]"
+                  }`}
+                />
+                <span
+                  className={`text-xs sm:text-sm font-semibold truncate ${
+                    isCurrent
+                      ? "text-[var(--primary)]"
+                      : isDone
+                        ? "text-[var(--foreground)]"
+                        : "text-[var(--muted-foreground)]"
+                  }`}
+                >
+                  {phase.label}
+                </span>
+                <span className="text-[11px] sm:text-xs text-[var(--muted-foreground)]">
+                  {isDone
+                    ? "Completed"
+                    : isCurrent
+                      ? "Now · In progress"
+                      : idx === phases.length - 1 && project.endDate
+                        ? new Date(project.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                        : "Upcoming"}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+
+      {/* Main 2-Column Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Left Column (2 cols) */}
+        <div className="lg:col-span-2 space-y-6 min-w-0">
+          {/* Actionable "Needs your review" Deliverable Highlight */}
+          {highlightedReviewItem && (
+            <section className="p-5 sm:p-6 rounded-2xl bg-[var(--background)] border-2 border-[var(--primary)] space-y-4">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex px-2.5 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] text-xs font-semibold">
+                  Needs your review
+                </span>
+                <span className="text-xs text-[var(--muted-foreground)]">
+                  {formatDateDisplay(highlightedReviewItem.createdAt)}
+                </span>
               </div>
-            </button>
-          );
-        })()}
+              <div className="flex gap-4 items-center">
+                <div className="w-20 sm:w-28 h-16 sm:h-20 rounded-lg bg-[var(--muted)] border border-[var(--border)] flex flex-col items-center justify-center shrink-0 text-[var(--muted-foreground)]">
+                  <FileText size={24} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base font-bold text-[var(--foreground)] truncate">
+                    {highlightedReviewItem.title}
+                  </h3>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                    {highlightedReviewItem.file.filename}
+                    {highlightedReviewItem.file.sizeBytes ? ` · ${formatBytes(highlightedReviewItem.file.sizeBytes)}` : ""}
+                  </p>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1.5 line-clamp-2">
+                    {highlightedReviewItem.requestNote || "Leave comments on the file, then approve or ask for changes."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                {highlightedReviewItem.type === "deliverable" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setReviewDocId(highlightedReviewItem.id)}
+                      className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-xs sm:text-sm font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewDocId(highlightedReviewItem.id)}
+                      className="px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--foreground)] text-xs sm:text-sm font-semibold hover:bg-[var(--muted)] transition-colors"
+                    >
+                      Request changes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewDocId(highlightedReviewItem.id)}
+                      className="text-xs sm:text-sm font-semibold text-[var(--primary)] hover:underline ml-1"
+                    >
+                      Open file
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openDocumentConfirm(highlightedReviewItem, "accepted")}
+                      className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-xs sm:text-sm font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openDocumentConfirm(highlightedReviewItem, "declined")}
+                      className="px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--foreground)] text-xs sm:text-sm font-semibold hover:bg-[var(--muted)] transition-colors"
+                    >
+                      Request changes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewingDoc(highlightedReviewItem)}
+                      className="text-xs sm:text-sm font-semibold text-[var(--primary)] hover:underline ml-1"
+                    >
+                      Open file
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Pending actions banner for other items */}
+          {(() => {
+            if (actionTotal === 0 || highlightedReviewItem) return null;
+            const parts: string[] = [];
+            if (toApproveCount > 0) parts.push(`${toApproveCount} to approve`);
+            if (toSignCount > 0) parts.push(`${toSignCount} to sign`);
+            if (openVoteCount > 0) parts.push(`${openVoteCount} ${openVoteCount === 1 ? "vote" : "votes"}`);
+            return (
+              <button
+                onClick={() => setActiveTab(toApproveCount + toSignCount === 0 ? "tasks" : "files")}
+                className="w-full p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"
+              >
+                <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-bold shrink-0">
+                  {actionTotal}
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-amber-900">
+                    {actionTotal === 1 ? "1 item to review" : `${actionTotal} items to review`}
+                  </p>
+                  <p className="text-xs text-amber-700">{parts.join(" · ")}</p>
+                </div>
+              </button>
+            );
+          })()}
 
         <div className="relative mb-6">
           <div className="flex overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -983,6 +1189,33 @@ export default function PortalProjectDetailPage() {
             </div>
             <div className="mt-3">
               <Pagination page={updatesPage} totalPages={updatesTotalPages} onPageChange={setUpdatesPage} />
+            </div>
+
+            {/* Inline Quick Reply matching the artboard */}
+            <div className="mt-6 pt-4 border-t border-[var(--border)] flex gap-2.5 items-center">
+              <label htmlFor="portal-quick-reply" className="sr-only">Reply to {agencyName}</label>
+              <input
+                id="portal-quick-reply"
+                value={quickReplyText}
+                onChange={(e) => setQuickReplyText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendQuickReply();
+                  }
+                }}
+                placeholder={`Reply to ${agencyName}...`}
+                className="flex-1 min-w-0 px-3.5 py-2.5 text-sm rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:ring-1 focus:ring-[var(--primary)]"
+              />
+              <button
+                type="button"
+                onClick={handleSendQuickReply}
+                disabled={sendingQuickReply || !quickReplyText.trim()}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
+              >
+                <Send size={14} />
+                <span>Send</span>
+              </button>
             </div>
           </div>
         )}
@@ -1581,6 +1814,93 @@ export default function PortalProjectDetailPage() {
           <PortalInvoicesSection projectId={id} />
         )}
       </div>
+
+      {/* Right Column (1 col) */}
+      <div className="space-y-6 lg:sticky lg:top-6 min-w-0">
+        {/* Active Invoice Card */}
+        {latestInvoice && (
+          <section className="p-5 sm:p-6 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-[var(--foreground)]">Invoice #{latestInvoice.invoiceNumber}</h2>
+              {latestInvoice.dueDate && (
+                <span className="text-xs text-[var(--muted-foreground)]">
+                  Due {new Date(latestInvoice.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </span>
+              )}
+            </div>
+            <p className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)]">
+              {formatCurrency(
+                (latestInvoice.amount ?? latestInvoice.lineItems?.reduce((s, item) => s + (item.quantity * item.unitPrice), 0)) || 0,
+                currency,
+              )}
+            </p>
+            <p className="text-xs text-[var(--muted-foreground)] line-clamp-2">
+              {latestInvoice.notes || latestInvoice.lineItems?.[0]?.description || "Project milestone"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab("invoices")}
+              className="w-full py-2.5 px-4 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-opacity text-center"
+            >
+              Pay invoice
+            </button>
+            <div>
+              <button
+                type="button"
+                onClick={() => handleDownloadInvoicePdf(latestInvoice.id, latestInvoice.invoiceNumber)}
+                className="text-xs font-semibold text-[var(--primary)] hover:underline inline-block"
+              >
+                Download PDF
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Recent Files Card */}
+        <section className="p-5 sm:p-6 rounded-2xl bg-[var(--background)] border border-[var(--border)]">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-[var(--foreground)]">Recent files</h2>
+            <button
+              type="button"
+              onClick={() => setActiveTab("files")}
+              className="text-xs font-semibold text-[var(--primary)] hover:underline"
+            >
+              All files
+            </button>
+          </div>
+          {project.files && project.files.length > 0 ? (
+            <ul className="divide-y divide-[var(--border)]">
+              {project.files.slice(0, 4).map((f) => (
+                <li
+                  key={f.id}
+                  onClick={() => handleDownload(f.id, f.filename)}
+                  className="py-2.5 flex items-center gap-2.5 cursor-pointer hover:text-[var(--primary)] transition-colors group"
+                >
+                  <FileText size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--primary)] shrink-0" />
+                  <span className="text-xs font-medium truncate flex-1">{f.filename}</span>
+                  <span className="text-[11px] text-[var(--muted-foreground)] shrink-0">
+                    {new Date(f.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-[var(--muted-foreground)] py-2">No files shared yet.</p>
+          )}
+        </section>
+
+        {/* Project Lead Card */}
+        <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] flex items-center gap-3">
+          <span className="w-10 h-10 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center text-xs font-bold shrink-0">
+            {projectLeadInitials || "TL"}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold truncate text-[var(--foreground)]">{projectLeadName}</p>
+            <p className="text-xs text-[var(--muted-foreground)] truncate">Your project lead at {agencyName}</p>
+          </div>
+        </section>
+      </div>
+    </div>
 
       {/* Task Detail Modal */}
       {openTaskId && (() => {

@@ -26,6 +26,7 @@ import {
   PlanLimit,
   CurrentOrg,
   CurrentUser,
+  CurrentMember,
   contentDisposition,
   toCsv,
 } from "../common";
@@ -50,8 +51,10 @@ export class ProjectsController {
     @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
     @Query() query: ClientProjectListQueryDto,
+    @CurrentMember("role") role?: string,
   ) {
-    return this.projectsService.findByClient(userId, orgId, query);
+    const isPrivileged = role === "owner" || role === "admin";
+    return this.projectsService.findByClient(userId, orgId, query, isPrivileged);
   }
 
   @Get("mine/:id")
@@ -59,8 +62,10 @@ export class ProjectsController {
     @Param("id") id: string,
     @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
+    @CurrentMember("role") role?: string,
   ) {
-    return this.projectsService.findOneByClient(id, userId, orgId);
+    const isPrivileged = role === "owner" || role === "admin";
+    return this.projectsService.findOneByClient(id, userId, orgId, isPrivileged);
   }
 
   @Get("stats")

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en"><head><style data-dc-design-system-vars="">@layer{:root{--primary:#006b68;--primary-hover:#005654;--on-primary:#ffffff;--primary-subtle:#e2f0ee;--primary-subtle-foreground:#005654;--ring:#006b68;--brass:#c99a3c;--on-brass:#2a1e05;--brass-text:#7f5d0c;--brass-surface:#f7efdc;--background:#ffffff;--surface-raised:#ffffff;--muted:#f6f5f1;--muted-strong:#eceae4;--foreground:#15201f;--muted-foreground:#5c6664;--border:#e3e1da;--input-border:#8e9593;--danger:#c4321f;--danger-surface:#fde8e6;--success:#167347;--success-surface:#dff3e8;--pro:#7f5d0c;--pro-surface:#f7efdc;--status-not-started:#8a9290;--status-not-started-surface:#eceae4;--status-not-started-foreground:#4f5755;--status-in-progress:#2f6fe4;--status-in-progress-surface:#e5edfd;--status-in-progress-foreground:#1d4ed8;--status-in-review:#7c4ddb;--status-in-review-surface:#efe9fc;--status-in-review-foreground:#5b2bc2;--status-completed:#1f9d63;--status-completed-surface:#dff3e8;--status-completed-foreground:#166a45;--status-cancelled:#d9452f;--status-cancelled-surface:#fde8e6;--status-cancelled-foreground:#b42318;--color-primary:#006b68;--color-primary-light:#005654;--color-accent:#c99a3c;--color-accent-dark:#7f5d0c;--color-background:#ffffff;--color-background-secondary:#f6f5f1;--color-background-card:#ffffff;--color-foreground:#15201f;--color-foreground-secondary:#5c6664;--color-border:#e3e1da;--blog-pros:#167347;--blog-cons:#7f5d0c;--stripe:#635bff;--shadow-sm:0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);--shadow-md:0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);--shadow-lg:0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);--shadow-xl:0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--space-24:96px;--space-32:128px;--container:1152px;--radius-sm:4px;--radius-md:6px;--radius:0.5rem;--radius-xl:12px;--radius-2xl:16px;--radius-full:9999px;--font-site:"Inter", system-ui, -apple-system, sans-serif;--font-app:system-ui, -apple-system, sans-serif;--font-mono:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;--text-display:800 72px/1.25 var(--font-site);--text-heading-2:700 36px/40px var(--font-site);--text-heading-3:700 20px/28px var(--font-site);--text-price:700 36px/40px var(--font-site);--text-lead:400 20px/1.625 var(--font-site);--text-body-lg:400 18px/28px var(--font-site);--text-body-sm:400 14px/1.625 var(--font-site);--text-eyebrow:600 12px/16px var(--font-site);--text-app-title:600 20px/28px var(--font-app);--text-app-body:400 14px/20px var(--font-app);--text-app-label:500 12px/16px var(--font-app);--text-app-micro:600 10px/16px var(--font-app);}}</style>
+
+
+<meta charset="utf-8">
+<title>Northwind Studio · Client portal</title>
+<script src="5ae4b731-b078-4d81-b97a-3489321c44c9"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f6f5f1;color:#15201f}
+*{box-sizing:border-box}
+a{color:#2449c9}a:hover{color:#1a3696}
+.btn-brand:hover{background:#1a3696 !important}
+.btn-outline:hover{border-color:#5c6664 !important}
+.ptab:hover{color:#15201f !important}
+button:focus-visible,a:focus-visible{outline:2px solid #2449c9;outline-offset:2px}
+</style>
+</helmet>
+
+<div style="width: 100%; min-height: 1000px; background: #f6f5f1; color: #15201f; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 20px;">
+
+<!-- header: agency brand only -->
+<header style="background: #ffffff; border-bottom: 1px solid #e3e1da;">
+<div style="max-width: 1120px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; min-height: 64px;">
+<div style="display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+<span style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px;"><span style="width: 32px; height: 32px; border-radius: 8px; background: #2449c9; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800;">NS</span>Northwind Studio</span>
+<nav style="display: flex; gap: 4px;">
+<a class="ptab" href="#" aria-current="page" style="padding: 20px 12px 18px; border-bottom: 2px solid #2449c9; color: #15201f; font-weight: 600; text-decoration: none;">Projects</a>
+<a class="ptab" href="#" style="padding: 20px 12px 18px; color: #5c6664; text-decoration: none;">Files</a>
+<a class="ptab" href="#" style="padding: 20px 12px 18px; color: #5c6664; text-decoration: none;">Invoices</a>
+</nav>
+</div>
+<div style="display: flex; align-items: center; gap: 10px;">
+<span style="color: #5c6664;">Harbor &amp; Co</span>
+<span style="width: 32px; height: 32px; border-radius: 50%; background: #eceae4; color: #4f5755; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">JL</span>
+</div>
+</div>
+</header>
+
+<main style="max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px; display: flex; flex-direction: column; gap: 24px;">
+
+<div>
+<p style="margin: 0; color: #5c6664;">Hi Jordan,</p>
+<h1 style="margin: 4px 0 0; font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em;">Here's where your website redesign stands</h1>
+</div>
+
+<!-- project status -->
+<section style="padding: 24px; border-radius: 16px; background: #ffffff; border: 1px solid #e3e1da; display: flex; flex-direction: column; gap: 20px;">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700;">Website redesign</h2>
+<span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; background: #e5edfd; color: #1d4ed8; font-size: 12px; font-weight: 500;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2f6fe4;"></span>In Progress</span>
+</div>
+<span style="color: #5c6664;">Launch planned for <strong style="color: #15201f; font-weight: 600;">Nov 19</strong></span>
+</div>
+<ol style="margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+<li style="display: flex; flex-direction: column; gap: 8px;"><span style="height: 6px; border-radius: 9999px; background: #2449c9;"></span><span style="font-weight: 600;">Discovery</span><span style="font-size: 12px; color: #5c6664;">Done · Oct 8</span></li>
+<li style="display: flex; flex-direction: column; gap: 8px;"><span style="height: 6px; border-radius: 9999px; background: #2449c9;"></span><span style="font-weight: 600;">Wireframes</span><span style="font-size: 12px; color: #5c6664;">Done · Oct 14</span></li>
+<li style="display: flex; flex-direction: column; gap: 8px;" aria-current="step"><span style="height: 6px; border-radius: 9999px; background: linear-gradient(90deg, #2449c9 0 55%, #d9d7cf 55% 100%);"></span><span style="font-weight: 600; color: #2449c9;">Visual design</span><span style="font-size: 12px; color: #5c6664;">Now · your review</span></li>
+<li style="display: flex; flex-direction: column; gap: 8px;"><span style="height: 6px; border-radius: 9999px; background: #d9d7cf;"></span><span style="font-weight: 600; color: #4f5755;">Build &amp; launch</span><span style="font-size: 12px; color: #5c6664;">Nov 19</span></li>
+</ol>
+</section>
+
+<div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;">
+
+<div style="flex: 2 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 24px;">
+
+<!-- needs review -->
+<section style="padding: 24px; border-radius: 16px; background: #ffffff; border: 2px solid #2449c9; display: flex; flex-direction: column; gap: 16px;">
+<div style="display: flex; align-items: center; gap: 10px;">
+<span style="display: inline-flex; padding: 3px 10px; border-radius: 9999px; background: #e9edfa; color: #1a3696; font-size: 12px; font-weight: 600;">Needs your review</span>
+<span style="font-size: 12px; color: #5c6664;">Sent by Sam Kim · 2 days ago</span>
+</div>
+<div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+<div style="width: 168px; height: 112px; flex: none; border-radius: 10px; background: #eceae4; display: flex; flex-direction: column; gap: 6px; padding: 12px;">
+<span style="height: 10px; width: 60%; border-radius: 4px; background: #d9d7cf;"></span>
+<span style="flex: 1; border-radius: 6px; background: #d9d7cf;"></span>
+<span style="height: 8px; width: 80%; border-radius: 4px; background: #d9d7cf;"></span>
+</div>
+<div style="flex: 1 1 240px; min-width: 0;">
+<h3 style="margin: 0; font-size: 17px; font-weight: 700;">Homepage designs, version 2</h3>
+<p style="margin: 6px 0 0; color: #4f5755;">homepage-v2.pdf · 6 pages</p>
+<p style="margin: 8px 0 0; color: #4f5755;">Leave comments on the file, then approve or ask for changes.</p>
+</div>
+</div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap;">
+<button class="btn-brand" type="button" style="min-height: 44px; padding: 10px 20px; border: 0; border-radius: 8px; background: #2449c9; color: #ffffff; font: inherit; font-weight: 600; cursor: pointer;">Approve</button>
+<button class="btn-outline" type="button" style="min-height: 44px; padding: 10px 20px; border: 1px solid #8e9593; border-radius: 8px; background: #ffffff; color: #15201f; font: inherit; font-weight: 600; cursor: pointer;">Request changes</button>
+<a href="#" style="display: inline-flex; align-items: center; min-height: 44px; padding: 10px 8px; font-weight: 600; color: #2449c9; text-decoration: none;">Open file</a>
+</div>
+</section>
+
+<!-- updates -->
+<section style="padding: 24px; border-radius: 16px; background: #ffffff; border: 1px solid #e3e1da;">
+<h2 style="margin: 0; font-size: 16px; font-weight: 700;">Updates from Northwind</h2>
+<ol style="margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 20px;">
+<li style="display: flex; gap: 12px;"><span style="width: 32px; height: 32px; flex: none; border-radius: 50%; background: #e9edfa; color: #1a3696; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">SK</span><div><p style="margin: 0;"><strong style="font-weight: 600;">Sam Kim</strong> <span style="color: #5c6664;">· 2 days ago</span></p><p style="margin: 4px 0 0;">Homepage designs are ready. Leave comments right on the file and we'll fold them into Thursday's build.</p></div></li>
+<li style="display: flex; gap: 12px;"><span style="width: 32px; height: 32px; flex: none; border-radius: 50%; background: #e9edfa; color: #1a3696; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">EC</span><div><p style="margin: 0;"><strong style="font-weight: 600;">Ed Cotto</strong> <span style="color: #5c6664;">· Oct 14</span></p><p style="margin: 4px 0 0;">Sitemap and wireframes are approved, thanks Jordan. Moving into visual design this week.</p></div></li>
+</ol>
+<div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+<label for="reply" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Reply to Northwind</label>
+<input id="reply" placeholder="Reply to Northwind…" style="flex: 1 1 240px; min-width: 0; min-height: 44px; padding: 10px 14px; border: 1px solid #8e9593; border-radius: 8px; font: inherit; color: #15201f;">
+<button class="btn-brand" type="button" style="min-height: 44px; padding: 10px 18px; border: 0; border-radius: 8px; background: #2449c9; color: #ffffff; font: inherit; font-weight: 600; cursor: pointer;">Send</button>
+</div>
+</section>
+</div>
+
+<!-- right column -->
+<div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 24px;">
+<section style="padding: 24px; border-radius: 16px; background: #ffffff; border: 1px solid #e3e1da; display: flex; flex-direction: column; gap: 12px;">
+<div style="display: flex; align-items: center; justify-content: space-between;"><h2 style="margin: 0; font-size: 16px; font-weight: 700;">Invoice #1042</h2><span style="font-size: 12px; color: #5c6664;">Due Nov 15</span></div>
+<p style="margin: 0; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">$2,400.00</p>
+<p style="margin: 0; color: #4f5755;">Visual design milestone</p>
+<button class="btn-brand" type="button" style="min-height: 44px; padding: 10px 18px; border: 0; border-radius: 8px; background: #2449c9; color: #ffffff; font: inherit; font-weight: 600; cursor: pointer;">Pay invoice</button>
+<a href="#" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none;">Download PDF</a>
+</section>
+
+<section style="padding: 24px; border-radius: 16px; background: #ffffff; border: 1px solid #e3e1da;">
+<div style="display: flex; align-items: center; justify-content: space-between;"><h2 style="margin: 0; font-size: 16px; font-weight: 700;">Recent files</h2><a href="#" style="font-size: 13px; font-weight: 600; color: #2449c9; text-decoration: none;">All files</a></div>
+<ul style="margin: 14px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px;">
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 0;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="#4f5755" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg><span style="flex: 1; min-width: 0;">homepage-v2.pdf</span><span style="font-size: 12px; color: #5c6664;">Oct 21</span></li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 0;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="#4f5755" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg><span style="flex: 1; min-width: 0;">wireframes-final.pdf</span><span style="font-size: 12px; color: #5c6664;">Oct 14</span></li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 0;"><svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="#4f5755" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg><span style="flex: 1; min-width: 0;">sitemap.pdf</span><span style="font-size: 12px; color: #5c6664;">Oct 8</span></li>
+</ul>
+</section>
+
+<section style="padding: 20px 24px; border-radius: 16px; background: #ffffff; border: 1px solid #e3e1da; display: flex; gap: 12px; align-items: center;">
+<span style="width: 40px; height: 40px; flex: none; border-radius: 50%; background: #e9edfa; color: #1a3696; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;">SK</span>
+<div><p style="margin: 0; font-weight: 600;">Sam Kim</p><p style="margin: 2px 0 0; font-size: 13px; color: #5c6664;">Your project lead at Northwind</p></div>
+</section>
+</div>
+</div>
+</main>
+
+<footer style="max-width: 1120px; margin: 0 auto; padding: 0 24px 40px; font-size: 13px; color: #5c6664;">© 2026 Northwind Studio · portal.northwind.studio</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+
+
+</body></html>

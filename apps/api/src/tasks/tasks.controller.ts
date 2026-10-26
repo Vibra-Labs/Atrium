@@ -29,6 +29,7 @@ import {
   Roles,
   CurrentUser,
   CurrentOrg,
+  CurrentMember,
   PaginationQueryDto,
   contentDisposition,
   toCsv,
@@ -86,13 +87,16 @@ export class TasksController {
     @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
     @Query() pagination: PaginationQueryDto,
+    @CurrentMember("role") role?: string,
   ) {
+    const isPrivileged = role === "owner" || role === "admin";
     return this.tasksService.findByProjectForClient(
       projectId,
       userId,
       orgId,
       pagination.page,
       pagination.limit,
+      isPrivileged,
     );
   }
 

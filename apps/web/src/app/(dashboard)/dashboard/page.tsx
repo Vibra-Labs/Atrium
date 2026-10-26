@@ -455,56 +455,100 @@ export default function DashboardPage() {
                 </Link>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-[var(--border)] text-xs font-medium text-[var(--muted-foreground)]">
-                      <th className="py-3 px-5">Project</th>
-                      <th className="py-3 px-3">Client</th>
-                      <th className="py-3 px-3">Status</th>
-                      <th className="py-3 px-3">Progress</th>
-                      <th className="py-3 px-5 text-right">Due</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border)]">
-                    {recentProjects.map((p) => {
-                      const badge = getStatusBadge(p.status);
-                      const progress = calculateProgress(p);
-                      return (
-                        <tr key={p.id} className="hover:bg-[var(--muted)]/30 transition-colors">
-                          <td className="py-3 px-5 font-semibold text-[var(--foreground)]">
-                            <Link href={`/dashboard/projects/${p.id}`} className="hover:text-[var(--primary)] transition-colors">
-                              {p.name}
-                            </Link>
-                          </td>
-                          <td className="py-3 px-3 text-xs text-[var(--muted-foreground)]">
-                            {getClientDisplayName(p)}
-                          </td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.bg}`}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="w-24 sm:w-28 bg-[var(--muted)] rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className="bg-[var(--primary)] h-full rounded-full transition-all duration-300"
-                                style={{ width: `${progress}%` }}
-                              />
-                            </div>
-                          </td>
-                          <td className="py-3 px-5 text-right text-xs text-[var(--muted-foreground)]">
+              <>
+                {/* Mobile View: Cards */}
+                <div className="divide-y divide-[var(--border)] sm:hidden">
+                  {recentProjects.map((p) => {
+                    const badge = getStatusBadge(p.status);
+                    const progress = calculateProgress(p);
+                    return (
+                      <Link
+                        key={p.id}
+                        href={`/dashboard/projects/${p.id}`}
+                        className="block p-4 hover:bg-[var(--muted)]/40 transition-colors"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="font-semibold text-sm text-[var(--foreground)] truncate">
+                            {p.name}
+                          </span>
+                          <span className="text-xs text-[var(--muted-foreground)] shrink-0">
                             {formatDueDate(p.endDate)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </span>
+                        </div>
+                        <span className="block mt-0.5 text-xs text-[var(--muted-foreground)] truncate">
+                          {getClientDisplayName(p)}
+                        </span>
+                        <div className="mt-3 flex items-center gap-3">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${badge.bg}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                            {badge.label}
+                          </span>
+                          <div className="flex-1 bg-[var(--muted)] rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-[var(--primary)] h-full rounded-full transition-all duration-300"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+
+                {/* Tablet / Desktop View: Table */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-[var(--border)] text-xs font-medium text-[var(--muted-foreground)]">
+                        <th className="py-3 px-5">Project</th>
+                        <th className="py-3 px-3">Client</th>
+                        <th className="py-3 px-3">Status</th>
+                        <th className="py-3 px-3">Progress</th>
+                        <th className="py-3 px-5 text-right">Due</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {recentProjects.map((p) => {
+                        const badge = getStatusBadge(p.status);
+                        const progress = calculateProgress(p);
+                        return (
+                          <tr key={p.id} className="hover:bg-[var(--muted)]/30 transition-colors">
+                            <td className="py-3 px-5 font-semibold text-[var(--foreground)]">
+                              <Link href={`/dashboard/projects/${p.id}`} className="hover:text-[var(--primary)] transition-colors">
+                                {p.name}
+                              </Link>
+                            </td>
+                            <td className="py-3 px-3 text-xs text-[var(--muted-foreground)]">
+                              {getClientDisplayName(p)}
+                            </td>
+                            <td className="py-3 px-3">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.bg}`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                                {badge.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="w-24 sm:w-28 bg-[var(--muted)] rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="bg-[var(--primary)] h-full rounded-full transition-all duration-300"
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                            </td>
+                            <td className="py-3 px-5 text-right text-xs text-[var(--muted-foreground)]">
+                              {formatDueDate(p.endDate)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         </div>

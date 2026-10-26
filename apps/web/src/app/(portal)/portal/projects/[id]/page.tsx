@@ -859,16 +859,16 @@ export default function PortalProjectDetailPage() {
             return (
               <button
                 onClick={() => setActiveTab(toApproveCount + toSignCount === 0 ? "tasks" : "files")}
-                className="w-full p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-left hover:bg-amber-100 transition-colors"
+                className="w-full p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-center gap-3 text-left hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors"
               >
                 <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-bold shrink-0">
                   {actionTotal}
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-amber-900">
+                  <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
                     {actionTotal === 1 ? "1 item to review" : `${actionTotal} items to review`}
                   </p>
-                  <p className="text-xs text-amber-700">{parts.join(" · ")}</p>
+                  <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">{parts.join(" · ")}</p>
                 </div>
               </button>
             );
@@ -1449,29 +1449,33 @@ export default function PortalProjectDetailPage() {
             <div>
               {needsReview.some((d) => d.type === "deliverable") && (
                 <div className="mb-6">
-                  <h3 className="text-sm font-medium mb-2">Needs your review</h3>
-                  <div className="space-y-2">
+                  <h3 className="text-sm font-semibold mb-2.5 text-[var(--foreground)]">Needs your review</h3>
+                  <div className="space-y-2.5">
                     {needsReview.filter((d) => d.type === "deliverable").map((d) => (
                       <div
                         key={d.id}
                         data-testid={`needs-review-${d.id}`}
-                        className="p-3 border border-amber-200 bg-amber-50 rounded-lg flex items-center justify-between gap-3"
+                        className="p-4 border border-amber-300/80 bg-amber-50/90 dark:border-amber-700/40 dark:bg-amber-950/30 rounded-xl flex items-center justify-between gap-4 shadow-sm"
                       >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-amber-950 dark:text-amber-100 truncate">
                             {d.title}
                             {(d.currentVersion ?? 1) > 1 && (
-                              <span className="ml-2 text-xs text-[var(--muted-foreground)]">v{d.currentVersion}</span>
+                              <span className="ml-2 text-xs font-normal text-amber-800/80 dark:text-amber-300/70">v{d.currentVersion}</span>
                             )}
                           </p>
                           {d.requestNote && (
-                            <p className="text-xs text-[var(--muted-foreground)] line-clamp-2">{d.requestNote}</p>
+                            <p className="text-xs text-amber-900/90 dark:text-amber-200/80 line-clamp-2 mt-1 leading-relaxed">
+                              {d.requestNote}
+                            </p>
                           )}
-                          <p className="text-xs text-[var(--muted-foreground)]">sent {formatRelativeTime(d.sentAt ?? d.createdAt)}</p>
+                          <p className="text-xs text-amber-800/70 dark:text-amber-400/70 mt-1">
+                            sent {formatRelativeTime(d.sentAt ?? d.createdAt)}
+                          </p>
                         </div>
                         <button
                           onClick={() => setReviewDocId(d.id)}
-                          className="px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-[var(--primary)] hover:opacity-90 shrink-0"
+                          className="px-4 py-2 text-xs font-semibold rounded-lg text-white bg-[var(--primary)] hover:opacity-90 shrink-0 shadow-sm transition-opacity"
                         >
                           Review
                         </button>

@@ -186,13 +186,16 @@ export class DocumentsController {
     @CurrentUser("id") userId: string,
     @CurrentOrg("id") orgId: string,
     @Query() pagination: PaginationQueryDto,
+    @CurrentMember("role") role?: string,
   ) {
+    const isPrivileged = role === "owner" || role === "admin";
     return this.documentsService.findByProjectForClient(
       projectId,
       userId,
       orgId,
       pagination.page,
       pagination.limit,
+      isPrivileged,
     );
   }
 

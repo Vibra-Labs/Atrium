@@ -38,6 +38,12 @@ export class PreviewModeMiddleware implements NestMiddleware {
       throw new UnauthorizedException("Preview unavailable");
     }
 
+    if (targetUserId === authReq.user?.id) {
+      authReq.previewMode = true;
+      next();
+      return;
+    }
+
     const targetMember = await this.prisma.member.findFirst({
       where: { userId: targetUserId, organizationId: orgId },
       select: { userId: true, role: true, organizationId: true },

@@ -126,6 +126,23 @@ describe("PreviewModeMiddleware", () => {
     );
   });
 
+  it("allows owner to preview portal as themselves (unassigned project preview)", async () => {
+    const prisma = buildPrismaMock({
+      userId: "owner-1",
+      role: "owner",
+      organizationId: "org-1",
+    });
+    const mw = new PreviewModeMiddleware(prisma as any);
+    const req = buildReq({ headers: { "x-preview-as": "owner-1" } });
+    const next = mock(() => {}) as unknown as NextFunction;
+
+    await mw.use(req as Request, {} as Response, next);
+
+    expect(req.user?.id).toBe("owner-1");
+    expect(req.previewMode).toBe(true);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects with 401 when target is owner or admin (not a client)", async () => {
     const prisma = buildPrismaMock({
       userId: "other-admin",

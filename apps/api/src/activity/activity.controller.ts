@@ -1,9 +1,9 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard, OrgRoleGuard, Roles, CurrentOrg } from "../auth";
+import { AuthGuard, RolesGuard, Roles, CurrentOrg } from "../common";
 import { ActivityService } from "./activity.service";
 
 @Controller("activity")
-@UseGuards(JwtAuthGuard, OrgRoleGuard)
+@UseGuards(AuthGuard, RolesGuard)
 export class ActivityController {
   constructor(private readonly activityService: ActivityService) {}
 

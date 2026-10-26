@@ -139,17 +139,17 @@ export default function DashboardPage() {
     // 4. Pending approvals
     apiFetch<PendingApproval[]>("/documents/approvals/pending")
       .then((res) => setPendingApprovals(res || []))
-      .catch(console.error);
+      .catch(() => setPendingApprovals([]));
 
     // 5. Overdue invoices
     apiFetch<PaginatedResponse<OverdueInvoice>>("/invoices?status=overdue&limit=3")
       .then((res) => setOverdueInvoices(res.data || []))
-      .catch(console.error);
+      .catch(() => setOverdueInvoices([]));
 
     // 6. Recent activity
     apiFetch<ActivityItem[]>("/activity?limit=5")
       .then((res) => setActivity(res || []))
-      .catch(console.error);
+      .catch(() => setActivity([]));
   }, []);
 
   const totalAttentionItems = pendingApprovals.length + overdueInvoices.length;

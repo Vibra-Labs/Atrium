@@ -58,14 +58,14 @@ test.describe("Email Verification", () => {
     // The banner should be visible for unverified users
     // Banner may or may not show depending on whether the test user got verified
     // during setup. We check it's either visible or the page loaded correctly.
-    const heading = page.getByRole("heading", { name: /dashboard/i });
+    const heading = page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ });
     await expect(heading).toBeVisible({ timeout: 10000 });
   });
 
   test("email verification banner has resend button", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(
-      page.getByRole("heading", { name: /dashboard/i }),
+      page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ }),
     ).toBeVisible({ timeout: 10000 });
 
     const resendButton = page.getByRole("button", {
@@ -82,7 +82,7 @@ test.describe("Email Verification", () => {
   test("email verification banner can be dismissed", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(
-      page.getByRole("heading", { name: /dashboard/i }),
+      page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ }),
     ).toBeVisible({ timeout: 10000 });
 
     const banner = page.getByText(/email address is not verified/i);

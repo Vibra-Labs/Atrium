@@ -11,6 +11,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { OrgSwitcher, type SwitchableOrg } from "@/components/org-switcher";
+import { initials } from "@/lib/initials";
 
 interface MobileNavProps {
   logoSrc: string | null;
@@ -115,12 +116,7 @@ export function MobileNav({
             className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-[var(--muted)] transition-colors group"
           >
             <div className="w-8 h-8 rounded-full bg-[var(--muted)] text-[var(--foreground)] border border-[var(--border)] flex items-center justify-center font-semibold text-xs shrink-0">
-              {(userName || "U")
-                .split(" ")
-                .map((n: string) => n[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase()}
+              {initials(userName, "U")}
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-xs font-semibold text-[var(--foreground)] truncate group-hover:text-[var(--primary)] transition-colors">

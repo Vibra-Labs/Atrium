@@ -20,7 +20,16 @@ import { UpdatesService } from "./updates.service";
 import { WeeklyUpdatesService } from "./weekly-updates.service";
 import type { WeeklyDraft, WeeklyUpdateDue } from "./weekly-updates.service";
 import { CreateUpdateDto, UpdateContentDto, UpdatePreviewPrefsDto } from "./updates.dto";
-import { AuthGuard, RolesGuard, Roles, CurrentUser, CurrentOrg, CurrentMember, PaginationQueryDto } from "../common";
+import {
+  AuthGuard,
+  RolesGuard,
+  Roles,
+  CurrentUser,
+  CurrentOrg,
+  CurrentMember,
+  PaginationQueryDto,
+  isPrivilegedRole,
+} from "../common";
 import type { UploadedFile as UploadedFileType } from "../files/files.service";
 
 @Controller("updates")
@@ -132,7 +141,7 @@ export class UpdatesController {
     @Query() pagination: PaginationQueryDto,
     @CurrentMember("role") role?: string,
   ) {
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     return this.updatesService.findTimelineForClient(
       projectId,
       userId,

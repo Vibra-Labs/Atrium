@@ -36,6 +36,9 @@ const STANDALONE_FILES = {
   documentVersions: { none: {} },
 };
 
+/** Checkbox-task progress for one project. */
+type TaskProgress = { total: number; done: number; lastAt: Date | null };
+
 @Injectable()
 export class ProjectsService implements OnApplicationBootstrap {
   private readonly logger: Logger = new Logger(ProjectsService.name);
@@ -121,7 +124,6 @@ export class ProjectsService implements OnApplicationBootstrap {
             },
           },
           labels: { include: { label: true } },
-          tasks: { select: { id: true, status: true } },
         },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
@@ -129,7 +131,48 @@ export class ProjectsService implements OnApplicationBootstrap {
       this.prisma.project.count({ where }),
     ]);
 
-    return paginatedResponse(data, total, page, limit);
+    const taskStats = await this.taskProgress(data.map((p) => p.id), organizationId);
+    const rows = data.map((p) => {
+      const stats = taskStats.get(p.id);
+      return { ...p, taskCount: stats?.total ?? 0, completedTaskCount: stats?.done ?? 0 };
+    });
+    return paginatedResponse(rows, total, page, limit);
+  }
+
+  /**
+   * Task progress per project, in one query. Counts checkbox tasks only: an open
+   * vote is waiting on the client, not agency work. Cancelled tasks are dropped
+   * so they don't cap the bar.
+   */
+  private async taskProgress(
+    projectIds: string[],
+    organizationId: string,
+  ): Promise<Map<string, TaskProgress>> {
+    const taskStats = new Map<string, TaskProgress>();
+    if (projectIds.length === 0) return taskStats;
+
+    const taskGroups = await this.prisma.task.groupBy({
+      by: ["projectId", "status"],
+      where: {
+        projectId: { in: projectIds },
+        organizationId,
+        type: "checkbox",
+        status: { not: "cancelled" },
+      },
+      _count: { _all: true },
+      _max: { updatedAt: true },
+    });
+
+    for (const g of taskGroups) {
+      const stats = taskStats.get(g.projectId) ?? { total: 0, done: 0, lastAt: null };
+      stats.total += g._count._all;
+      if (g.status === "done") stats.done += g._count._all;
+      if (g._max.updatedAt && (!stats.lastAt || g._max.updatedAt > stats.lastAt)) {
+        stats.lastAt = g._max.updatedAt;
+      }
+      taskStats.set(g.projectId, stats);
+    }
+    return taskStats;
   }
 
   async findOne(id: string, organizationId: string) {
@@ -156,6 +199,7 @@ export class ProjectsService implements OnApplicationBootstrap {
       ? {}
       : { clients: { some: { userId: clientUserId } } };
 
+    // The project lead is shown by name only, never with the owner's email.
     const [project, org] = await Promise.all([
       this.prisma.project.findFirst({
         where: {
@@ -187,9 +231,7 @@ export class ProjectsService implements OnApplicationBootstrap {
           name: true,
           members: {
             where: { role: "owner" },
-            select: {
-              user: { select: { id: true, name: true, email: true, image: true } },
-            },
+            select: { user: { select: { id: true, name: true } } },
             take: 1,
           },
         },
@@ -242,32 +284,7 @@ export class ProjectsService implements OnApplicationBootstrap {
       this.prisma.project.count({ where }),
     ]);
 
-    // Progress counts checkbox tasks only: an open vote is waiting on the client,
-    // not agency work. Cancelled tasks are dropped so they don't cap the bar.
-    const taskGroups = data.length
-      ? await this.prisma.task.groupBy({
-          by: ["projectId", "status"],
-          where: {
-            projectId: { in: data.map((p) => p.id) },
-            organizationId,
-            type: "checkbox",
-            status: { not: "cancelled" },
-          },
-          _count: { _all: true },
-          _max: { updatedAt: true },
-        })
-      : [];
-
-    const taskStats = new Map<string, { total: number; done: number; lastAt: Date | null }>();
-    for (const g of taskGroups) {
-      const stats = taskStats.get(g.projectId) ?? { total: 0, done: 0, lastAt: null };
-      stats.total += g._count._all;
-      if (g.status === "done") stats.done += g._count._all;
-      if (g._max.updatedAt && (!stats.lastAt || g._max.updatedAt > stats.lastAt)) {
-        stats.lastAt = g._max.updatedAt;
-      }
-      taskStats.set(g.projectId, stats);
-    }
+    const taskStats = await this.taskProgress(data.map((p) => p.id), organizationId);
 
     const rows = data.map(({ _count, updates, files, ...p }) => {
       const stats = taskStats.get(p.id);
@@ -524,10 +541,16 @@ export class ProjectsService implements OnApplicationBootstrap {
         where: { organizationId, archivedAt: null, status: "completed" },
       }),
       this.prisma.document.count({
-        where: { project: { organizationId }, type: "deliverable", status: "pending" },
+        where: { project: { organizationId, archivedAt: null }, type: "deliverable", status: "pending" },
       }),
+      // Deliverables are counted above, so a deliverable that also needs a signature isn't counted twice.
       this.prisma.document.count({
-        where: { project: { organizationId }, requiresSignature: true, status: "pending" },
+        where: {
+          project: { organizationId, archivedAt: null },
+          type: { not: "deliverable" },
+          requiresSignature: true,
+          status: "pending",
+        },
       }),
     ]);
     return {

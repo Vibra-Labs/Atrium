@@ -27,6 +27,7 @@ import {
   CurrentOrg,
   CurrentUser,
   CurrentMember,
+  isPrivilegedRole,
   contentDisposition,
   toCsv,
 } from "../common";
@@ -53,7 +54,7 @@ export class ProjectsController {
     @Query() query: ClientProjectListQueryDto,
     @CurrentMember("role") role?: string,
   ) {
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     return this.projectsService.findByClient(userId, orgId, query, isPrivileged);
   }
 
@@ -64,7 +65,7 @@ export class ProjectsController {
     @CurrentOrg("id") orgId: string,
     @CurrentMember("role") role?: string,
   ) {
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     return this.projectsService.findOneByClient(id, userId, orgId, isPrivileged);
   }
 

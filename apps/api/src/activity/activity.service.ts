@@ -84,7 +84,7 @@ export class ActivityService {
 
     return data.map((a) => ({
       ...a,
-      actor: actorMap.get(a.actorId) ?? { id: a.actorId, name: "Client" },
+      actor: actorMap.get(a.actorId) ?? { id: a.actorId, name: "Unknown" },
     }));
   }
 }

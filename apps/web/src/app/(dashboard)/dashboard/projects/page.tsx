@@ -67,16 +67,11 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [showArchived, setShowArchived] = useState(initialArchived);
 
-  // Keep state in sync if query parameters change (e.g. back/forward navigation or link click)
+  // Follow the URL when it changes (back/forward, or a dashboard widget link),
+  // including clearing the filter when the parameter is gone.
   useEffect(() => {
-    const status = searchParams.get("status");
-    if (status !== null) {
-      setStatusFilter(status);
-    }
-    const archived = searchParams.get("archived");
-    if (archived !== null) {
-      setShowArchived(archived === "true");
-    }
+    setStatusFilter(searchParams.get("status") ?? "");
+    setShowArchived(searchParams.get("archived") === "true");
   }, [searchParams]);
   const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
   const orgLabels: LabelRecord[] = useCachedApi<LabelRecord[]>("/labels") ?? [];

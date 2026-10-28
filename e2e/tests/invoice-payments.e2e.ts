@@ -8,11 +8,16 @@ test.describe("Invoice Payments", () => {
   // ── Settings UI ──
 
   test.describe("Settings page", () => {
-    test("system settings shows Client Payments section", async ({ page }) => {
-      await page.goto("/dashboard/settings/payments");
+    test("billing settings shows the Client Invoice Payments section", async ({ page }) => {
+      await page.goto("/dashboard/settings/billing");
       await expect(
-        page.getByRole("heading", { name: /client payments/i }),
+        page.getByRole("heading", { name: /client invoice payments/i }),
       ).toBeVisible({ timeout: 5000 });
+    });
+
+    test("the old payments URL redirects to billing", async ({ page }) => {
+      await page.goto("/dashboard/settings/payments");
+      await expect(page).toHaveURL(/\/dashboard\/settings\/billing$/);
     });
 
     test("shows Stripe connection UI (direct key input or OAuth button)", async ({ page, request }) => {

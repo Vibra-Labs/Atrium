@@ -61,7 +61,7 @@ test.describe("Portal Isolation", () => {
 
     async function openTab(tab: "updates" | "tasks" | "files" | "invoices"): Promise<Page> {
       await portal.client.goto(`${WEB}/portal/projects/${portal.projectId}?tab=${tab}`);
-      await expect(portal.client.getByRole("heading", { name: "Portal Isolation E2E" })).toBeVisible({ timeout: 15000 });
+      await expect(portal.client.getByRole("heading", { name: "Portal Isolation E2E", exact: true })).toBeVisible({ timeout: 15000 });
       return portal.client;
     }
 

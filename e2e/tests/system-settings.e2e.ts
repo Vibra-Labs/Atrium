@@ -19,9 +19,9 @@ test.describe("System Settings", () => {
     await expect(page.getByText(/maximum file size/i)).toBeVisible();
   });
 
-  test("settings subnav has Workspace link", async ({ page }) => {
-    await page.goto("/dashboard/settings");
-    const workspaceLink = page.getByRole("link", { name: /^workspace$/i });
+  test("settings subnav has General link", async ({ page }) => {
+    await page.goto("/dashboard/settings/team");
+    const workspaceLink = page.getByRole("link", { name: /^general$/i });
     await expect(workspaceLink).toBeVisible();
     await workspaceLink.click();
     await expect(page).toHaveURL(/\/dashboard\/settings\/workspace/);

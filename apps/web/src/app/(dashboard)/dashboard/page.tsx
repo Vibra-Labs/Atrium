@@ -10,11 +10,14 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, invoiceTotal } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
 import { useSession } from "@/lib/session-context";
 import { formatRelativeTime } from "@/lib/utils";
 import { StatCardSkeleton } from "@/components/skeletons";
+import { initials } from "@/lib/initials";
+import { WeeklyUpdatesCard } from "./weekly-updates-card";
+import { ThisWeekCard } from "./this-week-card";
 
 interface ProjectClient {
   userId: string;
@@ -70,11 +73,12 @@ interface PendingApproval {
 interface OverdueInvoice {
   id: string;
   invoiceNumber: string;
-  amount: number;
+  type: string;
+  amount: number | null;
+  lineItems: { quantity: number; unitPrice: number }[];
   dueDate: string;
-  projectId?: string;
-  project?: { name: string };
-  client?: { name: string };
+  projectId: string | null;
+  project: { name: string } | null;
 }
 
 interface ActivityItem {
@@ -105,15 +109,16 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState("");
 
-  const now = new Date();
-  const hour = now.getHours();
+  // Read the clock after mount: the server render runs in the server's timezone,
+  // which would give the wrong greeting and a hydration mismatch.
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => setNow(new Date()), []);
+  const hour = now?.getHours() ?? 12;
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const firstName = userName ? userName.split(" ")[0] : "there";
-  const formattedToday = now.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  const formattedToday = now
+    ? now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    : "";
 
   useEffect(() => {
     // 1. Project stats
@@ -215,9 +220,6 @@ export default function DashboardPage() {
       return "—";
     }
   };
-
-  // Upcoming items for "This week"
-  const thisWeekProjects = recentProjects.filter((p) => p.endDate && p.status !== "completed");
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto">
@@ -321,6 +323,7 @@ export default function DashboardPage() {
             {/* Outstanding (Highlighted Brass / Amber Card) */}
             <a
               href="#overdue-invoices"
+              data-testid="outstanding-card"
               onClick={(e) => {
                 e.preventDefault();
                 const target = document.getElementById("overdue-invoices") || document.getElementById("attention");
@@ -352,7 +355,6 @@ export default function DashboardPage() {
           {/* Needs your attention Card */}
           <section
             id="attention"
-            data-testid="pending-approvals-card"
             className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm scroll-mt-6"
           >
             <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[var(--border)]">
@@ -376,6 +378,7 @@ export default function DashboardPage() {
                 {pendingApprovals.map((item) => (
                   <div
                     key={`approval-${item.id}`}
+                    data-testid="pending-approval"
                     className="flex items-center gap-3.5 p-4 sm:p-5 hover:bg-[var(--muted)]/40 transition-colors"
                   >
                     <span className="w-9 h-9 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0">
@@ -413,10 +416,10 @@ export default function DashboardPage() {
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-[var(--foreground)] truncate">
-                            Invoice #{inv.invoiceNumber} is overdue
+                            {inv.invoiceNumber} is overdue
                           </p>
                           <p className="text-xs text-[var(--muted-foreground)] truncate mt-0.5">
-                            {inv.project?.name || inv.client?.name || "Client"} · {formatCurrency(inv.amount, currency)}
+                            {inv.project?.name ?? "No project"} · {formatCurrency(invoiceTotal(inv), currency)}
                           </p>
                         </div>
                         <Link
@@ -433,6 +436,8 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+
+          <WeeklyUpdatesCard />
 
           {/* Recent projects Table Card */}
           <section className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm">
@@ -565,19 +570,11 @@ export default function DashboardPage() {
             ) : (
               <ol className="space-y-4">
                 {activity.map((item) => {
-                  const initials = item.actor?.name
-                    ? item.actor.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .slice(0, 2)
-                        .toUpperCase()
-                    : "CL";
 
                   return (
                     <li key={item.id} className="flex items-start gap-3 text-xs">
                       <span className="w-7 h-7 rounded-full bg-[var(--muted)] text-[var(--foreground)] flex items-center justify-center font-bold text-[10px] shrink-0 border border-[var(--border)]">
-                        {initials}
+                        {initials(item.actor?.name, "CL")}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[var(--foreground)] leading-snug">
@@ -597,57 +594,7 @@ export default function DashboardPage() {
             )}
           </section>
 
-          {/* This week Card */}
-          <section className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm sm:text-base font-semibold text-[var(--foreground)]">This week</h2>
-              <Link
-                href="/dashboard/calendar"
-                className="text-xs font-semibold text-[var(--primary)] hover:underline flex items-center gap-1"
-              >
-                <span>Calendar</span>
-                <ChevronRight size={13} />
-              </Link>
-            </div>
-
-            {thisWeekProjects.length === 0 ? (
-              <p className="text-xs text-[var(--muted-foreground)] py-2">
-                No pending deadlines this week.
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {thisWeekProjects.map((p) => {
-                  const d = p.endDate ? new Date(p.endDate) : new Date();
-                  const weekday = d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
-                  const dayNum = d.getDate();
-
-                  return (
-                    <li key={p.id} className="flex items-center gap-3">
-                      <div className="w-11 py-1 text-center rounded-lg bg-[var(--muted)] shrink-0 border border-[var(--border)]">
-                        <span className="block text-[10px] font-medium text-[var(--muted-foreground)] leading-none">
-                          {weekday}
-                        </span>
-                        <span className="block text-sm font-bold text-[var(--foreground)] leading-tight mt-0.5">
-                          {dayNum}
-                        </span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <Link
-                          href={`/dashboard/projects/${p.id}`}
-                          className="block text-xs font-semibold text-[var(--foreground)] hover:text-[var(--primary)] truncate transition-colors"
-                        >
-                          {p.name}
-                        </Link>
-                        <span className="block text-[11px] text-[var(--muted-foreground)] truncate mt-0.5">
-                          {getClientDisplayName(p)} · Target completion
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
+          <ThisWeekCard />
         </div>
       </div>
     </div>

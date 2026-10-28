@@ -17,6 +17,7 @@ import { DEFAULT_BRANDING } from "@atrium/shared";
 import { serverFetch } from "@/lib/server-api";
 import { logoSrc as buildLogoSrc } from "@/lib/logo-src";
 import { SessionProvider } from "@/lib/session-context";
+import { initials } from "@/lib/initials";
 
 async function getSession() {
   try {
@@ -187,12 +188,7 @@ export default async function DashboardLayout({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={session.user.image} alt="" className="w-full h-full object-cover" />
               ) : (
-                (session.user?.name || "U")
-                  .split(" ")
-                  .map((n: string) => n[0])
-                  .join("")
-                  .slice(0, 2)
-                  .toUpperCase()
+                initials(session.user?.name, "U")
               )}
             </div>
             <div className="flex-1 min-w-0 text-left">

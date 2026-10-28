@@ -39,6 +39,7 @@ import {
   CurrentUser,
   CurrentOrg,
   CurrentMember,
+  isPrivilegedRole,
   PaginationQueryDto,
   PlanLimit,
   RequiresFeature,
@@ -188,7 +189,7 @@ export class DocumentsController {
     @Query() pagination: PaginationQueryDto,
     @CurrentMember("role") role?: string,
   ) {
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     return this.documentsService.findByProjectForClient(
       projectId,
       userId,

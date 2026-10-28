@@ -54,16 +54,16 @@ test.describe.serial("Weekly client updates", () => {
     await row.getByRole("link", { name: "Draft update" }).click();
     await page.waitForURL(new RegExp(`/dashboard/projects/${projectId}\\?tab=updates&compose=weekly`));
 
-    const composer = page.getByPlaceholder("Write a status update...");
+    const composer = page.getByPlaceholder("Write an update for your client…");
     await expect(composer).toHaveValue(new RegExp(doneTitle), { timeout: 15000 });
     await expect(page.getByTestId("weekly-draft-hint")).toContainText("every client on this project gets it by email");
 
     await composer.fill(`${await composer.inputValue()}\n\nThanks for the quick feedback on the homepage!`);
-    await page.getByRole("button", { name: "Post", exact: true }).click();
+    await page.getByRole("button", { name: "Post Update", exact: true }).click();
     await expect(page.getByText("Update posted")).toBeVisible({ timeout: 10000 });
 
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
     // Give the card's fetch time to land, then confirm this project dropped off.
     await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("weekly-updates-card").getByText(projectName)).toHaveCount(0);
@@ -71,9 +71,9 @@ test.describe.serial("Weekly client updates", () => {
 
   test("the composer can draft on demand from the Updates tab", async ({ page }) => {
     await page.goto(`/dashboard/projects/${projectId}?tab=updates`);
-    await page.getByRole("button", { name: "Add Update" }).click();
+    // The composer is always open on the Updates tab.
     await page.getByRole("button", { name: "Draft from this week" }).click();
-    await expect(page.getByPlaceholder("Write a status update...")).toHaveValue(new RegExp(nextTitle), {
+    await expect(page.getByPlaceholder("Write an update for your client…")).toHaveValue(new RegExp(nextTitle), {
       timeout: 10000,
     });
   });

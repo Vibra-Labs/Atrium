@@ -721,7 +721,7 @@ export default function ProjectDetailPage() {
                   onClick={() => setActiveTab("invoices")}
                   className="text-xs font-semibold text-[var(--primary)] hover:underline"
                 >
-                  + New invoice
+                  View invoices
                 </button>
               </div>
             </section>

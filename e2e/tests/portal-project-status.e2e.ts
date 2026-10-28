@@ -21,15 +21,14 @@ test.describe("Portal project status", () => {
       await client.getByRole("link", { name: /Portal Status E2E/ }).click({ timeout: 15000 });
       await expect(client).toHaveURL(new RegExp(`/portal/projects/${portal.projectId}$`));
 
-      const aside = client.locator("aside").first();
-      await expect(aside.getByRole("button", { name: /^back$/i })).toBeVisible({ timeout: 15000 });
+      // The header shows one pill with the current status.
+      const pill = client.getByTestId("project-status-pill");
+      await expect(pill).toHaveCount(1, { timeout: 15000 });
+      const pillText: string = (await pill.innerText()).trim();
+      expect(names).toContain(pillText);
 
-      // Exactly one status name is rendered in the sidebar, not the whole list.
-      let visible = 0;
-      for (const name of names) {
-        visible += await aside.getByText(name, { exact: true }).count();
-      }
-      expect(visible).toBe(1);
+      // "All projects" is a real link, so it works without browser history (preview tabs, email links).
+      await expect(client.getByRole("link", { name: "All projects" })).toHaveAttribute("href", "/portal/projects");
     } finally {
       await portal.close();
     }

@@ -53,8 +53,10 @@ export class PreviewModeMiddleware implements NestMiddleware {
       throw new UnauthorizedException("Preview unavailable");
     }
 
-    // Shallow-clone so we never mutate the SessionMiddleware cache.
+    // Shallow-clone so we never mutate the SessionMiddleware cache. The role is
+    // swapped too, so every role check downstream sees the client, not the owner.
     authReq.user = { ...authReq.user, id: targetMember.userId };
+    authReq.member = { ...authReq.member, role: targetMember.role };
     authReq.previewMode = true;
     next();
   }

@@ -31,7 +31,7 @@ test.describe("Billing", () => {
     // Navigate first to get auth cookies
     await page.goto("/dashboard");
     await expect(
-      page.getByRole("heading", { name: /overview|dashboard/i }),
+      page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ }),
     ).toBeVisible({ timeout: 10000 });
 
     const res = await page.request.get(`${API}/billing/subscription`);
@@ -53,7 +53,7 @@ test.describe("Billing", () => {
   test("POST /billing/checkout rejects free plan", async ({ page, context }) => {
     await page.goto("/dashboard");
     await expect(
-      page.getByRole("heading", { name: /overview|dashboard/i }),
+      page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ }),
     ).toBeVisible({ timeout: 10000 });
 
     // Read CSRF token from browser context cookies

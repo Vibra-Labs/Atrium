@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { startPreview } from "@/lib/preview-mode";
 import { useToast } from "@/components/toast";
 import { useSession } from "@/lib/session-context";
+import { initials } from "@/lib/initials";
 
 interface Branding {
   primaryColor: string;
@@ -138,43 +139,30 @@ export default function BrandingSettingsPage(): React.ReactElement {
 
   const handleSave = async () => {
     setSaving(true);
+    // Save one part at a time and record each success, so a failed domain save
+    // doesn't leave the saved colour looking unsaved (or the other way round).
     try {
-      const promises: Promise<unknown>[] = [];
-
       if (hasColorChange) {
-        promises.push(
-          apiFetch("/branding", {
-            method: "PUT",
-            body: JSON.stringify({
-              primaryColor: currentColor,
-              hideLogo: branding.hideLogo ?? false,
-            }),
-          })
-        );
+        await apiFetch("/branding", {
+          method: "PUT",
+          body: JSON.stringify({ primaryColor: currentColor, hideLogo: branding.hideLogo ?? false }),
+        });
+        setInitialColor(currentColor);
       }
 
       if (hasDomainChange) {
-        if (currentDomain.trim()) {
-          promises.push(
-            apiFetch("/settings/custom-domain", {
-              method: "PUT",
-              body: JSON.stringify({ domain: currentDomain.trim() }),
-            })
-          );
+        const domain = currentDomain.trim();
+        if (domain) {
+          await apiFetch("/settings/custom-domain", { method: "PUT", body: JSON.stringify({ domain }) });
         } else if (initialDomain) {
-          promises.push(
-            apiFetch("/settings/custom-domain", {
-              method: "DELETE",
-            })
-          );
+          await apiFetch("/settings/custom-domain", { method: "DELETE" });
         }
+        setInitialDomain(domain);
       }
 
-      await Promise.all(promises);
-      setInitialColor(currentColor);
-      setInitialDomain(currentDomain.trim());
       success("Branding settings saved");
     } catch (err) {
+      console.error("Failed to save branding settings", err);
       showError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
       setSaving(false);
@@ -185,12 +173,7 @@ export default function BrandingSettingsPage(): React.ReactElement {
     ? `${API_URL}/api/branding/logo/${branding.organizationId}?v=${cacheBust}`
     : branding.logoUrl || null;
 
-  const orgInitials = orgName
-    .split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase() || "AT";
+  const orgInitials = initials(orgName, "AT");
 
   if (loading) {
     return (

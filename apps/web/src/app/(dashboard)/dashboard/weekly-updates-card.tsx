@@ -29,10 +29,10 @@ export function WeeklyUpdatesCard(): React.ReactElement | null {
   if (!due || due.length === 0) return null;
 
   return (
-    <section data-testid="weekly-updates-card" className="p-4 border border-[var(--border)] rounded-lg space-y-3">
+    <section data-testid="weekly-updates-card" className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] shadow-sm space-y-3">
       <div className="flex items-center gap-2">
         <CalendarClock size={16} className="text-[var(--primary)]" />
-        <h2 className="text-lg font-semibold">Weekly updates</h2>
+        <h2 className="text-sm sm:text-base font-semibold text-[var(--foreground)]">Weekly updates</h2>
       </div>
       <p className="text-sm text-[var(--muted-foreground)]">
         These clients haven&apos;t heard from you in a week. Atrium drafts the update from what you finished.

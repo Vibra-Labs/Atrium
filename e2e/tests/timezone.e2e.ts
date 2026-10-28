@@ -24,7 +24,7 @@ test.describe.serial("Workspace timezone", () => {
 
   test("opening the dashboard fills in the browser's timezone when none is set", async ({ page, request }) => {
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible({ timeout: 15000 });
     const expected: string = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
     await expect.poll(async () => (await (await request.get(`${API}/settings`)).json()).timezone, { timeout: 10000 }).toBe(expected);
   });
@@ -33,7 +33,7 @@ test.describe.serial("Workspace timezone", () => {
     const headers = { "x-csrf-token": getCsrfToken() };
     await request.patch(`${API}/settings`, { data: { timezone: "UTC" }, headers });
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible({ timeout: 15000 });
     await page.waitForLoadState("networkidle");
     expect((await (await request.get(`${API}/settings`)).json()).timezone).toBe("UTC");
   });

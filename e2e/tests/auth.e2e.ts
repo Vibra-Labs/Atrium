@@ -91,7 +91,7 @@ test.describe("Auth", () => {
     });
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/dashboard/, { timeout: 10000 });
-    await expect(page.getByRole("heading", { name: /dashboard/i })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
 
     // Log out by clearing cookies and verify redirect
     await context.clearCookies();
@@ -106,7 +106,7 @@ test.describe("Auth", () => {
 
     // Should reach the dashboard (setup already completed)
     await expect(page).toHaveURL(/dashboard/, { timeout: 10000 });
-    await expect(page.getByRole("heading", { name: /dashboard/i })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
 
     await context.close();
   });

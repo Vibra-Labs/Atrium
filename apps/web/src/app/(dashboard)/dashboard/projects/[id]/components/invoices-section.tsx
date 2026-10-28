@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
-import { currencySymbol, formatCurrency } from "@/lib/format";
+import { currencySymbol, formatCurrency, invoiceTotal } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
@@ -780,9 +780,7 @@ export function InvoicesSection({
           {invoices.map((inv) => {
             const colors = statusColors[inv.status] || statusColors.draft;
             const isUploaded = inv.type === "uploaded";
-            const total = isUploaded
-              ? (inv.amount || 0)
-              : inv.lineItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
+            const total = invoiceTotal(inv);
             const isExpanded = expandedId === inv.id;
             const isDraft = inv.status === "draft";
             const isEditing = editingId === inv.id;

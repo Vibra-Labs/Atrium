@@ -228,7 +228,7 @@ test.describe("Setup Wizard", () => {
     });
     await expect(page).toHaveURL(/dashboard/, { timeout: 5000 });
     await expect(
-      page.getByRole("heading", { name: /dashboard/i }),
+      page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ }),
     ).toBeVisible({ timeout: 5000 });
 
     await context.close();

@@ -32,6 +32,7 @@ import {
   CurrentUser,
   CurrentOrg,
   CurrentMember,
+  isPrivilegedRole,
   PlanLimit,
   sanitizeFilename,
   contentDisposition,
@@ -110,7 +111,7 @@ export class InvoicesController {
     @Query() query: MineInvoiceQueryDto,
     @CurrentMember("role") role?: string,
   ) {
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     return this.invoicesService.findMine(
       userId,
       orgId,
@@ -129,7 +130,7 @@ export class InvoicesController {
     @Res() res: Response,
     @CurrentMember("role") role?: string,
   ) {
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     // Verify client access first
     await this.invoicesService.findOneMine(id, userId, orgId, isPrivileged);
     const { stream, filename } = await this.invoicePdfService.generate(id, orgId);
@@ -173,7 +174,7 @@ export class InvoicesController {
     @CurrentOrg("id") orgId: string,
     @CurrentMember("role") role?: string,
   ) {
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     return this.invoicesService.findOneMine(id, userId, orgId, isPrivileged);
   }
 

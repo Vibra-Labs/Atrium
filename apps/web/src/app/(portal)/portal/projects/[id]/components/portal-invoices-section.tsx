@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, invoiceTotal } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
@@ -208,12 +208,7 @@ export function PortalInvoicesSection({
         <div className="space-y-2">
           {invoices.map((inv) => {
             const colors = statusColors[inv.status] || { bg: "#e5e7eb", text: "#374151" };
-            const total = inv.type === "uploaded"
-              ? (inv.amount || 0)
-              : inv.lineItems.reduce(
-                  (s, li) => s + li.quantity * li.unitPrice,
-                  0,
-                );
+            const total = invoiceTotal(inv);
             const isExpanded = expandedId === inv.id;
             const expandedPanelId = `invoice-details-${inv.id}`;
 

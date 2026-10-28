@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { currencySymbol, formatCurrency } from "./format";
+import { currencySymbol, formatCurrency, invoiceTotal } from "./format";
 
 describe("formatCurrency", () => {
   it("defaults to USD", () => {
@@ -25,5 +25,24 @@ describe("currencySymbol", () => {
 
   it("falls back to $ for an invalid code", () => {
     expect(currencySymbol("nope")).toBe("$");
+  });
+});
+
+describe("invoiceTotal", () => {
+  it("uses the amount of an uploaded invoice", () => {
+    expect(invoiceTotal({ type: "uploaded", amount: 5000, lineItems: [] })).toBe(5000);
+  });
+
+  it("sums line items when the invoice was built in Atrium", () => {
+    const lineItems = [
+      { quantity: 2, unitPrice: 1500 },
+      { quantity: 1, unitPrice: 250 },
+    ];
+    expect(invoiceTotal({ type: "standard", amount: null, lineItems })).toBe(3250);
+  });
+
+  it("is 0 when there is nothing to add up", () => {
+    expect(invoiceTotal({ type: "uploaded", amount: null })).toBe(0);
+    expect(invoiceTotal({ type: "standard", amount: null })).toBe(0);
   });
 });

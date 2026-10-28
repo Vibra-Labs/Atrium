@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
@@ -35,9 +36,7 @@ import {
   CreditCard,
   CheckCircle2,
 } from "lucide-react";
-import { PortalDeliverableReview, type PortalDeliverable } from "./components/portal-deliverable-review";
 import { deliverableStatus } from "@/lib/deliverable";
-import { PortalInvoicesSection } from "./components/portal-invoices-section";
 import { linkify } from "@/lib/linkify";
 import { Embeds, type PreviewPrefs } from "@/lib/embeds";
 import { downloadFile } from "@/lib/download";
@@ -49,9 +48,13 @@ import { CommentsSection } from "@/components/comments-section";
 import { Avatar } from "@/components/avatar";
 import { TaskDetailModal } from "@/components/task-detail-modal";
 import { getTaskStatusBadge, getTaskStatusLabel } from "@/lib/task-status";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, invoiceTotal } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
 import { usePreviewMode } from "@/lib/preview-mode";
+import { initials } from "@/lib/initials";
+import { PortalDeliverableReview, type PortalDeliverable } from "./components/portal-deliverable-review";
+import { PortalInvoicesSection } from "./components/portal-invoices-section";
+import { projectPhases } from "./phases";
 
 interface FileRecord {
   id: string;
@@ -76,7 +79,7 @@ interface Project {
   openVotes?: number;
   organization?: {
     name: string;
-    members?: { user: { id: string; name: string; email: string; image?: string | null } }[];
+    members?: { user: { id: string; name: string } }[];
   };
 }
 
@@ -639,35 +642,11 @@ export default function PortalProjectDetailPage() {
   const agencyName = project.organization?.name || "your team";
   const projectLead = project.organization?.members?.[0]?.user;
   const projectLeadName = projectLead?.name || agencyName;
-  const projectLeadInitials = projectLeadName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
-  const highlightedReviewItem = needsReview[0] || null;
+  // Only deliverables get the hero card; contracts and FYI documents keep their own flow in the Files tab.
+  const highlightedReviewItem = needsReview.find((d) => d.type === "deliverable") ?? null;
 
-  const defaultPhases = [
-    { key: "discovery", label: "Discovery" },
-    { key: "in_progress", label: "Execution" },
-    { key: "review", label: "Review" },
-    { key: "completed", label: "Launch" },
-  ];
-
-  const phases =
-    statuses.length >= 3
-      ? statuses.slice(0, 4).map((s) => ({ key: s.slug, label: s.name }))
-      : defaultPhases;
-
-  const currentStatusIndex = Math.max(
-    0,
-    phases.findIndex(
-      (p) =>
-        p.key === project.status ||
-        p.label.toLowerCase() === project.status?.toLowerCase(),
-    ),
-  );
+  const { phases, currentIndex: currentStatusIndex } = projectPhases(statuses, project.status);
 
   return (
     <div className="space-y-6">
@@ -677,14 +656,14 @@ export default function PortalProjectDetailPage() {
 
       {/* Top Greeting & Back Button */}
       <div>
-        <button
-          type="button"
-          onClick={() => router.back()}
+        {/* A link, not router.back(): preview tabs and email deep links have no history to go back to. */}
+        <Link
+          href="/portal/projects"
           className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors mb-2"
         >
           <ArrowLeft size={14} />
           All projects
-        </button>
+        </Link>
         <p className="text-sm text-[var(--muted-foreground)]">Hi {clientFirstName},</p>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)] mt-0.5">
           Here&apos;s where your {project.name} stands
@@ -698,6 +677,7 @@ export default function PortalProjectDetailPage() {
             <h2 className="text-lg font-bold text-[var(--foreground)]">{project.name}</h2>
             {currentStatus && (
               <span
+                data-testid="project-status-pill"
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
                 style={{
                   backgroundColor: `color-mix(in srgb, ${currentStatus.color} 15%, transparent)`,
@@ -724,8 +704,10 @@ export default function PortalProjectDetailPage() {
 
         <ol className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
           {phases.map((phase, idx) => {
-            const isDone = idx < currentStatusIndex;
-            const isCurrent = idx === currentStatusIndex;
+            // The completed status is the end of the track: show it as done, not "in progress".
+            const isFinished = idx === currentStatusIndex && phase.key === "completed";
+            const isDone = idx < currentStatusIndex || isFinished;
+            const isCurrent = idx === currentStatusIndex && !isFinished;
             return (
               <li key={phase.key} className="flex flex-col gap-2">
                 <span
@@ -769,7 +751,10 @@ export default function PortalProjectDetailPage() {
         <div className="lg:col-span-2 space-y-6 min-w-0">
           {/* Actionable "Needs your review" Deliverable Highlight */}
           {highlightedReviewItem && (
-            <section className="p-5 sm:p-6 rounded-2xl bg-[var(--background)] border-2 border-[var(--primary)] space-y-4">
+            <section
+              data-testid="review-highlight"
+              className="p-5 sm:p-6 rounded-2xl bg-[var(--background)] border-2 border-[var(--primary)] space-y-4"
+            >
               <div className="flex items-center gap-2.5">
                 <span className="inline-flex px-2.5 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] text-xs font-semibold">
                   Needs your review
@@ -786,72 +771,28 @@ export default function PortalProjectDetailPage() {
                   <h3 className="text-base font-bold text-[var(--foreground)] truncate">
                     {highlightedReviewItem.title}
                   </h3>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                    {highlightedReviewItem.file.filename}
-                    {highlightedReviewItem.file.sizeBytes ? ` · ${formatBytes(highlightedReviewItem.file.sizeBytes)}` : ""}
-                  </p>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1.5 line-clamp-2">
+                  {/* Clients see the document's title, never the raw filename (same as the Files tab). */}
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1 line-clamp-2">
                     {highlightedReviewItem.requestNote || "Leave comments on the file, then approve or ask for changes."}
                   </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                {highlightedReviewItem.type === "deliverable" ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setReviewDocId(highlightedReviewItem.id)}
-                      className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-xs sm:text-sm font-semibold hover:opacity-90 transition-opacity"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReviewDocId(highlightedReviewItem.id)}
-                      className="px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--foreground)] text-xs sm:text-sm font-semibold hover:bg-[var(--muted)] transition-colors"
-                    >
-                      Request changes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReviewDocId(highlightedReviewItem.id)}
-                      className="text-xs sm:text-sm font-semibold text-[var(--primary)] hover:underline ml-1"
-                    >
-                      Open file
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => openDocumentConfirm(highlightedReviewItem, "accepted")}
-                      className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-xs sm:text-sm font-semibold hover:opacity-90 transition-opacity"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openDocumentConfirm(highlightedReviewItem, "declined")}
-                      className="px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--foreground)] text-xs sm:text-sm font-semibold hover:bg-[var(--muted)] transition-colors"
-                    >
-                      Request changes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewingDoc(highlightedReviewItem)}
-                      className="text-xs sm:text-sm font-semibold text-[var(--primary)] hover:underline ml-1"
-                    >
-                      Open file
-                    </button>
-                  </>
-                )}
+                {/* Approve and request-changes live in the review panel, next to the file. */}
+                <button
+                  type="button"
+                  onClick={() => setReviewDocId(highlightedReviewItem.id)}
+                  className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-xs sm:text-sm font-semibold hover:opacity-90 transition-opacity"
+                >
+                  Review
+                </button>
               </div>
             </section>
           )}
 
-          {/* Pending actions banner for other items */}
+          {/* Pending actions banner: shown when anything is waiting beyond the highlighted deliverable */}
           {(() => {
-            if (actionTotal === 0 || highlightedReviewItem) return null;
+            if (actionTotal <= (highlightedReviewItem ? 1 : 0)) return null;
             const parts: string[] = [];
             if (toApproveCount > 0) parts.push(`${toApproveCount} to approve`);
             if (toSignCount > 0) parts.push(`${toSignCount} to sign`);
@@ -1825,7 +1766,7 @@ export default function PortalProjectDetailPage() {
         {latestInvoice && (
           <section className="p-5 sm:p-6 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold text-[var(--foreground)]">Invoice #{latestInvoice.invoiceNumber}</h2>
+              <h2 className="text-sm font-bold text-[var(--foreground)]">{latestInvoice.invoiceNumber}</h2>
               {latestInvoice.dueDate && (
                 <span className="text-xs text-[var(--muted-foreground)]">
                   Due {new Date(latestInvoice.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -1834,7 +1775,7 @@ export default function PortalProjectDetailPage() {
             </div>
             <p className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)]">
               {formatCurrency(
-                (latestInvoice.amount ?? latestInvoice.lineItems?.reduce((s, item) => s + (item.quantity * item.unitPrice), 0)) || 0,
+                invoiceTotal(latestInvoice),
                 currency,
               )}
             </p>
@@ -1896,7 +1837,7 @@ export default function PortalProjectDetailPage() {
         {/* Project Lead Card */}
         <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] flex items-center gap-3">
           <span className="w-10 h-10 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center text-xs font-bold shrink-0">
-            {projectLeadInitials || "TL"}
+            {initials(projectLeadName, "TL")}
           </span>
           <div className="min-w-0">
             <p className="text-sm font-bold truncate text-[var(--foreground)]">{projectLeadName}</p>

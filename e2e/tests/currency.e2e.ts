@@ -9,7 +9,7 @@ const API = "http://localhost:3001/api";
 // Other specs leave invoices on the shared account, so assert on the symbol of
 // the Outstanding card rather than an exact amount.
 function outstandingCard(page: Page): Locator {
-  return page.locator("div.p-4", { has: page.getByText("Outstanding", { exact: true }) });
+  return page.getByTestId("outstanding-card");
 }
 
 test.describe("configurable currency", () => {

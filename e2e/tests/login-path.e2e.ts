@@ -29,9 +29,9 @@ test.describe("Login path", () => {
     await expect.poll(() => polls.length).toBeGreaterThan(0);
   });
 
-  test("/dashboard/settings lands on account settings", async ({ page }) => {
+  test("/dashboard/settings lands on general workspace settings", async ({ page }) => {
     await page.goto("/dashboard/settings");
-    await expect(page).toHaveURL(/\/dashboard\/settings\/account$/);
+    await expect(page).toHaveURL(/\/dashboard\/settings\/workspace$/);
   });
 
   test("owner and portal client log in to the right area", async ({ browser }) => {

@@ -26,7 +26,9 @@ export function ThisWeekCard(): React.ReactElement {
 
   useEffect(() => {
     const { from, to } = thisWeekRange(new Date());
-    const params = new URLSearchParams({ from, to, tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // activeOnly: skip archived projects and deadlines of projects that are already done.
+    const params = new URLSearchParams({ from, to, tz, activeOnly: "true" });
     apiFetch<CalendarEvent[]>(`/calendar?${params.toString()}`)
       .then((events) => setItems(thisWeekItems(events)))
       .catch((err: unknown) => {

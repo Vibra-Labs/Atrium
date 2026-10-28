@@ -36,8 +36,18 @@ test.describe("View as customer", () => {
     const otherRes = await ownerPage.request.get(`${API_URL}/api/projects/mine/${other.id}`, { headers: asClient });
     expect(otherRes.status()).toBe(404);
 
+    // Previewing as a client is read-only: a write is refused even though the owner could make it.
+    const write = await ownerPage.request.post(`${API_URL}/api/tasks?projectId=${theirs.id}`, {
+      data: { title: "Should not be created" },
+      headers: { ...headers, ...asClient },
+    });
+    expect(write.status()).toBe(403);
+
     // Previewing as themselves, the owner can still open a project with no client.
-    const asSelf = await ownerPage.request.get(`${API_URL}/api/projects/mine/${other.id}`);
+    const session = await (await ownerPage.request.get(`${API_URL}/api/auth/get-session`)).json();
+    const asSelf = await ownerPage.request.get(`${API_URL}/api/projects/mine/${other.id}`, {
+      headers: { "x-preview-as": session.user.id },
+    });
     expect(asSelf.ok()).toBe(true);
 
     await ownerCtx.close();

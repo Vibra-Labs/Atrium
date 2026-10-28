@@ -702,14 +702,15 @@ export default function PortalProjectDetailPage() {
           )}
         </div>
 
-        <ol className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+        {/* Flex, not a fixed grid: workspaces can have any number of statuses. */}
+        <ol className="flex flex-wrap gap-3 pt-1">
           {phases.map((phase, idx) => {
             // The completed status is the end of the track: show it as done, not "in progress".
             const isFinished = idx === currentStatusIndex && phase.key === "completed";
             const isDone = idx < currentStatusIndex || isFinished;
             const isCurrent = idx === currentStatusIndex && !isFinished;
             return (
-              <li key={phase.key} className="flex flex-col gap-2">
+              <li key={phase.key} className="flex-1 min-w-[7rem] flex flex-col gap-2">
                 <span
                   className={`h-1.5 rounded-full ${
                     isDone
@@ -792,22 +793,27 @@ export default function PortalProjectDetailPage() {
 
           {/* Pending actions banner: shown when anything is waiting beyond the highlighted deliverable */}
           {(() => {
-            if (actionTotal <= (highlightedReviewItem ? 1 : 0)) return null;
+            // The highlighted deliverable already has its own card, so the banner counts the rest.
+            const highlighted = highlightedReviewItem ? 1 : 0;
+            const otherTotal = actionTotal - highlighted;
+            const otherToApprove = toApproveCount - highlighted;
+            if (otherTotal <= 0) return null;
             const parts: string[] = [];
-            if (toApproveCount > 0) parts.push(`${toApproveCount} to approve`);
+            if (otherToApprove > 0) parts.push(`${otherToApprove} to approve`);
             if (toSignCount > 0) parts.push(`${toSignCount} to sign`);
             if (openVoteCount > 0) parts.push(`${openVoteCount} ${openVoteCount === 1 ? "vote" : "votes"}`);
+            const noun = otherTotal === 1 ? "item" : "items";
             return (
               <button
-                onClick={() => setActiveTab(toApproveCount + toSignCount === 0 ? "tasks" : "files")}
+                onClick={() => setActiveTab(otherToApprove + toSignCount === 0 ? "tasks" : "files")}
                 className="w-full p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-center gap-3 text-left hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors"
               >
                 <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-500 text-white text-sm font-bold shrink-0">
-                  {actionTotal}
+                  {otherTotal}
                 </span>
                 <div>
                   <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
-                    {actionTotal === 1 ? "1 item to review" : `${actionTotal} items to review`}
+                    {otherTotal} {highlighted ? `more ${noun}` : noun} to review
                   </p>
                   <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">{parts.join(" · ")}</p>
                 </div>

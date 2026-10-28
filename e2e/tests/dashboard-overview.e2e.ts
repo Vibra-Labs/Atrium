@@ -136,10 +136,42 @@ test.describe.serial("Dashboard overview", () => {
     });
     expect(res.ok(), await res.text()).toBe(true);
 
+    // Both projects end this week, but only the one still in progress counts as a deadline.
+    for (const p of [activeProject, doneProject]) {
+      const r = await owner.request.put(`${API_URL}/api/projects/${p.id}`, { data: { endDate: dayFromNow(3) }, headers });
+      expect(r.ok(), await r.text()).toBe(true);
+    }
+
     await owner.goto(`${WEB_URL}/dashboard`);
     const card = owner.locator("section", { has: owner.getByRole("heading", { name: "This week" }) });
     await expect(card.getByRole("link", { name: title })).toBeVisible({ timeout: 15000 });
     await expect(card).toContainText("Task due");
+    await expect(card.getByRole("link", { name: activeProject.name, exact: true })).toBeVisible();
+    await expect(card.getByRole("link", { name: doneProject.name, exact: true })).toHaveCount(0);
+  });
+
+  test("recent projects show task progress from the project list", async () => {
+    const headers = { "x-csrf-token": await getCsrfTokenFromContext(ownerCtx) };
+    // Two checkbox tasks, one done: 50%.
+    for (const [i, status] of ["done", "todo"].entries()) {
+      const task = await (await owner.request.post(`${API_URL}/api/tasks?projectId=${activeProject.id}`, {
+        data: { title: `Progress task ${i} ${stamp}` },
+        headers,
+      })).json();
+      if (status === "done") {
+        const res = await owner.request.put(`${API_URL}/api/tasks/${task.id}`, { data: { status: "done" }, headers });
+        expect(res.ok(), await res.text()).toBe(true);
+      }
+    }
+
+    await owner.goto(`${WEB_URL}/dashboard`);
+    const bar = owner.getByRole("progressbar", { name: `${activeProject.name} progress` }).locator("visible=true");
+    // The "This week" test added an open task with a due date too: 1 done of 3.
+    await expect(bar).toHaveAttribute("aria-valuenow", "33", { timeout: 15000 });
+    await expect(owner.getByRole("progressbar", { name: `${doneProject.name} progress` }).locator("visible=true")).toHaveAttribute(
+      "aria-valuenow",
+      "100",
+    );
   });
 
   test("the Completed widget opens the project list filtered to completed, and the filter clears", async () => {

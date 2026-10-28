@@ -16,6 +16,7 @@ import { useSession } from "@/lib/session-context";
 import { formatRelativeTime } from "@/lib/utils";
 import { StatCardSkeleton } from "@/components/skeletons";
 import { initials } from "@/lib/initials";
+import { projectProgress } from "./progress";
 import { WeeklyUpdatesCard } from "./weekly-updates-card";
 import { ThisWeekCard } from "./this-week-card";
 
@@ -36,7 +37,8 @@ interface Project {
   startDate?: string | null;
   endDate?: string | null;
   clients?: ProjectClient[];
-  tasks?: Array<{ id: string; status: string }>;
+  taskCount?: number;
+  completedTaskCount?: number;
 }
 
 interface ProjectStats {
@@ -95,6 +97,24 @@ interface ActivityItem {
 interface PaginatedResponse<T> {
   data: T[];
   meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+function ProgressBar({ value, label, className }: { value: number; label: string; className: string }): React.ReactElement {
+  return (
+    <div
+      className={`${className} bg-[var(--muted)] rounded-full h-1.5 overflow-hidden`}
+      role="progressbar"
+      aria-label={label}
+      aria-valuenow={value}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <div
+        className="bg-[var(--primary)] h-full rounded-full transition-all duration-300"
+        style={{ width: `${value}%` }}
+      />
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -202,13 +222,6 @@ export default function DashboardPage() {
       if (client?.email) return client.email.split("@")[0];
     }
     return "Internal";
-  };
-
-  const calculateProgress = (project: Project): number => {
-    if (project.status === "completed") return 100;
-    if (!project.tasks || project.tasks.length === 0) return 0;
-    const completed = project.tasks.filter((t) => t.status === "done").length;
-    return Math.round((completed / project.tasks.length) * 100);
   };
 
   const formatDueDate = (dateStr?: string | null): string => {
@@ -465,7 +478,7 @@ export default function DashboardPage() {
                 <div className="divide-y divide-[var(--border)] sm:hidden">
                   {recentProjects.map((p) => {
                     const badge = getStatusBadge(p.status);
-                    const progress = calculateProgress(p);
+                    const progress = projectProgress(p);
                     return (
                       <Link
                         key={p.id}
@@ -490,12 +503,7 @@ export default function DashboardPage() {
                             <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
                             {badge.label}
                           </span>
-                          <div className="flex-1 bg-[var(--muted)] rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="bg-[var(--primary)] h-full rounded-full transition-all duration-300"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
+                          <ProgressBar className="flex-1" label={`${p.name} progress`} value={progress} />
                         </div>
                       </Link>
                     );
@@ -517,7 +525,7 @@ export default function DashboardPage() {
                     <tbody className="divide-y divide-[var(--border)]">
                       {recentProjects.map((p) => {
                         const badge = getStatusBadge(p.status);
-                        const progress = calculateProgress(p);
+                        const progress = projectProgress(p);
                         return (
                           <tr key={p.id} className="hover:bg-[var(--muted)]/30 transition-colors">
                             <td className="py-3 px-5 font-semibold text-[var(--foreground)]">
@@ -537,12 +545,7 @@ export default function DashboardPage() {
                               </span>
                             </td>
                             <td className="py-3 px-3">
-                              <div className="w-24 sm:w-28 bg-[var(--muted)] rounded-full h-1.5 overflow-hidden">
-                                <div
-                                  className="bg-[var(--primary)] h-full rounded-full transition-all duration-300"
-                                  style={{ width: `${progress}%` }}
-                                />
-                              </div>
+                              <ProgressBar className="w-24 sm:w-28" label={`${p.name} progress`} value={progress} />
                             </td>
                             <td className="py-3 px-5 text-right text-xs text-[var(--muted-foreground)]">
                               {formatDueDate(p.endDate)}

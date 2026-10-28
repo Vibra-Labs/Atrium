@@ -136,6 +136,39 @@ test.describe("Deliverable approvals", () => {
     await ownerCtx.close();
   });
 
+  test("the banner counts only what the highlighted deliverable card doesn't cover", async ({ browser }) => {
+    const { context: ownerCtx, page: owner } = await createOwner(browser, "deliv-banner-owner");
+    const { clientEmail, password } = await inviteAndAcceptClient(browser, owner, "deliv-banner-client");
+    const clients = await (await owner.request.get(`${API_URL}/api/clients?limit=100`)).json();
+    const clientRow = (clients.data ?? clients).find((m: { user: { email: string } }) => m.user.email === clientEmail);
+    const headers = { "x-csrf-token": await csrf(ownerCtx) };
+    const project = await (await owner.request.post(`${API_URL}/api/projects`, {
+      data: { name: "Banner Count E2E", clientUserIds: [clientRow.userId] },
+      headers,
+    })).json();
+    const deliverable = await owner.request.post(`${API_URL}/api/documents/link`, {
+      data: { projectId: project.id, title: "Homepage mockup", url: "https://example.com/mockup", sendNow: true },
+      headers,
+    });
+    expect(deliverable.ok()).toBe(true);
+    const decision = await owner.request.post(`${API_URL}/api/tasks?projectId=${project.id}`, {
+      data: { title: "Pick a font", type: "decision", question: "Which font?", options: [{ label: "Serif" }, { label: "Sans" }] },
+      headers,
+    });
+    expect(decision.ok()).toBe(true);
+
+    const { ctx: clientCtx, page: client } = await loginClient(browser, clientEmail, password);
+    await client.goto(`${WEB_URL}/portal/projects/${project.id}`);
+    await expect(client.getByTestId("review-highlight").getByText("Homepage mockup", { exact: true })).toBeVisible();
+    // Only the vote is left for the banner: the deliverable isn't counted twice.
+    await expect(client.getByText("1 more item to review")).toBeVisible();
+    await expect(client.getByText("1 vote", { exact: true })).toBeVisible();
+    await expect(client.getByText(/to approve/)).toHaveCount(0);
+
+    await clientCtx.close();
+    await ownerCtx.close();
+  });
+
   test("link deliverable: client opens the link and approves; URL edit is refused", async ({ browser }) => {
     const { context: ownerCtx, page: owner } = await createOwner(browser, "deliv-link-owner");
     const { clientEmail, password } = await inviteAndAcceptClient(browser, owner, "deliv-link-client");

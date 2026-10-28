@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Upload, Trash2, ExternalLink } from "lucide-react";
+import { Check, Copy, Upload, Trash2, ExternalLink } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { startPreview } from "@/lib/preview-mode";
 import { useToast } from "@/components/toast";
 import { useSession } from "@/lib/session-context";
 import { initials } from "@/lib/initials";
+import { copyToClipboard } from "@/lib/clipboard";
 import { CustomDomainSection } from "../system/custom-domain-section";
 
 interface Branding {
@@ -47,6 +48,10 @@ export default function BrandingSettingsPage(): React.ReactElement {
   const [initialHideLogo, setInitialHideLogo] = useState(false);
   const [branding, setBranding] = useState<Branding>({ primaryColor: "#006B68" });
   const [orgName, setOrgName] = useState("Your Studio");
+  const [orgSlug, setOrgSlug] = useState("");
+  // Read after mount so the server render and the first browser render match.
+  const [origin, setOrigin] = useState("");
+  const [loginLinkCopied, setLoginLinkCopied] = useState(false);
 
   // Working state
   const [currentColor, setCurrentColor] = useState("#006B68");
@@ -61,7 +66,7 @@ export default function BrandingSettingsPage(): React.ReactElement {
   useEffect(() => {
     Promise.all([
       apiFetch<Branding>("/branding").catch((): Branding => ({ primaryColor: "#006B68" })),
-      apiFetch<{ name?: string }>("/organization/current").catch(() => null),
+      apiFetch<{ name?: string; slug?: string | null }>("/organization/current").catch(() => null),
     ])
       .then(([bData, orgData]) => {
         const color = bData.primaryColor || "#006B68";
@@ -71,6 +76,8 @@ export default function BrandingSettingsPage(): React.ReactElement {
         setInitialHideLogo(bData.hideLogo ?? false);
         setHideLogo(bData.hideLogo ?? false);
         if (orgData?.name) setOrgName(orgData.name);
+        if (orgData?.slug) setOrgSlug(orgData.slug);
+        setOrigin(window.location.origin);
         setLoading(false);
       })
       .catch((err) => {
@@ -301,6 +308,35 @@ export default function BrandingSettingsPage(): React.ReactElement {
             <h2 className="text-sm font-semibold text-[var(--foreground)]">Custom domain</h2>
             <CustomDomainSection onSavedDomainChange={setPortalDomain} />
           </section>
+
+          {orgSlug && (
+            <section className="space-y-2 pt-6 border-t border-[var(--border)]">
+              <h2 className="text-sm font-semibold text-[var(--foreground)]">Branded login link</h2>
+              <div className="flex items-center gap-2">
+                <code className="text-xs text-[var(--muted-foreground)] flex-1 truncate">
+                  {origin}/login/{orgSlug}
+                </code>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!(await copyToClipboard(`${origin}/login/${orgSlug}`))) {
+                      showError("Could not copy link");
+                      return;
+                    }
+                    setLoginLinkCopied(true);
+                    setTimeout(() => setLoginLinkCopied(false), 2000);
+                  }}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
+                >
+                  {loginLinkCopied ? <Check size={12} /> : <Copy size={12} />}
+                  {loginLinkCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Share this with your team and clients for a sign-in page with your logo and color.
+              </p>
+            </section>
+          )}
         </div>
 
         {/* Right Column (5 cols): Live Client Portal Preview */}

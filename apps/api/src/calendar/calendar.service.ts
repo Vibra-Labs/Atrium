@@ -49,6 +49,8 @@ export class CalendarService {
       ? new Set(query.type.split(",").map((s) => s.trim()).filter((s) => VALID_TYPES.has(s)))
       : VALID_TYPES;
 
+    const activeOnly = query.activeOnly === "true";
+
     const wantTasks = requestedTypes.has("task");
     const wantProjectStart = requestedTypes.has("project_start");
     const wantProjectEnd = requestedTypes.has("project_end");
@@ -60,6 +62,7 @@ export class CalendarService {
             where: {
               organizationId: orgId,
               ...(query.projectId ? { projectId: query.projectId } : {}),
+              ...(activeOnly ? { project: { archivedAt: null } } : {}),
               dueDate: { gte: from, lte: to },
             },
             select: {
@@ -83,6 +86,7 @@ export class CalendarService {
             where: {
               organizationId: orgId,
               ...(query.projectId ? { id: query.projectId } : {}),
+              ...(activeOnly ? { archivedAt: null, status: { notIn: ["completed", "cancelled"] } } : {}),
               OR: [
                 { startDate: { gte: from, lte: to } },
                 { endDate: { gte: from, lte: to } },
@@ -96,6 +100,7 @@ export class CalendarService {
             where: {
               organizationId: orgId,
               ...(query.projectId ? { projectId: query.projectId } : {}),
+              ...(activeOnly ? { OR: [{ projectId: null }, { project: { archivedAt: null } }] } : {}),
               dueDate: { gte: from, lte: to },
             },
             select: {

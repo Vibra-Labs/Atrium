@@ -10,6 +10,14 @@ test.describe("Branding", () => {
     await expect(page.getByRole("heading", { name: "Custom domain", exact: true })).toBeVisible();
   });
 
+  test("branding page shows the branded login link for this workspace", async ({ page }) => {
+    const org = await (await page.request.get("http://localhost:3001/api/organization/current")).json();
+    test.skip(!org.slug, "Workspace has no slug");
+    await page.goto("/dashboard/settings/branding");
+    await expect(page.getByRole("heading", { name: "Branded login link" })).toBeVisible();
+    await expect(page.getByText(`/login/${org.slug}`)).toBeVisible();
+  });
+
   test("custom domain shows its real status, not a hard-coded verified badge", async ({ page }) => {
     await page.goto("/dashboard/settings/branding");
     await expect(page.getByRole("heading", { name: "Custom domain", exact: true })).toBeVisible();

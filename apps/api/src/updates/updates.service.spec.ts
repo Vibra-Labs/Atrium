@@ -225,3 +225,31 @@ describe("UpdatesService.update", () => {
     });
   });
 });
+
+describe("UpdatesService.findTimelineForClient", () => {
+  let service: UpdatesService;
+
+  beforeEach(() => {
+    clearAllMocks();
+    service = new UpdatesService(
+      mockPrisma as unknown as PrismaService,
+      mockNotifications,
+      mockActivity,
+      mockStorage as unknown as StorageProvider,
+    );
+    service.findTimeline = mock(() => Promise.resolve({ data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } })) as never;
+  });
+
+  it("refuses a client who isn't on the project", async () => {
+    mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+    await expect(service.findTimelineForClient("p1", "client-1", "org-1")).rejects.toBeInstanceOf(ForbiddenException);
+    expect(service.findTimeline).not.toHaveBeenCalled();
+  });
+
+  it("lets an owner or admin through without being on the project", async () => {
+    mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+    await service.findTimelineForClient("p1", "owner-1", "org-1", 1, 20, true);
+    expect(mockPrisma.projectClient.findFirst).not.toHaveBeenCalled();
+    expect(service.findTimeline).toHaveBeenCalledWith("p1", "org-1", 1, 20);
+  });
+});

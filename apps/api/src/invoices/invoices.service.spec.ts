@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { InvoicesService } from "./invoices.service";
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { CreateInvoiceDto } from "./invoices.dto";
@@ -42,6 +42,7 @@ function makeBasePrisma() {
       findFirst: mock(() =>
         Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
       ),
+      findMany: mock(() => Promise.resolve([] as { id: string }[])),
     },
     projectClient: {
       findMany: mock(() => Promise.resolve([])),
@@ -268,6 +269,23 @@ describe("InvoicesService", () => {
     expect(stats.outstandingAmount).toBe(20000);
   });
 
+  test("getStats counts open invoices (sent + overdue) and overdue ones", async () => {
+    prisma.invoice.groupBy.mockImplementation(() =>
+      Promise.resolve([
+        { status: "sent", _count: 2 },
+        { status: "overdue", _count: 3 },
+        { status: "paid", _count: 4 },
+        { status: "draft", _count: 1 },
+      ]),
+    );
+    prisma.$queryRaw.mockImplementation(() => Promise.resolve([]));
+
+    const stats = await service.getStats(orgId);
+
+    expect(stats.openCount).toBe(5);
+    expect(stats.overdueCount).toBe(3);
+  });
+
   test("getStats returns zeroes when there are no invoices", async () => {
     prisma.invoice.groupBy.mockImplementation(() => Promise.resolve([]));
     prisma.$queryRaw.mockImplementation(() => Promise.resolve([]));
@@ -399,11 +417,43 @@ describe("InvoicesService", () => {
       expect(result.id).toBe("inv-1");
     });
 
+    test("a client not on the invoice's project is refused", async () => {
+      invoiceWithStatus("sent");
+      prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve(null) as never);
+      await expect(service.findOneMine("inv-1", "user-1", orgId)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    test("an owner or admin can open it without being on the project", async () => {
+      invoiceWithStatus("sent");
+      prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve(null) as never);
+      const result = await service.findOneMine("inv-1", "owner-1", orgId, true);
+      expect(result.id).toBe("inv-1");
+    });
+
     for (const status of ["draft", "cancelled"]) {
       test(`a ${status} invoice is not found`, async () => {
         invoiceWithStatus(status);
         await expect(service.findOneMine("inv-1", "user-1", orgId)).rejects.toBeInstanceOf(NotFoundException);
       });
     }
+  });
+
+  describe("findMine", () => {
+    test("a client only sees invoices from projects they're on", async () => {
+      prisma.projectClient.findMany.mockImplementation(() => Promise.resolve([{ projectId: "proj-1" }]) as never);
+      await service.findMine("user-1", orgId);
+      const args = prisma.invoice.findMany.mock.calls.at(-1)?.[0] as { where: { projectId: { in: string[] } } };
+      expect(args.where.projectId.in).toEqual(["proj-1"]);
+    });
+
+    test("an owner or admin sees invoices from every live project", async () => {
+      prisma.project.findMany.mockImplementation(() => Promise.resolve([{ id: "proj-1" }, { id: "proj-2" }]) as never);
+      await service.findMine("owner-1", orgId, 1, 20, undefined, true);
+      expect(prisma.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organizationId: orgId, archivedAt: null } }),
+      );
+      const args = prisma.invoice.findMany.mock.calls.at(-1)?.[0] as { where: { projectId: { in: string[] } } };
+      expect(args.where.projectId.in).toEqual(["proj-1", "proj-2"]);
+    });
   });
 });

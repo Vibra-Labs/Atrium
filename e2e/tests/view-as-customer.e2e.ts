@@ -42,6 +42,54 @@ test.describe("View as customer", () => {
 
     await ownerCtx.close();
   });
+  test("View as client on a project opens that project in the client's portal", async ({ browser }) => {
+    const { context: ownerCtx, page: ownerPage } = await createOwner(browser, "vac-project");
+    const { clientEmail, clientName } = await inviteAndAcceptClient(browser, ownerPage, "vac-project-client");
+    const clients = await (await ownerPage.request.get(`${API_URL}/api/clients?limit=100`)).json();
+    const clientRow = (clients.data ?? clients).find(
+      (m: { user: { email: string } }) => m.user.email === clientEmail,
+    );
+    const project = await (await ownerPage.request.post(`${API_URL}/api/projects`, {
+      data: { name: "Preview Project E2E", clientUserIds: [clientRow.userId] },
+      headers: { "x-csrf-token": await getCsrfTokenFromContext(ownerCtx) },
+    })).json();
+
+    await ownerPage.goto(`${WEB_URL}/dashboard/projects/${project.id}`);
+    const [previewPage] = await Promise.all([
+      ownerCtx.waitForEvent("page"),
+      ownerPage.getByRole("button", { name: "View as client" }).first().click(),
+    ]);
+
+    await previewPage.waitForURL(new RegExp(`/portal/projects/${project.id}$`), { timeout: 15000 });
+    await expect(previewPage.getByText(/previewing as/i)).toBeVisible({ timeout: 10000 });
+    await expect(previewPage.getByText(clientName).first()).toBeVisible();
+    await expect(previewPage.getByRole("heading", { name: "Preview Project E2E", exact: true })).toBeVisible();
+
+    await ownerCtx.close();
+  });
+
+  test("View as client on a project with no client previews it as the owner", async ({ browser }) => {
+    const { context: ownerCtx, page: ownerPage } = await createOwner(browser, "vac-noclient");
+    const project = await (await ownerPage.request.post(`${API_URL}/api/projects`, {
+      data: { name: "No Client Preview E2E" },
+      headers: { "x-csrf-token": await getCsrfTokenFromContext(ownerCtx) },
+    })).json();
+
+    await ownerPage.goto(`${WEB_URL}/dashboard/projects/${project.id}`);
+    const [previewPage] = await Promise.all([
+      ownerCtx.waitForEvent("page"),
+      ownerPage.getByRole("button", { name: "View as client" }).first().click(),
+    ]);
+
+    await previewPage.waitForURL(new RegExp(`/portal/projects/${project.id}$`), { timeout: 15000 });
+    await expect(previewPage.getByText(/previewing as/i)).toBeVisible({ timeout: 10000 });
+    // The portal endpoints let the owner open a project that has no client yet.
+    await expect(previewPage.getByRole("heading", { name: "No Client Preview E2E", exact: true })).toBeVisible();
+    await expect(previewPage.getByText("Project not found")).toHaveCount(0);
+
+    await ownerCtx.close();
+  });
+
   test("owner can preview portal as a client and mutations are blocked", async ({
     browser,
   }) => {

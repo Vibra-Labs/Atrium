@@ -2273,6 +2273,21 @@ describe("DocumentsService", () => {
     });
   });
 
+  describe("findByProjectForClient() - access", () => {
+    it("refuses a client who isn't on the project", async () => {
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+      await expect(service.findByProjectForClient(PROJECT_ID, CLIENT_USER, ORG)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("lets an owner or admin through without being on the project", async () => {
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
+      mockPrisma.document.findMany.mockReturnValue(Promise.resolve([]));
+      mockPrisma.document.count.mockReturnValue(Promise.resolve(0));
+      const res = await service.findByProjectForClient(PROJECT_ID, "owner-1", ORG, 1, 20, true);
+      expect(res.data).toEqual([]);
+    });
+  });
+
   describe("findByProjectForClient() - deliverable decisions", () => {
     it("attaches the deciding client's response to deliverables only", async () => {
       mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1" }));

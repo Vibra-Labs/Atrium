@@ -168,6 +168,21 @@ describe("ProjectsService", () => {
     expect(args.select.members.select.user.select).toEqual({ id: true, name: true });
   });
 
+  it("getStats adds deliverables to review and documents to sign into waitingOnClients", async () => {
+    mockPrisma.project.count = mock((args: { where: { status?: unknown } }) =>
+      Promise.resolve(args.where.status === "in_review" ? 2 : 7),
+    ) as never;
+    mockPrisma.document.count.mockImplementation(((args: { where: { type?: unknown } }) =>
+      Promise.resolve(args.where.type === "deliverable" ? 3 : 4)) as never);
+
+    const stats = await service.getStats("org-1");
+
+    expect(stats.inReview).toBe(2);
+    expect(stats.waitingReviews).toBe(3);
+    expect(stats.waitingSignatures).toBe(4);
+    expect(stats.waitingOnClients).toBe(7);
+  });
+
   it("getStats counts client-waiting documents in live projects, each document once", async () => {
     mockPrisma.project.count = mock(() => Promise.resolve(0));
     mockPrisma.document.count.mockClear();

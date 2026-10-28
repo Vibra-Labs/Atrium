@@ -384,3 +384,31 @@ describe("TasksService", () => {
     });
   });
 });
+
+describe("TasksService.findByProjectForClient access", () => {
+  function build(assignment: unknown) {
+    const prisma = {
+      projectClient: { findFirst: mock(() => Promise.resolve(assignment)), count: mock(() => Promise.resolve(0)) },
+      task: { findMany: mock(() => Promise.resolve([])), count: mock(() => Promise.resolve(0)) },
+    };
+    const service = new TasksService(
+      prisma as never,
+      {} as never,
+      { create: mock(() => Promise.resolve()) } as never,
+      { warn: mock(() => {}), error: mock(() => {}) } as never,
+    );
+    return { prisma, service };
+  }
+
+  it("refuses a client who isn't on the project", async () => {
+    const { service } = build(null);
+    await expect(service.findByProjectForClient("p1", "client-1", "org-1")).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("lets an owner or admin through without being on the project", async () => {
+    const { prisma, service } = build(null);
+    await service.findByProjectForClient("p1", "owner-1", "org-1", 1, 20, true);
+    expect(prisma.projectClient.findFirst).not.toHaveBeenCalled();
+    expect(prisma.task.findMany).toHaveBeenCalled();
+  });
+});

@@ -122,7 +122,8 @@ test.describe.serial("Pro trial", () => {
     // the whole suite is hammering the dev server; allow the full default wait.
     await owner.page.goto(`${WEB}/dashboard/settings/payments`);
     await expect(owner.page.getByTestId("trial-tag").first()).toBeVisible({ timeout: 30000 });
-    await owner.page.goto(`${WEB}/dashboard/settings/workspace`);
+    // Custom domain lives on the Branding tab.
+    await owner.page.goto(`${WEB}/dashboard/settings/branding`);
     await expect(owner.page.getByTestId("trial-tag").first()).toBeVisible({ timeout: 30000 });
   });
 

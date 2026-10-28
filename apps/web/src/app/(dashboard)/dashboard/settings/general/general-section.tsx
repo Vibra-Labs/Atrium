@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Mail, HardDrive, Send, Globe, BarChart2, Clock } from "lucide-react";
+import { Mail, HardDrive, Send, BarChart2, Clock } from "lucide-react";
 import { enableSentry } from "@/lib/sentry";
-import { CustomDomainSection } from "../system/custom-domain-section";
 import { SMTP_DEFAULT_PORTS } from "@atrium/shared";
 import type { SmtpSecurity } from "@atrium/shared";
 
@@ -413,17 +412,6 @@ export function GeneralSection(): React.ReactElement {
           </button>
         </div>
       </form>
-
-      <section className="space-y-4 py-8">
-        <div className="flex items-center gap-2">
-          <Globe size={18} />
-          <h2 className="text-base font-semibold">Custom Domain</h2>
-        </div>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          Let your clients access the portal at your own domain (e.g. portal.yourcompany.com).
-        </p>
-        <CustomDomainSection />
-      </section>
     </div>
   );
 }

@@ -1,48 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { BrandingSection } from "../system/branding-section";
 import { LabelsSection } from "../system/labels-section";
-
-interface Branding {
-  primaryColor: string;
-  logoUrl?: string;
-  logoKey?: string;
-  organizationId?: string;
-  hideLogo?: boolean;
-}
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export function BrandingPageSection(): React.ReactElement {
-  const [branding, setBranding] = useState<Branding>({
-    primaryColor: "#006b68",
-  });
   const [orgName, setOrgName] = useState<string>("");
-  const [orgSlug, setOrgSlug] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const router = useRouter();
   const { success, error: showError } = useToast();
 
   useEffect(() => {
-    Promise.all([
-      apiFetch<Branding>("/branding"),
-      fetch(`${API_URL}/api/organization/current`, {
-        credentials: "include",
-      }).then((r) => (r.ok ? r.json() : null)),
-    ])
-      .then(([brandingData, org]) => {
-        setBranding(brandingData);
+    fetch(`${API_URL}/api/organization/current`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((org: { name?: string } | null) => {
         if (org?.name) setOrgName(org.name);
-        if (org?.slug) setOrgSlug(org.slug);
         setLoading(false);
       })
       .catch((err) => {
-        showError(err instanceof Error ? err.message : "Failed to load branding");
+        console.error("Failed to load workspace", err);
+        showError(err instanceof Error ? err.message : "Failed to load workspace");
         setLoading(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,24 +34,17 @@ export function BrandingPageSection(): React.ReactElement {
     e.preventDefault();
     setSaving(true);
     try {
-      await Promise.all([
-        apiFetch("/branding", {
-          method: "PUT",
-          body: JSON.stringify({
-            primaryColor: branding.primaryColor,
-            hideLogo: branding.hideLogo ?? false,
-          }),
-        }),
-        fetch(`${API_URL}/api/auth/organization/update`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: { name: orgName.trim() } }),
-          credentials: "include",
-        }),
-      ]);
+      const res = await fetch(`${API_URL}/api/auth/organization/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { name: orgName.trim() } }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to save workspace name");
       success("Workspace saved");
       router.refresh();
     } catch (err) {
+      console.error("Failed to save workspace", err);
       showError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
@@ -83,9 +58,13 @@ export function BrandingPageSection(): React.ReactElement {
       <form onSubmit={handleSave} className="space-y-0">
         <section className="space-y-4 pb-8">
           <div>
-            <h2 className="text-base font-semibold">Branding</h2>
+            <h2 className="text-base font-semibold">Workspace</h2>
             <p className="text-sm text-[var(--muted-foreground)] mt-0.5">
-              Customize your client portal appearance with your company name, logo, and brand color.
+              Your logo, brand color and custom domain are on the{" "}
+              <Link href="/dashboard/settings/branding" className="text-[var(--primary)] hover:underline">
+                Branding
+              </Link>{" "}
+              tab.
             </p>
           </div>
           <div className="space-y-2">
@@ -101,7 +80,6 @@ export function BrandingPageSection(): React.ReactElement {
               Displayed in the sidebar and client portal header.
             </p>
           </div>
-          <BrandingSection branding={branding} onBrandingChange={setBranding} orgName={orgName} orgSlug={orgSlug} />
           <button
             type="submit"
             disabled={saving}

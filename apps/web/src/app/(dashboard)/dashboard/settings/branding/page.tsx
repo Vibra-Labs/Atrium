@@ -7,6 +7,7 @@ import { startPreview } from "@/lib/preview-mode";
 import { useToast } from "@/components/toast";
 import { useSession } from "@/lib/session-context";
 import { initials } from "@/lib/initials";
+import { CustomDomainSection } from "../system/custom-domain-section";
 
 interface Branding {
   primaryColor: string;
@@ -14,10 +15,6 @@ interface Branding {
   logoKey?: string;
   organizationId?: string;
   hideLogo?: boolean;
-}
-
-interface CustomDomainData {
-  customDomain: string | null;
 }
 
 const COLOR_PRESETS = [
@@ -47,13 +44,15 @@ export default function BrandingSettingsPage(): React.ReactElement {
 
   // Saved state
   const [initialColor, setInitialColor] = useState("#006B68");
-  const [initialDomain, setInitialDomain] = useState("");
+  const [initialHideLogo, setInitialHideLogo] = useState(false);
   const [branding, setBranding] = useState<Branding>({ primaryColor: "#006B68" });
   const [orgName, setOrgName] = useState("Your Studio");
 
   // Working state
   const [currentColor, setCurrentColor] = useState("#006B68");
-  const [currentDomain, setCurrentDomain] = useState("");
+  const [hideLogo, setHideLogo] = useState(false);
+  // Shown in the preview's address bar; edited in the Custom domain section below.
+  const [portalDomain, setPortalDomain] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -61,34 +60,35 @@ export default function BrandingSettingsPage(): React.ReactElement {
 
   useEffect(() => {
     Promise.all([
-      apiFetch<Branding>("/branding").catch(() => ({ primaryColor: "#006B68" })),
-      apiFetch<CustomDomainData>("/settings/custom-domain").catch(() => ({ customDomain: null })),
+      apiFetch<Branding>("/branding").catch((): Branding => ({ primaryColor: "#006B68" })),
       apiFetch<{ name?: string }>("/organization/current").catch(() => null),
+      apiFetch<{ customDomain: string | null }>("/settings/custom-domain").catch(() => null),
     ])
-      .then(([bData, dData, orgData]) => {
+      .then(([bData, orgData, domainData]) => {
+        setPortalDomain(domainData?.customDomain ?? "");
         const color = bData.primaryColor || "#006B68";
-        const domain = dData?.customDomain || "";
         setBranding(bData);
         setInitialColor(color);
         setCurrentColor(color);
-        setInitialDomain(domain);
-        setCurrentDomain(domain);
+        setInitialHideLogo(bData.hideLogo ?? false);
+        setHideLogo(bData.hideLogo ?? false);
         if (orgData?.name) setOrgName(orgData.name);
         setLoading(false);
       })
       .catch((err) => {
+        console.error("Failed to load branding settings", err);
         showError(err instanceof Error ? err.message : "Failed to load branding");
         setLoading(false);
       });
   }, [showError]);
 
   const hasColorChange = currentColor.toLowerCase() !== initialColor.toLowerCase();
-  const hasDomainChange = currentDomain.trim().toLowerCase() !== initialDomain.trim().toLowerCase();
-  const hasUnsavedChanges = hasColorChange || hasDomainChange;
+  const hasHideLogoChange = hideLogo !== initialHideLogo;
+  const hasUnsavedChanges = hasColorChange || hasHideLogoChange;
 
   const unsavedSummary = [
     hasColorChange ? "brand color" : null,
-    hasDomainChange ? "portal address" : null,
+    hasHideLogoChange ? "logo visibility" : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -134,32 +134,18 @@ export default function BrandingSettingsPage(): React.ReactElement {
 
   const handleDiscard = () => {
     setCurrentColor(initialColor);
-    setCurrentDomain(initialDomain);
+    setHideLogo(initialHideLogo);
   };
 
   const handleSave = async () => {
     setSaving(true);
-    // Save one part at a time and record each success, so a failed domain save
-    // doesn't leave the saved colour looking unsaved (or the other way round).
     try {
-      if (hasColorChange) {
-        await apiFetch("/branding", {
-          method: "PUT",
-          body: JSON.stringify({ primaryColor: currentColor, hideLogo: branding.hideLogo ?? false }),
-        });
-        setInitialColor(currentColor);
-      }
-
-      if (hasDomainChange) {
-        const domain = currentDomain.trim();
-        if (domain) {
-          await apiFetch("/settings/custom-domain", { method: "PUT", body: JSON.stringify({ domain }) });
-        } else if (initialDomain) {
-          await apiFetch("/settings/custom-domain", { method: "DELETE" });
-        }
-        setInitialDomain(domain);
-      }
-
+      await apiFetch("/branding", {
+        method: "PUT",
+        body: JSON.stringify({ primaryColor: currentColor, hideLogo }),
+      });
+      setInitialColor(currentColor);
+      setInitialHideLogo(hideLogo);
       success("Branding settings saved");
     } catch (err) {
       console.error("Failed to save branding settings", err);
@@ -245,6 +231,15 @@ export default function BrandingSettingsPage(): React.ReactElement {
             <p className="text-xs text-[var(--muted-foreground)]">
               SVG or PNG, square, at least 256 px. Also used as the portal favicon.
             </p>
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-[var(--foreground)]">
+              <input
+                type="checkbox"
+                checked={hideLogo}
+                onChange={(e) => setHideLogo(e.target.checked)}
+                className="rounded"
+              />
+              Hide logo in the sidebar and portal header
+            </label>
           </section>
 
           {/* Brand Color Section */}
@@ -303,55 +298,10 @@ export default function BrandingSettingsPage(): React.ReactElement {
             </p>
           </section>
 
-          {/* Custom Domain Section */}
+          {/* Custom domain: the shared section, with real DNS verification and plan gating */}
           <section className="space-y-3.5 pt-6 border-t border-[var(--border)]">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold text-[var(--foreground)]">Custom domain</h2>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                PRO
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="custom-domain" className="text-xs text-[var(--muted-foreground)] block font-medium">
-                Portal address
-              </label>
-              <div className="relative">
-                <input
-                  id="custom-domain"
-                  type="text"
-                  value={currentDomain}
-                  onChange={(e) => setCurrentDomain(e.target.value)}
-                  placeholder="portal.yourstudio.com"
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[var(--border)] bg-[var(--background)] outline-none focus:ring-1 focus:ring-[var(--primary)] text-[var(--foreground)]"
-                />
-              </div>
-            </div>
-
-            {/* DNS Instructions Box */}
-            <div className="p-3.5 rounded-xl bg-[var(--muted)]/60 border border-[var(--border)] font-mono text-xs space-y-1">
-              <div className="text-[var(--muted-foreground)] flex justify-between">
-                <span>Type</span>
-                <span>Name</span>
-                <span>Value</span>
-              </div>
-              <div className="text-[var(--foreground)] font-semibold flex justify-between pt-1">
-                <span>CNAME</span>
-                <span>portal</span>
-                <span className="truncate max-w-[200px] sm:max-w-none">
-                  {typeof window !== "undefined" ? window.location.hostname : "app.atrium.design"}
-                </span>
-              </div>
-            </div>
-
-            {/* Verification Status */}
-            <div className="flex items-center gap-3 text-xs pt-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                Verified
-              </span>
-              <span className="text-[var(--muted-foreground)]">SSL certificate active</span>
-            </div>
+            <h2 className="text-sm font-semibold text-[var(--foreground)]">Custom domain</h2>
+            <CustomDomainSection />
           </section>
         </div>
 
@@ -371,7 +321,7 @@ export default function BrandingSettingsPage(): React.ReactElement {
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/80" />
               </div>
               <div className="flex-1 ml-2 px-2.5 py-1 rounded-md bg-[var(--background)] border border-[var(--border)] text-[11px] text-[var(--muted-foreground)] truncate text-center">
-                {currentDomain || "portal.yourstudio.com"}
+                {portalDomain || "portal.yourstudio.com"}
               </div>
             </div>
 

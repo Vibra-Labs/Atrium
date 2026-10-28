@@ -19,6 +19,7 @@ import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from
 import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS, logsInviteLinks } from "../clients/invitations";
 import { cookieUrlWarning, secureCookies } from "../common/helpers/secure-cookies";
 import { publicApiUrl } from "../common/helpers/public-api-url";
+import { isPrivilegedRole } from "../common/helpers/privileged-role";
 
 interface AdminResetContext {
   capturedUrl: string | null;
@@ -535,7 +536,7 @@ export class AuthService {
       where: { userId },
       select: { role: true },
     });
-    if (memberships.some((m) => m.role === "owner" || m.role === "admin")) {
+    if (memberships.some((m) => isPrivilegedRole(m.role))) {
       return true;
     }
     // Only client-role memberships: this is a portal client.

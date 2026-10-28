@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { paginationArgs, paginatedResponse, assertProjectAccess } from "../common";
+import { paginationArgs, paginatedResponse, assertProjectAccess, isPrivilegedRole } from "../common";
 import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
@@ -131,8 +131,7 @@ export class CommentsService {
     });
     if (!comment) throw new NotFoundException("Comment not found");
 
-    const isOwnerOrAdmin = role === "owner" || role === "admin";
-    if (comment.authorId !== userId && !isOwnerOrAdmin) {
+    if (comment.authorId !== userId && !isPrivilegedRole(role)) {
       throw new ForbiddenException("Cannot delete this comment");
     }
 

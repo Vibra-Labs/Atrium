@@ -18,6 +18,7 @@ import {
   paginatedResponse,
   assertProjectAccess,
   sanitizeFilename,
+  isPrivilegedRole,
 } from "../common";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
@@ -731,7 +732,7 @@ export class DocumentsService {
         throw new BadRequestException("Signature field not found on this document");
       }
 
-      const isAdmin = role === "owner" || role === "admin";
+      const isAdmin = isPrivilegedRole(role);
       const [assignment, existingResponse, signer] = await Promise.all([
         isAdmin ? null : tx.projectClient.findFirst({ where: { projectId: doc.projectId, userId } }),
         tx.documentResponse.findFirst({ where: { documentId: id, userId, fieldId: dto.fieldId } }),
@@ -1075,7 +1076,7 @@ export class DocumentsService {
 
     // For admins, return all signed field IDs across all users.
     // For clients, return only their own signed fields.
-    const isAdmin = role === "owner" || role === "admin";
+    const isAdmin = isPrivilegedRole(role);
     const responseFilter = isAdmin
       ? { documentId: id, action: "signed" as const }
       : { documentId: id, userId, action: "signed" as const };

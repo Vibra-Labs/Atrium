@@ -17,7 +17,7 @@ import { Readable } from "stream";
 import { extname } from "path";
 import type { Response } from "express";
 import { DOWNLOAD_CACHE } from "../common/helpers/http-cache";
-import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess, BLOCKED_EXTENSIONS } from "../common";
+import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess, BLOCKED_EXTENSIONS, isPrivilegedRole } from "../common";
 
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
@@ -330,7 +330,7 @@ export class UpdatesService {
     });
     if (!update) throw new NotFoundException("Update not found");
 
-    const isPrivileged = role === "owner" || role === "admin";
+    const isPrivileged = isPrivilegedRole(role);
     const isAuthor = update.authorId === userId;
     if (!isAuthor && !isPrivileged) {
       throw new ForbiddenException("Cannot edit this update");

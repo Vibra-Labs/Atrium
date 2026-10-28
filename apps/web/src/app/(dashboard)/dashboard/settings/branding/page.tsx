@@ -51,8 +51,8 @@ export default function BrandingSettingsPage(): React.ReactElement {
   // Working state
   const [currentColor, setCurrentColor] = useState("#006B68");
   const [hideLogo, setHideLogo] = useState(false);
-  // Shown in the preview's address bar; edited in the Custom domain section below.
-  const [portalDomain, setPortalDomain] = useState("");
+  // Shown in the preview's address bar; kept in sync by the Custom domain section below.
+  const [portalDomain, setPortalDomain] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -62,10 +62,8 @@ export default function BrandingSettingsPage(): React.ReactElement {
     Promise.all([
       apiFetch<Branding>("/branding").catch((): Branding => ({ primaryColor: "#006B68" })),
       apiFetch<{ name?: string }>("/organization/current").catch(() => null),
-      apiFetch<{ customDomain: string | null }>("/settings/custom-domain").catch(() => null),
     ])
-      .then(([bData, orgData, domainData]) => {
-        setPortalDomain(domainData?.customDomain ?? "");
+      .then(([bData, orgData]) => {
         const color = bData.primaryColor || "#006B68";
         setBranding(bData);
         setInitialColor(color);
@@ -301,7 +299,7 @@ export default function BrandingSettingsPage(): React.ReactElement {
           {/* Custom domain: the shared section, with real DNS verification and plan gating */}
           <section className="space-y-3.5 pt-6 border-t border-[var(--border)]">
             <h2 className="text-sm font-semibold text-[var(--foreground)]">Custom domain</h2>
-            <CustomDomainSection />
+            <CustomDomainSection onSavedDomainChange={setPortalDomain} />
           </section>
         </div>
 

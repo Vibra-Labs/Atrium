@@ -168,7 +168,12 @@ function DnsTable({ domain, target }: { domain: string; target: string }) {
   );
 }
 
-export function CustomDomainSection() {
+interface CustomDomainSectionProps {
+  /** Called with the saved domain when it loads and after every save or removal. */
+  onSavedDomainChange?: (domain: string | null) => void;
+}
+
+export function CustomDomainSection({ onSavedDomainChange }: CustomDomainSectionProps = {}) {
   const [isPaid, setIsPaid] = useState(false);
   const isTrialing: boolean = useIsTrialing();
   const [loadingPlan, setLoadingPlan] = useState(true);
@@ -180,6 +185,10 @@ export function CustomDomainSection() {
   const [domainError, setDomainError] = useState<string | null>(null);
   const [verifyStatus, setVerifyStatus] = useState<null | "checking" | { verified: boolean; reason?: string }>(null);
   const { success, error: showError } = useToast();
+
+  useEffect(() => {
+    onSavedDomainChange?.(savedDomain);
+  }, [savedDomain, onSavedDomainChange]);
 
   useEffect(() => {
     Promise.all([

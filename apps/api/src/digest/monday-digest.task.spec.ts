@@ -1,4 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
+// Always mock the templates. Bun's module mocks are process-wide and file order differs on
+// Linux, so without this the template is sometimes real and sometimes mocked (see CLAUDE.md).
+import "../common/testing/mock-email";
 import { fakeEmailRenderer } from "../common/testing/fake-email-renderer";
 import { MondayDigestTask, digestSubject } from "./monday-digest.task";
 import type { MondayDigest } from "./monday-digest.service";
@@ -81,9 +84,9 @@ describe("MondayDigestTask", () => {
     const { task, mail } = build({ digest: withFollowUps });
     await task.sendDigests(NOW);
     const html = (mail.send.mock.calls[0] as unknown as [string, string, string])[2];
-    expect(html).toContain("Follow-ups");
-    expect(html).toContain("Ana Ruiz");
-    expect(html).toContain("Overdue");
+    // The template is mocked to return its props, so check the data handed to it, not its wording.
+    expect(html).toContain('"name":"Ana Ruiz"');
+    expect(html).toContain('"overdue":true');
     expect(html).toContain("Oct 14");
     expect(html).toContain("https://app.atrium.test/dashboard/contacts/c2");
   });

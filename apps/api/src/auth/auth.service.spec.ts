@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
-import { ForbiddenException, InternalServerErrorException } from "@nestjs/common";
+import "../common/testing/mock-email";
+import { BadRequestException, ForbiddenException, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { APIError } from "better-auth/api";
 import { AuthService } from "./auth.service";
 import type { ConfigService } from "@nestjs/config";
@@ -9,12 +10,14 @@ import type { BillingService } from "../billing/billing.service";
 
 // Mutable so individual tests can flip the deploy between open and locked down.
 let allowSignups: string | undefined;
+let resendApiKey: string | undefined;
 
 const mockConfig = {
   get: mock((key: string, fallback?: string) => {
     if (key === "WEB_URL") return "http://localhost:3000";
     if (key === "API_URL") return "http://localhost:3001";
     if (key === "ALLOW_SIGNUPS") return allowSignups;
+    if (key === "RESEND_API_KEY") return resendApiKey;
     return fallback;
   }),
   getOrThrow: mock((key: string) => {
@@ -33,9 +36,20 @@ const mockPrisma = {
   },
   user: {
     findUnique: mock(() => Promise.resolve(null)),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
   },
   invitation: {
     findFirst: mock(() => Promise.resolve(null)),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
+  },
+  contact: {
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+  },
+  organization: {
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
+  },
+  systemSettings: {
+    count: mock((): Promise<number> => Promise.resolve(0)),
   },
 };
 
@@ -43,6 +57,7 @@ const mockMail = { send: mock(() => Promise.resolve()) };
 const mockBilling = {
   initializeFreePlan: mock(() => Promise.resolve()),
   assertPlanLimit: mock((): Promise<void> => Promise.resolve()),
+  hasFeature: mock((): Promise<boolean> => Promise.resolve(true)),
 };
 
 function makeService(): AuthService {
@@ -65,8 +80,23 @@ describe("AuthService", () => {
     mockPrisma.projectClient.count.mockClear();
     mockPrisma.user.findUnique.mockClear();
     mockPrisma.invitation.findFirst.mockClear();
+    mockPrisma.invitation.findUnique.mockReset();
+    mockPrisma.invitation.findUnique.mockImplementation(() => Promise.resolve(null));
+    mockPrisma.user.findFirst.mockReset();
+    mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve(null));
+    mockPrisma.contact.findFirst.mockReset();
+    mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve(null));
+    mockPrisma.organization.findUnique.mockReset();
+    mockPrisma.organization.findUnique.mockImplementation(() => Promise.resolve(null));
+    mockPrisma.systemSettings.count.mockReset();
+    mockPrisma.systemSettings.count.mockImplementation(() => Promise.resolve(0));
+    mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve(null));
+    mockBilling.hasFeature.mockReset();
+    mockBilling.hasFeature.mockImplementation(() => Promise.resolve(true));
+    mockMail.send.mockClear();
     mockConfig.get.mockClear();
     allowSignups = undefined;
+    resendApiKey = undefined;
   });
 
   describe("maySignUp", () => {
@@ -575,6 +605,263 @@ describe("AuthService", () => {
     it("afterUpdateMemberRole syncs the contact for the role change", async () => {
       await hook("afterUpdateMemberRole")({ member: { ...client, role: "admin" }, previousRole: "member" });
       expect(sync.syncRoleChange).toHaveBeenCalledWith("org-1", "u-1", "member", "admin");
+    });
+  });
+
+  describe("passwordless invitations", () => {
+    const future: Date = new Date(Date.now() + 86_400_000);
+    const portalInvite = {
+      id: "inv-1",
+      email: "jane@acme.com",
+      role: "member",
+      status: "pending",
+      expiresAt: future,
+      organizationId: "org-1",
+      organization: { name: "Acme Agency" },
+    };
+
+    type SignInCall = { body: { email: string; name?: string; callbackURL: string; errorCallbackURL: string } };
+
+    /** Stands in for Better Auth: hands the verify URL to sendMagicLink, as the plugin does. */
+    function stubSignInMagicLink(): ReturnType<typeof mock> {
+      const signInMagicLink = mock(async (call: SignInCall) => {
+        await service.deliverMagicLink(
+          call.body.email,
+          `http://localhost:3001/api/auth/magic-link/verify?token=tok-1&callbackURL=${encodeURIComponent(call.body.callbackURL)}`,
+        );
+      });
+      (service.auth as unknown as { api: { signInMagicLink: typeof signInMagicLink } }).api.signInMagicLink =
+        signInMagicLink;
+      return signInMagicLink;
+    }
+
+    describe("describeInvitation", () => {
+      it("summarises a pending portal invitation", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() => Promise.resolve(portalInvite));
+
+        expect(await service.describeInvitation("inv-1")).toEqual({
+          email: "jane@acme.com",
+          organizationName: "Acme Agency",
+          portal: true,
+        });
+      });
+
+      it("marks a staff invitation as not a portal one", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() =>
+          Promise.resolve({ ...portalInvite, role: "admin" }),
+        );
+
+        expect((await service.describeInvitation("inv-1"))?.portal).toBe(false);
+      });
+
+      it("returns null for an expired, used or unknown invitation", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() =>
+          Promise.resolve({ ...portalInvite, expiresAt: new Date(Date.now() - 1000) }),
+        );
+        expect(await service.describeInvitation("inv-1")).toBeNull();
+
+        mockPrisma.invitation.findUnique.mockImplementation(() =>
+          Promise.resolve({ ...portalInvite, status: "accepted" }),
+        );
+        expect(await service.describeInvitation("inv-1")).toBeNull();
+
+        mockPrisma.invitation.findUnique.mockImplementation(() => Promise.resolve(null));
+        expect(await service.describeInvitation("nope")).toBeNull();
+      });
+    });
+
+    describe("startInviteSignIn", () => {
+      it("returns a sign-in URL without emailing when the invitee has no account yet", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() => Promise.resolve(portalInvite));
+        mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve({ name: "Jane Doe" }));
+        const signIn = stubSignInMagicLink();
+
+        const result = await service.startInviteSignIn("inv-1");
+
+        expect(result).toEqual({
+          url: expect.stringContaining("http://localhost:3001/api/auth/magic-link/verify?token=tok-1"),
+        });
+        expect(mockMail.send).not.toHaveBeenCalled();
+        const body = (signIn.mock.calls[0][0] as SignInCall).body;
+        expect(body.email).toBe("jane@acme.com");
+        expect(body.name).toBe("Jane Doe");
+        expect(body.callbackURL).toBe("http://localhost:3000/accept-invite?id=inv-1");
+      });
+
+      it("names a new account after the email when the contact has no real name", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() => Promise.resolve(portalInvite));
+        mockPrisma.contact.findFirst.mockImplementation(() => Promise.resolve({ name: "jane@acme.com" }));
+        const signIn = stubSignInMagicLink();
+
+        await service.startInviteSignIn("inv-1");
+
+        expect((signIn.mock.calls[0][0] as SignInCall).body.name).toBe("jane");
+      });
+
+      it("emails a link instead when the invitee already has an account", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() => Promise.resolve(portalInvite));
+        mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-1" }));
+        stubSignInMagicLink();
+
+        const result = await service.startInviteSignIn("inv-1");
+
+        expect(result).toEqual({ emailed: true });
+        expect(mockMail.send).toHaveBeenCalledTimes(1);
+      });
+
+      it("refuses a staff invitation, which keeps the password form", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() =>
+          Promise.resolve({ ...portalInvite, role: "admin" }),
+        );
+        const signIn = stubSignInMagicLink();
+
+        await expect(service.startInviteSignIn("inv-1")).rejects.toThrow(BadRequestException);
+        expect(signIn).not.toHaveBeenCalled();
+      });
+
+      it("refuses an invitation that is no longer pending", async () => {
+        mockPrisma.invitation.findUnique.mockImplementation(() =>
+          Promise.resolve({ ...portalInvite, status: "canceled" }),
+        );
+        const signIn = stubSignInMagicLink();
+
+        await expect(service.startInviteSignIn("inv-1")).rejects.toThrow(NotFoundException);
+        expect(signIn).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("deliverMagicLink", () => {
+      it("never emails an address with no account, so the login page cannot create one", async () => {
+        await service.deliverMagicLink("stranger@example.com", "http://localhost:3001/api/auth/magic-link/verify?token=t");
+
+        expect(mockMail.send).not.toHaveBeenCalled();
+      });
+
+      it("emails a link to the web app's confirm page rather than the API's verify endpoint", async () => {
+        mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-1" }));
+
+        await service.deliverMagicLink(
+          "jane@acme.com",
+          "http://localhost:3001/api/auth/magic-link/verify?token=t&callbackURL=%2Fportal",
+        );
+
+        expect(mockMail.send).toHaveBeenCalledTimes(1);
+        const html = String((mockMail.send.mock.calls[0] as unknown[])[2]);
+        expect(html).toContain("http://localhost:3000/magic-link?token=t&callbackURL=%2Fportal");
+        expect(html).not.toContain("/api/auth/magic-link/verify");
+      });
+
+      it("stops emailing an address after 3 links in 15 minutes", async () => {
+        mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-1" }));
+        const verify = "http://localhost:3001/api/auth/magic-link/verify?token=t";
+
+        for (let i = 0; i < 4; i++) await service.deliverMagicLink("Jane@acme.com", verify);
+        await service.deliverMagicLink("other@acme.com", verify);
+
+        expect(mockMail.send).toHaveBeenCalledTimes(4);
+        expect((mockMail.send.mock.calls[3] as unknown[])[0]).toBe("other@acme.com");
+      });
+
+      describe("on a workspace's custom domain", () => {
+        const verifyFrom = (origin: string): string =>
+          `http://localhost:3001/api/auth/magic-link/verify?token=t&callbackURL=${encodeURIComponent(`${origin}/portal`)}`;
+
+        beforeEach(() => {
+          mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-1" }));
+          mockPrisma.organization.findUnique.mockImplementation(() => Promise.resolve({ id: "org-1" }));
+        });
+
+        it("opens the link on that domain for a member of the workspace", async () => {
+          mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ id: "m-1" }));
+
+          await service.deliverMagicLink("jane@acme.com", verifyFrom("https://portal.acme.com"));
+
+          const html = String((mockMail.send.mock.calls[0] as unknown[])[2]);
+          expect(html).toContain("https://portal.acme.com/magic-link?token=t");
+        });
+
+        it("uses the main site for someone outside that workspace", async () => {
+          await service.deliverMagicLink("jane@acme.com", verifyFrom("https://portal.acme.com"));
+
+          const html = String((mockMail.send.mock.calls[0] as unknown[])[2]);
+          expect(html).toContain("http://localhost:3000/magic-link?token=t");
+        });
+
+        it("uses the main site when the workspace's plan no longer includes custom domains", async () => {
+          mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ id: "m-1" }));
+          mockBilling.hasFeature.mockImplementation(() => Promise.resolve(false));
+
+          await service.deliverMagicLink("jane@acme.com", verifyFrom("https://portal.acme.com"));
+
+          const html = String((mockMail.send.mock.calls[0] as unknown[])[2]);
+          expect(html).toContain("http://localhost:3000/magic-link?token=t");
+        });
+      });
+    });
+
+    describe("trustedOriginsFor", () => {
+      const from = (host: string): Request =>
+        new Request("http://internal/api/auth/sign-in/magic-link", { headers: { host } });
+
+      it("trusts a workspace's custom domain when the request arrived on it", async () => {
+        mockPrisma.organization.findUnique.mockImplementation(() => Promise.resolve({ id: "org-1" }));
+
+        expect(await service.trustedOriginsFor(from("portal.acme.com:443"))).toContain("https://portal.acme.com");
+      });
+
+      it("trusts only the main origins for an unknown or unentitled host", async () => {
+        expect(await service.trustedOriginsFor(from("evil.test"))).toEqual([
+          "http://localhost:3000",
+          "http://localhost:3001",
+        ]);
+
+        mockPrisma.organization.findUnique.mockImplementation(() => Promise.resolve({ id: "org-1" }));
+        mockBilling.hasFeature.mockImplementation(() => Promise.resolve(false));
+        expect(await service.trustedOriginsFor(from("portal.acme.com"))).not.toContain("https://portal.acme.com");
+      });
+
+      it("skips the lookup for the main site and server-side calls", async () => {
+        await service.trustedOriginsFor(from("localhost:3000"));
+        await service.trustedOriginsFor(undefined);
+
+        expect(mockPrisma.organization.findUnique).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("signInLinksAvailable", () => {
+      it("is true when the server has a Resend key", async () => {
+        resendApiKey = "re_123";
+        expect(await service.signInLinksAvailable()).toBe(true);
+      });
+
+      it("is true when a workspace has set up its own email", async () => {
+        mockPrisma.systemSettings.count.mockImplementation(() => Promise.resolve(1));
+        expect(await service.signInLinksAvailable()).toBe(true);
+      });
+
+      it("is false when nothing can send email", async () => {
+        expect(await service.signInLinksAvailable()).toBe(false);
+      });
+    });
+  });
+
+  describe("setPassword", () => {
+    it("sets a first password through Better Auth with the caller's session", async () => {
+      const setPassword = mock(() => Promise.resolve({ status: true }));
+      (service.auth as unknown as { api: { setPassword: typeof setPassword } }).api.setPassword = setPassword;
+
+      await service.setPassword({ cookie: "session=abc" }, "correct horse");
+
+      const call = (setPassword.mock.calls[0] as unknown as [{ body: unknown; headers: Headers }])[0];
+      expect(call.body).toEqual({ newPassword: "correct horse" });
+      expect(call.headers.get("cookie")).toBe("session=abc");
+    });
+
+    it("turns Better Auth's refusal into a 400", async () => {
+      (service.auth as unknown as { api: { setPassword: () => Promise<never> } }).api.setPassword = () =>
+        Promise.reject(new APIError("BAD_REQUEST", { message: "Password already set" }));
+
+      await expect(service.setPassword({}, "correct horse")).rejects.toThrow(BadRequestException);
     });
   });
 });

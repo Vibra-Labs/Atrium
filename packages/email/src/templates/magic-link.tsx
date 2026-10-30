@@ -26,7 +26,7 @@ export function MagicLinkEmail({ url, organizationName }: MagicLinkEmailProps) {
             Sign in to {organizationName ?? "Atrium"}
           </Heading>
           <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
-            Click the link below to sign in. This link expires in 15 minutes.
+            Click the link below to sign in. This link expires in 1 hour and works once.
           </Text>
           <Link
             href={url}

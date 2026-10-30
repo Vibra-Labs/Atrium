@@ -16,13 +16,15 @@ export function middleware(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
   const name = hostname(host);
 
-  if (!MAIN_DOMAIN || name === hostname(MAIN_DOMAIN) || LOOPBACK_HOSTS.has(name)) {
-    return NextResponse.next();
-  }
+  // Layouts can't see the URL, and need it to send a signed-out visitor back
+  // to the page they asked for after signing in.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname + request.nextUrl.search);
 
   // Custom domain: inject header so server components can read it
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-custom-host", name);
+  if (MAIN_DOMAIN && name !== hostname(MAIN_DOMAIN) && !LOOPBACK_HOSTS.has(name)) {
+    requestHeaders.set("x-custom-host", name);
+  }
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 

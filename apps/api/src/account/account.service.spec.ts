@@ -69,6 +69,7 @@ const mockPrisma = {
   },
   user: {
     delete: mock(() => Promise.resolve()),
+    findUnique: mock(() => Promise.resolve({ email: "jane@acme.com" })),
   },
   $transaction: mock((fn: (prisma: typeof mockPrisma) => unknown) => fn(mockPrisma)),
 };
@@ -116,6 +117,7 @@ function clearAllMocks() {
   mockPrisma.projectNote.updateMany.mockClear();
   mockPrisma.organization.delete.mockClear();
   mockPrisma.user.delete.mockClear();
+  mockPrisma.user.findUnique.mockClear();
   mockPrisma.$transaction.mockClear();
   mockStorage.delete.mockClear();
   mockLogger.info.mockClear();
@@ -249,6 +251,17 @@ describe("AccountService", () => {
     });
   });
 
+  describe("hasPassword", () => {
+    it("is true when the user has a password", async () => {
+      expect(await service.hasPassword("user-1")).toBe(true);
+    });
+
+    it("is false for someone who only signs in by emailed link", async () => {
+      mockPrisma.account.findFirst.mockImplementation(() => Promise.resolve(null));
+      expect(await service.hasPassword("user-1")).toBe(false);
+    });
+  });
+
   // =========================================================================
   // deleteAccount
   // =========================================================================
@@ -322,6 +335,31 @@ describe("AccountService", () => {
 
       expect(msg1).toBe(msg2);
       expect(msg1).toBe("Password verification failed.");
+    });
+
+    it("lets someone without a password confirm with their email address instead", async () => {
+      mockPrisma.account.findFirst.mockImplementation(() => Promise.resolve(null));
+
+      await service.deleteAccount("user-1", undefined, " Jane@Acme.com ");
+
+      expect(mockPrisma.user.delete).toHaveBeenCalled();
+      expect(mockVerifyPassword).not.toHaveBeenCalled();
+    });
+
+    it("refuses an email that isn't theirs", async () => {
+      mockPrisma.account.findFirst.mockImplementation(() => Promise.resolve(null));
+
+      await expect(service.deleteAccount("user-1", undefined, "someone@else.com")).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    it("still requires the password from someone who has one, even if they give their email", async () => {
+      await expect(service.deleteAccount("user-1", undefined, "jane@acme.com")).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
     });
 
     it("deletion detaches contacts", async () => {

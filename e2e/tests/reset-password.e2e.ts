@@ -97,6 +97,7 @@ test.describe("Reset Password Page", () => {
     const clientCtx = await browser.newContext({ storageState: undefined });
     const clientPage = await clientCtx.newPage();
     await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`);
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.getByLabel(/your name/i).fill("Reset Client");
     await clientPage.getByLabel(/email/i).fill(clientEmail);
     await clientPage.getByLabel(/password/i).fill(originalPassword);
@@ -200,6 +201,7 @@ test.describe("Reset Password Page", () => {
     const clientCtx = await browser.newContext({ storageState: undefined });
     const clientPage = await clientCtx.newPage();
     await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`);
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.getByLabel(/your name/i).fill("Reset Reuse Client");
     await clientPage.getByLabel(/email/i).fill(clientEmail);
     await clientPage.getByLabel(/password/i).fill("ClientOriginal123!");

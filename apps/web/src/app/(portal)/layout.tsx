@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { redirect, unstable_rethrow } from "next/navigation";
+import { loginRedirectPath } from "@/lib/login-redirect";
 import Link from "next/link";
 import { SignOutButton } from "./sign-out-button";
 import { getSession } from "@/lib/auth";
@@ -51,7 +52,7 @@ export default async function PortalLayout({
     getOrg(),
   ]);
   if (!session) {
-    redirect("/login");
+    redirect(await loginRedirectPath());
   }
 
   const orgName: string | null = org?.name || null;

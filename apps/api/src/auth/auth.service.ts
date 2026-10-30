@@ -1,6 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as Sentry from "@sentry/nestjs";
-import { ForbiddenException, Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -16,10 +23,16 @@ import { BillingService } from "../billing/billing.service";
 import { DEFAULT_STATUSES, DEFAULT_BRANDING, DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
-import { formatInvitationExpiry, INVITATION_EXPIRES_IN_SECONDS, logsInviteLinks } from "../clients/invitations";
+import {
+  formatInvitationExpiry,
+  INVITATION_EXPIRES_IN_SECONDS,
+  isPortalInviteRole,
+  logsInviteLinks,
+} from "../clients/invitations";
 import { cookieUrlWarning, secureCookies } from "../common/helpers/secure-cookies";
 import { publicApiUrl } from "../common/helpers/public-api-url";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
+import { SendLimiter } from "./send-limiter";
 
 interface AdminResetContext {
   capturedUrl: string | null;
@@ -27,11 +40,46 @@ interface AdminResetContext {
   emailViaOrgConfig: boolean;
 }
 
+/** Holds the verify URL of a magic link minted for the browser that asked, instead of emailing it. */
+interface MagicLinkCapture {
+  url: string | null;
+}
+
+/** What the accept-invite page shows before anyone is signed in. */
+export interface InvitationSummary {
+  email: string;
+  organizationName: string;
+  /** Portal (client) invites sign in by link; staff invites keep the password form. */
+  portal: boolean;
+}
+
+export type InviteSignInResult = { url: string } | { emailed: true };
+
+/** The magic link plugin's endpoint, which `auth`'s plugin-less type leaves out. */
+type SignInMagicLink = (input: {
+  body: { email: string; name?: string; callbackURL: string; errorCallbackURL: string };
+  headers: Headers;
+}) => Promise<unknown>;
+
+export const MAGIC_LINK_EXPIRES_IN_SECONDS: number = 60 * 60;
+
+/** Sign-in emails per address per window, so nobody can flood someone's inbox from the login page. */
+const MAGIC_LINK_EMAILS_PER_WINDOW = 3;
+const MAGIC_LINK_EMAIL_WINDOW_MS: number = 15 * 60 * 1000;
+
+/** The request's host without a port, lowercased. */
+function requestHost(request?: Request): string | null {
+  const host: string | null = request?.headers.get("host") ?? null;
+  return host ? host.split(":")[0].toLowerCase() : null;
+}
+
 @Injectable()
 export class AuthService {
   public auth: ReturnType<typeof betterAuth>;
   private readonly logger = new Logger(AuthService.name);
   private readonly adminResetStorage = new AsyncLocalStorage<AdminResetContext>();
+  private readonly magicLinkCapture = new AsyncLocalStorage<MagicLinkCapture>();
+  private readonly magicLinkEmails = new SendLimiter(MAGIC_LINK_EMAILS_PER_WINDOW, MAGIC_LINK_EMAIL_WINDOW_MS);
 
   constructor(
     private config: ConfigService,
@@ -211,7 +259,7 @@ export class AuthService {
           },
         },
       },
-      trustedOrigins: [webUrl, apiUrl],
+      trustedOrigins: (request?: Request) => this.trustedOriginsFor(request),
       hooks: {
         before: mcpOAuthEnabled ? mcpOAuthBeforeHook : undefined,
         after: mcpOAuthEnabled ? mcpOAuthAfterHook : undefined,
@@ -389,16 +437,8 @@ export class AuthService {
           },
         }),
         magicLink({
-          sendMagicLink: async ({ email, url }) => {
-            const html = await render(MagicLinkEmail({ url }));
-            const organizationId = await this.getPrimaryOrgForEmail(email);
-            await this.mail.send(
-              email,
-              "Sign in to Atrium",
-              html,
-              organizationId,
-            );
-          },
+          expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
+          sendMagicLink: ({ email, url }) => this.deliverMagicLink(email, url),
         }),
         ...(mcpOAuthEnabled
           ? [
@@ -614,6 +654,176 @@ export class AuthService {
       );
       return undefined;
     }
+  }
+
+  /** A still-usable invitation, or null when it is unknown, expired or already answered. */
+  async describeInvitation(id: string): Promise<InvitationSummary | null> {
+    const invitation = await this.findOpenInvitation(id);
+    if (!invitation) return null;
+    return {
+      email: invitation.email,
+      organizationName: invitation.organization.name,
+      portal: isPortalInviteRole(invitation.role),
+    };
+  }
+
+  private async findOpenInvitation(id: string) {
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { id },
+      include: { organization: { select: { name: true } } },
+    });
+    if (!invitation || invitation.status !== "pending" || invitation.expiresAt <= new Date()) {
+      return null;
+    }
+    return invitation;
+  }
+
+  /**
+   * One click on a portal invite. Someone new gets a sign-in URL back to follow
+   * straight away — the invite email already proved they own the address, and a
+   * second email is exactly the friction this removes. Someone who already has
+   * an account is emailed a short-lived link instead: that account may hold
+   * another workspace's data, and a two-week invite link shouldn't open it.
+   * Either way the link returns to /accept-invite, which joins the workspace.
+   */
+  async startInviteSignIn(id: string): Promise<InviteSignInResult> {
+    const invitation = await this.findOpenInvitation(id);
+    if (!invitation) throw new NotFoundException("This invitation has expired or was already used");
+    if (!isPortalInviteRole(invitation.role)) throw new BadRequestException("Team invitations are accepted with a password");
+
+    const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
+    const acceptUrl = `${webUrl}/accept-invite?id=${id}`;
+    const body = { email: invitation.email, callbackURL: acceptUrl, errorCallbackURL: acceptUrl };
+
+    const signInMagicLink = (this.auth.api as unknown as { signInMagicLink: SignInMagicLink }).signInMagicLink;
+    if (await this.hasAccount(invitation.email)) {
+      await signInMagicLink({ body, headers: new Headers() });
+      return { emailed: true };
+    }
+
+    const name: string = await this.inviteeName(invitation.organizationId, invitation.email);
+    const capture: MagicLinkCapture = { url: null };
+    await this.magicLinkCapture.run(capture, () =>
+      signInMagicLink({ body: { ...body, name }, headers: new Headers() }),
+    );
+    if (!capture.url) throw new InternalServerErrorException("Sign-in link was not captured");
+    return { url: capture.url };
+  }
+
+  /**
+   * The magic link plugin's sender. A link minted by startInviteSignIn is handed
+   * back to that request rather than emailed. Otherwise it goes only to existing
+   * accounts, so "email me a sign-in link" on the login page can't create one
+   * (the plugin signs up unknown addresses on verify) and answers the same
+   * whether or not the address is registered. The emailed link opens a web page
+   * with a button: mail scanners fetch every link they see, and fetching the
+   * verify endpoint itself would spend the single-use token before the person
+   * clicks.
+   */
+  async deliverMagicLink(email: string, url: string): Promise<void> {
+    const capture: MagicLinkCapture | undefined = this.magicLinkCapture.getStore();
+    if (capture) {
+      capture.url = url;
+      return;
+    }
+    if (!(await this.hasAccount(email))) {
+      this.logger.log("Sign-in link requested for an address with no account; not sent");
+      return;
+    }
+    if (!this.magicLinkEmails.allow(email.toLowerCase())) {
+      this.logger.warn("Sign-in link not sent: too many requested for this address recently");
+      return;
+    }
+    const origin: string = await this.signInPageOrigin(email, url);
+    const confirmUrl = `${origin}/magic-link${new URL(url).search}`;
+    const html = await render(MagicLinkEmail({ url: confirmUrl }));
+    const organizationId = await this.getPrimaryOrgForEmail(email);
+    await this.mail.send(email, "Sign in to Atrium", html, organizationId);
+  }
+
+  /**
+   * Where the emailed link opens. A client who asked from their agency's custom
+   * domain gets it on that domain, so the session lands there too. Only for a
+   * member of that workspace: anyone can save a domain on a workspace, and the
+   * link must never point a stranger's sign-in at it.
+   */
+  private async signInPageOrigin(email: string, verifyUrl: string): Promise<string> {
+    const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
+    const callbackURL: string | null = new URL(verifyUrl).searchParams.get("callbackURL");
+    if (!callbackURL || !URL.canParse(callbackURL)) return webUrl;
+    const host: string = new URL(callbackURL).hostname;
+    if (host === new URL(webUrl).hostname) return webUrl;
+
+    const organizationId: string | null = await this.customDomainOrgId(host);
+    if (!organizationId) return webUrl;
+    const member = await this.prisma.member.findFirst({
+      where: { organizationId, user: { email: { equals: email, mode: "insensitive" } } },
+      select: { id: true },
+    });
+    return member ? `https://${host}` : webUrl;
+  }
+
+  /**
+   * The web and API origins, plus the custom domain a request arrived on when a
+   * workspace serves its portal there. Lets the login page on that domain ask
+   * for a sign-in link that returns to it.
+   */
+  async trustedOriginsFor(request?: Request): Promise<string[]> {
+    const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
+    const origins: string[] = [webUrl, publicApiUrl(this.config)];
+    const host: string | null = requestHost(request);
+    if (!host || origins.some((origin: string) => new URL(origin).hostname === host)) return origins;
+    return (await this.customDomainOrgId(host)) ? [...origins, `https://${host}`] : origins;
+  }
+
+  /** The workspace serving its portal on this domain, if its plan still includes custom domains. */
+  private async customDomainOrgId(host: string): Promise<string | null> {
+    try {
+      const org = await this.prisma.organization.findUnique({ where: { customDomain: host }, select: { id: true } });
+      if (!org) return null;
+      return (await this.billingService.hasFeature(org.id, "custom_domain")) ? org.id : null;
+    } catch (err) {
+      this.logger.error(`Custom domain lookup failed for ${host}`, err instanceof Error ? err.stack : String(err));
+      return null;
+    }
+  }
+
+  /** Whether "Email me a sign-in link" can work: the server or some workspace can send email. */
+  async signInLinksAvailable(): Promise<boolean> {
+    if (this.config.get("RESEND_API_KEY")) return true;
+    return (await this.prisma.systemSettings.count({ where: { emailProvider: { not: null } } })) > 0;
+  }
+
+  /** A first password for someone who joined by link. Better Auth refuses if one is already set. */
+  async setPassword(requestHeaders: Record<string, string | string[] | undefined>, newPassword: string): Promise<void> {
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(requestHeaders)) {
+      if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+    }
+    try {
+      await this.auth.api.setPassword({ body: { newPassword }, headers });
+    } catch (err) {
+      if (err instanceof APIError) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  private async hasAccount(email: string): Promise<boolean> {
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+      select: { id: true },
+    });
+    return user !== null;
+  }
+
+  /** The contact's name when the agency gave one; otherwise the part of the email before the @. */
+  private async inviteeName(organizationId: string, email: string): Promise<string> {
+    const contact = await this.prisma.contact.findFirst({
+      where: { organizationId, email: email.toLowerCase() },
+      select: { name: true },
+    });
+    const name: string = contact?.name.trim() ?? "";
+    return name && name.toLowerCase() !== email.toLowerCase() ? name : email.split("@")[0];
   }
 
   async generateResetLink(

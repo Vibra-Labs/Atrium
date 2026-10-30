@@ -21,7 +21,9 @@ export default function PortalSettingsPage() {
   const { userName } = useSession();
   const [name, setName] = useState(userName);
 
-  // Password fields
+  // Password fields. A client who joined by link has no password: null until we know.
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  const linkOnly: boolean = hasPassword === false;
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -31,7 +33,7 @@ export default function PortalSettingsPage() {
   const [profileLoading, setProfileLoading] = useState(true);
 
   // Delete account
-  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
@@ -41,6 +43,12 @@ export default function PortalSettingsPage() {
         setProfileLoading(false);
       })
       .catch(() => setProfileLoading(false));
+    apiFetch<{ hasPassword: boolean }>("/account/password")
+      .then((res) => setHasPassword(res.hasPassword))
+      .catch((err: unknown) => {
+        console.error("Could not load password status", err);
+        setHasPassword(true);
+      });
   }, []);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -70,11 +78,20 @@ export default function PortalSettingsPage() {
       return;
     }
     try {
-      await apiFetch("/auth/change-password", {
-        method: "POST",
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-      success("Password changed");
+      if (!linkOnly) {
+        await apiFetch("/auth/change-password", {
+          method: "POST",
+          body: JSON.stringify({ currentPassword, newPassword }),
+        });
+        success("Password changed");
+      } else {
+        await apiFetch("/account/password", {
+          method: "POST",
+          body: JSON.stringify({ newPassword }),
+        });
+        success("Password set");
+        setHasPassword(true);
+      }
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -86,8 +103,8 @@ export default function PortalSettingsPage() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!deletePassword) {
-      showError("Please enter your password");
+    if (!deleteConfirmation) {
+      showError(linkOnly ? "Please enter your email address" : "Please enter your password");
       return;
     }
     if (!confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
@@ -97,7 +114,7 @@ export default function PortalSettingsPage() {
     try {
       await apiFetch("/account", {
         method: "DELETE",
-        body: JSON.stringify({ password: deletePassword }),
+        body: JSON.stringify(linkOnly ? { email: deleteConfirmation } : { password: deleteConfirmation }),
       });
       window.location.href = "/login";
     } catch (err) {
@@ -163,25 +180,34 @@ export default function PortalSettingsPage() {
 
       {/* Change Password Section */}
       <div className="max-w-md">
-        <h2 className="text-sm font-medium mb-3">Change Password</h2>
-        <form onSubmit={handleChangePassword} className="space-y-3">
+        <h2 className="text-sm font-medium mb-1">{linkOnly ? "Set a Password" : "Change Password"}</h2>
+        {linkOnly && (
+          <p className="text-sm text-[var(--muted-foreground)] mb-3">
+            You sign in with emailed links. Add a password if you&apos;d also like to sign in with one.
+          </p>
+        )}
+        <form onSubmit={handleChangePassword} className="space-y-3 mt-2">
+          {!linkOnly && (
+            <div>
+              <label htmlFor="current-password" className="text-sm text-[var(--muted-foreground)]">
+                Current Password
+              </label>
+              <input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+              />
+            </div>
+          )}
           <div>
-            <label className="text-sm text-[var(--muted-foreground)]">
-              Current Password
-            </label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-            />
-          </div>
-          <div>
-            <label className="text-sm text-[var(--muted-foreground)]">
+            <label htmlFor="new-password" className="text-sm text-[var(--muted-foreground)]">
               New Password
             </label>
             <input
+              id="new-password"
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -191,10 +217,11 @@ export default function PortalSettingsPage() {
             />
           </div>
           <div>
-            <label className="text-sm text-[var(--muted-foreground)]">
+            <label htmlFor="confirm-password" className="text-sm text-[var(--muted-foreground)]">
               Confirm New Password
             </label>
             <input
+              id="confirm-password"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
@@ -206,7 +233,7 @@ export default function PortalSettingsPage() {
             type="submit"
             className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium"
           >
-            Change Password
+            {linkOnly ? "Set Password" : "Change Password"}
           </button>
         </form>
       </div>
@@ -296,20 +323,21 @@ export default function PortalSettingsPage() {
         </p>
         <div className="space-y-3">
           <div>
-            <label className="text-sm text-[var(--muted-foreground)]">
-              Confirm your password
+            <label htmlFor="delete-confirmation" className="text-sm text-[var(--muted-foreground)]">
+              {linkOnly ? "Type your email address to confirm" : "Confirm your password"}
             </label>
             <input
-              type="password"
-              value={deletePassword}
-              onChange={(e) => setDeletePassword(e.target.value)}
-              placeholder="Your current password"
+              id="delete-confirmation"
+              type={linkOnly ? "email" : "password"}
+              value={deleteConfirmation}
+              onChange={(e) => setDeleteConfirmation(e.target.value)}
+              placeholder={linkOnly ? "you@example.com" : "Your current password"}
               className="w-full mt-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
             />
           </div>
           <button
             onClick={handleDeleteAccount}
-            disabled={!deletePassword || deleteLoading}
+            disabled={!deleteConfirmation || deleteLoading}
             className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
           >
             {deleteLoading ? "Deleting..." : "Delete Account"}

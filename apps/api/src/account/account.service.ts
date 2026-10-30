@@ -56,24 +56,36 @@ export class AccountService {
     };
   }
 
-  async deleteAccount(userId: string, password: string): Promise<void> {
-    // Verify password before proceeding
+  /** False for someone who only ever signs in with an emailed link. */
+  async hasPassword(userId: string): Promise<boolean> {
+    return (await this.passwordHash(userId)) !== null;
+  }
+
+  private async passwordHash(userId: string): Promise<string | null> {
     const account = await this.prisma.account.findFirst({
       where: { userId, providerId: "credential" },
       select: { password: true },
     });
+    return account?.password ?? null;
+  }
 
-    if (!account?.password) {
-      throw new UnauthorizedException("Password verification failed.");
-    }
-
-    const valid = await verifyPassword({
-      hash: account.password,
-      password,
-    });
-
-    if (!valid) {
-      throw new UnauthorizedException("Password verification failed.");
+  /**
+   * Someone with a password confirms with it. Someone without one (a client who
+   * joined by link) types their email address instead.
+   */
+  async deleteAccount(userId: string, password?: string, email?: string): Promise<void> {
+    const hash: string | null = await this.passwordHash(userId);
+    if (hash) {
+      if (!password || !(await verifyPassword({ hash, password }))) {
+        throw new UnauthorizedException("Password verification failed.");
+      }
+    } else {
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+      if (!email || !user || user.email.toLowerCase() !== email.trim().toLowerCase()) {
+        throw new UnauthorizedException(
+          email ? "That email doesn't match your account." : "Password verification failed.",
+        );
+      }
     }
 
     const memberships = await this.prisma.member.findMany({

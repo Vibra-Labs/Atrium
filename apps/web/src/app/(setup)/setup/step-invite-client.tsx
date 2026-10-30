@@ -5,6 +5,8 @@ import { apiFetch } from "@/lib/api";
 import { UserPlus, Copy, Check } from "lucide-react";
 import { track } from "@/lib/track";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useConfirm } from "@/components/confirm-modal";
+import { confirmInviteOptions } from "@/lib/confirm-invite";
 
 interface StepInviteClientProps {
   onNext: () => void;
@@ -18,12 +20,14 @@ export function StepInviteClient({ onNext, onBack }: StepInviteClientProps) {
   const [inviteLink, setInviteLink] = useState("");
   const [copied, setCopied] = useState(false);
   const [invited, setInvited] = useState(false);
+  const confirm = useConfirm();
 
   const handleInvite = async () => {
     if (!email.trim()) {
       setError("Email is required");
       return;
     }
+    if (!(await confirm(confirmInviteOptions(email.trim())))) return;
     setSaving(true);
     setError("");
     try {

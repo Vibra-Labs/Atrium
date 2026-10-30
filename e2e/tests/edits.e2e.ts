@@ -245,6 +245,7 @@ test.describe("Edit flows", () => {
       `${WEB_URL}/accept-invite?id=${invitationId}`,
       { waitUntil: "networkidle", timeout: 15000 },
     );
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.getByLabel(/your name/i).fill("Portal Edit Client");
     await clientPage.getByLabel(/email/i).fill(clientEmail);
     await clientPage.getByLabel(/password/i).fill(clientPassword);

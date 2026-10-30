@@ -91,6 +91,7 @@ test.describe("Client invite follow-through", () => {
     const clientCtx: BrowserContext = await browser.newContext({ storageState: undefined });
     const clientPage: Page = await clientCtx.newPage();
     await clientPage.goto(`${WEB}/accept-invite?id=${invitationId}`);
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.getByLabel(/your name/i).fill("Follow Client");
     await clientPage.getByLabel(/email/i).fill(clientEmail);
     await clientPage.getByLabel(/password/i).fill("FollowClient123!");

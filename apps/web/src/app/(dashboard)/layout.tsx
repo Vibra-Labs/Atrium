@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect, unstable_rethrow } from "next/navigation";
+import { loginRedirectPath } from "@/lib/login-redirect";
 import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
@@ -126,7 +127,7 @@ export default async function DashboardLayout({
   const role: string = activeOrg?.role ?? "";
 
   if (!session) {
-    redirect("/login");
+    redirect(await loginRedirectPath());
   }
 
   // Clients (members) should use the portal, not the dashboard

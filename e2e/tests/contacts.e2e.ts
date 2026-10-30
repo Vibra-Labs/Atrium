@@ -679,7 +679,15 @@ test.describe("Contact page", () => {
 
     await page.goto(`/dashboard/contacts/${id}`);
     await expect(page.getByTestId("contact-status")).toHaveText("Lead");
+    // A wrong address would get one-click access, so the email is confirmed first.
     await page.getByRole("button", { name: "Invite to portal" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText(email);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByTestId("pending-invite")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Invite to portal" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Send invite" }).click();
     await expect(page.getByText("Invitation created")).toBeVisible();
     // Email may not be delivered in test environments; the link is always offered.
     await expect(page.getByTestId("pending-invite")).toBeVisible();
@@ -693,6 +701,7 @@ test.describe("Contact page", () => {
     const clientCtx = await browser.newContext({ storageState: undefined });
     const clientPage = await clientCtx.newPage();
     await clientPage.goto(invite.inviteLink);
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.locator("#name").fill("Portal Person");
     await clientPage.locator("#email").fill(email);
     await clientPage.locator("#password").fill("Client123!");
@@ -716,6 +725,7 @@ test.describe("Contact page", () => {
     const { id } = await (await page.request.post(`${API}/contacts`, { data: { name: "Ended Person", email }, headers })).json();
     await page.goto(`/dashboard/contacts/${id}`);
     await page.getByRole("button", { name: "Invite to portal" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Send invite" }).click();
     await expect(page.getByText("Invitation created")).toBeVisible();
     const invitations = await (await page.request.get(`${API}/clients/invitations`)).json();
     const { inviteLink } = invitations.find((i: { email: string }) => i.email === email);
@@ -723,6 +733,7 @@ test.describe("Contact page", () => {
     const clientCtx = await browser.newContext({ storageState: undefined });
     const clientPage = await clientCtx.newPage();
     await clientPage.goto(inviteLink);
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.locator("#name").fill("Ended Person");
     await clientPage.locator("#email").fill(email);
     await clientPage.locator("#password").fill("Client123!");

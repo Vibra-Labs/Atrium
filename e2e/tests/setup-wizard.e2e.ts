@@ -149,6 +149,33 @@ test.describe("Setup Wizard", () => {
     await context.close();
   });
 
+  test("inviting a client from the wizard asks to confirm the address first", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: undefined });
+    const page = await context.newPage();
+    await signupAndNavigateToSetup(page, "setup-invite-confirm");
+
+    await page.getByRole("button", { name: /continue/i }).click();
+    await skipEmailStepIfPresent(page);
+    await page.getByRole("button", { name: /skip/i }).first().click();
+    await expect(page.getByRole("heading", { name: /invite a client/i })).toBeVisible({ timeout: 5000 });
+
+    const clientEmail = `setup-confirm-${Date.now()}@test.local`;
+    await page.getByLabel(/client email/i).fill(clientEmail);
+
+    // Cancelling sends nothing.
+    await page.getByRole("button", { name: /send invitation/i }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText(clientEmail);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByText(`Invitation sent to ${clientEmail}`)).toHaveCount(0);
+
+    await page.getByRole("button", { name: /send invitation/i }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Send invite" }).click();
+    await expect(page.getByText(`Invitation sent to ${clientEmail}`)).toBeVisible({ timeout: 10000 });
+
+    await context.close();
+  });
+
   test("setup wizard step navigation works", async ({ browser }) => {
     const context = await browser.newContext({ storageState: undefined });
     const page = await context.newPage();

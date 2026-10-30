@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from "fs";
+import { createRequire } from "module";
 import { resolve } from "path";
 import { expect } from "@playwright/test";
 import type { APIRequestContext, Browser, BrowserContext, Locator, Page } from "@playwright/test";
@@ -215,6 +216,7 @@ export async function inviteAndAcceptClient(
     waitUntil: "domcontentloaded",
     timeout: 30000,
   });
+  await clientPage.getByRole("button", { name: /use a password instead/i }).click();
   await clientPage.waitForSelector("#name", { state: "visible", timeout: 30000 });
   await clientPage.waitForLoadState("networkidle", { timeout: 30000 });
   await clientPage.locator("#name").fill(clientName);
@@ -327,4 +329,47 @@ export async function createPortalClientProject(
       await ownerContext.close();
     },
   };
+}
+
+/**
+ * Gives the test workspace an email provider (an SMTP port nothing listens on),
+ * so the login page offers "Email me a sign-in link" even where the server has
+ * none, as in CI. Undo it with disableWorkspaceEmail.
+ */
+export async function enableWorkspaceEmail(request: APIRequestContext): Promise<void> {
+  const res = await request.patch(`${API}/settings`, {
+    data: { emailProvider: "smtp", smtpHost: "127.0.0.1", smtpPort: 1, emailFrom: "e2e@test.local" },
+    headers: { "x-csrf-token": getCsrfToken() },
+  });
+  if (!res.ok()) throw new Error(`Enabling workspace email failed (${res.status()}): ${await res.text()}`);
+}
+
+export async function disableWorkspaceEmail(request: APIRequestContext): Promise<void> {
+  const res = await request.patch(`${API}/settings`, {
+    data: { emailProvider: null, smtpHost: null, smtpPort: null, emailFrom: null },
+    headers: { "x-csrf-token": getCsrfToken() },
+  });
+  if (!res.ok()) throw new Error(`Disabling workspace email failed (${res.status()}): ${await res.text()}`);
+}
+
+/**
+ * The newest magic link token issued for this address. Stands in for opening
+ * the email: the token is stored in plain text in the verification table.
+ */
+export async function latestMagicLinkToken(email: string): Promise<string> {
+  // Resolved from the database package, which owns the generated Prisma client.
+  const requireFromDb = createRequire(resolve(__dirname, "../../packages/database/package.json"));
+  const { PrismaClient } = requireFromDb("@prisma/client") as typeof import("@prisma/client");
+  const prisma = new PrismaClient();
+  try {
+    const row = await prisma.verification.findFirst({
+      where: { value: { contains: `"${email.toLowerCase()}"` } },
+      orderBy: { createdAt: "desc" },
+      select: { identifier: true },
+    });
+    if (!row) throw new Error(`No magic link issued for ${email}`);
+    return row.identifier;
+  } finally {
+    await prisma.$disconnect();
+  }
 }

@@ -8,6 +8,7 @@ import { loadSubscription } from "@/lib/cached";
 import { useAppConfig } from "@/lib/app-config";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
+import { confirmInviteOptions } from "@/lib/confirm-invite";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { STATUS_LABELS } from "../shared";
 import { RatingBadge } from "../rating-badge";
@@ -86,6 +87,8 @@ export default function ContactPage() {
 
   async function invite(): Promise<void> {
     if (!contact?.email) return;
+    // A renewal goes to an address already confirmed once.
+    if (!pendingInvite && !(await confirm(confirmInviteOptions(contact.email)))) return;
     setInviting(true);
     try {
       await apiFetch("/auth/organization/invite-member", {

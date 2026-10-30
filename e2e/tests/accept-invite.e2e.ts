@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { latestMagicLinkToken } from "./helpers";
 
 const API_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
@@ -98,7 +99,136 @@ async function inviteClient(
   return invitationId;
 }
 
+/** A client who joined with "Open my portal" and so has no password, signed in on their own page. */
+async function joinByLink(browser: import("@playwright/test").Browser, prefix: string) {
+  const { context: ownerCtx, page: ownerPage } = await createOwnerUser(browser, `${prefix}-owner`);
+  const clientEmail = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
+  const invitationId = await inviteClient(ownerPage, clientEmail);
+  await ownerCtx.close();
+
+  const clientCtx = await browser.newContext({ storageState: undefined });
+  const clientPage = await clientCtx.newPage();
+  await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`);
+  await clientPage.getByRole("button", { name: /open my portal/i }).click();
+  await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+  return { clientCtx, clientPage, clientEmail };
+}
+
+test.describe("A client who joined by link", () => {
+  // Each test creates an owner, invites, joins, then works in settings.
+  test.setTimeout(60000);
+  test("can set a first password without being asked for a current one", async ({ browser }) => {
+    const { clientCtx, clientPage, clientEmail } = await joinByLink(browser, "nopw-set");
+
+    await clientPage.goto(`${WEB_URL}/portal/settings`);
+    await expect(clientPage.getByRole("heading", { name: "Set a Password" })).toBeVisible({ timeout: 15000 });
+    await expect(clientPage.getByLabel("Current Password")).toHaveCount(0);
+
+    await clientPage.getByLabel("New Password", { exact: true }).fill("FirstPassword123!");
+    await clientPage.getByLabel("Confirm New Password").fill("FirstPassword123!");
+    await clientPage.getByRole("button", { name: "Set Password" }).click();
+    await expect(clientPage.getByText("Password set")).toBeVisible({ timeout: 10000 });
+    await expect(clientPage.getByRole("heading", { name: "Change Password" })).toBeVisible();
+    await clientCtx.close();
+
+    // The new password works on the login page.
+    const fresh = await browser.newContext({ storageState: undefined });
+    const page = await fresh.newPage();
+    await page.goto(`${WEB_URL}/login`);
+    await page.getByLabel(/email/i).fill(clientEmail);
+    await page.getByLabel(/password/i).fill("FirstPassword123!");
+    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await expect(page).toHaveURL(/\/portal/, { timeout: 20000 });
+    await fresh.close();
+  });
+
+  test("can delete their account by typing their email address", async ({ browser }) => {
+    const { clientCtx, clientPage, clientEmail } = await joinByLink(browser, "nopw-delete");
+    clientPage.on("dialog", (dialog) => dialog.accept());
+
+    await clientPage.goto(`${WEB_URL}/portal/settings`);
+    const confirmation = clientPage.getByLabel("Type your email address to confirm");
+    await expect(confirmation).toBeVisible({ timeout: 15000 });
+
+    await confirmation.fill("someone-else@test.local");
+    await clientPage.getByRole("button", { name: "Delete Account" }).click();
+    await expect(clientPage.getByText("That email doesn't match your account.")).toBeVisible({ timeout: 10000 });
+
+    await confirmation.fill(clientEmail);
+    await clientPage.getByRole("button", { name: "Delete Account" }).click();
+    await expect(clientPage).toHaveURL(/\/login/, { timeout: 20000 });
+    await clientCtx.close();
+  });
+});
+
 test.describe("Accept Invite", () => {
+  test("client opens the portal from an invite with one click, no password", async ({
+    browser,
+  }) => {
+    const { context: ownerCtx, page: ownerPage, orgName } = await createOwnerUser(browser, "inv-oneclick");
+    const clientEmail = `inv-oneclick-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
+    const invitationId = await inviteClient(ownerPage, clientEmail);
+    await ownerCtx.close();
+
+    const clientCtx = await browser.newContext({ storageState: undefined });
+    const clientPage = await clientCtx.newPage();
+    await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`);
+
+    await expect(
+      clientPage.getByRole("heading", { name: `You're invited to ${orgName}` }),
+    ).toBeVisible({ timeout: 15000 });
+    await expect(clientPage.getByText(clientEmail)).toBeVisible();
+    await expect(clientPage.getByLabel(/password/i)).toHaveCount(0);
+
+    await clientPage.getByRole("button", { name: /open my portal/i }).click();
+    await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+
+    // The invite is spent: opening it again says so rather than offering to join.
+    await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`);
+    await expect(
+      clientPage.getByRole("heading", { name: /invitation unavailable/i }),
+    ).toBeVisible({ timeout: 15000 });
+
+    await clientCtx.close();
+  });
+
+  test("invitee who already has an account is emailed a sign-in link that joins them", async ({
+    browser,
+  }) => {
+    const { context: ownerCtx, page: ownerPage, orgName } = await createOwnerUser(browser, "inv-emailed");
+    const clientEmail = `inv-emailed-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
+    const invitationId = await inviteClient(ownerPage, clientEmail);
+    await ownerCtx.close();
+
+    const tempCtx = await browser.newContext({ storageState: undefined });
+    const signupRes = await tempCtx.request.post(`${API_URL}/api/auth/sign-up/email`, {
+      data: { name: "Existing Client", email: clientEmail, password: "ExistingClient123!" },
+      headers: { Origin: WEB_URL },
+    });
+    expect(signupRes.ok()).toBe(true);
+    await tempCtx.close();
+
+    const clientCtx = await browser.newContext({ storageState: undefined });
+    const clientPage = await clientCtx.newPage();
+    await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`);
+    await clientPage.getByRole("button", { name: /open my portal/i }).click();
+    await expect(clientPage.getByRole("heading", { name: /check your email/i })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(clientPage.getByText(orgName)).toBeVisible();
+
+    // Follow the emailed link: the confirm page, then back to the invite, which joins.
+    const token: string = await latestMagicLinkToken(clientEmail);
+    const callbackURL: string = `${WEB_URL}/accept-invite?id=${invitationId}`;
+    await clientPage.goto(
+      `${WEB_URL}/magic-link?token=${token}&callbackURL=${encodeURIComponent(callbackURL)}`,
+    );
+    await clientPage.getByRole("button", { name: /continue/i }).click();
+    await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+
+    await clientCtx.close();
+  });
+
   test("client can sign up from invite link and gets redirected to portal", async ({
     browser,
   }) => {
@@ -121,6 +251,8 @@ test.describe("Accept Invite", () => {
       `${WEB_URL}/accept-invite?id=${invitationId}`,
       { waitUntil: "networkidle", timeout: 15000 },
     );
+
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
 
     // Verify the signup form is shown
     await expect(
@@ -192,7 +324,8 @@ test.describe("Accept Invite", () => {
       { waitUntil: "networkidle", timeout: 15000 },
     );
 
-    // Step 5: Switch to login mode
+    // Step 5: Switch to the password form, then to login mode
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.getByRole("button", { name: /sign in instead/i }).click();
 
     await expect(
@@ -259,6 +392,7 @@ test.describe("Accept Invite", () => {
       { waitUntil: "networkidle", timeout: 15000 },
     );
 
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
     await clientPage.getByRole("button", { name: /sign in instead/i }).click();
     await clientPage.getByLabel(/email/i).fill(inviteeEmail);
     await clientPage.getByLabel(/password/i).fill(inviteePassword);
@@ -285,11 +419,9 @@ test.describe("Accept Invite", () => {
     });
 
     await expect(
-      page.getByRole("heading", { name: /invalid invitation/i }),
+      page.getByRole("heading", { name: /invitation unavailable/i }),
     ).toBeVisible({ timeout: 10000 });
-    await expect(
-      page.getByText(/this invitation link is missing or invalid/i),
-    ).toBeVisible();
+    await expect(page.getByText(/expired or was already used/i)).toBeVisible();
 
     await context.close();
   });

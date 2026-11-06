@@ -72,6 +72,9 @@ ALTER TABLE "project_contact_gap" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "time_entry" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "integration_destination" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "integration_delivery" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "project_pursuit" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "project_pursuit_event" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pending_project_access" ENABLE ROW LEVEL SECURITY;
 
 -- ─── Revoke direct access from anon and authenticated roles ─────────────────
 -- REVOKE is idempotent -- revoking a privilege that was never granted is a no-op.
@@ -131,5 +134,8 @@ REVOKE ALL ON "project_contact_gap" FROM anon, authenticated;
 REVOKE ALL ON "time_entry" FROM anon, authenticated;
 REVOKE ALL ON "integration_destination" FROM anon, authenticated;
 REVOKE ALL ON "integration_delivery" FROM anon, authenticated;
+REVOKE ALL ON "project_pursuit" FROM anon, authenticated;
+REVOKE ALL ON "project_pursuit_event" FROM anon, authenticated;
+REVOKE ALL ON "pending_project_access" FROM anon, authenticated;
 
 COMMIT;

@@ -80,6 +80,17 @@ export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 export const CONTACT_RATINGS = ["hot", "warm", "cold"] as const;
 export type ContactRating = (typeof CONTACT_RATINGS)[number];
 
+// Potential contracts: projects that aren't signed yet.
+export const PURSUIT_STAGES = ["found", "proposal_sent", "waiting"] as const;
+export type PursuitStage = (typeof PURSUIT_STAGES)[number];
+export const PURSUIT_STAGE_LABELS: Record<PursuitStage, string> = {
+  found: "Found",
+  proposal_sent: "Proposal sent",
+  waiting: "Waiting on decision",
+};
+export const PURSUIT_OUTCOMES = ["open", "won", "lost"] as const;
+export type PursuitOutcome = (typeof PURSUIT_OUTCOMES)[number];
+
 // A type alias (not an interface) so it is assignable to Prisma's Json input.
 export type ContactPhone = {
   label: string;

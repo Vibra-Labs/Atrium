@@ -27,6 +27,8 @@ import { formatCurrency } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
 import { DealCard, LostDialog, PursuitContactsCard, PursuitPipeline, WonDialog } from "../_pursuit/pursuit-ui";
 import { reopenPursuit as reopenPursuitApi } from "@/lib/pursuit";
+import { InternalTab, internalCount } from "./internal-tab";
+import type { InternalItems } from "./internal-tab";
 import type { ProjectContactRow, Pursuit } from "@/lib/pursuit";
 
 interface FileRecord {
@@ -91,6 +93,7 @@ const tabs = [
   { id: "time", label: "Time" },
   { id: "invoices", label: "Invoices" },
   { id: "notes", label: "Notes" },
+  { id: "internal", label: "Internal" },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
@@ -201,6 +204,22 @@ export default function ProjectDetailPage() {
       .then(setProject)
       .catch((err) => setError(err.message || "Failed to load project"));
   }, [id]);
+
+  // Items from before a potential contract was won; only a won one can have them.
+  const isWonPursuit: boolean = pursuit?.outcome === "won";
+  const [internalItems, setInternalItems] = useState<InternalItems | null>(null);
+  const loadInternal = useCallback(() => {
+    apiFetch<InternalItems>(`/projects/${id}/internal`)
+      .then(setInternalItems)
+      .catch((err: unknown) => console.error("Failed to load internal items", err));
+  }, [id]);
+  useEffect(() => {
+    if (isWonPursuit) loadInternal();
+  }, [isWonPursuit, loadInternal]);
+  const internalTotal: number = internalCount(internalItems);
+  useEffect(() => {
+    if (activeTab === "internal" && internalItems && internalTotal === 0) setActiveTab("updates");
+  }, [activeTab, internalItems, internalTotal]);
 
   const [billingStats, setBillingStats] = useState<{
     totalAmount: number;
@@ -452,11 +471,15 @@ export default function ProjectDetailPage() {
   const tabBar = (
     <div className="relative border-b border-[var(--border)] -mx-1">
       <div className="flex overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] gap-1">
-        {tabs.filter((t) => !(isPursuit && t.id === "invoices")).map((tab) => {
+        {tabs
+          .filter((t) => !(isPursuit && t.id === "invoices") && (t.id !== "internal" || internalTotal > 0))
+          .map((tab) => {
           const count =
             tab.id === "files" && project.files?.length
               ? ` (${project.files.length})`
-              : "";
+              : tab.id === "internal"
+                ? ` (${internalTotal})`
+                : "";
           return (
             <button
               key={tab.id}
@@ -515,6 +538,16 @@ export default function ProjectDetailPage() {
       )}
       {activeTab === "notes" && (
         <NotesSection projectId={id} isArchived={isArchived} />
+      )}
+      {activeTab === "internal" && internalItems && (
+        <InternalTab
+          projectId={id}
+          items={internalItems}
+          onChanged={() => {
+            loadInternal();
+            loadProject();
+          }}
+        />
       )}
     </>
   );

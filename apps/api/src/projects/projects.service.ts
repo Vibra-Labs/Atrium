@@ -617,6 +617,27 @@ export class ProjectsService implements OnApplicationBootstrap {
     });
   }
 
+  /**
+   * Gives a newly joined client the won projects they were invited to from the Won dialog.
+   * Rows for projects that aren't won (yet) are left in place.
+   */
+  async grantPendingAccess(organizationId: string, userId: string, email: string): Promise<number> {
+    const rows = await this.prisma.pendingProjectAccess.findMany({
+      where: {
+        organizationId,
+        email: { equals: email.toLowerCase(), mode: "insensitive" },
+        project: { pursuit: { is: { outcome: "won" } } },
+      },
+      select: { id: true, projectId: true },
+    });
+    for (const row of rows) {
+      await this.prisma.projectClient.createMany({ data: [{ projectId: row.projectId, userId }], skipDuplicates: true });
+      await this.syncClients(row.projectId, organizationId, [userId]);
+      await this.prisma.pendingProjectAccess.delete({ where: { id: row.id } });
+    }
+    return rows.length;
+  }
+
   async archive(id: string, organizationId: string) {
     const result = await this.prisma.project.updateMany({
       where: { id, organizationId },

@@ -23,6 +23,8 @@ export class DocumentReminderTask {
       where: {
         status: "pending",
         reminderEnabled: true,
+        // Internal documents (from before a potential contract was won) aren't the client's to review.
+        internal: false,
         sentAt: { not: null },
       },
       include: {

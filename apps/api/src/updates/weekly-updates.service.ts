@@ -34,18 +34,18 @@ export class WeeklyUpdatesService {
     const [done, upcoming, files, time] = await Promise.all([
       // Tasks have no completion timestamp; a done task touched this week is the closest signal.
       this.prisma.task.findMany({
-        where: { projectId, status: "done", updatedAt: { gte: since } },
+        where: { projectId, internal: false, status: "done", updatedAt: { gte: since } },
         select: { title: true },
         orderBy: { updatedAt: "asc" },
       }),
       this.prisma.task.findMany({
-        where: { projectId, status: { in: ["open", "in_progress"] } },
+        where: { projectId, internal: false, status: { in: ["open", "in_progress"] } },
         select: { title: true },
         orderBy: [{ status: "desc" }, { order: "asc" }],
         take: UPCOMING_LIMIT,
       }),
       this.prisma.file.findMany({
-        where: { projectId, createdAt: { gte: since } },
+        where: { projectId, internal: false, createdAt: { gte: since } },
         select: { filename: true },
         orderBy: { createdAt: "asc" },
       }),

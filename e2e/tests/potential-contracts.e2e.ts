@@ -159,4 +159,68 @@ test.describe("Potential contracts", () => {
     await expect(env.client.getByText("Our margin on this is thin")).toBeVisible({ timeout: 15000 });
     await env.close();
   });
+
+  test("won with access off gives the client nothing", async ({ browser }) => {
+    const env = await createPortalClientProject(browser, "pc-noaccess", "Signed site");
+    const id = await createPotential(env.owner, "Quiet win");
+    const contactId = await contactIdByEmail(env.owner, env.clientEmail);
+    await env.owner.request.post(`${API}/contacts/${contactId}/projects/${id}`, { headers: env.ownerHeaders });
+
+    await env.owner.goto(`${WEB}/dashboard/projects/${id}`);
+    await env.owner.getByRole("button", { name: "Won" }).click();
+    const dialog = env.owner.getByRole("dialog");
+    await expect(dialog.getByLabel(/Give portal access now/)).not.toBeChecked();
+    await dialog.getByRole("button", { name: "Mark won" }).click();
+    await expect(env.owner.getByRole("dialog")).toHaveCount(0, { timeout: 10000 });
+
+    const res = await env.client.request.get(`${API}/projects/mine/${id}`);
+    expect(res.status()).toBe(404);
+    await env.close();
+  });
+
+  test("link a new lead from the contacts card, win with an invite, and the invite gives the project", async ({
+    browser,
+  }) => {
+    const { context, page } = await createOwner(browser, "pc-invite");
+    const id = await createPotential(page, "Clinic rebuild");
+    const email = `pc-lead-${Date.now()}@test.local`;
+
+    // Link a brand-new lead from the Contacts card; linking doesn't invite them.
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    await page.getByRole("button", { name: "+ Contact" }).click();
+    const linkDialog = page.getByRole("dialog", { name: "Link a contact" });
+    await linkDialog.getByPlaceholder("Search or type a new name").fill("Lee Park");
+    await linkDialog.getByRole("button", { name: /Create .Lee Park./ }).click();
+    await linkDialog.getByPlaceholder("Email (optional)").fill(email);
+    await linkDialog.getByRole("button", { name: "Create lead" }).click();
+    await expect(page.getByRole("link", { name: "Lee Park" })).toBeVisible({ timeout: 10000 });
+    const before = await (await page.request.get(`${API}/clients/invitations`)).json();
+    expect(before.find((i: { email: string }) => i.email === email)).toBeFalsy();
+
+    // Win with "Invite to the portal now".
+    await page.getByRole("button", { name: "Won" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel(/Invite to the portal now/).check();
+    await dialog.getByRole("button", { name: "Mark won" }).click();
+    await expect(page.getByText(`Portal invite sent to ${email}`)).toBeVisible({ timeout: 15000 });
+
+    const invitations = await (await page.request.get(`${API}/clients/invitations`)).json();
+    const invite = invitations.find((i: { email: string }) => i.email === email);
+    expect(invite).toBeTruthy();
+
+    // Accepting the invite gives them this project.
+    const clientCtx = await browser.newContext({ storageState: undefined });
+    const clientPage = await clientCtx.newPage();
+    await clientPage.goto(invite.inviteLink);
+    await clientPage.getByRole("button", { name: /use a password instead/i }).click();
+    await clientPage.locator("#name").fill("Lee Park");
+    await clientPage.locator("#email").fill(email);
+    await clientPage.locator("#password").fill("Client123!");
+    await clientPage.getByRole("button", { name: /create account & join/i }).click();
+    await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+    await clientPage.goto(`${WEB}/portal/projects`);
+    await expect(clientPage.getByText("Clinic rebuild")).toBeVisible({ timeout: 15000 });
+    await clientCtx.close();
+    await context.close();
+  });
 });

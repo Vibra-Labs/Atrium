@@ -294,7 +294,7 @@ export class ProjectsService implements OnApplicationBootstrap {
       this.prisma.project.findMany({
         where,
         include: {
-          _count: { select: { documents: { where: { requiresApproval: true, status: "pending" } } } },
+          _count: { select: { documents: { where: { requiresApproval: true, status: "pending", internal: false } } } },
           // Latest progress update and file, for "last updated". Document files
           // are left out so a draft upload doesn't read as client-visible activity.
           updates: { where: { internal: false }, select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
@@ -457,7 +457,9 @@ export class ProjectsService implements OnApplicationBootstrap {
         clients: { select: { userId: true } },
         labels: { select: { labelId: true } },
         pursuit: { select: { outcome: true } },
+        // Internal tasks (from before a potential contract was won) aren't copied into client-visible work.
         tasks: {
+          where: { internal: false },
           include: {
             options: { select: { label: true, order: true } },
             labels: { select: { labelId: true } },

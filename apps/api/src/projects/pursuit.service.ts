@@ -140,21 +140,31 @@ export class PursuitService {
     const pursuit = await this.getOrThrow(projectId, orgId);
     if (pursuit.outcome !== "open") throw new BadRequestException("Only an open potential contract can be lost");
     const reason: string | null = dto.reason?.trim() || null;
-    // Archived, never Cancelled, so lost deals don't mix with cancelled work.
-    await this.prisma.project.update({ where: { id: projectId }, data: { archivedAt: new Date() } });
-    await this.prisma.projectPursuit.update({ where: { projectId }, data: { outcome: "lost", lostReason: reason } });
-    await this.log(this.prisma, projectId, reason ? `Lost: ${reason}` : "Lost");
+    await this.prisma.$transaction(async (tx) => {
+      // Claimed like win, so a concurrent win can't leave a lost project with portal clients.
+      const claimed = await tx.projectPursuit.updateMany({
+        where: { projectId, outcome: "open" },
+        data: { outcome: "lost", lostReason: reason },
+      });
+      if (claimed.count === 0) throw new BadRequestException("Only an open potential contract can be lost");
+      // Archived, never Cancelled, so lost deals don't mix with cancelled work.
+      await tx.project.update({ where: { id: projectId }, data: { archivedAt: new Date() } });
+      await this.log(tx, projectId, reason ? `Lost: ${reason}` : "Lost");
+    });
   }
 
   async reopen(projectId: string, orgId: string): Promise<void> {
     const pursuit = await this.getOrThrow(projectId, orgId);
     if (pursuit.outcome !== "lost") throw new BadRequestException("Only a lost potential contract can be reopened");
-    await this.prisma.project.update({ where: { id: projectId }, data: { archivedAt: null } });
-    await this.prisma.projectPursuit.update({
-      where: { projectId },
-      data: { outcome: "open", stage: "found", lostReason: null },
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.projectPursuit.updateMany({
+        where: { projectId, outcome: "lost" },
+        data: { outcome: "open", stage: "found", lostReason: null },
+      });
+      if (claimed.count === 0) throw new BadRequestException("Only a lost potential contract can be reopened");
+      await tx.project.update({ where: { id: projectId }, data: { archivedAt: null } });
+      await this.log(tx, projectId, "Reopened");
     });
-    await this.log(this.prisma, projectId, "Reopened");
   }
 
   async pipeline(orgId: string): Promise<PipelineRow[]> {

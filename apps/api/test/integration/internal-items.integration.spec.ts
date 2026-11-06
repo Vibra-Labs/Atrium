@@ -8,6 +8,9 @@ import { FilesService } from "../../src/files/files.service";
 import { CommentsService } from "../../src/comments/comments.service";
 import { DocumentsService } from "../../src/documents/documents.service";
 import { InternalItemsService } from "../../src/projects/internal-items.service";
+import { WeeklyUpdatesService } from "../../src/updates/weekly-updates.service";
+import { DocumentReminderTask } from "../../src/documents/document-reminder.task";
+import { ProjectsService } from "../../src/projects/projects.service";
 
 let prisma: PrismaService;
 let updates: UpdatesService;
@@ -193,5 +196,52 @@ describe("items from before the win stay internal", () => {
     const d = await seed();
     const other = await seed();
     await expect(internal.share(d.projectId, "task", other.internalTaskId, d.orgId)).rejects.toThrow(NotFoundException);
+  });
+
+  it("weekly draft leaves out internal tasks and files", async () => {
+    const d = await seed();
+    await prisma.task.update({ where: { id: d.internalTaskId }, data: { status: "open" } });
+    const draft = await new WeeklyUpdatesService(prisma).getDraft(d.projectId, d.orgId);
+    expect(draft.content).not.toContain("Write bid");
+    expect(draft.content).not.toContain("pricing.xlsx");
+    expect(draft.stats.newFiles).toBe(0);
+  });
+
+  it("reminder job skips internal documents", async () => {
+    const d = await seed();
+    const past = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    await prisma.document.update({
+      where: { id: d.internalDocId },
+      data: { reminderEnabled: true, sentAt: past, reminderIntervalDays: 1 },
+    });
+    const reminded: string[] = [];
+    const task = new DocumentReminderTask(
+      prisma,
+      { notifyDocumentReminder: (id: string) => reminded.push(id) } as never,
+      { log: () => {} } as never,
+    );
+    await task.sendReminders();
+    expect(reminded).not.toContain(d.internalDocId);
+  });
+
+  it("portal project card does not count internal documents as waiting for review", async () => {
+    const d = await seed();
+    await prisma.document.update({ where: { id: d.internalDocId }, data: { requiresApproval: true } });
+    const projects = new ProjectsService(prisma, { linkProjectClients: async () => {} } as never);
+    const res = await projects.findByClient(d.clientId, d.orgId, {});
+    const card = res.data.find((p: { id: string }) => p.id === d.projectId) as { pendingApprovals: number };
+    expect(card.pendingApprovals).toBe(0);
+  });
+
+  it("duplicating a won project leaves its internal tasks behind", async () => {
+    const d = await seed();
+    const visibleTaskId = (
+      await prisma.task.create({ data: { projectId: d.projectId, organizationId: d.orgId, title: "Kickoff call" } })
+    ).id;
+    const projects = new ProjectsService(prisma, { linkProjectClients: async () => {} } as never);
+    const copy = await projects.duplicate(d.projectId, { name: "Copy", includeTasks: true }, d.orgId);
+    const titles: string[] = (await prisma.task.findMany({ where: { projectId: copy!.id } })).map((t) => t.title);
+    expect(titles).toEqual(["Kickoff call"]);
+    expect(visibleTaskId).toBeTruthy();
   });
 });

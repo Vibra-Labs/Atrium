@@ -134,8 +134,8 @@ describe("PursuitService", () => {
     const data = (prisma.project.update.mock.calls[0] as [Args])[0].data!;
     expect(data.archivedAt).toBeInstanceOf(Date);
     expect(data.status).toBeUndefined();
-    expect(prisma.projectPursuit.update).toHaveBeenCalledWith({
-      where: { projectId: "p1" },
+    expect(prisma.projectPursuit.updateMany).toHaveBeenCalledWith({
+      where: { projectId: "p1", outcome: "open" },
       data: { outcome: "lost", lostReason: "Price" },
     });
   });
@@ -149,10 +149,23 @@ describe("PursuitService", () => {
     pursuit!.outcome = "lost";
     await service.reopen("p1", "org-1");
     expect(prisma.project.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { archivedAt: null } });
-    expect(prisma.projectPursuit.update).toHaveBeenCalledWith({
-      where: { projectId: "p1" },
+    expect(prisma.projectPursuit.updateMany).toHaveBeenCalledWith({
+      where: { projectId: "p1", outcome: "lost" },
       data: { outcome: "open", stage: "found", lostReason: null },
     });
+  });
+
+  it("lose does nothing when a concurrent win claimed it first", async () => {
+    prisma.projectPursuit.updateMany.mockImplementationOnce(() => Promise.resolve({ count: 0 }));
+    await expect(service.lose("p1", {}, "org-1")).rejects.toThrow(BadRequestException);
+    expect(prisma.project.update).not.toHaveBeenCalled();
+  });
+
+  it("reopen does nothing when the pursuit stopped being lost", async () => {
+    pursuit!.outcome = "lost";
+    prisma.projectPursuit.updateMany.mockImplementationOnce(() => Promise.resolve({ count: 0 }));
+    await expect(service.reopen("p1", "org-1")).rejects.toThrow(BadRequestException);
+    expect(prisma.project.update).not.toHaveBeenCalled();
   });
 
   it("reopen only works on a lost pursuit", async () => {

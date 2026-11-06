@@ -2253,7 +2253,8 @@ describe("DocumentsService", () => {
       expect(mockPrisma.document.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: expect.objectContaining({
           organizationId: ORG, projectId: PROJECT_ID, requiresApproval: true,
-          project: { archivedAt: null },
+          // Unsigned potential contracts don't show in "Needs attention".
+          project: { archivedAt: null, OR: [{ pursuit: { is: null } }, { pursuit: { is: { outcome: "won" } } }] },
           OR: [
             { type: "deliverable", status: { in: ["pending", "declined"] } },
             { type: { not: "deliverable" }, status: "pending" },

@@ -18,6 +18,7 @@ export { sanitizeFilename, contentDisposition } from "./utils/sanitize";
 export { toCsv } from "./utils/csv";
 export type { CsvColumn } from "./utils/csv";
 export { assertProjectAccess } from "./helpers/assert-project-access";
+export { SIGNED_PROJECT } from "./helpers/signed-project";
 export { RateLimiter } from "./helpers/rate-limiter";
 export { isPublicOAuthPath } from "./helpers/public-oauth-cors";
 export { isMcpPath } from "./helpers/mcp-path";

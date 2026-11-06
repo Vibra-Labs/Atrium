@@ -12,7 +12,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { lockProjectClients } from "../contact-sync/project-links";
-import { paginationArgs, paginatedResponse } from "../common";
+import { paginationArgs, paginatedResponse, SIGNED_PROJECT } from "../common";
 
 interface ProjectWhereInput {
   organizationId?: string;
@@ -36,11 +36,6 @@ const STANDALONE_FILES = {
   documents: { none: {} },
   signedDocuments: { none: {} },
   documentVersions: { none: {} },
-};
-
-/** Projects that aren't open or lost potential contracts. */
-export const SIGNED_PROJECT = {
-  OR: [{ pursuit: { is: null } }, { pursuit: { is: { outcome: "won" } } }],
 };
 
 /** Leaves open potential contracts out of counts of active work. */
@@ -223,9 +218,10 @@ export class ProjectsService implements OnApplicationBootstrap {
     organizationId: string,
     isPrivileged = false,
   ) {
+    // Clients never see an open or lost potential contract.
     const clientFilter = isPrivileged
       ? {}
-      : { clients: { some: { userId: clientUserId } } };
+      : { clients: { some: { userId: clientUserId } }, ...SIGNED_PROJECT };
 
     // The project lead is shown by name only, never with the owner's email.
     const [project, org] = await Promise.all([
@@ -277,9 +273,10 @@ export class ProjectsService implements OnApplicationBootstrap {
     isPrivileged = false,
   ) {
     const { page = 1, limit = 20, search } = query;
+    // Clients never see an open or lost potential contract.
     const clientFilter = isPrivileged
       ? {}
-      : { clients: { some: { userId: clientUserId } } };
+      : { clients: { some: { userId: clientUserId } }, ...SIGNED_PROJECT };
 
     const where: ProjectWhereInput = {
       organizationId,
@@ -378,10 +375,14 @@ export class ProjectsService implements OnApplicationBootstrap {
   async update(id: string, data: UpdateProjectDto, organizationId: string) {
     const existing = await this.prisma.project.findFirst({
       where: { id, organizationId },
+      include: { pursuit: { select: { outcome: true } } },
     });
     if (!existing) throw new NotFoundException("Project not found");
     if (existing.archivedAt) {
       throw new BadRequestException("Cannot update an archived project");
+    }
+    if (data.clientUserIds?.length && existing.pursuit && existing.pursuit.outcome !== "won") {
+      throw new BadRequestException("Mark it won to give portal access");
     }
 
     const { clientUserIds, startDate, endDate, ...rest } = data;
@@ -453,6 +454,7 @@ export class ProjectsService implements OnApplicationBootstrap {
       include: {
         clients: { select: { userId: true } },
         labels: { select: { labelId: true } },
+        pursuit: { select: { outcome: true } },
         tasks: {
           include: {
             options: { select: { label: true, order: true } },
@@ -465,6 +467,9 @@ export class ProjectsService implements OnApplicationBootstrap {
 
     const includeTasks = dto.includeTasks ?? true;
     const includeClients = dto.includeClients ?? false;
+    if (includeClients && source.pursuit && source.pursuit.outcome !== "won") {
+      throw new BadRequestException("A potential contract has no portal clients to copy");
+    }
 
     const duplicated = await this.prisma.$transaction(async (tx) => {
       // Duplicate = fresh copy semantics:

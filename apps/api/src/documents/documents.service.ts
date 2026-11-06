@@ -19,6 +19,7 @@ import {
   assertProjectAccess,
   sanitizeFilename,
   isPrivilegedRole,
+  SIGNED_PROJECT,
 } from "../common";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
@@ -346,7 +347,7 @@ export class DocumentsService {
       where: {
         organizationId: orgId,
         requiresApproval: true,
-        project: { archivedAt: null },
+        project: { archivedAt: null, ...SIGNED_PROJECT },
         OR: [
           { type: "deliverable", status: { in: ["pending", "declined"] } },
           { type: { not: "deliverable" }, status: "pending" },

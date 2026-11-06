@@ -658,4 +658,48 @@ describe("ProjectsService", () => {
       );
     });
   });
+
+  describe("potential contracts", () => {
+    it("create with potential creates a pursuit", async () => {
+      await service.create({ name: "County RFP", potential: true }, "org-1");
+      const data = (mockPrisma.project.create.mock.calls.at(-1) as [PrismaArgs])[0].data!;
+      expect(data.pursuit).toEqual({
+        create: { organizationId: "org-1", events: { create: { text: "Created as a potential contract" } } },
+      });
+      expect(data.potential).toBeUndefined();
+    });
+
+    it("create without potential creates no pursuit", async () => {
+      await service.create({ name: "Site" }, "org-1");
+      const data = (mockPrisma.project.create.mock.calls.at(-1) as [PrismaArgs])[0].data!;
+      expect(data.pursuit).toBeUndefined();
+    });
+
+    it("create potential with clientUserIds throws", async () => {
+      await expect(
+        service.create({ name: "County RFP", potential: true, clientUserIds: ["u1"] }, "org-1"),
+      ).rejects.toThrow("Mark it won to give portal access");
+    });
+
+    it("getStats excludes open potential contracts from every project count", async () => {
+      mockPrisma.project.count.mockClear();
+      await service.getStats("org-1");
+      for (const call of mockPrisma.project.count.mock.calls as [PrismaArgs][]) {
+        expect(call[0].where).toMatchObject({ NOT: { pursuit: { is: { outcome: "open" } } } });
+      }
+      expect(mockPrisma.project.count.mock.calls.length).toBe(4);
+    });
+
+    it("findAll with pursuit=only lists open potential contracts", async () => {
+      await service.findAll("org-1", { pursuit: "only" });
+      const where = (mockPrisma.project.findMany.mock.calls.at(-1) as [PrismaArgs])[0].where!;
+      expect(where.pursuit).toEqual({ is: { outcome: "open" } });
+    });
+
+    it("findAll with pursuit=exclude leaves open and lost potential contracts out", async () => {
+      await service.findAll("org-1", { pursuit: "exclude" });
+      const where = (mockPrisma.project.findMany.mock.calls.at(-1) as [PrismaArgs])[0].where!;
+      expect(where.OR).toEqual([{ pursuit: { is: null } }, { pursuit: { is: { outcome: "won" } } }]);
+    });
+  });
 });

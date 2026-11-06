@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -12,6 +13,11 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { ProjectsService } from "./projects.service";
+import { PursuitService } from "./pursuit.service";
+import type { PipelineRow, WinResult } from "./pursuit.service";
+import { LosePursuitDto, UpdatePursuitDto, WinPursuitDto } from "./pursuit.dto";
+import { PURSUIT_STAGE_LABELS } from "@atrium/shared";
+import type { PursuitStage } from "@atrium/shared";
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -36,7 +42,10 @@ import type { CsvColumn } from "../common";
 @Controller("projects")
 @UseGuards(AuthGuard, RolesGuard)
 export class ProjectsController {
-  constructor(private projectsService: ProjectsService) {}
+  constructor(
+    private projectsService: ProjectsService,
+    private pursuitService: PursuitService,
+  ) {}
 
   @Get()
   @Roles("owner", "admin")
@@ -75,6 +84,12 @@ export class ProjectsController {
     return this.projectsService.getStats(orgId);
   }
 
+  @Get("pipeline")
+  @Roles("owner", "admin")
+  getPipeline(@CurrentOrg("id") orgId: string): Promise<PipelineRow[]> {
+    return this.pursuitService.pipeline(orgId);
+  }
+
   @Get("statuses")
   getStatuses(@CurrentOrg("id") orgId: string) {
     return this.projectsService.getStatuses(orgId);
@@ -92,6 +107,10 @@ export class ProjectsController {
       { header: "End Date", value: (r) => r.endDate?.toISOString().split("T")[0] },
       { header: "Clients", value: (r) => r.clients.length },
       { header: "Archived", value: (r) => r.archivedAt ? "Yes" : "No" },
+      { header: "Stage", value: (r) => (r.pursuit ? PURSUIT_STAGE_LABELS[r.pursuit.stage as PursuitStage] : "") },
+      { header: "Outcome", value: (r) => r.pursuit?.outcome ?? "" },
+      { header: "Value", value: (r) => (r.pursuit?.valueCents != null ? (r.pursuit.valueCents / 100).toFixed(2) : "") },
+      { header: "Close Date", value: (r) => r.pursuit?.closeDate?.toISOString().split("T")[0] ?? "" },
       { header: "Created At", value: (r) => r.createdAt.toISOString().split("T")[0] },
     ];
     const csv = toCsv(columns, data);
@@ -111,6 +130,30 @@ export class ProjectsController {
   @PlanLimit("projects")
   create(@Body() dto: CreateProjectDto, @CurrentOrg("id") orgId: string) {
     return this.projectsService.create(dto, orgId);
+  }
+
+  @Patch(":id/pursuit")
+  @Roles("owner", "admin")
+  updatePursuit(@Param("id") id: string, @Body() dto: UpdatePursuitDto, @CurrentOrg("id") orgId: string) {
+    return this.pursuitService.update(id, dto, orgId);
+  }
+
+  @Post(":id/pursuit/win")
+  @Roles("owner", "admin")
+  winPursuit(@Param("id") id: string, @Body() dto: WinPursuitDto, @CurrentOrg("id") orgId: string): Promise<WinResult> {
+    return this.pursuitService.win(id, dto, orgId);
+  }
+
+  @Post(":id/pursuit/lose")
+  @Roles("owner", "admin")
+  losePursuit(@Param("id") id: string, @Body() dto: LosePursuitDto, @CurrentOrg("id") orgId: string): Promise<void> {
+    return this.pursuitService.lose(id, dto, orgId);
+  }
+
+  @Post(":id/pursuit/reopen")
+  @Roles("owner", "admin")
+  reopenPursuit(@Param("id") id: string, @CurrentOrg("id") orgId: string): Promise<void> {
+    return this.pursuitService.reopen(id, orgId);
   }
 
   @Post(":id/archive")

@@ -16,6 +16,8 @@ import { paginationArgs, paginatedResponse } from "../common";
 
 interface ProjectWhereInput {
   organizationId?: string;
+  pursuit?: { is: { outcome: string } | null };
+  OR?: ProjectWhereInput[];
   archivedAt?: null | Date;
   name?: { contains: string; mode: "default" | "insensitive" };
   status?: string | { not: string };
@@ -35,6 +37,14 @@ const STANDALONE_FILES = {
   signedDocuments: { none: {} },
   documentVersions: { none: {} },
 };
+
+/** Projects that aren't open or lost potential contracts. */
+export const SIGNED_PROJECT = {
+  OR: [{ pursuit: { is: null } }, { pursuit: { is: { outcome: "won" } } }],
+};
+
+/** Leaves open potential contracts out of counts of active work. */
+const NOT_OPEN_PURSUIT = { NOT: { pursuit: { is: { outcome: "open" } } } };
 
 /** Checkbox-task progress for one project. */
 type TaskProgress = { total: number; done: number; lastAt: Date | null };
@@ -89,9 +99,10 @@ export class ProjectsService implements OnApplicationBootstrap {
       status?: string;
       archived?: string;
       labels?: string;
+      pursuit?: "only" | "exclude";
     },
   ) {
-    const { page = 1, limit = 20, search, status, archived, labels } = query;
+    const { page = 1, limit = 20, search, status, archived, labels, pursuit } = query;
     const where: ProjectWhereInput = { organizationId };
 
     // Archived and cancelled projects are "inactive": hidden unless asked for.
@@ -106,6 +117,8 @@ export class ProjectsService implements OnApplicationBootstrap {
     if (status) {
       where.status = status;
     }
+    if (pursuit === "only") where.pursuit = { is: { outcome: "open" } };
+    if (pursuit === "exclude") where.OR = SIGNED_PROJECT.OR;
     if (labels) {
       const labelIds = labels.split(",").filter(Boolean);
       if (labelIds.length > 0) {
@@ -124,6 +137,7 @@ export class ProjectsService implements OnApplicationBootstrap {
             },
           },
           labels: { include: { label: true } },
+          pursuit: { include: { company: { select: { id: true, name: true } } } },
         },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
@@ -182,6 +196,20 @@ export class ProjectsService implements OnApplicationBootstrap {
         files: { where: STANDALONE_FILES },
         clients: { select: { userId: true } },
         labels: { include: { label: true } },
+        pursuit: {
+          include: {
+            company: { select: { id: true, name: true } },
+            events: { orderBy: { createdAt: "desc" }, take: 50 },
+          },
+        },
+        contacts: {
+          where: { endedAt: null },
+          select: {
+            contact: {
+              select: { id: true, firstName: true, lastName: true, email: true, userId: true, status: true },
+            },
+          },
+        },
       },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -306,7 +334,10 @@ export class ProjectsService implements OnApplicationBootstrap {
   }
 
   async create(data: CreateProjectDto, organizationId: string) {
-    const { clientUserIds, startDate, endDate, ...rest } = data;
+    const { clientUserIds, startDate, endDate, potential, ...rest } = data;
+    if (potential && clientUserIds?.length) {
+      throw new BadRequestException("Mark it won to give portal access");
+    }
 
     if (clientUserIds?.length) {
       const validMembers = await this.prisma.member.count({
@@ -323,6 +354,13 @@ export class ProjectsService implements OnApplicationBootstrap {
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
         organizationId,
+        ...(potential
+          ? {
+              pursuit: {
+                create: { organizationId, events: { create: { text: "Created as a potential contract" } } },
+              },
+            }
+          : {}),
         ...(clientUserIds?.length
           ? {
               clients: {
@@ -529,16 +567,16 @@ export class ProjectsService implements OnApplicationBootstrap {
   async getStats(organizationId: string) {
     const [total, inProgress, inReview, completed, waitingReviews, waitingSignatures] = await Promise.all([
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: { not: PROJECT_STATUSES.CANCELLED } },
+        where: { organizationId, archivedAt: null, status: { not: PROJECT_STATUSES.CANCELLED }, ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: "in_progress" },
+        where: { organizationId, archivedAt: null, status: "in_progress", ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: "in_review" },
+        where: { organizationId, archivedAt: null, status: "in_review", ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: "completed" },
+        where: { organizationId, archivedAt: null, status: "completed", ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.document.count({
         where: { project: { organizationId, archivedAt: null }, type: "deliverable", status: "pending" },
@@ -567,7 +605,7 @@ export class ProjectsService implements OnApplicationBootstrap {
   async exportAll(organizationId: string) {
     return this.prisma.project.findMany({
       where: { organizationId },
-      include: { clients: { select: { userId: true } } },
+      include: { clients: { select: { userId: true } }, pursuit: true },
       orderBy: { createdAt: "desc" },
     });
   }

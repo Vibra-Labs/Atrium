@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsBoolean, IsDateString, IsInt, MaxLength, Min } from "class-validator";
+import { IsString, IsOptional, IsArray, IsBoolean, IsDateString, IsIn, IsInt, MaxLength, Min } from "class-validator";
 import { PaginationQueryDto } from "../common";
 
 export class CreateProjectDto {
@@ -28,6 +28,11 @@ export class CreateProjectDto {
   @IsString({ each: true })
   @IsOptional()
   clientUserIds?: string[];
+
+  /** Creates it as a potential contract: work that isn't signed yet. */
+  @IsBoolean()
+  @IsOptional()
+  potential?: boolean;
 }
 
 export class ClientProjectListQueryDto extends PaginationQueryDto {
@@ -51,6 +56,11 @@ export class ProjectListQueryDto extends ClientProjectListQueryDto {
   @IsOptional()
   @MaxLength(2000)
   labels?: string;
+
+  /** "only": open potential contracts. "exclude": signed work only. */
+  @IsOptional()
+  @IsIn(["only", "exclude"])
+  pursuit?: "only" | "exclude";
 }
 
 export class DuplicateProjectDto {

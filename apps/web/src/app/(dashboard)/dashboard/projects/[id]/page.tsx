@@ -25,6 +25,9 @@ import { useSession } from "@/lib/session-context";
 import { useCachedApi } from "@/lib/cached";
 import { formatCurrency } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
+import { DealCard, LostDialog, PursuitContactsCard, PursuitPipeline, WonDialog } from "../_pursuit/pursuit-ui";
+import { reopenPursuit as reopenPursuitApi } from "@/lib/pursuit";
+import type { ProjectContactRow, Pursuit } from "@/lib/pursuit";
 
 interface FileRecord {
   id: string;
@@ -55,6 +58,8 @@ interface Project {
   clients?: { userId: string }[];
   files: FileRecord[];
   labels?: { label: LabelRecord }[];
+  pursuit?: Pursuit | null;
+  contacts?: ProjectContactRow[];
 }
 
 interface ProjectStatus {
@@ -146,6 +151,10 @@ export default function ProjectDetailPage() {
   const { success, error: showError } = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
+  const pursuit: Pursuit | null = project?.pursuit ?? null;
+  // Open or lost: not signed yet, so no clients, billing or invoices.
+  const isPursuit: boolean = !!pursuit && pursuit.outcome !== "won";
+  const [pursuitDialog, setPursuitDialog] = useState<"won" | "lost" | null>(null);
   const [clients, setClients] = useState<ClientMember[]>([]);
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
@@ -155,6 +164,14 @@ export default function ProjectDetailPage() {
     if (searchParams.get("task")) return "tasks";
     return "updates";
   });
+
+  // A potential contract opens on its files (RFP, proposal) when no tab is asked for.
+  const openedOnFiles = useRef(false);
+  useEffect(() => {
+    if (openedOnFiles.current || !isPursuit) return;
+    openedOnFiles.current = true;
+    if (!searchParams.get("tab") && !searchParams.get("task")) setActiveTab("files");
+  }, [isPursuit, searchParams]);
 
   // When a ?task=<id> deep link is set (e.g. from a notification or
   // cross-tab share), jump to the Tasks tab so the detail modal can open.
@@ -416,6 +433,16 @@ export default function ProjectDetailPage() {
 
   if (!project) return <ProjectDetailSkeleton />;
 
+  async function reopenPursuit(): Promise<void> {
+    try {
+      await reopenPursuitApi(id);
+      loadProject();
+    } catch (err) {
+      console.error(err);
+      setError("Failed to reopen");
+    }
+  }
+
   const assignedIds = new Set((project.clients ?? []).map((c) => c.userId));
   const assignedClients = clients.filter((c) => assignedIds.has(c.userId));
   const projectLabelIds = (project.labels ?? []).map((l) => l.label.id);
@@ -425,7 +452,7 @@ export default function ProjectDetailPage() {
   const tabBar = (
     <div className="relative border-b border-[var(--border)] -mx-1">
       <div className="flex overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] gap-1">
-        {tabs.map((tab) => {
+        {tabs.filter((t) => !(isPursuit && t.id === "invoices")).map((tab) => {
           const count =
             tab.id === "files" && project.files?.length
               ? ` (${project.files.length})`
@@ -483,7 +510,7 @@ export default function ProjectDetailPage() {
       {activeTab === "time" && (
         <TimeTab projectId={id} isArchived={isArchived} />
       )}
-      {activeTab === "invoices" && (
+      {activeTab === "invoices" && !isPursuit && (
         <InvoicesSection projectId={id} isArchived={isArchived} />
       )}
       {activeTab === "notes" && (
@@ -571,7 +598,7 @@ export default function ProjectDetailPage() {
           {isArchived ? (
             <button
               type="button"
-              onClick={handleUnarchive}
+              onClick={pursuit?.outcome === "lost" ? reopenPursuit : handleUnarchive}
               className="inline-flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-xs sm:text-sm font-medium hover:bg-[var(--muted)] transition-colors"
             >
               <ArchiveRestore size={14} />
@@ -592,12 +619,46 @@ export default function ProjectDetailPage() {
 
       {/* Status Pipeline */}
       <div>
-        <StatusPipeline
-          statuses={statuses}
-          currentStatus={project.status}
-          onStatusChange={handleStatusChange}
-          disabled={isArchived}
-        />
+        {isPursuit && pursuit ? (
+          <PursuitPipeline
+            p={pursuit}
+            onChanged={loadProject}
+            onWon={() => setPursuitDialog("won")}
+            onLost={() => setPursuitDialog("lost")}
+            onReopen={reopenPursuit}
+          />
+        ) : (
+          <StatusPipeline
+            statuses={statuses}
+            currentStatus={project.status}
+            onStatusChange={handleStatusChange}
+            disabled={isArchived}
+          />
+        )}
+        {pursuitDialog === "won" && pursuit && (
+          <WonDialog
+            projectId={id}
+            projectName={project.name}
+            contacts={project.contacts ?? []}
+            statuses={statuses}
+            onClose={() => setPursuitDialog(null)}
+            onDone={() => {
+              setPursuitDialog(null);
+              loadProject();
+            }}
+          />
+        )}
+        {pursuitDialog === "lost" && pursuit && (
+          <LostDialog
+            projectId={id}
+            projectName={project.name}
+            onClose={() => setPursuitDialog(null)}
+            onDone={() => {
+              setPursuitDialog(null);
+              loadProject();
+            }}
+          />
+        )}
       </div>
 
       {/* Tab Navigation */}
@@ -612,7 +673,13 @@ export default function ProjectDetailPage() {
 
         {/* Right Column (1 col) */}
         <aside className="space-y-6 lg:sticky lg:top-6 min-w-0">
+          {pursuit && <DealCard p={pursuit} readOnly={pursuit.outcome !== "open"} onChanged={loadProject} />}
+          {isPursuit && pursuit && (
+            <PursuitContactsCard p={pursuit} contacts={project.contacts ?? []} onChanged={loadProject} />
+          )}
+
           {/* Clients Card */}
+          {!isPursuit && (
           <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
               Clients{assignedIds.size > 0 && ` (${assignedIds.size})`}
@@ -633,6 +700,7 @@ export default function ProjectDetailPage() {
               They see this project in their client portal
             </p>
           </section>
+          )}
 
           {/* Timeline Card */}
           <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
@@ -691,8 +759,8 @@ export default function ProjectDetailPage() {
             })()}
           </section>
 
-          {/* Billing Card */}
-          {(currentRole === "owner" || currentRole === "admin") && (
+          {/* Billing Card (hidden while it's a potential contract) */}
+          {!isPursuit && (currentRole === "owner" || currentRole === "admin") && (
             <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-2.5">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                 Billing

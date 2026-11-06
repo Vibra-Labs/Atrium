@@ -8,11 +8,14 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
 import { ProjectCardSkeleton } from "@/components/skeletons";
 import { Plus, Search, FolderOpen, Archive, Tag, Download, Sparkles, ExternalLink } from "lucide-react";
-import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
 import { useAppConfig } from "@/lib/app-config";
 import { loadSubscription, useCachedApi } from "@/lib/cached";
+import { PursuitBadge } from "./_pursuit/pursuit-ui";
+import { isUnsigned } from "@/lib/pursuit";
+import type { Pursuit } from "@/lib/pursuit";
+import { NewProjectModal } from "./new-project-modal";
 
 interface LabelRecord {
   id: string;
@@ -28,6 +31,7 @@ interface Project {
   archivedAt?: string | null;
   createdAt: string;
   labels?: { label: LabelRecord }[];
+  pursuit?: Pursuit | null;
 }
 
 interface ProjectStatus {
@@ -47,8 +51,6 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
   const [error, setError] = useState("");
   const [planLimits, setPlanLimits] = useState<{ maxProjects: number; projectsUsed: number } | null>(null);
 
@@ -99,7 +101,8 @@ export default function ProjectsPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: "20" });
       if (debouncedSearch) params.set("search", debouncedSearch);
-      if (statusFilter) params.set("status", statusFilter);
+      if (statusFilter === "pursuit") params.set("pursuit", "only");
+      else if (statusFilter) params.set("status", statusFilter);
       if (showArchived) params.set("archived", "true");
       if (labelFilter.length > 0) params.set("labels", labelFilter.join(","));
       const res = await apiFetch<PaginatedResponse<Project>>(
@@ -132,32 +135,16 @@ export default function ProjectsPage() {
     });
   }, [config?.billingEnabled]);
 
-  const [creating, setCreating] = useState(false);
 
   const atProjectLimit = planLimits !== null && planLimits.maxProjects !== -1 && planLimits.projectsUsed >= planLimits.maxProjects;
   const oneProjectLeft = planLimits !== null && planLimits.maxProjects !== -1 && !atProjectLimit && planLimits.maxProjects - planLimits.projectsUsed === 1;
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (creating) return;
-    setCreating(true);
-    try {
-      await apiFetch<Project>("/projects", {
-        method: "POST",
-        body: JSON.stringify({ name, description }),
-      });
-      track("project_created", { source: "dashboard" });
-      setName("");
-      setDescription("");
-      setShowCreate(false);
-      loadProjects();
-      if (planLimits) {
-        setPlanLimits((prev) => prev ? { ...prev, projectsUsed: prev.projectsUsed + 1 } : prev);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create project");
-    } finally {
-      setCreating(false);
+
+  const handleCreated = (): void => {
+    setShowCreate(false);
+    loadProjects();
+    if (planLimits) {
+      setPlanLimits((prev) => prev ? { ...prev, projectsUsed: prev.projectsUsed + 1 } : prev);
     }
   };
 
@@ -235,45 +222,11 @@ export default function ProjectsPage() {
       )}
 
       {showCreate && !atProjectLimit && (
-        <form
-          onSubmit={handleCreate}
-          className="mb-6 p-4 border border-[var(--border)] rounded-lg space-y-3"
-        >
-          {oneProjectLeft && (
-            <div className="flex items-center justify-between rounded-lg bg-[var(--muted)] border border-[var(--border)] px-3 py-2">
-              <p className="text-xs text-[var(--muted-foreground)]">
-                <span className="font-medium text-[var(--foreground)]">Last free project.</span> Upgrade to Pro for unlimited.
-              </p>
-              <Link
-                href="/dashboard/settings/billing?reason=projects"
-                className="text-xs font-medium text-[var(--primary)] hover:opacity-80 whitespace-nowrap ml-3"
-              >
-                Upgrade →
-              </Link>
-            </div>
-          )}
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Project name"
-            required
-            className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-          />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description (optional)"
-            className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-            rows={2}
-          />
-          <button
-            type="submit"
-            disabled={creating}
-            className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm disabled:opacity-50"
-          >
-            {creating ? "Creating..." : "Create"}
-          </button>
-        </form>
+        <NewProjectModal
+          onClose={() => setShowCreate(false)}
+          onCreated={handleCreated}
+          oneProjectLeft={oneProjectLeft}
+        />
       )}
 
       {/* Search, Filter, Archive */}
@@ -298,6 +251,7 @@ export default function ProjectsPage() {
           className="w-full sm:w-auto px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
         >
           <option value="">All statuses</option>
+          <option value="pursuit">Potential contracts</option>
           {statuses.map((s) => (
             <option key={s.id} value={s.slug}>
               {s.name}
@@ -413,9 +367,13 @@ export default function ProjectsPage() {
                       </p>
                     )}
                   </div>
-                  <span className="text-xs px-2 py-1 bg-[var(--muted)] rounded-full shrink-0 self-start">
-                    {project.status.replace(/_/g, " ")}
-                  </span>
+                  {project.pursuit && isUnsigned(project) ? (
+                    <PursuitBadge p={project.pursuit} />
+                  ) : (
+                    <span className="text-xs px-2 py-1 bg-[var(--muted)] rounded-full shrink-0 self-start">
+                      {project.status.replace(/_/g, " ")}
+                    </span>
+                  )}
                 </div>
               </Link>
             ))}

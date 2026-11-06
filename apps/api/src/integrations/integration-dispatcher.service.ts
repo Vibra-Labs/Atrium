@@ -68,6 +68,14 @@ export class IntegrationDispatcher {
   }
 
   async run(input: DispatchInput): Promise<void> {
+    // Nothing goes out about a potential contract until it's won.
+    if (input.projectId) {
+      const pursuit = await this.prisma.projectPursuit.findUnique({
+        where: { projectId: input.projectId },
+        select: { outcome: true },
+      });
+      if (pursuit && pursuit.outcome !== "won") return;
+    }
     const destinations = await this.prisma.integrationDestination.findMany({
       where: { organizationId: input.organizationId, enabled: true, events: { has: input.event } },
       select: { id: true, projectIds: true },

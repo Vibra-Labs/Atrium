@@ -72,7 +72,7 @@ export class CommentsService {
       .notifyComment(target.projectId, orgId, userId, role, content, targetType, {
         requestedById: target.requestedById,
         assigneeId: target.assigneeId,
-      })
+      }, target.internal)
       .catch(() => {});
 
     return comment;

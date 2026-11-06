@@ -98,6 +98,7 @@ beforeAll(async () => {
     billingStub,
     new DocumentsService(prisma, noop, noop, noop, noop, noop, billingStub),
     configStub,
+    noop,
   );
 
   const app = express();

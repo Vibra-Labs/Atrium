@@ -10,6 +10,6 @@ import { InternalItemsService } from "./internal-items.service";
   imports: [ContactSyncModule, ContactsModule],
   controllers: [ProjectsController],
   providers: [ProjectsService, PursuitService, InternalItemsService],
-  exports: [ProjectsService],
+  exports: [ProjectsService, PursuitService],
 })
 export class ProjectsModule {}

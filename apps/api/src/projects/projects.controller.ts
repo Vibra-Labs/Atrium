@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -14,6 +15,8 @@ import {
 import type { Response } from "express";
 import { ProjectsService } from "./projects.service";
 import { PursuitService } from "./pursuit.service";
+import { InternalItemsService, INTERNAL_KINDS } from "./internal-items.service";
+import type { InternalItems, InternalKind } from "./internal-items.service";
 import type { PipelineRow, WinResult } from "./pursuit.service";
 import { LosePursuitDto, UpdatePursuitDto, WinPursuitDto } from "./pursuit.dto";
 import { PURSUIT_STAGE_LABELS } from "@atrium/shared";
@@ -45,6 +48,7 @@ export class ProjectsController {
   constructor(
     private projectsService: ProjectsService,
     private pursuitService: PursuitService,
+    private internalItems: InternalItemsService,
   ) {}
 
   @Get()
@@ -154,6 +158,24 @@ export class ProjectsController {
   @Roles("owner", "admin")
   reopenPursuit(@Param("id") id: string, @CurrentOrg("id") orgId: string): Promise<void> {
     return this.pursuitService.reopen(id, orgId);
+  }
+
+  @Get(":id/internal")
+  @Roles("owner", "admin")
+  listInternal(@Param("id") id: string, @CurrentOrg("id") orgId: string): Promise<InternalItems> {
+    return this.internalItems.list(id, orgId);
+  }
+
+  @Post(":id/internal/:kind/:itemId/share")
+  @Roles("owner", "admin")
+  shareInternal(
+    @Param("id") id: string,
+    @Param("kind") kind: string,
+    @Param("itemId") itemId: string,
+    @CurrentOrg("id") orgId: string,
+  ): Promise<void> {
+    if (!(INTERNAL_KINDS as readonly string[]).includes(kind)) throw new BadRequestException("Unknown item kind");
+    return this.internalItems.share(id, kind as InternalKind, itemId, orgId);
   }
 
   @Post(":id/archive")

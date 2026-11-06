@@ -14,7 +14,7 @@ import { STORAGE_PROVIDER } from "./storage/storage.interface";
 import { randomUUID } from "crypto";
 import { extname } from "path";
 import { createReadStream } from "fs";
-import { paginationArgs, paginatedResponse, sanitizeFilename, assertProjectAccess, BLOCKED_EXTENSIONS } from "../common";
+import { paginationArgs, paginatedResponse, sanitizeFilename, assertProjectAccess, BLOCKED_EXTENSIONS, assertVisibleToRole } from "../common";
 
 /** A multer upload held in memory (small routes: logos, update attachments, signatures). */
 export interface UploadedFile {
@@ -145,7 +145,8 @@ export class FilesService {
   ) {
     await assertProjectAccess(this.prisma,projectId, userId, role);
 
-    const where = { projectId, organizationId };
+    // Internal files (made before a potential contract was won) show in the Internal tab only.
+    const where = { projectId, organizationId, internal: false };
     const [data, total] = await Promise.all([
       this.prisma.file.findMany({
         where,
@@ -196,6 +197,7 @@ export class FilesService {
       where: { id, organizationId },
     });
     if (!file) throw new NotFoundException("File not found");
+    assertVisibleToRole(file, role);
     if (file.type === "LINK") {
       throw new BadRequestException("Cannot download a link entry");
     }
@@ -214,6 +216,7 @@ export class FilesService {
       where: { id, organizationId },
     });
     if (!file) throw new NotFoundException("File not found");
+    assertVisibleToRole(file, role);
     if (file.type === "LINK") {
       throw new BadRequestException("Cannot download a link entry");
     }

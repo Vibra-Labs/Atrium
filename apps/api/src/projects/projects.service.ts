@@ -166,6 +166,7 @@ export class ProjectsService implements OnApplicationBootstrap {
         projectId: { in: projectIds },
         organizationId,
         type: "checkbox",
+        internal: false,
         status: { not: "cancelled" },
       },
       _count: { _all: true },
@@ -188,7 +189,7 @@ export class ProjectsService implements OnApplicationBootstrap {
     const project = await this.prisma.project.findFirst({
       where: { id, organizationId },
       include: {
-        files: { where: STANDALONE_FILES },
+        files: { where: { ...STANDALONE_FILES, internal: false } },
         clients: { select: { userId: true } },
         labels: { include: { label: true } },
         pursuit: {
@@ -233,13 +234,14 @@ export class ProjectsService implements OnApplicationBootstrap {
           ...clientFilter,
         },
         include: {
-          files: { where: STANDALONE_FILES, orderBy: { createdAt: "desc" } },
+          files: { where: { ...STANDALONE_FILES, internal: false }, orderBy: { createdAt: "desc" } },
           // Counted server-side so the portal banner isn't limited to the task page it has loaded.
           _count: {
             select: {
               tasks: {
                 where: {
                   type: "decision",
+                  internal: false,
                   closedAt: null,
                   status: { notIn: ["done", "cancelled"] },
                   votes: { none: { userId: clientUserId } },
@@ -295,9 +297,9 @@ export class ProjectsService implements OnApplicationBootstrap {
           _count: { select: { documents: { where: { requiresApproval: true, status: "pending" } } } },
           // Latest progress update and file, for "last updated". Document files
           // are left out so a draft upload doesn't read as client-visible activity.
-          updates: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+          updates: { where: { internal: false }, select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
           files: {
-            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } },
+            where: { ...STANDALONE_FILES, internal: false },
             select: { createdAt: true },
             orderBy: { createdAt: "desc" },
             take: 1,

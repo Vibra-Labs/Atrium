@@ -138,7 +138,8 @@ export class TasksService {
         : status && status !== "all"
         ? { status }
         : {};
-    const where = { projectId, organizationId: orgId, ...statusFilter };
+    // Internal tasks (from before a potential contract was won) show in the Internal tab only.
+    const where = { projectId, organizationId: orgId, internal: false, ...statusFilter };
     const [data, total] = await Promise.all([
       this.prisma.task.findMany({
         where,
@@ -197,7 +198,7 @@ export class TasksService {
       }
     }
 
-    const where = { projectId, organizationId: orgId };
+    const where = { projectId, organizationId: orgId, internal: false };
     const [data, total] = await Promise.all([
       this.prisma.task.findMany({
         where,
@@ -247,14 +248,14 @@ export class TasksService {
 
   async exportByProject(projectId: string, orgId: string) {
     return this.prisma.task.findMany({
-      where: { projectId, organizationId: orgId },
+      where: { projectId, organizationId: orgId, internal: false },
       orderBy: { order: "asc" },
     });
   }
 
   async vote(taskId: string, optionId: string, userId: string, orgId: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id: taskId, organizationId: orgId, type: "decision" },
+      where: { id: taskId, organizationId: orgId, type: "decision", internal: false },
       include: { options: true },
     });
     if (!task) throw new NotFoundException("Decision task not found");
@@ -392,7 +393,7 @@ export class TasksService {
    */
   async cancelClientTask(taskId: string, userId: string, orgId: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id: taskId, organizationId: orgId },
+      where: { id: taskId, organizationId: orgId, internal: false },
     });
     if (!task) throw new NotFoundException("Task not found");
     if (task.requestedById !== userId) throw new ForbiddenException("Cannot cancel this task");

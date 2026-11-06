@@ -225,6 +225,7 @@ describe("ProjectsService", () => {
           projectId: { in: ["p1", "p2"] },
           organizationId: "org-1",
           type: "checkbox",
+          internal: false,
           status: { not: "cancelled" },
         },
       }),
@@ -246,7 +247,7 @@ describe("ProjectsService", () => {
       expect.objectContaining({
         include: expect.objectContaining({
           files: expect.objectContaining({
-            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } },
+            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} }, internal: false },
           }),
         }),
       }),
@@ -421,7 +422,7 @@ describe("ProjectsService", () => {
       expect.objectContaining({
         include: expect.objectContaining({
           files: expect.objectContaining({
-            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } },
+            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} }, internal: false },
           }),
         }),
         where: expect.objectContaining({
@@ -455,6 +456,7 @@ describe("ProjectsService", () => {
               tasks: {
                 where: {
                   type: "decision",
+                  internal: false,
                   closedAt: null,
                   status: { notIn: ["done", "cancelled"] },
                   votes: { none: { userId: "user-client" } },

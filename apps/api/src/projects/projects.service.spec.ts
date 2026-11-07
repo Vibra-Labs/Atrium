@@ -192,7 +192,7 @@ describe("ProjectsService", () => {
     );
     expect(wheres).toHaveLength(2);
     for (const where of wheres) {
-      expect(where.project).toEqual({ organizationId: "org-1", archivedAt: null });
+      expect(where.project).toMatchObject({ organizationId: "org-1", archivedAt: null });
     }
     const signatures = wheres.find((w) => w.requiresSignature === true);
     expect(signatures?.type).toEqual({ not: "deliverable" });
@@ -690,6 +690,26 @@ describe("ProjectsService", () => {
         expect(call[0].where).toMatchObject({ NOT: { pursuit: { is: { outcome: "open" } } } });
       }
       expect(mockPrisma.project.count.mock.calls.length).toBe(4);
+    });
+
+    it("getStats waiting counts skip open potential contracts and internal documents", async () => {
+      mockPrisma.document.count.mockClear();
+      await service.getStats("org-1");
+      const calls = mockPrisma.document.count.mock.calls as unknown as [PrismaArgs][];
+      expect(calls.length).toBe(2);
+      for (const call of calls) {
+        expect(call[0].where).toMatchObject({
+          internal: false,
+          project: { NOT: { pursuit: { is: { outcome: "open" } } } },
+        });
+      }
+    });
+
+    it("unarchive refuses a lost potential contract", async () => {
+      mockPrisma.project.findFirst.mockImplementationOnce(() =>
+        Promise.resolve({ id: "p1", pursuit: { outcome: "lost" } } as never),
+      );
+      await expect(service.unarchive("p1", "org-1")).rejects.toThrow("Reopen it instead");
     });
 
     it("findAll with pursuit=only lists open potential contracts", async () => {

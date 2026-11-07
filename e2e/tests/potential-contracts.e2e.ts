@@ -74,6 +74,34 @@ test.describe("Potential contracts", () => {
     await context.close();
   });
 
+  test("a rejected deal field goes back to the saved value", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-reject");
+    const id = await createPotential(page, "Port bid");
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    await page.getByText("Formal bid").click();
+    const link = page.getByLabel("Posting link");
+    await link.fill("not a link");
+    await link.blur();
+    await expect(link).toHaveValue("", { timeout: 10000 });
+    await context.close();
+  });
+
+  test("won dialog picks a status when statuses load after it opens", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-slowstatus");
+    const id = await createPotential(page, "Slow bid");
+    let release: () => void = () => {};
+    const gate: Promise<void> = new Promise((r) => (release = r));
+    await page.route("**/api/projects/statuses", async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    await page.getByRole("button", { name: "Won" }).click();
+    release();
+    await expect(page.getByRole("dialog").locator("#won-status")).toHaveValue("in_progress", { timeout: 10000 });
+    await context.close();
+  });
+
   test("pipeline card shows the open contract and it stays out of active projects", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "pc-pipeline");
     const id = await createPotential(page, "Harbor bid");

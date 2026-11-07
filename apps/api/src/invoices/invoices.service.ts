@@ -42,9 +42,13 @@ export class InvoicesService {
     if (dto.projectId) {
       const project = await this.prisma.project.findFirst({
         where: { id: dto.projectId, organizationId: orgId },
+        select: { id: true, pursuit: { select: { outcome: true } } },
       });
       if (!project) {
         throw new ForbiddenException("Project does not belong to this organization");
+      }
+      if (project.pursuit && project.pursuit.outcome !== "won") {
+        throw new BadRequestException("This is a potential contract. Mark it won before invoicing");
       }
     }
 
@@ -94,9 +98,13 @@ export class InvoicesService {
     if (dto.projectId) {
       const project = await this.prisma.project.findFirst({
         where: { id: dto.projectId, organizationId: orgId },
+        select: { id: true, pursuit: { select: { outcome: true } } },
       });
       if (!project) {
         throw new ForbiddenException("Project does not belong to this organization");
+      }
+      if (project.pursuit && project.pursuit.outcome !== "won") {
+        throw new BadRequestException("This is a potential contract. Mark it won before invoicing");
       }
     }
 

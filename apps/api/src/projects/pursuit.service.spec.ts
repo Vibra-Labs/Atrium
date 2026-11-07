@@ -23,6 +23,7 @@ const prisma = {
     updateMany: updateManyMock(),
   },
   projectPursuitEvent: { create: mock(() => Promise.resolve({})) },
+  company: { findFirst: mock(() => Promise.resolve({ id: "co1", name: "Harbor County" })) },
   projectStatus: {
     findFirst: mock((args: Args) => Promise.resolve({ slug: (args.where as { slug: string }).slug })),
   },
@@ -177,6 +178,30 @@ describe("PursuitService", () => {
     expect(prisma.projectPursuitEvent.create).toHaveBeenCalledWith({
       data: { projectId: "p1", text: "Moved to Proposal sent" },
     });
+  });
+
+  it("update on a won pursuit doesn't tell you to reopen it", async () => {
+    pursuit!.outcome = "won";
+    await expect(service.update("p1", { valueCents: 100 }, "org-1")).rejects.toThrow("This deal was won and is read-only");
+  });
+
+  it("win rejects an archived project", async () => {
+    pursuit!.project.archivedAt = new Date();
+    await expect(win(false)).rejects.toThrow(BadRequestException);
+    expect(contacts.linkProject).not.toHaveBeenCalled();
+  });
+
+  it("update logs a company change", async () => {
+    await service.update("p1", { companyId: "co1" }, "org-1");
+    expect(prisma.projectPursuitEvent.create).toHaveBeenCalledWith({
+      data: { projectId: "p1", text: "Company set to Harbor County" },
+    });
+  });
+
+  it("update logs clearing the company", async () => {
+    (pursuit as PursuitRow & { companyId: string }).companyId = "co1";
+    await service.update("p1", { companyId: null } as never, "org-1");
+    expect(prisma.projectPursuitEvent.create).toHaveBeenCalledWith({ data: { projectId: "p1", text: "Company cleared" } });
   });
 
   it("update rejects a closed pursuit", async () => {

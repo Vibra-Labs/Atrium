@@ -54,10 +54,13 @@ export class PursuitService {
 
   async update(projectId: string, dto: UpdatePursuitDto, orgId: string): Promise<ProjectPursuit> {
     const pursuit = await this.getOrThrow(projectId, orgId);
+    if (pursuit.outcome === "won") throw new BadRequestException("This deal was won and is read-only");
     if (pursuit.outcome !== "open") throw new BadRequestException("Reopen it to make changes");
+    let companyName: string | null = null;
     if (dto.companyId) {
       const company = await this.prisma.company.findFirst({ where: { id: dto.companyId, organizationId: orgId } });
       if (!company) throw new BadRequestException("Company not found");
+      companyName = company.name;
     }
 
     const updated: ProjectPursuit = await this.prisma.projectPursuit.update({
@@ -78,12 +81,16 @@ export class PursuitService {
     if (dto.stage && dto.stage !== pursuit.stage) {
       await this.log(this.prisma, projectId, `Moved to ${PURSUIT_STAGE_LABELS[dto.stage as PursuitStage]}`);
     }
+    if (dto.companyId !== undefined && dto.companyId !== pursuit.companyId) {
+      await this.log(this.prisma, projectId, companyName ? `Company set to ${companyName}` : "Company cleared");
+    }
     return updated;
   }
 
   async win(projectId: string, dto: WinPursuitDto, orgId: string): Promise<WinResult> {
     const pursuit = await this.getOrThrow(projectId, orgId);
     if (pursuit.outcome !== "open") throw new BadRequestException("Only an open potential contract can be won");
+    if (pursuit.project.archivedAt) throw new BadRequestException("Unarchive it before marking it won");
     if (CLOSED_STATUSES.includes(dto.status)) {
       throw new BadRequestException("A won project needs an active status");
     }

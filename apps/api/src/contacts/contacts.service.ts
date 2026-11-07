@@ -272,6 +272,9 @@ type LinkFields = Pick<
   "companyId" | "companyName" | "leadSourceId" | "leadSourceName" | "referredById"
 >;
 
+const contactName = (c: { firstName: string | null; lastName: string | null }): string =>
+  [c.firstName, c.lastName].filter(Boolean).join(" ");
+
 @Injectable()
 export class ContactsService {
   private readonly logger = new Logger(ContactsService.name);
@@ -768,8 +771,17 @@ export class ContactsService {
     await this.prisma.contactNote.delete({ where: { id: noteId } });
   }
 
+  /** Adds a line to the deal history when the project is an open potential contract. */
+  private async logDeal(projectId: string, orgId: string, text: string): Promise<void> {
+    const pursuit = await this.prisma.projectPursuit.findFirst({
+      where: { projectId, organizationId: orgId, outcome: "open" },
+      select: { projectId: true },
+    });
+    if (pursuit) await this.prisma.projectPursuitEvent.create({ data: { projectId, text } });
+  }
+
   async linkProject(id: string, projectId: string, orgId: string): Promise<void> {
-    await this.getOrThrow(id, orgId);
+    const contact = await this.getOrThrow(id, orgId);
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, organizationId: orgId },
     });
@@ -801,6 +813,7 @@ export class ContactsService {
       `Linked to project "${project.name}"`,
       projectId,
     );
+    await this.logDeal(projectId, orgId, `Linked ${contactName(contact)}`);
   }
 
   async unlinkProject(id: string, projectId: string, orgId: string): Promise<void> {
@@ -812,9 +825,10 @@ export class ContactsService {
       });
       if (client) throw new BadRequestException("Remove them as a client on the project first");
     }
-    await this.prisma.projectContact.deleteMany({
+    const removed = await this.prisma.projectContact.deleteMany({
       where: { contactId: id, projectId, project: { organizationId: orgId } },
     });
+    if (removed.count > 0) await this.logDeal(projectId, orgId, `Removed ${contactName(contact)}`);
   }
 
   async setFollowUp(id: string, dto: SetFollowUpDto, orgId: string, userId: string): Promise<ContactRecord> {

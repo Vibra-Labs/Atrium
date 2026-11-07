@@ -588,12 +588,18 @@ export class ProjectsService implements OnApplicationBootstrap {
         where: { organizationId, archivedAt: null, status: "completed", ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.document.count({
-        where: { project: { organizationId, archivedAt: null }, type: "deliverable", status: "pending" },
+        where: {
+          project: { organizationId, archivedAt: null, ...NOT_OPEN_PURSUIT },
+          internal: false,
+          type: "deliverable",
+          status: "pending",
+        },
       }),
       // Deliverables are counted above, so a deliverable that also needs a signature isn't counted twice.
       this.prisma.document.count({
         where: {
-          project: { organizationId, archivedAt: null },
+          project: { organizationId, archivedAt: null, ...NOT_OPEN_PURSUIT },
+          internal: false,
           type: { not: "deliverable" },
           requiresSignature: true,
           status: "pending",
@@ -649,6 +655,15 @@ export class ProjectsService implements OnApplicationBootstrap {
   }
 
   async unarchive(id: string, organizationId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id, organizationId },
+      select: { pursuit: { select: { outcome: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    // A lost deal comes back through Reopen, which also clears its lost state.
+    if (project.pursuit?.outcome === "lost") {
+      throw new BadRequestException("This potential contract was lost. Reopen it instead");
+    }
     const result = await this.prisma.project.updateMany({
       where: { id, organizationId },
       data: { archivedAt: null },

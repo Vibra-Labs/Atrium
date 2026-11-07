@@ -217,7 +217,7 @@ function SavedText({
   ariaLabel,
 }: {
   value: string | null;
-  onSave: (v: string | null) => void;
+  onSave: (v: string | null) => Promise<boolean>;
   placeholder?: string;
   disabled?: boolean;
   ariaLabel: string;
@@ -229,9 +229,10 @@ function SavedText({
       value={text}
       disabled={disabled}
       onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
+      onBlur={async () => {
         const next: string | null = text.trim() || null;
-        if (next !== (value ?? null)) onSave(next);
+        if (next === (value ?? null)) return;
+        if (!(await onSave(next))) setText(value ?? "");
       }}
       placeholder={placeholder}
       className={input}
@@ -242,15 +243,19 @@ function SavedText({
 export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boolean; onChanged: () => void }) {
   const money = useMoney();
   const { error: showError } = useToast();
-  const [valueText, setValueText] = useState<string>(p.valueCents === null ? "" : withCommas(String(p.valueCents / 100)));
+  const savedValueText: string = p.valueCents === null ? "" : withCommas(String(p.valueCents / 100));
+  const [valueText, setValueText] = useState<string>(savedValueText);
 
-  async function save(patch: PursuitPatch): Promise<void> {
+  /** Returns false when the save was rejected, so the field can go back to the saved value. */
+  async function save(patch: PursuitPatch): Promise<boolean> {
     try {
       await updatePursuit(p.projectId, patch);
       onChanged();
+      return true;
     } catch (err) {
       console.error(err);
       showError(err instanceof Error ? err.message : "Failed to save");
+      return false;
     }
   }
 
@@ -277,9 +282,10 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
             disabled={readOnly}
             value={valueText}
             onChange={(e) => setValueText(withCommas(e.target.value))}
-            onBlur={() => {
+            onBlur={async () => {
               const cents: number | null = toCents(valueText);
-              if (cents !== p.valueCents) save({ valueCents: cents });
+              if (cents === p.valueCents) return;
+              if (!(await save({ valueCents: cents }))) setValueText(savedValueText);
             }}
             placeholder={money(0)}
             className={input}
@@ -609,7 +615,12 @@ export function WonDialog({
   const [client, setClient] = useState<ContactRef | null>(linked[0] ?? null);
   const [picking, setPicking] = useState<boolean>(linked.length === 0);
   const active: Status[] = statuses.filter((s) => s.slug !== "cancelled" && s.slug !== "completed");
-  const [status, setStatus] = useState<string>(active.find((s) => s.slug === "in_progress")?.slug ?? active[0]?.slug ?? "");
+  const defaultStatus: string = active.find((s) => s.slug === "in_progress")?.slug ?? active[0]?.slug ?? "";
+  const [status, setStatus] = useState<string>(defaultStatus);
+  // Statuses can arrive after the dialog opens.
+  useEffect(() => {
+    if (!status && defaultStatus) setStatus(defaultStatus);
+  }, [status, defaultStatus]);
   const [giveAccess, setGiveAccess] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const canGiveAccess: boolean = !!client && (client.hasLogin || !!client.email);

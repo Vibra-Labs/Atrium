@@ -351,6 +351,7 @@ export class DocumentsService {
       where: {
         organizationId: orgId,
         requiresApproval: true,
+        internal: false,
         project: { archivedAt: null, ...SIGNED_PROJECT },
         OR: [
           { type: "deliverable", status: { in: ["pending", "declined"] } },
@@ -1541,6 +1542,7 @@ export class DocumentsService {
       where: { id: documentId, organizationId: orgId },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    if (doc.internal) throw new BadRequestException("Share this document with the client first");
 
     // Verify userId is a project client on this document's project
     const assignment = await this.prisma.projectClient.findFirst({
@@ -1589,7 +1591,8 @@ export class DocumentsService {
       },
     });
 
-    if (!record) throw new NotFoundException("Invalid or expired link");
+    // An internal document is hidden from clients, so its link reads as invalid.
+    if (!record || record.document.internal) throw new NotFoundException("Invalid or expired link");
     if (record.revokedAt) {
       throw new BadRequestException("This signing link has been revoked");
     }

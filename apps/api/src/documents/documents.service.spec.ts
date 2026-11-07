@@ -1896,6 +1896,18 @@ describe("DocumentsService", () => {
       );
     }
 
+    it("doesn't notify clients or log client activity for an internal document", async () => {
+      setupLinkDoc({ internal: true });
+      mockPrisma.document.update.mockReturnValue(
+        Promise.resolve(makeDoc({ type: "deliverable", status: "pending", currentVersion: 2, file: {}, internal: true })),
+      );
+      mockNotifications.notifyDocumentUploaded.mockClear();
+      mockActivityService.create.mockClear();
+      await service.linkVersion(DOC_ID, ORG, USER, "https://staging.example.com/v2");
+      expect(mockNotifications.notifyDocumentUploaded).not.toHaveBeenCalled();
+      expect(mockActivityService.create).not.toHaveBeenCalled();
+    });
+
     it("snapshots the current link, creates a new LINK file and resets to pending", async () => {
       setupLinkDoc();
       await service.linkVersion(DOC_ID, ORG, USER, "https://staging.example.com/v2", "Fixed nav");

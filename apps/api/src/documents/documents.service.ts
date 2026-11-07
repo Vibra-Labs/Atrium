@@ -188,7 +188,7 @@ export class DocumentsService {
     });
 
     this.auditService.log(id, "sent", { userId });
-    this.notifications.notifyDocumentUploaded(id);
+    if (!updated.internal) this.notifications.notifyDocumentUploaded(id);
 
     return updated;
   }
@@ -1283,7 +1283,8 @@ export class DocumentsService {
       metadata: { version: result.currentVersion, filename: file.originalname, note },
     });
 
-    if (result.type === "deliverable" && result.status === "pending") {
+    // Internal documents are hidden from clients, so they aren't told about new versions.
+    if (result.type === "deliverable" && result.status === "pending" && !result.internal) {
       this.notifications.notifyDocumentUploaded(id);
       this.logVersionActivity(result, userId, orgId);
     }
@@ -1362,7 +1363,7 @@ export class DocumentsService {
       userId,
       metadata: { version: result.currentVersion, url: parsed.toString(), note },
     });
-    if (result.status === "pending") {
+    if (result.status === "pending" && !result.internal) {
       this.notifications.notifyDocumentUploaded(id);
       this.logVersionActivity(result, userId, orgId);
     }

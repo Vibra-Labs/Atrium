@@ -121,6 +121,10 @@ export class PursuitService {
       await tx.task.updateMany({ where, data });
       await tx.document.updateMany({ where, data });
       await tx.activityLog.updateMany({ where, data });
+      await tx.comment.updateMany({
+        where: { OR: [{ update: { projectId } }, { task: { projectId } }] },
+        data,
+      });
       await tx.contact.update({ where: { id: contact.id }, data: { status: "client" } });
       await this.log(tx, projectId, `Won. ${name} is now a client`);
     });

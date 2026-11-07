@@ -569,9 +569,12 @@ export class TimeEntriesService {
   async generateInvoice(userId: string, orgId: string, dto: GenerateInvoiceDto): Promise<GenerateInvoiceResult> {
     const project = await this.prisma.project.findFirst({
       where: { id: dto.projectId, organizationId: orgId },
-      select: { id: true, name: true, hourlyRateCents: true },
+      select: { id: true, name: true, hourlyRateCents: true, pursuit: { select: { outcome: true, wonAt: true } } },
     });
     if (!project) throw new NotFoundException("Project not found");
+    if (project.pursuit && project.pursuit.outcome !== "won") {
+      throw new BadRequestException("This is a potential contract. Mark it won before invoicing");
+    }
 
     const where: Record<string, unknown> = {
       organizationId: orgId,
@@ -581,14 +584,18 @@ export class TimeEntriesService {
       durationSec: { not: null },
     };
     if (!dto.includeNonBillable) where.billable = true;
-    if (dto.from || dto.to) {
-      // Date-only inputs become inclusive whole days. `to` is bumped to the
-      // start of the next day (exclusive) so an entry started any time on
-      // the picked day is still included.
-      const toDate = dto.to ? new Date(dto.to) : null;
-      if (toDate) toDate.setUTCDate(toDate.getUTCDate() + 1);
+    // Date-only inputs become inclusive whole days. `to` is bumped to the
+    // start of the next day (exclusive) so an entry started any time on
+    // the picked day is still included.
+    const toDate: Date | null = dto.to ? new Date(dto.to) : null;
+    if (toDate) toDate.setUTCDate(toDate.getUTCDate() + 1);
+    // Time spent winning the work isn't billed to the client.
+    const fromDate: Date | null = dto.from ? new Date(dto.from) : null;
+    const wonAt: Date | null = project.pursuit?.wonAt ?? null;
+    const startDate: Date | null = wonAt && !(fromDate && fromDate > wonAt) ? wonAt : fromDate;
+    if (startDate || toDate) {
       where.startedAt = {
-        ...(dto.from ? { gte: new Date(dto.from) } : {}),
+        ...(startDate ? { gte: startDate } : {}),
         ...(toDate ? { lt: toDate } : {}),
       };
     }

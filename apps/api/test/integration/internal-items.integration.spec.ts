@@ -185,6 +185,21 @@ describe("items from before the win stay internal", () => {
     await files.download(d.internalFileId, d.orgId, d.clientId, "member");
   });
 
+  it("sharing an update keeps the staff comments from before the win hidden", async () => {
+    const d = await seed();
+    await prisma.comment.create({
+      data: { content: "Don't drop below 40k", authorId: d.ownerId, organizationId: d.orgId, updateId: d.internalUpdateId, internal: true },
+    });
+    await internal.share(d.projectId, "update", d.internalUpdateId, d.orgId);
+    const res = await comments.findByTarget("update", d.internalUpdateId, d.orgId, d.clientId, "member");
+    expect(res.data).toHaveLength(0);
+    const timeline = await updates.findTimelineForClient(d.projectId, d.clientId, d.orgId);
+    const shared = (timeline.data as { id: string; commentCount?: number }[]).find((i) => i.id === d.internalUpdateId);
+    expect(shared?.commentCount).toBe(0);
+    const staff = await comments.findByTarget("update", d.internalUpdateId, d.orgId, d.ownerId, "owner");
+    expect(staff.data).toHaveLength(1);
+  });
+
   it("sharing a draft document does not show it to the client", async () => {
     const d = await seed();
     await internal.share(d.projectId, "document", d.draftDocId, d.orgId);

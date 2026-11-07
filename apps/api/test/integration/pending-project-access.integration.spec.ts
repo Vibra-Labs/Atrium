@@ -67,6 +67,22 @@ describe("grantPendingAccess", () => {
     expect(await prisma.pendingProjectAccess.count({ where: { projectId: d.openId } })).toBe(1);
   });
 
+  it("drops access promised longer ago than an invite lasts", async () => {
+    const d = await seed();
+    const old = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+    await prisma.pendingProjectAccess.updateMany({ where: { projectId: d.wonId }, data: { createdAt: old } });
+    expect(await projects.grantPendingAccess(d.orgId, d.userId, d.email)).toBe(0);
+    expect(await prisma.projectClient.count({ where: { projectId: d.wonId } })).toBe(0);
+    expect(await prisma.pendingProjectAccess.count({ where: { projectId: d.wonId } })).toBe(0);
+  });
+
+  it("ignores access to a project that has since been archived", async () => {
+    const d = await seed();
+    await prisma.project.update({ where: { id: d.wonId }, data: { archivedAt: new Date() } });
+    expect(await projects.grantPendingAccess(d.orgId, d.userId, d.email)).toBe(0);
+    expect(await prisma.projectClient.count({ where: { projectId: d.wonId } })).toBe(0);
+  });
+
   it("does nothing for an email with no pending access", async () => {
     const d = await seed();
     expect(await projects.grantPendingAccess(d.orgId, d.userId, "someone@else.com")).toBe(0);

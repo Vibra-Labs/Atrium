@@ -212,6 +212,7 @@ export class UpdatesService {
     organizationId: string,
     page = 1,
     limit = 20,
+    forClient = false,
   ) {
     // Internal updates and activity (from before a potential contract was won) are left out.
     const where = { projectId, organizationId, internal: false };
@@ -226,7 +227,8 @@ export class UpdatesService {
         take: limit,
         include: {
           file: { select: { id: true } },
-          _count: { select: { comments: true } },
+          // Clients don't see comments from before a potential contract was won.
+          _count: { select: { comments: forClient ? { where: { internal: false } } : true } },
         },
       }),
       this.prisma.projectUpdate.count({ where }),
@@ -317,7 +319,7 @@ export class UpdatesService {
       }
     }
 
-    return this.findTimeline(projectId, organizationId, page, limit);
+    return this.findTimeline(projectId, organizationId, page, limit, !isPrivileged);
   }
 
   async update(

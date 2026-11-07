@@ -93,6 +93,8 @@ export class CommentsService {
     const where = {
       organizationId: orgId,
       ...(targetType === "update" ? { updateId: targetId } : { taskId: targetId }),
+      // Comments from before a potential contract was won stay staff-only.
+      ...(isPrivilegedRole(role) ? {} : { internal: false }),
     };
 
     const [comments, total] = await Promise.all([

@@ -87,7 +87,7 @@ export class WeeklyUpdatesService {
       select: {
         id: true,
         name: true,
-        updates: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+        updates: { where: { internal: false }, select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { clients: true } },
       },
     });

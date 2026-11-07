@@ -9,6 +9,7 @@ import { randomUUID } from "crypto";
 import * as Sentry from "@sentry/nestjs";
 import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { lockProjectClients } from "../contact-sync/project-links";
@@ -630,11 +631,17 @@ export class ProjectsService implements OnApplicationBootstrap {
    * Rows for projects that aren't won (yet) are left in place.
    */
   async grantPendingAccess(organizationId: string, userId: string, email: string): Promise<number> {
+    const emailMatch = { equals: email.toLowerCase(), mode: "insensitive" as const };
+    // Access promised by an invite that has since expired is dropped, so a later invite doesn't revive it.
+    const expiredBefore = new Date(Date.now() - INVITATION_EXPIRES_IN_SECONDS * 1000);
+    await this.prisma.pendingProjectAccess.deleteMany({
+      where: { organizationId, email: emailMatch, createdAt: { lt: expiredBefore } },
+    });
     const rows = await this.prisma.pendingProjectAccess.findMany({
       where: {
         organizationId,
-        email: { equals: email.toLowerCase(), mode: "insensitive" },
-        project: { pursuit: { is: { outcome: "won" } } },
+        email: emailMatch,
+        project: { archivedAt: null, pursuit: { is: { outcome: "won" } } },
       },
       select: { id: true, projectId: true },
     });

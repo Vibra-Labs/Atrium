@@ -505,6 +505,25 @@ describe("TimeEntriesService.list/report/generateInvoice", () => {
     expect(reloaded.every((e) => e.invoiceLineItemId !== null)).toBe(true);
   });
 
+  it("generateInvoice refuses an open potential contract", async () => {
+    await prisma.projectPursuit.create({ data: { projectId, organizationId: orgId } });
+    await service.create(userId, orgId, { projectId, startedAt: "2026-04-01T09:00:00Z", endedAt: "2026-04-01T10:00:00Z" });
+    await expect(service.generateInvoice(userId, orgId, { projectId })).rejects.toThrow(/Mark it won/);
+  });
+
+  it("generateInvoice leaves out time logged before the win", async () => {
+    await prisma.projectPursuit.create({
+      data: { projectId, organizationId: orgId, outcome: "won", wonAt: new Date("2026-04-02T00:00:00Z") },
+    });
+    const before = await service.create(userId, orgId, { projectId, startedAt: "2026-04-01T09:00:00Z", endedAt: "2026-04-01T10:00:00Z" });
+    const after = await service.create(userId, orgId, { projectId, startedAt: "2026-04-03T09:00:00Z", endedAt: "2026-04-03T10:00:00Z" });
+    const { invoiceId } = await service.generateInvoice(userId, orgId, { projectId, from: "2026-03-01" });
+    const lines = await prisma.invoiceLineItem.findMany({ where: { invoiceId } });
+    expect(lines.length).toBe(1);
+    const billed = await prisma.timeEntry.findMany({ where: { id: { in: [before.id, after.id] }, invoiceLineItemId: { not: null } } });
+    expect(billed.map((e) => e.id)).toEqual([after.id]);
+  });
+
   it("generateInvoice rejects when no eligible entries", async () => {
     await expect(service.generateInvoice(userId, orgId, { projectId })).rejects.toThrow();
   });

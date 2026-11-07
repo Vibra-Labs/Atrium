@@ -488,6 +488,8 @@ model Comment {
   organizationId String
   updateId       String?
   taskId         String?
+  /// Written before a potential contract was won; staff only, even if its update or task is shared.
+  internal       Boolean  @default(false)
   createdAt      DateTime @default(now())
 
   update ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)

@@ -250,6 +250,6 @@ describe("UpdatesService.findTimelineForClient", () => {
     mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
     await service.findTimelineForClient("p1", "owner-1", "org-1", 1, 20, true);
     expect(mockPrisma.projectClient.findFirst).not.toHaveBeenCalled();
-    expect(service.findTimeline).toHaveBeenCalledWith("p1", "org-1", 1, 20);
+    expect(service.findTimeline).toHaveBeenCalledWith("p1", "org-1", 1, 20, false);
   });
 });

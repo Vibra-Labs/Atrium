@@ -216,7 +216,7 @@ export class TasksService {
           labels: { include: { label: true } },
           requester: { select: { id: true, name: true, image: true } },
           assignee: { select: { id: true, name: true, image: true } },
-          _count: { select: { votes: true, comments: true } },
+          _count: { select: { votes: true, comments: { where: { internal: false } } } },
         },
         orderBy: { order: "asc" },
         ...paginationArgs(page, limit),
@@ -314,7 +314,8 @@ export class TasksService {
       },
     });
 
-    this.notifications.notifyDecisionClosed(taskId);
+    // Internal tasks are hidden from clients, so they aren't told about them.
+    if (!task.internal) this.notifications.notifyDecisionClosed(taskId);
 
     this.activityService
       .create({
@@ -325,6 +326,7 @@ export class TasksService {
         targetTitle: task.question || task.title,
         projectId: task.projectId,
         organizationId: orgId,
+        internal: task.internal,
       })
       .catch((err) => this.logger.warn({ err }, "Failed to log decision closed activity"));
 
@@ -363,7 +365,7 @@ export class TasksService {
       },
     });
 
-    if (dto.status && dto.status !== task.status) {
+    if (dto.status && dto.status !== task.status && !task.internal) {
       this.notifications.notifyTaskStatusChanged(
         task.id,
         task.title,

@@ -40,6 +40,7 @@ const prisma = {
   task: { updateMany: updateManyMock() },
   document: { updateMany: updateManyMock() },
   activityLog: { updateMany: updateManyMock() },
+  comment: { updateMany: updateManyMock() },
   projectClient: { createMany: mock(() => Promise.resolve({ count: 1 })) },
   pendingProjectAccess: { upsert: mock(() => Promise.resolve({})) },
   $transaction: mock((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
@@ -74,6 +75,14 @@ describe("PursuitService", () => {
     for (const model of [prisma.projectUpdate, prisma.file, prisma.task, prisma.document, prisma.activityLog]) {
       expect(model.updateMany).toHaveBeenCalledWith({ where: { projectId: "p1" }, data: { internal: true } });
     }
+  });
+
+  it("win marks comments on the project's updates and tasks internal", async () => {
+    await win(false);
+    expect(prisma.comment.updateMany).toHaveBeenCalledWith({
+      where: { OR: [{ update: { projectId: "p1" } }, { task: { projectId: "p1" } }] },
+      data: { internal: true },
+    });
   });
 
   it("win makes the contact a client and moves the project to the chosen status", async () => {

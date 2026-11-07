@@ -46,6 +46,8 @@ test.describe("Potential contracts", () => {
 
     await expect(page).toHaveURL(/\/dashboard\/projects\/[^/?]+/, { timeout: 15000 });
     await expect(await stageButton(page, "Found")).toHaveAttribute("aria-pressed", "true");
+    // Opens on updates, like any project.
+    await expect(page.getByTestId("project-tab-updates")).toHaveAttribute("aria-selected", "true");
     // Unsigned: no billing, no invoices.
     await expect(page.getByTestId("project-tab-invoices")).toHaveCount(0);
     await context.close();
@@ -71,6 +73,8 @@ test.describe("Potential contracts", () => {
     await page.goto(`${WEB}/dashboard/projects?status=pursuit`);
     const row = page.getByRole("link", { name: /Website redesign/ });
     await expect(row.getByTestId("pursuit-badge")).toHaveText("Proposal sent");
+    // Clearly marked as not signed yet, not just by its stage.
+    await expect(row.getByTestId("pursuit-tag")).toHaveText("Potential contract");
     await context.close();
   });
 

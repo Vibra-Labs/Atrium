@@ -7,7 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
 import { ProjectCardSkeleton } from "@/components/skeletons";
-import { Plus, Search, FolderOpen, Archive, Tag, Download, Sparkles, ExternalLink } from "lucide-react";
+import { Plus, Search, FolderOpen, Archive, Tag, Download, Sparkles, ExternalLink, Target } from "lucide-react";
 import { LabelBadge } from "@/components/label-badge";
 import { downloadCsv } from "@/lib/download";
 import { useAppConfig } from "@/lib/app-config";
@@ -341,12 +341,23 @@ export default function ProjectsPage() {
               <Link
                 key={project.id}
                 href={`/dashboard/projects/${project.id}`}
-                className="block p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
+                className={`block p-4 border rounded-lg hover:bg-[var(--muted)] transition-colors ${
+                  isUnsigned(project) ? "border-dashed border-amber-500/50" : "border-[var(--border)]"
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-medium">{project.name}</h3>
+                      {isUnsigned(project) && (
+                        <span
+                          data-testid="pursuit-tag"
+                          className="flex items-center gap-1 text-xs px-2 py-0.5 border border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-full"
+                        >
+                          <Target size={12} />
+                          Potential contract
+                        </span>
+                      )}
                       {project.archivedAt && (
                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-full">
                           <Archive size={12} />

@@ -168,14 +168,6 @@ export default function ProjectDetailPage() {
     return "updates";
   });
 
-  // A potential contract opens on its files (RFP, proposal) when no tab is asked for.
-  const openedOnFiles = useRef(false);
-  useEffect(() => {
-    if (openedOnFiles.current || !isPursuit) return;
-    openedOnFiles.current = true;
-    if (!searchParams.get("tab") && !searchParams.get("task")) setActiveTab("files");
-  }, [isPursuit, searchParams]);
-
   // Invoices are hidden while unsigned, so a link to them lands on files.
   useEffect(() => {
     if (isPursuit && activeTab === "invoices") setActiveTab("files");

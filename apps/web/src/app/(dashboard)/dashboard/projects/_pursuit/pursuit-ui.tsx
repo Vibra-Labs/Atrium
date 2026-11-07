@@ -2,7 +2,7 @@
 
 // UI for potential contracts: projects that aren't signed yet.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Building2, ChevronRight, ExternalLink, Trophy, User, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -26,10 +26,10 @@ import type { ContactRef, PipelineRow, ProjectContactRow, Pursuit, PursuitPatch 
 const input =
   "w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-60";
 const label = "block text-xs text-[var(--muted-foreground)] mb-1";
-const btn =
-  "px-3 py-2 border border-[var(--border)] rounded-lg text-sm whitespace-nowrap hover:bg-[var(--muted)] transition-colors disabled:opacity-40";
-const primaryBtn =
-  "px-3 py-2 bg-[var(--primary)] text-white rounded-lg text-sm whitespace-nowrap hover:opacity-90 disabled:opacity-40";
+/** Keyboard focus shows a ring in the brand color instead of the browser's outline. */
+const focusRing = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]";
+const btn = `px-3 py-2 border border-[var(--border)] rounded-lg text-sm whitespace-nowrap hover:bg-[var(--muted)] transition-colors disabled:opacity-40 ${focusRing}`;
+const primaryBtn = `px-3 py-2 bg-[var(--primary)] text-white rounded-lg text-sm whitespace-nowrap hover:opacity-90 disabled:opacity-40 ${focusRing}`;
 const cardTitle = "text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]";
 
 function useMoney(): (cents: number | null) => string {
@@ -38,6 +38,7 @@ function useMoney(): (cents: number | null) => string {
 }
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const pressedOnBackdrop = useRef<boolean>(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
@@ -46,17 +47,22 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto"
+      onMouseDown={(e) => (pressedOnBackdrop.current = e.target === e.currentTarget)}
+      onClick={(e) => {
+        if (pressedOnBackdrop.current && e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-2xl bg-[var(--background)] border border-[var(--border)] p-5 space-y-4 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl bg-[var(--background)] border border-[var(--border)] p-5 space-y-4 shadow-xl"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-[var(--muted-foreground)]">
+          <button type="button" onClick={onClose} aria-label="Close" className={`text-[var(--muted-foreground)] rounded ${focusRing}`}>
             <X size={18} />
           </button>
         </div>
@@ -83,7 +89,7 @@ export function KindPicker({ value, onChange }: { value: NewKind; onChange: (k: 
           type="button"
           aria-pressed={value === o.id}
           onClick={() => onChange(o.id)}
-          className={`flex-1 min-w-[8rem] text-left px-3 py-2 rounded-lg border text-sm ${
+          className={`flex-1 min-w-[8rem] text-left px-3 py-2 rounded-lg border text-sm ${focusRing} ${
             value === o.id ? "border-[var(--primary)] ring-1 ring-[var(--primary)]" : "border-[var(--border)]"
           }`}
         >
@@ -114,7 +120,10 @@ export function PursuitBadge({ p }: { p: Pursuit }) {
         {text}
       </span>
       {p.outcome === "open" && (p.valueCents !== null || p.nextStep) && (
-        <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
+        <span
+          className="text-xs text-[var(--muted-foreground)] whitespace-nowrap max-w-[12rem] truncate"
+          title={p.nextStep ?? undefined}
+        >
           {p.valueCents !== null && money(p.valueCents)}
           {p.valueCents !== null && p.nextStep && " · "}
           {p.nextStep && `Next: ${p.nextStep}${p.nextStepAt ? ` ${formatDay(p.nextStepAt)}` : ""}`}
@@ -137,9 +146,10 @@ export function PursuitPipeline({
   onChanged: () => void;
   onWon: () => void;
   onLost: () => void;
-  onReopen: () => void;
+  onReopen: () => void | Promise<void>;
 }) {
   const { error: showError } = useToast();
+  const [reopening, setReopening] = useState<boolean>(false);
 
   async function setStage(stage: Pursuit["stage"]): Promise<void> {
     try {
@@ -157,8 +167,19 @@ export function PursuitPipeline({
         <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--muted)]">
           Lost{p.lostReason ? ` · ${p.lostReason}` : ""}
         </span>
-        <button onClick={onReopen} className="text-xs text-[var(--primary)] hover:underline">
-          Reopen
+        <button
+          onClick={async () => {
+            setReopening(true);
+            try {
+              await onReopen();
+            } finally {
+              setReopening(false);
+            }
+          }}
+          disabled={reopening}
+          className="text-xs text-[var(--primary)] hover:underline disabled:opacity-50"
+        >
+          {reopening ? "Reopening..." : "Reopen"}
         </button>
       </div>
     );
@@ -206,6 +227,53 @@ function withCommas(raw: string): string {
 function toCents(text: string): number | null {
   const n: number = Number(text.replace(/,/g, ""));
   return text === "" || Number.isNaN(n) ? null : Math.round(n * 100);
+}
+
+/** Date field that keeps what you type and saves only a whole date (or a cleared field when you leave it). */
+function DateField({
+  value,
+  onSave,
+  disabled,
+  ariaLabel,
+}: {
+  value: string | null;
+  onSave: (v: string | null) => Promise<boolean>;
+  disabled?: boolean;
+  ariaLabel: string;
+}) {
+  const saved: string = toDay(value) ?? "";
+  const [text, setText] = useState<string>(saved);
+  // The last value sent, so leaving the field right after a save doesn't send it again.
+  const sent = useRef<string>(saved);
+  useEffect(() => {
+    setText(saved);
+    sent.current = saved;
+  }, [saved]);
+
+  async function commit(next: string): Promise<void> {
+    if (next === sent.current) return;
+    sent.current = next;
+    if (!(await onSave(next || null))) {
+      sent.current = saved;
+      setText(saved);
+    }
+  }
+
+  return (
+    <input
+      type="date"
+      aria-label={ariaLabel}
+      disabled={disabled}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        // Typing a year goes 0002, 0020, 0202, 2026; only a real year is worth saving straight away.
+        if (Number(e.target.value.slice(0, 4)) >= 1900) commit(e.target.value);
+      }}
+      onBlur={() => commit(text)}
+      className={input}
+    />
+  );
 }
 
 /** Text field that saves when you leave it, and only if it changed. */
@@ -260,14 +328,7 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
   }
 
   const dateField = (key: "closeDate" | "nextStepAt" | "questionsDueAt", aria: string) => (
-    <input
-      type="date"
-      aria-label={aria}
-      disabled={readOnly}
-      value={toDay(p[key]) ?? ""}
-      onChange={(e) => save({ [key]: e.target.value || null })}
-      className={input}
-    />
+    <DateField ariaLabel={aria} value={p[key]} disabled={readOnly} onSave={(v) => save({ [key]: v })} />
   );
 
   return (
@@ -284,6 +345,7 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
             onChange={(e) => setValueText(withCommas(e.target.value))}
             onBlur={async () => {
               const cents: number | null = toCents(valueText);
+              if (cents === null) setValueText("");
               if (cents === p.valueCents) return;
               if (!(await save({ valueCents: cents }))) setValueText(savedValueText);
             }}
@@ -394,18 +456,26 @@ function Picker({
   const { error: showError } = useToast();
   const [q, setQ] = useState<string>("");
   const [rows, setRows] = useState<Row[]>([]);
+  const [search, setSearch] = useState<"loading" | "done" | "failed">("loading");
   const [creating, setCreating] = useState<boolean>(false);
+  const [busy, setBusy] = useState<boolean>(false);
   const [email, setEmail] = useState<string>("");
+  const plural: string = kind === "contact" ? "contacts" : "companies";
 
   useEffect(() => {
+    setSearch("loading");
     const t = setTimeout(() => {
       const params = new URLSearchParams({ limit: "6" });
       if (q.trim()) params.set("search", q.trim());
-      apiFetch<{ data: Row[] }>(`/${kind === "contact" ? "contacts" : "companies"}?${params}`)
-        .then((res) => setRows(res.data.filter((r) => !exclude.includes(r.id))))
+      apiFetch<{ data: Row[] }>(`/${plural}?${params}`)
+        .then((res) => {
+          setRows(res.data.filter((r) => !exclude.includes(r.id)));
+          setSearch("done");
+        })
         .catch((err: unknown) => {
           console.error(err);
           setRows([]);
+          setSearch("failed");
         });
     }, 200);
     return () => clearTimeout(t);
@@ -413,6 +483,7 @@ function Picker({
   }, [q, kind]);
 
   async function create(): Promise<void> {
+    setBusy(true);
     try {
       if (kind === "contact") {
         const [firstName, ...rest] = q.trim().split(" ");
@@ -433,6 +504,8 @@ function Picker({
     } catch (err) {
       console.error(err);
       showError(err instanceof Error ? err.message : `Failed to create ${kind}`);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -451,8 +524,8 @@ function Picker({
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className={input} />
           )}
           <div className="flex gap-2">
-            <button className={primaryBtn} disabled={!q.trim()} onClick={create}>
-              Create {kind === "contact" ? "lead" : "company"}
+            <button className={primaryBtn} disabled={!q.trim() || busy} onClick={create}>
+              {busy ? "Creating..." : `Create ${kind === "contact" ? "lead" : "company"}`}
             </button>
             <button className={btn} onClick={() => setCreating(false)}>
               Back
@@ -465,7 +538,7 @@ function Picker({
             {rows.map((r) => (
               <li key={r.id}>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--muted)]"
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-[var(--muted)] ${focusRing}`}
                   onClick={() => onPick({ id: r.id, name: r.name, email: r.email ?? null, hasLogin: !!r.hasLogin })}
                 >
                   {r.name}
@@ -473,7 +546,11 @@ function Picker({
                 </button>
               </li>
             ))}
-            {rows.length === 0 && <li className="px-3 py-2 text-sm text-[var(--muted-foreground)]">No matches</li>}
+            {rows.length === 0 && (
+              <li className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
+                {search === "loading" ? "Searching..." : search === "failed" ? `Couldn't load ${plural}` : "No matches"}
+              </li>
+            )}
           </ul>
           {q.trim() && (
             <button className="text-sm text-[var(--primary)] hover:underline" onClick={() => setCreating(true)}>
@@ -500,10 +577,13 @@ export function PursuitContactsCard({
 }) {
   const { error: showError } = useToast();
   const [adding, setAdding] = useState<"contact" | "company" | null>(null);
+  const [busy, setBusy] = useState<boolean>(false);
   const people: ContactRef[] = contacts.map(contactRef);
   const editable: boolean = p.outcome === "open";
 
   async function run(action: () => Promise<unknown>, failure: string): Promise<void> {
+    if (busy) return;
+    setBusy(true);
     try {
       await action();
       setAdding(null);
@@ -511,6 +591,8 @@ export function PursuitContactsCard({
     } catch (err) {
       console.error(err);
       showError(err instanceof Error ? err.message : failure);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -538,7 +620,12 @@ export function PursuitContactsCard({
               </Link>
             </span>
             {editable && (
-              <button className="text-xs text-[var(--muted-foreground)] hover:underline" onClick={() => setCompany(null)}>
+              <button
+                className="text-xs text-[var(--muted-foreground)] hover:underline disabled:opacity-50"
+                disabled={busy}
+                aria-label={`Remove ${p.company.name}`}
+                onClick={() => setCompany(null)}
+              >
                 Remove
               </button>
             )}
@@ -553,7 +640,12 @@ export function PursuitContactsCard({
               </Link>
             </span>
             {editable && (
-              <button className="text-xs text-[var(--muted-foreground)] hover:underline" onClick={() => unlink(c.id)}>
+              <button
+                className="text-xs text-[var(--muted-foreground)] hover:underline disabled:opacity-50"
+                disabled={busy}
+                aria-label={`Remove ${c.name}`}
+                onClick={() => unlink(c.id)}
+              >
                 Remove
               </button>
             )}
@@ -624,6 +716,8 @@ export function WonDialog({
   const [giveAccess, setGiveAccess] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const canGiveAccess: boolean = !!client && (client.hasLogin || !!client.email);
+  // Why "Mark won" is disabled, if it is (besides saving).
+  const blocker: string | null = !client || picking ? "Pick the client" : !status ? "Loading statuses..." : null;
 
   async function confirm(): Promise<void> {
     if (!client) return;
@@ -715,7 +809,7 @@ export function WonDialog({
             checked={giveAccess && canGiveAccess}
             disabled={!canGiveAccess}
             onChange={(e) => setGiveAccess(e.target.checked)}
-            className="mt-1"
+            className={`mt-1 rounded ${focusRing}`}
           />
           <span>
             <span className="font-medium">{client?.hasLogin ? "Give portal access now" : "Invite to the portal now"}</span>
@@ -729,11 +823,12 @@ export function WonDialog({
           </span>
         </label>
       </div>
-      <div className="flex justify-end gap-2">
+      <div className="flex items-center justify-end gap-2">
+        {blocker && <span className="mr-auto text-xs text-[var(--muted-foreground)]">{blocker}</span>}
         <button onClick={onClose} className={btn}>
           Cancel
         </button>
-        <button onClick={confirm} disabled={!client || picking || saving || !status} className={primaryBtn}>
+        <button onClick={confirm} disabled={blocker !== null || saving} className={primaryBtn}>
           {saving ? "Saving..." : "Mark won"}
         </button>
       </div>

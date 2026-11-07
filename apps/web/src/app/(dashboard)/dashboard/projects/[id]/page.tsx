@@ -176,6 +176,11 @@ export default function ProjectDetailPage() {
     if (!searchParams.get("tab") && !searchParams.get("task")) setActiveTab("files");
   }, [isPursuit, searchParams]);
 
+  // Invoices are hidden while unsigned, so a link to them lands on files.
+  useEffect(() => {
+    if (isPursuit && activeTab === "invoices") setActiveTab("files");
+  }, [isPursuit, activeTab]);
+
   // When a ?task=<id> deep link is set (e.g. from a notification or
   // cross-tab share), jump to the Tasks tab so the detail modal can open.
   // When a ?tab=<id> deep link is set (e.g. from the timer widget), jump to it.
@@ -470,7 +475,7 @@ export default function ProjectDetailPage() {
 
   const tabBar = (
     <div className="relative border-b border-[var(--border)] -mx-1">
-      <div className="flex overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] gap-1">
+      <div role="tablist" className="flex overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] gap-1">
         {tabs
           .filter((t) => !(isPursuit && t.id === "invoices") && (t.id !== "internal" || internalTotal > 0))
           .map((tab) => {
@@ -484,6 +489,8 @@ export default function ProjectDetailPage() {
             <button
               key={tab.id}
               data-testid={`project-tab-${tab.id}`}
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors relative after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:rounded-full ${
                 activeTab === tab.id
@@ -635,7 +642,7 @@ export default function ProjectDetailPage() {
               className="inline-flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] rounded-lg text-xs sm:text-sm font-medium hover:bg-[var(--muted)] transition-colors"
             >
               <ArchiveRestore size={14} />
-              <span>Unarchive</span>
+              <span>{pursuit?.outcome === "lost" ? "Reopen" : "Unarchive"}</span>
             </button>
           ) : (
             <button

@@ -186,7 +186,7 @@ test.describe("Time tracking", () => {
     // Switch to the Invoices tab
     await page
       .locator("main")
-      .getByRole("button", { name: /^invoices$/i })
+      .getByRole("tab", { name: /^invoices$/i })
       .first()
       .click();
 

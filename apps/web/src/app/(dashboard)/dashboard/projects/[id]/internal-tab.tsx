@@ -116,6 +116,7 @@ export function InternalTab({
                 <button
                   onClick={() => share(row)}
                   disabled={sharing === row.id}
+                  aria-label={`Share ${row.title} with client`}
                   className="shrink-0 px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium hover:bg-[var(--muted)] disabled:opacity-50"
                 >
                   {sharing === row.id ? "Sharing..." : "Share with client"}

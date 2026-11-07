@@ -86,6 +86,35 @@ test.describe("Potential contracts", () => {
     await context.close();
   });
 
+  test("typing a date with the keyboard saves the whole date", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-datetype");
+    const id = await createPotential(page, "Typed date bid");
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    const close = page.getByLabel("Expected close");
+    await close.click();
+    await page.keyboard.type("12312026");
+    await close.blur();
+    await expect(close).toHaveValue("2026-12-31");
+    await expect(async () => {
+      const res = await page.request.get(`${API}/projects/${id}`);
+      const closeDate: string | null = ((await res.json()) as { pursuit: { closeDate: string | null } }).pursuit.closeDate;
+      expect(closeDate?.slice(0, 10)).toBe("2026-12-31");
+    }).toPass({ timeout: 10000 });
+    await context.close();
+  });
+
+  test("a lost deal offers Reopen, and an invoices link falls back to files", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-reopenlabel");
+    const id = await createPotential(page, "Gone deal");
+    const lose = await page.request.post(`${API}/projects/${id}/pursuit/lose`, { data: {}, headers: await headersFor(page) });
+    expect(lose.ok()).toBe(true);
+    await page.goto(`${WEB}/dashboard/projects/${id}?tab=invoices`);
+    await expect(page.getByText("Lost", { exact: false }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("button", { name: "Unarchive" })).toHaveCount(0);
+    await expect(page.getByTestId("project-tab-files")).toHaveAttribute("aria-selected", "true");
+    await context.close();
+  });
+
   test("won dialog picks a status when statuses load after it opens", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "pc-slowstatus");
     const id = await createPotential(page, "Slow bid");
@@ -180,7 +209,7 @@ test.describe("Potential contracts", () => {
 
     // Shared from the Internal tab, it shows up.
     await env.owner.getByTestId("project-tab-internal").click();
-    await env.owner.getByRole("button", { name: "Share with client" }).first().click();
+    await env.owner.getByRole("button", { name: /^Share .* with client$/ }).first().click();
     await expect(env.owner.getByTestId("project-tab-internal")).toHaveCount(0, { timeout: 10000 });
 
     await env.client.reload();

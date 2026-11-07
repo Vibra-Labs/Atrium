@@ -109,7 +109,7 @@ test.describe("Potential contracts", () => {
     await context.close();
   });
 
-  test("a lost deal offers Reopen, and an invoices link falls back to files", async ({ browser }) => {
+  test("a lost deal offers Reopen, and an invoices link shows billing without invoices", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "pc-reopenlabel");
     const id = await createPotential(page, "Gone deal");
     const lose = await page.request.post(`${API}/projects/${id}/pursuit/lose`, { data: {}, headers: await headersFor(page) });
@@ -117,7 +117,24 @@ test.describe("Potential contracts", () => {
     await page.goto(`${WEB}/dashboard/projects/${id}?tab=invoices`);
     await expect(page.getByText("Lost", { exact: false }).first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole("button", { name: "Unarchive" })).toHaveCount(0);
-    await expect(page.getByTestId("project-tab-files")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("project-tab-billing")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Invoices" })).toHaveCount(0);
+    await context.close();
+  });
+
+  test("the project page has four tabs and old tab links still land", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-tabs");
+    const id = await createPotential(page, "Tabs bid");
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    await expect(page.getByRole("tab")).toHaveText(["Updates", "Files", "Billing", "Internal"]);
+    // Tasks live on Updates, between the composer and the timeline.
+    await expect(page.getByRole("heading", { name: /^Tasks/ })).toBeVisible();
+    await page.goto(`${WEB}/dashboard/projects/${id}?tab=tasks`);
+    await expect(page.getByTestId("project-tab-updates")).toHaveAttribute("aria-selected", "true");
+    // Notes are part of Internal.
+    await page.goto(`${WEB}/dashboard/projects/${id}?tab=notes`);
+    await expect(page.getByTestId("project-tab-internal")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByPlaceholder("Write an internal note...")).toBeVisible();
     await context.close();
   });
 
@@ -216,7 +233,11 @@ test.describe("Potential contracts", () => {
     // Shared from the Internal tab, it shows up.
     await env.owner.getByTestId("project-tab-internal").click();
     await env.owner.getByRole("button", { name: /^Share .* with client$/ }).first().click();
-    await expect(env.owner.getByTestId("project-tab-internal")).toHaveCount(0, { timeout: 10000 });
+    // It asks first, since this was written for the team only.
+    const confirm = env.owner.getByRole("dialog");
+    await expect(confirm).toContainText("written for your team");
+    await confirm.getByRole("button", { name: "Share", exact: true }).click();
+    await expect(env.owner.getByTestId("pre-win-items")).toHaveCount(0, { timeout: 10000 });
 
     await env.client.reload();
     await expect(env.client.getByText("Our margin on this is thin")).toBeVisible({ timeout: 15000 });

@@ -99,12 +99,15 @@ export function UpdatesSection({
   onFileChange,
   currentUserId = null,
   currentRole = null,
+  afterComposer,
 }: {
   projectId: string;
   isArchived: boolean;
   onFileChange?: () => void;
   currentUserId?: string | null;
   currentRole?: string | null;
+  /** Shown between the composer and the timeline (the project's tasks). */
+  afterComposer?: React.ReactNode;
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -352,6 +355,8 @@ export function UpdatesSection({
           </div>
         </div>
       )}
+
+      {afterComposer && <div className="mb-8">{afterComposer}</div>}
 
       <div className="space-y-3">
         {timeline.map((entry) => {

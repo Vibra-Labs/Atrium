@@ -183,10 +183,10 @@ test.describe("Time tracking", () => {
       await noThanks.click();
     }
 
-    // Switch to the Invoices tab
+    // Switch to the Billing tab (invoices live there)
     await page
       .locator("main")
-      .getByRole("tab", { name: /^invoices$/i })
+      .getByRole("tab", { name: /^billing$/i })
       .first()
       .click();
 

@@ -21,7 +21,7 @@ test.describe("Web render and request fixes", () => {
     });
 
     await page.goto(`/dashboard/projects/${projectId}?tab=tasks`, { waitUntil: "networkidle" });
-    await expect(page.getByTestId("project-tab-tasks")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("project-tab-updates")).toBeVisible({ timeout: 15000 });
 
     expect(labelRequests).toHaveLength(1);
   });

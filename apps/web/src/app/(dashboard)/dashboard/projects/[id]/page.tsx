@@ -88,15 +88,21 @@ interface PaginatedResponse<T> {
 
 const tabs = [
   { id: "updates", label: "Updates" },
-  { id: "tasks", label: "Tasks" },
   { id: "files", label: "Files" },
-  { id: "time", label: "Time" },
-  { id: "invoices", label: "Invoices" },
-  { id: "notes", label: "Notes" },
+  { id: "billing", label: "Billing" },
   { id: "internal", label: "Internal" },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
+
+/** Tabs that were merged into another one, so old links still land in the right place. */
+const MERGED_TABS: Record<string, TabId> = { tasks: "updates", time: "billing", invoices: "billing", notes: "internal" };
+
+function tabFromParam(param: string | null): TabId | null {
+  if (!param) return null;
+  if (tabs.some((t) => t.id === param)) return param as TabId;
+  return MERGED_TABS[param] ?? null;
+}
 
 function formatDateDisplay(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
@@ -161,28 +167,14 @@ export default function ProjectDetailPage() {
   const [clients, setClients] = useState<ClientMember[]>([]);
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TabId>(() => {
-    const tabParam = searchParams.get("tab");
-    if (tabParam && tabs.some((t) => t.id === tabParam)) return tabParam as TabId;
-    if (searchParams.get("task")) return "tasks";
-    return "updates";
-  });
+  const [activeTab, setActiveTab] = useState<TabId>(() => tabFromParam(searchParams.get("tab")) ?? "updates");
 
-  // Invoices are hidden while unsigned, so a link to them lands on files.
+  // A ?tab=<id> deep link (e.g. from the timer widget) jumps to that tab. A ?task=<id> link
+  // (e.g. from a notification) jumps to Updates, where tasks live, so the detail modal can open.
   useEffect(() => {
-    if (isPursuit && activeTab === "invoices") setActiveTab("files");
-  }, [isPursuit, activeTab]);
-
-  // When a ?task=<id> deep link is set (e.g. from a notification or
-  // cross-tab share), jump to the Tasks tab so the detail modal can open.
-  // When a ?tab=<id> deep link is set (e.g. from the timer widget), jump to it.
-  useEffect(() => {
-    const tabParam = searchParams.get("tab");
-    if (tabParam && tabs.some((t) => t.id === tabParam)) {
-      setActiveTab(tabParam as TabId);
-      return;
-    }
-    if (searchParams.get("task")) setActiveTab("tasks");
+    const tab: TabId | null = tabFromParam(searchParams.get("tab"));
+    if (tab) setActiveTab(tab);
+    else if (searchParams.get("task")) setActiveTab("updates");
   }, [searchParams]);
   const session = useSession();
   const currentRole: string | null = session.role || null;
@@ -214,9 +206,6 @@ export default function ProjectDetailPage() {
     if (isWonPursuit) loadInternal();
   }, [isWonPursuit, loadInternal]);
   const internalTotal: number = internalCount(internalItems);
-  useEffect(() => {
-    if (activeTab === "internal" && internalItems && internalTotal === 0) setActiveTab("updates");
-  }, [activeTab, internalItems, internalTotal]);
 
   const [billingStats, setBillingStats] = useState<{
     totalAmount: number;
@@ -468,13 +457,11 @@ export default function ProjectDetailPage() {
   const tabBar = (
     <div className="relative border-b border-[var(--border)] -mx-1">
       <div role="tablist" className="flex overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] gap-1">
-        {tabs
-          .filter((t) => !(isPursuit && t.id === "invoices") && (t.id !== "internal" || internalTotal > 0))
-          .map((tab) => {
+        {tabs.map((tab) => {
           const count =
             tab.id === "files" && project.files?.length
               ? ` (${project.files.length})`
-              : tab.id === "internal"
+              : tab.id === "internal" && internalTotal > 0
                 ? ` (${internalTotal})`
                 : "";
           return (
@@ -501,13 +488,13 @@ export default function ProjectDetailPage() {
 
   const tabContent = (
     <>
-      {activeTab === "tasks" && (
-        <TasksSection projectId={id} isArchived={isArchived} onGoToFiles={() => setActiveTab("files")} />
-      )}
       {activeTab === "updates" && (
         <UpdatesSection
           projectId={id}
           isArchived={isArchived}
+          afterComposer={
+            <TasksSection projectId={id} isArchived={isArchived} onGoToFiles={() => setActiveTab("files")} />
+          }
           onFileChange={() => {
             loadProject();
             loadBillingStats();
@@ -529,24 +516,27 @@ export default function ProjectDetailPage() {
           currentRole={currentRole}
         />
       )}
-      {activeTab === "time" && (
-        <TimeTab projectId={id} isArchived={isArchived} />
+      {activeTab === "billing" && (
+        <div className="space-y-8">
+          <TimeTab projectId={id} isArchived={isArchived} />
+          {/* No invoices before the award. */}
+          {!isPursuit && <InvoicesSection projectId={id} isArchived={isArchived} />}
+        </div>
       )}
-      {activeTab === "invoices" && !isPursuit && (
-        <InvoicesSection projectId={id} isArchived={isArchived} />
-      )}
-      {activeTab === "notes" && (
-        <NotesSection projectId={id} isArchived={isArchived} />
-      )}
-      {activeTab === "internal" && internalItems && (
-        <InternalTab
-          projectId={id}
-          items={internalItems}
-          onChanged={() => {
-            loadInternal();
-            loadProject();
-          }}
-        />
+      {activeTab === "internal" && (
+        <div className="space-y-8">
+          <NotesSection projectId={id} isArchived={isArchived} />
+          {internalItems && internalTotal > 0 && (
+            <InternalTab
+              projectId={id}
+              items={internalItems}
+              onChanged={() => {
+                loadInternal();
+                loadProject();
+              }}
+            />
+          )}
+        </div>
       )}
     </>
   );
@@ -819,7 +809,7 @@ export default function ProjectDetailPage() {
               <div className="pt-1">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("invoices")}
+                  onClick={() => setActiveTab("billing")}
                   className="text-xs font-semibold text-[var(--primary)] hover:underline"
                 >
                   View invoices

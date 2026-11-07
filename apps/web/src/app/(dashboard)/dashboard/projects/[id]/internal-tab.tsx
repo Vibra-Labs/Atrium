@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { useConfirm } from "@/components/confirm-modal";
 
 export interface InternalItems {
   updates: { id: string; content: string; createdAt: string; file: { id: string; filename: string } | null }[];
@@ -42,6 +43,7 @@ export function InternalTab({
   onChanged: () => void;
 }) {
   const { success, error: showError } = useToast();
+  const confirm = useConfirm();
   const [sharing, setSharing] = useState<string | null>(null);
 
   const groups: { title: string; rows: Row[] }[] = [
@@ -82,6 +84,12 @@ export function InternalTab({
   ].filter((g) => g.rows.length > 0) as { title: string; rows: Row[] }[];
 
   async function share(row: Row): Promise<void> {
+    const ok: boolean = await confirm({
+      title: "Share with the client?",
+      message: `"${row.title}" was written for your team while this was a potential contract. Once shared, anyone with portal access to this project can see it.`,
+      confirmLabel: "Share",
+    });
+    if (!ok) return;
     setSharing(row.id);
     try {
       await apiFetch(`/projects/${projectId}/internal/${row.kind}/${row.id}/share`, { method: "POST" });
@@ -96,10 +104,13 @@ export function InternalTab({
   }
 
   return (
-    <div className="space-y-5" data-testid="internal-tab">
-      <p className="text-sm text-[var(--muted-foreground)]">
-        Made before this project was won. Clients can&apos;t see these until you share them.
-      </p>
+    <div className="space-y-5" data-testid="pre-win-items">
+      <div>
+        <h2 className="text-sm font-medium">From before the win</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Made while this was a potential contract. Clients can&apos;t see these until you share them.
+        </p>
+      </div>
       {groups.map((g) => (
         <section key={g.title} className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">{g.title}</h3>

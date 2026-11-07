@@ -201,13 +201,17 @@ export function PursuitPipeline({
         </button>
       ))}
       <span className="w-px h-5 bg-[var(--border)] mx-1" />
+      {/* Outcomes are actions, so they're outlined; only the current stage is filled. */}
       <button
         onClick={onWon}
-        className="px-2.5 py-1 rounded-full text-xs font-medium bg-green-600 text-white hover:opacity-90 flex items-center gap-1"
+        className={`px-2.5 py-1 rounded-full text-xs font-medium border border-green-600/60 text-green-700 dark:text-green-400 hover:bg-green-600/10 flex items-center gap-1 ${focusRing}`}
       >
         <Trophy size={12} /> Won
       </button>
-      <button onClick={onLost} className="px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--muted)] hover:opacity-80">
+      <button
+        onClick={onLost}
+        className={`px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] ${focusRing}`}
+      >
         Lost
       </button>
     </div>

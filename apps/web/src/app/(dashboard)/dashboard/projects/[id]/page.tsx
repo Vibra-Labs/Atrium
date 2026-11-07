@@ -592,7 +592,8 @@ export default function ProjectDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {(currentRole === "owner" || currentRole === "admin") && (
+          {/* A potential contract is pre-award: clients can't see it, so there's nothing to preview. */}
+          {(currentRole === "owner" || currentRole === "admin") && !isPursuit && (
             <button
               type="button"
               onClick={() => {

@@ -48,6 +48,8 @@ test.describe("Potential contracts", () => {
     await expect(await stageButton(page, "Found")).toHaveAttribute("aria-pressed", "true");
     // Opens on updates, like any project.
     await expect(page.getByTestId("project-tab-updates")).toHaveAttribute("aria-selected", "true");
+    // Pre-award: nothing for a client to see, so no preview.
+    await expect(page.getByRole("button", { name: "View as client" })).toHaveCount(0);
     // Unsigned: no billing, no invoices.
     await expect(page.getByTestId("project-tab-invoices")).toHaveCount(0);
     await context.close();

@@ -22,6 +22,7 @@ import { SetupModule } from "./setup/setup.module";
 import { BillingModule } from "./billing/billing.module";
 import { TrialModule } from "./trial/trial.module";
 import { DigestModule } from "./digest/digest.module";
+import { DashboardLayoutModule } from "./dashboard-layout/dashboard-layout.module";
 import { AccountModule } from "./account/account.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { ActivityModule } from "./activity/activity.module";
@@ -91,6 +92,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     BillingModule,
     TrialModule,
     DigestModule,
+    DashboardLayoutModule,
     AccountModule,
     DocumentsModule,
     ActivityModule,

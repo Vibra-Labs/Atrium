@@ -277,3 +277,18 @@ export const DEFAULT_CURRENCY = "usd";
 export function formatMoney(cents: number, currency: string = DEFAULT_CURRENCY): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
+
+/** Cards on the staff dashboard that each person can hide or show. */
+export const DASHBOARD_WIDGETS = [
+  { key: "stats", label: "Summary numbers" },
+  { key: "attention", label: "Needs your attention" },
+  { key: "weeklyUpdates", label: "Weekly updates" },
+  { key: "recentProjects", label: "Recent projects" },
+  { key: "activity", label: "Client activity" },
+  { key: "pipeline", label: "Pipeline" },
+  { key: "thisWeek", label: "This week" },
+] as const;
+
+export type DashboardWidget = (typeof DASHBOARD_WIDGETS)[number]["key"];
+
+export const DASHBOARD_WIDGET_KEYS: DashboardWidget[] = DASHBOARD_WIDGETS.map((w) => w.key);

@@ -22,6 +22,7 @@ import { WeeklyUpdatesCard } from "./weekly-updates-card";
 import { ThisWeekCard } from "./this-week-card";
 import { PipelineCard } from "./projects/_pursuit/pursuit-ui";
 import { NewProjectModal } from "./projects/new-project-modal";
+import { CustomizeDashboard, useDashboardLayout } from "./customize-dashboard";
 
 interface ProjectClient {
   userId: string;
@@ -134,6 +135,9 @@ export default function DashboardPage() {
   const [overdueInvoices, setOverdueInvoices] = useState<OverdueInvoice[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState("");
+  const layout = useDashboardLayout();
+  const showLeft: boolean = layout.shows("attention") || layout.shows("weeklyUpdates") || layout.shows("recentProjects");
+  const showRight: boolean = layout.shows("activity") || layout.shows("pipeline") || layout.shows("thisWeek");
 
   // Read the clock after mount: the server render runs in the server's timezone,
   // which would give the wrong greeting and a hydration mismatch.
@@ -252,6 +256,7 @@ export default function DashboardPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2.5">
+          <CustomizeDashboard layout={layout} />
           <button
             onClick={() => setShowNewProject(true)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
@@ -274,7 +279,14 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {layout.hidden !== null && !layout.shows("stats") && !showLeft && !showRight && (
+        <div className="p-8 text-center text-sm text-[var(--muted-foreground)] border border-dashed border-[var(--border)] rounded-2xl">
+          Every card is hidden. Use Customize to bring some back.
+        </div>
+      )}
+
       {/* KPI Stats Grid */}
+      {layout.shows("stats") && (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {stats === null ? (
           <>
@@ -398,12 +410,16 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+      )}
 
-      {/* Main 2-Column Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      {/* Main 2-Column Grid: one column fills the width when the other's cards are all hidden */}
+      {(showLeft || showRight) && (
+      <div className={`grid grid-cols-1 gap-6 items-start ${showLeft && showRight ? "lg:grid-cols-3" : ""}`}>
         {/* Left Column (2 cols) */}
-        <div className="lg:col-span-2 space-y-6 min-w-0">
+        {showLeft && (
+        <div className={`space-y-6 min-w-0 ${showRight ? "lg:col-span-2" : ""}`}>
           {/* Needs your attention Card */}
+          {layout.shows("attention") && (
           <section
             id="attention"
             className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm scroll-mt-6"
@@ -487,10 +503,12 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+          )}
 
-          <WeeklyUpdatesCard />
+          {layout.shows("weeklyUpdates") && <WeeklyUpdatesCard />}
 
           {/* Recent projects Table Card */}
+          {layout.shows("recentProjects") && (
           <section className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm">
             <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[var(--border)]">
               <h2 className="text-sm sm:text-base font-semibold text-[var(--foreground)]">Recent projects</h2>
@@ -597,11 +615,15 @@ export default function DashboardPage() {
               </>
             )}
           </section>
+          )}
         </div>
+        )}
 
         {/* Right Column (1 col) */}
+        {showRight && (
         <div className="space-y-6 min-w-0">
           {/* Client activity Card */}
+          {layout.shows("activity") && (
           <section className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-4 shadow-sm">
             <h2 className="text-sm sm:text-base font-semibold text-[var(--foreground)]">Client activity</h2>
             {activity.length === 0 ? (
@@ -634,11 +656,14 @@ export default function DashboardPage() {
               </ol>
             )}
           </section>
+          )}
 
-          <PipelineCard />
-          <ThisWeekCard />
+          {layout.shows("pipeline") && <PipelineCard />}
+          {layout.shows("thisWeek") && <ThisWeekCard />}
         </div>
+        )}
       </div>
+      )}
     </div>
   );
 }

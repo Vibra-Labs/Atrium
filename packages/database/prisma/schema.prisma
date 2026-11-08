@@ -148,6 +148,10 @@ model Member {
   // owners see which clients are actually using the portal.
   lastSeenAt DateTime?
 
+  // Dashboard cards this person has hidden. Stored as hidden (not shown) so new
+  // cards appear for everyone by default.
+  dashboardHidden String[] @default([])
+
   @@index([organizationId])
   @@index([userId])
   // Session resolution and most services look a member up by (org, user).

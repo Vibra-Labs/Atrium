@@ -175,7 +175,7 @@ export function CostSection({
                 {costs.laborRateCents !== null &&
                   ` × ${money(costs.laborRateCents)} = ${money(summary?.laborCents ?? 0)}`}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
                 <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Cost per hour</span>
                 <MoneyField
                   ariaLabel="Cost per hour"
@@ -190,7 +190,7 @@ export function CostSection({
             {costs.lines.length > 0 && (
               <ul className="space-y-2">
                 {costs.lines.map((l) => (
-                  <li key={l.id} className="flex items-center gap-2">
+                  <li key={l.id} className="grid grid-cols-[minmax(0,1fr)_6.5rem_auto] items-center gap-2">
                     <input
                       aria-label="Cost name"
                       defaultValue={l.label}
@@ -205,16 +205,14 @@ export function CostSection({
                       }}
                       className={input}
                     />
-                    <div className="w-32 shrink-0">
-                      <MoneyField
-                        ariaLabel="Cost amount"
-                        cents={l.amountCents}
-                        disabled={!editable}
-                        onSave={(amountCents) =>
-                          run(() => updateCostLine(projectId, l.id, { amountCents: amountCents ?? 0 }))
-                        }
-                      />
-                    </div>
+                    <MoneyField
+                      ariaLabel="Cost amount"
+                      cents={l.amountCents}
+                      disabled={!editable}
+                      onSave={(amountCents) =>
+                        run(() => updateCostLine(projectId, l.id, { amountCents: amountCents ?? 0 }))
+                      }
+                    />
                     {editable && (
                       <button
                         type="button"
@@ -230,32 +228,35 @@ export function CostSection({
               </ul>
             )}
 
+            {/* The card is narrow: name on its own line, then amount and the button. */}
             {editable && (
-              <div className="flex items-center gap-2">
+              <div className="space-y-2">
                 <input
                   aria-label="New cost name"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Materials"
+                  placeholder="New cost (e.g. Materials, Permits)"
                   maxLength={100}
                   className={input}
                 />
-                <input
-                  aria-label="New cost amount"
-                  inputMode="decimal"
-                  value={newAmount}
-                  onChange={(e) => setNewAmount(withCommas(e.target.value))}
-                  placeholder={money(0)}
-                  className={`${input} w-32 shrink-0`}
-                />
-                <button
-                  type="button"
-                  onClick={() => void add()}
-                  disabled={!newName.trim()}
-                  className="shrink-0 px-3 py-2 border border-[var(--border)] rounded-lg text-sm whitespace-nowrap hover:bg-[var(--muted)] disabled:opacity-40"
-                >
-                  Add cost
-                </button>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  <input
+                    aria-label="New cost amount"
+                    inputMode="decimal"
+                    value={newAmount}
+                    onChange={(e) => setNewAmount(withCommas(e.target.value))}
+                    placeholder={money(0)}
+                    className={input}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void add()}
+                    disabled={!newName.trim()}
+                    className="px-3 py-2 border border-[var(--border)] rounded-lg text-sm whitespace-nowrap hover:bg-[var(--muted)] disabled:opacity-40"
+                  >
+                    Add cost
+                  </button>
+                </div>
               </div>
             )}
           </div>

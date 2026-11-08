@@ -51,10 +51,26 @@ test.describe("Potential contracts", () => {
     await expect(page.getByTestId("project-tab-updates")).toHaveAttribute("aria-selected", "true");
     // A quiet note by the composer says clients can't see updates yet.
     await expect(page.getByTestId("updates-internal-note")).toHaveText("Internal: clients can't see this until it's won");
+    // The rest of the composer agrees.
+    await expect(page.getByPlaceholder("Write an update for your team…")).toBeVisible();
+    await expect(page.getByText("Team only", { exact: true })).toBeVisible();
+    await expect(page.getByText("Visible to client", { exact: true })).toHaveCount(0);
     // Pre-award: nothing for a client to see, so no preview.
     await expect(page.getByRole("button", { name: "View as client" })).toHaveCount(0);
     // Unsigned: no billing, no invoices.
     await expect(page.getByTestId("project-tab-invoices")).toHaveCount(0);
+    await context.close();
+  });
+
+  test("creating from the projects page opens the new contract", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-fromlist");
+    await page.goto(`${WEB}/dashboard/projects?status=pursuit`);
+    await page.getByRole("button", { name: /new project/i }).first().click();
+    const dialog = page.getByRole("dialog", { name: "New potential contract" });
+    await dialog.getByPlaceholder("County RFP: records system").fill("List-made bid");
+    await dialog.getByRole("button", { name: "Create" }).click();
+    await expect(page).toHaveURL(/\/dashboard\/projects\/[^/?]+/, { timeout: 15000 });
+    await expect(page.getByRole("heading", { name: "List-made bid" })).toBeVisible();
     await context.close();
   });
 
@@ -123,6 +139,9 @@ test.describe("Potential contracts", () => {
     await expect(page.getByRole("button", { name: "Unarchive" })).toHaveCount(0);
     await expect(page.getByTestId("project-tab-billing")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { name: "Invoices" })).toHaveCount(0);
+    // Named for what's there: just time until it's won.
+    await expect(page.getByTestId("project-tab-billing")).toHaveText("Time");
+    await expect(page.getByTestId("invoices-after-win")).toHaveText("Invoices open up once it's won.");
     await context.close();
   });
 
@@ -130,7 +149,7 @@ test.describe("Potential contracts", () => {
     const { context, page } = await createOwner(browser, "pc-tabs");
     const id = await createPotential(page, "Tabs bid");
     await page.goto(`${WEB}/dashboard/projects/${id}`);
-    await expect(page.getByRole("tab")).toHaveText(["Updates", "Files", "Time & billing", "Internal"]);
+    await expect(page.getByRole("tab")).toHaveText(["Updates", "Files", "Time", "Internal"]);
     // Tasks live on Updates, between the composer and the timeline.
     await expect(page.getByRole("heading", { name: /^Tasks/ })).toBeVisible();
     await page.goto(`${WEB}/dashboard/projects/${id}?tab=tasks`);
@@ -201,9 +220,13 @@ test.describe("Potential contracts", () => {
     await page.goto(`${WEB}/dashboard/projects/${id}`);
 
     await page.getByRole("button", { name: "Lost", exact: true }).click();
+    await expect(page.getByRole("dialog")).toContainText("Show archived & cancelled");
     await page.getByLabel("Reason (optional)").fill("Price");
     await page.getByRole("button", { name: "Mark lost" }).click();
     await expect(page.getByText("Lost · Price")).toBeVisible({ timeout: 10000 });
+    // Read-only now: empty fields show a dash, not example text.
+    await expect(page.getByLabel("Value")).toHaveAttribute("placeholder", "—");
+    await expect(page.getByLabel("Next step", { exact: true })).toHaveAttribute("placeholder", "—");
 
     const active = await (await page.request.get(`${API}/projects`)).json();
     expect(active.data.map((p: { id: string }) => p.id)).not.toContain(id);
@@ -255,6 +278,8 @@ test.describe("Potential contracts", () => {
     const banner = env.owner.getByTestId("won-internal-banner");
     await expect(banner).toContainText("1 item from before the win is still internal");
     await expect(env.owner.getByTestId("updates-internal-note")).toHaveCount(0);
+    // Won: billing is back in the tab name.
+    await expect(env.owner.getByTestId("project-tab-billing")).toHaveText("Time & billing");
 
     // The client gets the project, but not what was written before the win.
     await env.client.goto(`${WEB}/portal/projects/${id}`);
@@ -264,6 +289,10 @@ test.describe("Potential contracts", () => {
     // Shared from the Internal tab, it shows up. Review on the prompt opens that tab.
     await banner.getByRole("button", { name: "Review" }).click();
     await expect(env.owner.getByTestId("project-tab-internal")).toHaveAttribute("aria-selected", "true");
+    // What Review points at is first on the tab, not under the notes.
+    await expect(env.owner.getByTestId("pre-win-items")).toBeInViewport();
+    // One Clients heading on a signed project.
+    await expect(env.owner.getByRole("heading", { name: /^Clients/ })).toHaveCount(1);
     await env.owner.getByRole("button", { name: /^Share .* with client$/ }).first().click();
     // It asks first, since this was written for the team only.
     const confirm = env.owner.getByRole("dialog");

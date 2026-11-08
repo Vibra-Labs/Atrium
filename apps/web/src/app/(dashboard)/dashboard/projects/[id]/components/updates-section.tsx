@@ -316,7 +316,7 @@ export function UpdatesSection({
             id="update-content"
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
-            placeholder="Write an update for your client…"
+            placeholder={internalNote ? "Write an update for your team…" : "Write an update for your client…"}
             maxLength={5000}
             rows={draftStats ? 8 : 3}
             className="w-full px-3.5 py-2.5 border border-[var(--border)] rounded-xl bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
@@ -354,7 +354,7 @@ export function UpdatesSection({
               )}
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-[var(--muted-foreground)]">Visible to client</span>
+              <span className="text-xs text-[var(--muted-foreground)]">{internalNote ? "Team only" : "Visible to client"}</span>
               <button
                 onClick={handlePost}
                 disabled={posting || !newContent.trim()}

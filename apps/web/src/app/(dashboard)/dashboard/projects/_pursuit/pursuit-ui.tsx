@@ -369,7 +369,7 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
               if (cents === p.valueCents) return;
               if (!(await save({ valueCents: cents }))) setValueText(savedValueText);
             }}
-            placeholder={money(0)}
+            placeholder={readOnly ? "—" : money(0)}
             className={input}
           />
         </div>
@@ -386,7 +386,7 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
             value={p.nextStep}
             disabled={readOnly}
             onSave={(nextStep) => save({ nextStep })}
-            placeholder="Follow up Friday"
+            placeholder={readOnly ? "—" : "Follow up Friday"}
           />
           {dateField("nextStepAt", "Next step date")}
         </div>
@@ -425,7 +425,7 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
                 value={p.sourceUrl}
                 disabled={readOnly}
                 onSave={(sourceUrl) => save({ sourceUrl })}
-                placeholder="https://"
+                placeholder={readOnly ? "—" : "https://"}
               />
               {p.sourceUrl && (
                 <a href={p.sourceUrl} target="_blank" rel="noreferrer" className={btn} aria-label="Open posting">
@@ -907,7 +907,7 @@ export function LostDialog({
       </div>
       <p className="text-xs text-[var(--muted-foreground)]">
         It moves off your active list. To find it again, filter Projects by &ldquo;Potential contracts&rdquo; with
-        &ldquo;Show archived&rdquo; on. You can reopen it any time.
+        &ldquo;Show archived &amp; cancelled&rdquo; on. You can reopen it any time.
       </p>
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className={btn}>
@@ -1007,7 +1007,7 @@ export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
           {due.map((d, i) => (
             <li key={`${d.projectId}-${i}`} className="flex items-center gap-3">
               <span
-                className={`w-14 text-[11px] font-semibold shrink-0 ${isPast(d.date) ? "text-rose-600 dark:text-rose-400" : "text-[var(--muted-foreground)]"}`}
+                className={`w-20 text-[11px] font-semibold shrink-0 whitespace-nowrap ${isPast(d.date) ? "text-rose-600 dark:text-rose-400" : "text-[var(--muted-foreground)]"}`}
               >
                 {isPast(d.date) ? daysLate(d.date) : formatDay(d.date)}
               </span>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
@@ -16,6 +16,7 @@ import { PursuitBadge } from "./_pursuit/pursuit-ui";
 import { isUnsigned } from "@/lib/pursuit";
 import type { Pursuit } from "@/lib/pursuit";
 import { NewProjectModal } from "./new-project-modal";
+import type { CreatedProject } from "./new-project-modal";
 
 interface LabelRecord {
   id: string;
@@ -55,6 +56,7 @@ export default function ProjectsPage() {
   const [planLimits, setPlanLimits] = useState<{ maxProjects: number; projectsUsed: number } | null>(null);
 
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialStatus = searchParams.get("status") || "";
   const initialArchived = searchParams.get("archived") === "true";
 
@@ -140,12 +142,9 @@ export default function ProjectsPage() {
   const oneProjectLeft = planLimits !== null && planLimits.maxProjects !== -1 && !atProjectLimit && planLimits.maxProjects - planLimits.projectsUsed === 1;
 
 
-  const handleCreated = (): void => {
-    setShowCreate(false);
-    loadProjects();
-    if (planLimits) {
-      setPlanLimits((prev) => prev ? { ...prev, projectsUsed: prev.projectsUsed + 1 } : prev);
-    }
+  // Open the new project, as the dashboard does.
+  const handleCreated = (project: CreatedProject): void => {
+    router.push(`/dashboard/projects/${project.id}`);
   };
 
   return (

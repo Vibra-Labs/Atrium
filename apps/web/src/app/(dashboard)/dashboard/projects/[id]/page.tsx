@@ -479,7 +479,8 @@ export default function ProjectDetailPage() {
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] after:bg-transparent"
               }`}
             >
-              {tab.label}
+              {/* No invoices before the award, so it's just time until then. */}
+              {tab.id === "billing" && isPursuit ? "Time" : tab.label}
               {count}
             </button>
           );
@@ -523,12 +524,18 @@ export default function ProjectDetailPage() {
         <div className="space-y-8">
           <TimeTab projectId={id} isArchived={isArchived} />
           {/* No invoices before the award. */}
-          {!isPursuit && <InvoicesSection projectId={id} isArchived={isArchived} />}
+          {isPursuit ? (
+            <p data-testid="invoices-after-win" className="text-xs text-[var(--muted-foreground)]">
+              Invoices open up once it&apos;s won.
+            </p>
+          ) : (
+            <InvoicesSection projectId={id} isArchived={isArchived} />
+          )}
         </div>
       )}
       {activeTab === "internal" && (
         <div className="space-y-8">
-          <NotesSection projectId={id} isArchived={isArchived} />
+          {/* What Review points at comes first; notes follow. */}
           {internalItems && internalTotal > 0 && (
             <InternalTab
               projectId={id}
@@ -539,6 +546,7 @@ export default function ProjectDetailPage() {
               }}
             />
           )}
+          <NotesSection projectId={id} isArchived={isArchived} />
         </div>
       )}
     </>

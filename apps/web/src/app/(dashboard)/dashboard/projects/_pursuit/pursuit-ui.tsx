@@ -18,11 +18,14 @@ import {
   formatDay,
   isPast,
   losePursuit,
+  toCents,
   toDay,
   updatePursuit,
   winPursuit,
+  withCommas,
 } from "@/lib/pursuit";
 import type { ContactRef, PipelineRow, ProjectContactRow, Pursuit, PursuitPatch } from "@/lib/pursuit";
+import { CostSection } from "./costs-ui";
 
 const input =
   "w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-60";
@@ -223,19 +226,6 @@ export function PursuitPipeline({
 
 /* ------------------------------ Potential contract card ------------------------------ */
 
-/** "45000.5" -> "45,000.5". Keeps a trailing "." so you can keep typing cents. */
-function withCommas(raw: string): string {
-  const clean: string = raw.replace(/[^\d.]/g, "");
-  const [whole, ...rest] = clean.split(".");
-  const grouped: string = whole.replace(/^0+(?=\d)/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return rest.length ? `${grouped}.${rest.join("").slice(0, 2)}` : grouped;
-}
-
-function toCents(text: string): number | null {
-  const n: number = Number(text.replace(/,/g, ""));
-  return text === "" || Number.isNaN(n) ? null : Math.round(n * 100);
-}
-
 /** Date field that keeps what you type and saves only a whole date (or a cleared field when you leave it). */
 function DateField({
   value,
@@ -315,7 +305,18 @@ function SavedText({
   );
 }
 
-export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boolean; onChanged: () => void }) {
+export function DealCard({
+  p,
+  readOnly,
+  costsEditable,
+  onChanged,
+}: {
+  p: Pursuit;
+  readOnly: boolean;
+  /** Costs stay editable after a win; only a lost or archived contract locks them. */
+  costsEditable: boolean;
+  onChanged: () => void;
+}) {
   const money = useMoney();
   const { error: showError } = useToast();
   const savedValueText: string = p.valueCents === null ? "" : withCommas(String(p.valueCents / 100));
@@ -326,14 +327,18 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
     if (savedTimer.current) clearTimeout(savedTimer.current);
   }, []);
 
+  function flashSaved(): void {
+    setSaved(true);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 2000);
+  }
+
   /** Returns false when the save was rejected, so the field can go back to the saved value. */
   async function save(patch: PursuitPatch): Promise<boolean> {
     try {
       await updatePursuit(p.projectId, patch);
       onChanged();
-      setSaved(true);
-      if (savedTimer.current) clearTimeout(savedTimer.current);
-      savedTimer.current = setTimeout(() => setSaved(false), 2000);
+      flashSaved();
       return true;
     } catch (err) {
       console.error(err);
@@ -354,29 +359,35 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
           {saved ? "Saved" : ""}
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className={label}>Value</label>
-          <input
-            aria-label="Value"
-            inputMode="decimal"
-            disabled={readOnly}
-            value={valueText}
-            onChange={(e) => setValueText(withCommas(e.target.value))}
-            onBlur={async () => {
-              const cents: number | null = toCents(valueText);
-              if (cents === null) setValueText("");
-              if (cents === p.valueCents) return;
-              if (!(await save({ valueCents: cents }))) setValueText(savedValueText);
-            }}
-            placeholder={readOnly ? "—" : money(0)}
-            className={input}
-          />
-        </div>
-        <div>
-          <label className={label}>{p.isBid ? "Bid due" : "Expected close"}</label>
-          {dateField("closeDate", p.isBid ? "Bid due" : "Expected close")}
-        </div>
+      <CostSection
+        projectId={p.projectId}
+        valueCents={p.valueCents}
+        editable={costsEditable}
+        onSaved={flashSaved}
+        valueField={
+          <div>
+            <label className={label}>Value</label>
+            <input
+              aria-label="Value"
+              inputMode="decimal"
+              disabled={readOnly}
+              value={valueText}
+              onChange={(e) => setValueText(withCommas(e.target.value))}
+              onBlur={async () => {
+                const cents: number | null = toCents(valueText);
+                if (cents === null) setValueText("");
+                if (cents === p.valueCents) return;
+                if (!(await save({ valueCents: cents }))) setValueText(savedValueText);
+              }}
+              placeholder={readOnly ? "—" : money(0)}
+              className={input}
+            />
+          </div>
+        }
+      />
+      <div>
+        <label className={label}>{p.isBid ? "Bid due" : "Expected close"}</label>
+        {dateField("closeDate", p.isBid ? "Bid due" : "Expected close")}
       </div>
       <div>
         <label className={label}>Next step</label>

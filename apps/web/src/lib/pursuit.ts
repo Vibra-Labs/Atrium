@@ -1,10 +1,11 @@
 // Potential contracts: projects that aren't signed yet.
 
-import { PURSUIT_STAGES, PURSUIT_STAGE_LABELS } from "@atrium/shared";
-import type { PursuitOutcome, PursuitStage } from "@atrium/shared";
+import { PURSUIT_STAGES, PURSUIT_STAGE_LABELS, costSummary } from "@atrium/shared";
+import type { CostSummary, PursuitOutcome, PursuitStage } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
 
-export { PURSUIT_STAGES, PURSUIT_STAGE_LABELS };
+export { PURSUIT_STAGES, PURSUIT_STAGE_LABELS, costSummary };
+export type { CostSummary };
 export type { PursuitOutcome, PursuitStage };
 
 export interface PursuitEvent {
@@ -170,4 +171,65 @@ export function losePursuit(projectId: string, reason: string): Promise<void> {
 
 export function reopenPursuit(projectId: string): Promise<void> {
   return apiFetch(`/projects/${projectId}/pursuit/reopen`, { method: "POST" });
+}
+
+/** "45000.5" -> "45,000.5". Keeps a trailing "." so you can keep typing cents. */
+export function withCommas(raw: string): string {
+  const clean: string = raw.replace(/[^\d.]/g, "");
+  const [whole, ...rest] = clean.split(".");
+  const grouped: string = whole.replace(/^0+(?=\d)/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return rest.length ? `${grouped}.${rest.join("").slice(0, 2)}` : grouped;
+}
+
+export function toCents(text: string): number | null {
+  const n: number = Number(text.replace(/,/g, ""));
+  return text === "" || Number.isNaN(n) ? null : Math.round(n * 100);
+}
+
+/* Cost and margin */
+
+export interface CostLine {
+  id: string;
+  label: string;
+  amountCents: number;
+}
+
+export interface ContractCosts {
+  costCents: number | null;
+  laborRateCents: number | null;
+  trackedSeconds: number;
+  lines: CostLine[];
+  summary: CostSummary;
+}
+
+const costsPath = (projectId: string): string => `/projects/${projectId}/costs`;
+
+export function getCosts(projectId: string): Promise<ContractCosts> {
+  return apiFetch<ContractCosts>(costsPath(projectId));
+}
+
+export function updateCosts(
+  projectId: string,
+  patch: { costCents?: number | null; laborRateCents?: number | null },
+): Promise<ContractCosts> {
+  return apiFetch<ContractCosts>(costsPath(projectId), { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export function addCostLine(projectId: string, line: { label: string; amountCents: number }): Promise<ContractCosts> {
+  return apiFetch<ContractCosts>(`${costsPath(projectId)}/lines`, { method: "POST", body: JSON.stringify(line) });
+}
+
+export function updateCostLine(
+  projectId: string,
+  lineId: string,
+  patch: { label?: string; amountCents?: number },
+): Promise<ContractCosts> {
+  return apiFetch<ContractCosts>(`${costsPath(projectId)}/lines/${lineId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function removeCostLine(projectId: string, lineId: string): Promise<ContractCosts> {
+  return apiFetch<ContractCosts>(`${costsPath(projectId)}/lines/${lineId}`, { method: "DELETE" });
 }

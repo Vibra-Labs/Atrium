@@ -739,7 +739,14 @@ export default function ProjectDetailPage() {
 
         {/* Right Column (1 col) */}
         <aside className="space-y-6 lg:sticky lg:top-6 min-w-0">
-          {pursuit && <DealCard p={pursuit} readOnly={pursuit.outcome !== "open"} onChanged={loadProject} />}
+          {pursuit && (
+            <DealCard
+              p={pursuit}
+              readOnly={pursuit.outcome !== "open"}
+              costsEditable={pursuit.outcome !== "lost" && !isArchived}
+              onChanged={loadProject}
+            />
+          )}
           {isPursuit && pursuit && (
             <PursuitContactsCard p={pursuit} contacts={project.contacts ?? []} onChanged={loadProject} />
           )}

@@ -1251,12 +1251,16 @@ model ProjectPursuit {
   sourceUrl          String?
   companyId          String?
   wonAt              DateTime?
+  // Cost: typed directly, or worked out from tracked time × laborRateCents plus cost lines.
+  costCents          Int?
+  laborRateCents     Int?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  project Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  company Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  events  ProjectPursuitEvent[]
+  project   Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  company   Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  events    ProjectPursuitEvent[]
+  costLines ProjectCostLine[]
 
   @@index([organizationId, outcome])
   @@map("project_pursuit")
@@ -1272,6 +1276,21 @@ model ProjectPursuitEvent {
 
   @@index([projectId, createdAt])
   @@map("project_pursuit_event")
+}
+
+// A cost on a potential contract (materials, a subcontractor...). Labor from tracked time is separate.
+model ProjectCostLine {
+  id          String   @id @default(cuid())
+  projectId   String
+  label       String   @db.VarChar(100)
+  amountCents Int
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  pursuit ProjectPursuit @relation(fields: [projectId], references: [projectId], onDelete: Cascade)
+
+  @@index([projectId, sortOrder])
+  @@map("project_cost_line")
 }
 
 // Portal access promised when a potential contract was won and its contact invited.

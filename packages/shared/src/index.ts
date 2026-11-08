@@ -292,3 +292,36 @@ export const DASHBOARD_WIDGETS = [
 export type DashboardWidget = (typeof DASHBOARD_WIDGETS)[number]["key"];
 
 export const DASHBOARD_WIDGET_KEYS: DashboardWidget[] = DASHBOARD_WIDGETS.map((w) => w.key);
+
+// Cost and margin on potential contracts.
+export interface CostInput {
+  valueCents: number | null;
+  /** The cost typed in directly; used only while no cost details are set. */
+  costCents: number | null;
+  /** What an hour of tracked time costs (not the billing rate). */
+  laborRateCents: number | null;
+  /** Finished time entries on the project, billable or not. */
+  trackedSeconds: number;
+  lineCents: number[];
+}
+
+export interface CostSummary {
+  /** True once a cost rate or a cost line is set: cost is then their total. */
+  detailed: boolean;
+  laborCents: number;
+  costCents: number | null;
+  profitCents: number | null;
+  /** Whole-number percent of value. */
+  marginPct: number | null;
+}
+
+export function costSummary(i: CostInput): CostSummary {
+  const detailed: boolean = i.laborRateCents !== null || i.lineCents.length > 0;
+  const laborCents: number = Math.round((i.trackedSeconds / 3600) * (i.laborRateCents ?? 0));
+  const costCents: number | null = detailed ? laborCents + i.lineCents.reduce((sum, c) => sum + c, 0) : i.costCents;
+  const hasBoth: boolean = costCents !== null && i.valueCents !== null && i.valueCents > 0;
+  const profitCents: number | null = hasBoth ? (i.valueCents as number) - (costCents as number) : null;
+  const marginPct: number | null =
+    profitCents === null ? null : Math.round((profitCents / (i.valueCents as number)) * 100);
+  return { detailed, laborCents, costCents, profitCents, marginPct };
+}

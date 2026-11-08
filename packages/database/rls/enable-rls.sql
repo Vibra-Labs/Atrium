@@ -74,6 +74,7 @@ ALTER TABLE "integration_destination" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "integration_delivery" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "project_pursuit" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "project_pursuit_event" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "project_cost_line" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "pending_project_access" ENABLE ROW LEVEL SECURITY;
 
 -- ─── Revoke direct access from anon and authenticated roles ─────────────────
@@ -136,6 +137,7 @@ REVOKE ALL ON "integration_destination" FROM anon, authenticated;
 REVOKE ALL ON "integration_delivery" FROM anon, authenticated;
 REVOKE ALL ON "project_pursuit" FROM anon, authenticated;
 REVOKE ALL ON "project_pursuit_event" FROM anon, authenticated;
+REVOKE ALL ON "project_cost_line" FROM anon, authenticated;
 REVOKE ALL ON "pending_project_access" FROM anon, authenticated;
 
 COMMIT;

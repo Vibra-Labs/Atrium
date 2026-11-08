@@ -17,14 +17,16 @@ export function NewProjectModal({
   onClose,
   onCreated,
   oneProjectLeft = false,
+  initialKind = "project",
 }: {
   onClose: () => void;
   onCreated: (project: CreatedProject) => void;
   oneProjectLeft?: boolean;
+  initialKind?: NewKind;
 }) {
   const [name, setName] = useState<string>("");
   const [description, setDescription] = useState<string>("");
-  const [kind, setKind] = useState<NewKind>("project");
+  const [kind, setKind] = useState<NewKind>(initialKind);
   const [creating, setCreating] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 

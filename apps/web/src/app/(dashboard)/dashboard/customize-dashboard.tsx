@@ -108,9 +108,6 @@ export function CustomizeDashboard({ layout }: { layout: DashboardLayoutState })
               {w.label}
             </label>
           ))}
-          <p className="px-1 pt-1 text-[11px] text-[var(--muted-foreground)]">
-            Pipeline only appears while you have open potential contracts.
-          </p>
         </div>
       )}
     </div>

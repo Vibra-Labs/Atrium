@@ -903,7 +903,8 @@ export function LostDialog({
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-export function PipelineCard() {
+/** Open potential contracts. With none, an empty state with a way to add the first. */
+export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
   const money = useMoney();
   const [rows, setRows] = useState<PipelineRow[] | null>(null);
 
@@ -916,7 +917,30 @@ export function PipelineCard() {
       });
   }, []);
 
-  if (!rows || rows.length === 0) return null;
+  if (!rows) return null;
+  if (rows.length === 0) {
+    return (
+      <section
+        data-testid="pipeline-card"
+        className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-2 shadow-sm"
+      >
+        <h2 className="text-sm sm:text-base font-semibold">Pipeline</h2>
+        <p className="text-sm font-medium">No potential contracts yet</p>
+        <p className="text-xs text-[var(--muted-foreground)]">
+          Track leads and bids you haven't won yet: their value, stage and next step.
+        </p>
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="text-xs font-semibold text-[var(--primary)] hover:underline inline-flex items-center gap-1 pt-1"
+          >
+            Add a potential contract <ChevronRight size={13} />
+          </button>
+        )}
+      </section>
+    );
+  }
   const value: number = rows.reduce((sum, p) => sum + (p.valueCents ?? 0), 0);
   const due = dueSoon(rows).slice(0, 6);
   return (

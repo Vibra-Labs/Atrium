@@ -20,7 +20,7 @@ import { initials } from "@/lib/initials";
 import { projectProgress } from "./progress";
 import { WeeklyUpdatesCard } from "./weekly-updates-card";
 import { ThisWeekCard } from "./this-week-card";
-import { PipelineCard } from "./projects/_pursuit/pursuit-ui";
+import { PipelineCard, type NewKind } from "./projects/_pursuit/pursuit-ui";
 import { NewProjectModal } from "./projects/new-project-modal";
 import { CustomizeDashboard, useDashboardLayout } from "./customize-dashboard";
 
@@ -127,7 +127,7 @@ export default function DashboardPage() {
 
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const router = useRouter();
-  const [showNewProject, setShowNewProject] = useState<boolean>(false);
+  const [newKind, setNewKind] = useState<NewKind | null>(null);
   const [invoiceStats, setInvoiceStats] = useState<InvoiceStats | null>(null);
   const hasOutstanding: boolean = (invoiceStats?.outstandingAmount ?? 0) > 0;
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
@@ -258,15 +258,16 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2.5">
           <CustomizeDashboard layout={layout} />
           <button
-            onClick={() => setShowNewProject(true)}
+            onClick={() => setNewKind("project")}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
           >
             <Plus size={16} />
             <span>New Project</span>
           </button>
-          {showNewProject && (
+          {newKind && (
             <NewProjectModal
-              onClose={() => setShowNewProject(false)}
+              initialKind={newKind}
+              onClose={() => setNewKind(null)}
               onCreated={(p) => router.push(`/dashboard/projects/${p.id}`)}
             />
           )}
@@ -524,7 +525,7 @@ export default function DashboardPage() {
             {recentProjects.length === 0 ? (
               <div className="p-8 text-center text-sm text-[var(--muted-foreground)]">
                 No projects yet.{" "}
-                <button onClick={() => setShowNewProject(true)} className="text-[var(--primary)] hover:underline font-medium">
+                <button onClick={() => setNewKind("project")} className="text-[var(--primary)] hover:underline font-medium">
                   Create your first project
                 </button>
               </div>
@@ -658,7 +659,7 @@ export default function DashboardPage() {
           </section>
           )}
 
-          {layout.shows("pipeline") && <PipelineCard />}
+          {layout.shows("pipeline") && <PipelineCard onAdd={() => setNewKind("pursuit")} />}
           {layout.shows("thisWeek") && <ThisWeekCard />}
         </div>
         )}

@@ -40,23 +40,25 @@ test.describe("Customize dashboard", () => {
     await context.close();
   });
 
-  test("pipeline appears only with open deals, and can be hidden", async ({ browser }) => {
+  test("pipeline shows an empty state with a way to add the first deal, and can be hidden", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "dash-pipeline");
     await page.goto(`${WEB}/dashboard`);
-    await expect(page.getByRole("heading", { name: "Client activity" })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId("pipeline-card")).toHaveCount(0);
+    const card = page.getByTestId("pipeline-card");
+    await expect(card).toContainText("No potential contracts yet", { timeout: 15000 });
 
-    const res = await page.request.post(`${API}/projects`, {
-      data: { name: "County bid", potential: true },
-      headers: { "x-csrf-token": await getCsrfTokenFromContext(context) },
-    });
-    expect(res.ok()).toBe(true);
-    await page.reload();
-    await expect(page.getByTestId("pipeline-card")).toBeVisible({ timeout: 15000 });
+    await card.getByRole("button", { name: "Add a potential contract" }).click();
+    const dialog = page.getByRole("dialog", { name: "New project" });
+    await expect(dialog.getByRole("button", { name: /Potential contract/ })).toHaveAttribute("aria-pressed", "true");
+    await dialog.getByPlaceholder("County RFP: records system").fill("County bid");
+    await dialog.getByRole("button", { name: "Create" }).click();
+    await expect(page).toHaveURL(/\/dashboard\/projects\/[^/?]+/, { timeout: 15000 });
+
+    await page.goto(`${WEB}/dashboard`);
+    await expect(card).toContainText("1 contract", { timeout: 15000 });
 
     await openCustomize(page);
     await cardSwitch(page, "Pipeline").uncheck();
-    await expect(page.getByTestId("pipeline-card")).toHaveCount(0);
+    await expect(card).toHaveCount(0);
     await context.close();
   });
 

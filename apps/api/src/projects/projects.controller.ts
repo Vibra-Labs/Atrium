@@ -19,6 +19,9 @@ import { InternalItemsService, INTERNAL_KINDS } from "./internal-items.service";
 import type { InternalItems, InternalKind } from "./internal-items.service";
 import type { PipelineRow, WinResult } from "./pursuit.service";
 import { LosePursuitDto, UpdatePursuitDto, WinPursuitDto } from "./pursuit.dto";
+import { CostsService } from "./costs.service";
+import type { ContractCosts } from "./costs.service";
+import { CostLineDto, UpdateCostLineDto, UpdateCostsDto } from "./costs.dto";
 import { PURSUIT_STAGE_LABELS } from "@atrium/shared";
 import type { PursuitStage } from "@atrium/shared";
 import {
@@ -49,6 +52,7 @@ export class ProjectsController {
     private projectsService: ProjectsService,
     private pursuitService: PursuitService,
     private internalItems: InternalItemsService,
+    private costs: CostsService,
   ) {}
 
   @Get()
@@ -158,6 +162,45 @@ export class ProjectsController {
   @Roles("owner", "admin")
   reopenPursuit(@Param("id") id: string, @CurrentOrg("id") orgId: string): Promise<void> {
     return this.pursuitService.reopen(id, orgId);
+  }
+
+  @Get(":id/costs")
+  @Roles("owner", "admin")
+  getCosts(@Param("id") id: string, @CurrentOrg("id") orgId: string): Promise<ContractCosts> {
+    return this.costs.get(id, orgId);
+  }
+
+  @Patch(":id/costs")
+  @Roles("owner", "admin")
+  updateCosts(@Param("id") id: string, @Body() dto: UpdateCostsDto, @CurrentOrg("id") orgId: string): Promise<ContractCosts> {
+    return this.costs.update(id, dto, orgId);
+  }
+
+  @Post(":id/costs/lines")
+  @Roles("owner", "admin")
+  addCostLine(@Param("id") id: string, @Body() dto: CostLineDto, @CurrentOrg("id") orgId: string): Promise<ContractCosts> {
+    return this.costs.addLine(id, dto, orgId);
+  }
+
+  @Patch(":id/costs/lines/:lineId")
+  @Roles("owner", "admin")
+  updateCostLine(
+    @Param("id") id: string,
+    @Param("lineId") lineId: string,
+    @Body() dto: UpdateCostLineDto,
+    @CurrentOrg("id") orgId: string,
+  ): Promise<ContractCosts> {
+    return this.costs.updateLine(id, lineId, dto, orgId);
+  }
+
+  @Delete(":id/costs/lines/:lineId")
+  @Roles("owner", "admin")
+  removeCostLine(
+    @Param("id") id: string,
+    @Param("lineId") lineId: string,
+    @CurrentOrg("id") orgId: string,
+  ): Promise<ContractCosts> {
+    return this.costs.removeLine(id, lineId, orgId);
   }
 
   @Get(":id/internal")

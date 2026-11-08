@@ -84,7 +84,7 @@ export type ContactRating = (typeof CONTACT_RATINGS)[number];
 export const PURSUIT_STAGES = ["found", "proposal_sent", "waiting"] as const;
 export type PursuitStage = (typeof PURSUIT_STAGES)[number];
 export const PURSUIT_STAGE_LABELS: Record<PursuitStage, string> = {
-  found: "Found",
+  found: "Lead",
   proposal_sent: "Proposal sent",
   waiting: "Waiting on decision",
 };

@@ -100,6 +100,7 @@ export function UpdatesSection({
   currentUserId = null,
   currentRole = null,
   afterComposer,
+  internalNote,
 }: {
   projectId: string;
   isArchived: boolean;
@@ -108,6 +109,8 @@ export function UpdatesSection({
   currentRole?: string | null;
   /** Shown between the composer and the timeline (the project's tasks). */
   afterComposer?: React.ReactNode;
+  /** A quiet line by the composer, e.g. that clients can't see updates yet. */
+  internalNote?: string;
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -286,9 +289,17 @@ export function UpdatesSection({
       {!isArchived && (
         <div className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-4 sm:p-5 space-y-3 mb-6 shadow-sm">
           <div className="flex items-center justify-between gap-2">
-            <label htmlFor="update-content" className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              Write an update
-            </label>
+            <div className="flex items-center gap-3 flex-wrap min-w-0">
+              <label htmlFor="update-content" className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                Write an update
+              </label>
+              {internalNote && (
+                <span data-testid="updates-internal-note" className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                  <Lock size={12} />
+                  {internalNote}
+                </span>
+              )}
+            </div>
             {isPrivileged && !newContent.trim() && (
               <button
                 type="button"

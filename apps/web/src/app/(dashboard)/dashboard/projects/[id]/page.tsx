@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag, Copy, Eye } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag, Copy, Eye, Lock, X } from "lucide-react";
 import { track } from "@/lib/track";
 import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
@@ -89,7 +89,7 @@ interface PaginatedResponse<T> {
 const tabs = [
   { id: "updates", label: "Updates" },
   { id: "files", label: "Files" },
-  { id: "billing", label: "Billing" },
+  { id: "billing", label: "Time & billing" },
   { id: "internal", label: "Internal" },
 ] as const;
 
@@ -164,6 +164,8 @@ export default function ProjectDetailPage() {
   // Open or lost: not signed yet, so no clients, billing or invoices.
   const isPursuit: boolean = !!pursuit && pursuit.outcome !== "won";
   const [pursuitDialog, setPursuitDialog] = useState<"won" | "lost" | null>(null);
+  // Set right after a win, to point at the items that are still internal.
+  const [justWon, setJustWon] = useState<boolean>(false);
   const [clients, setClients] = useState<ClientMember[]>([]);
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
@@ -492,6 +494,7 @@ export default function ProjectDetailPage() {
         <UpdatesSection
           projectId={id}
           isArchived={isArchived}
+          internalNote={isPursuit ? "Internal: clients can't see this until it's won" : undefined}
           afterComposer={
             <TasksSection projectId={id} isArchived={isArchived} onGoToFiles={() => setActiveTab("files")} />
           }
@@ -667,6 +670,7 @@ export default function ProjectDetailPage() {
             onClose={() => setPursuitDialog(null)}
             onDone={() => {
               setPursuitDialog(null);
+              setJustWon(true);
               loadProject();
             }}
           />
@@ -683,6 +687,37 @@ export default function ProjectDetailPage() {
           />
         )}
       </div>
+
+      {justWon && internalTotal > 0 && activeTab !== "internal" && (
+        <div
+          data-testid="won-internal-banner"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] text-sm"
+        >
+          <Lock size={14} className="text-[var(--muted-foreground)] shrink-0" />
+          <p className="flex-1 min-w-0">
+            {internalTotal === 1 ? "1 item from before the win is" : `${internalTotal} items from before the win are`} still
+            internal. Share what the client should see.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("internal");
+              setJustWon(false);
+            }}
+            className="text-xs font-semibold text-[var(--primary)] hover:underline whitespace-nowrap"
+          >
+            Review
+          </button>
+          <button
+            type="button"
+            onClick={() => setJustWon(false)}
+            aria-label="Dismiss"
+            className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       {tabBar}

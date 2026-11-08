@@ -226,6 +226,7 @@ export default function ProjectsPage() {
           onClose={() => setShowCreate(false)}
           onCreated={handleCreated}
           oneProjectLeft={oneProjectLeft}
+          initialKind={statusFilter === "pursuit" ? "pursuit" : "project"}
         />
       )}
 
@@ -341,9 +342,7 @@ export default function ProjectsPage() {
               <Link
                 key={project.id}
                 href={`/dashboard/projects/${project.id}`}
-                className={`block p-4 border rounded-lg hover:bg-[var(--muted)] transition-colors ${
-                  isUnsigned(project) ? "border-dashed border-amber-500/50" : "border-[var(--border)]"
-                }`}
+                className="block p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -359,7 +358,7 @@ export default function ProjectsPage() {
                         </span>
                       )}
                       {project.archivedAt && (
-                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-full">
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-[var(--muted)] text-[var(--muted-foreground)] rounded-full">
                           <Archive size={12} />
                           Archived
                         </span>

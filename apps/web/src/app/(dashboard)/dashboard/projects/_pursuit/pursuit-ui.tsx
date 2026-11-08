@@ -13,6 +13,7 @@ import {
   PURSUIT_STAGES,
   PURSUIT_STAGE_LABELS,
   contactRef,
+  daysLate,
   dueSoon,
   formatDay,
   isPast,
@@ -193,8 +194,10 @@ export function PursuitPipeline({
           data-testid="pursuit-stage"
           aria-pressed={p.stage === stage}
           onClick={() => p.stage !== stage && setStage(stage)}
-          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-            p.stage === stage ? "bg-amber-500 text-white" : "bg-[var(--muted)] text-[var(--foreground)]"
+          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${focusRing} ${
+            p.stage === stage
+              ? "bg-amber-500 text-white cursor-default"
+              : "bg-[var(--muted)] text-[var(--foreground)] cursor-pointer hover:ring-1 hover:ring-amber-500/60"
           }`}
         >
           {PURSUIT_STAGE_LABELS[stage]}
@@ -218,7 +221,7 @@ export function PursuitPipeline({
   );
 }
 
-/* ------------------------------ Deal card ------------------------------ */
+/* ------------------------------ Potential contract card ------------------------------ */
 
 /** "45000.5" -> "45,000.5". Keeps a trailing "." so you can keep typing cents. */
 function withCommas(raw: string): string {
@@ -317,12 +320,20 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
   const { error: showError } = useToast();
   const savedValueText: string = p.valueCents === null ? "" : withCommas(String(p.valueCents / 100));
   const [valueText, setValueText] = useState<string>(savedValueText);
+  const [saved, setSaved] = useState<boolean>(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+  }, []);
 
   /** Returns false when the save was rejected, so the field can go back to the saved value. */
   async function save(patch: PursuitPatch): Promise<boolean> {
     try {
       await updatePursuit(p.projectId, patch);
       onChanged();
+      setSaved(true);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSaved(false), 2000);
       return true;
     } catch (err) {
       console.error(err);
@@ -337,7 +348,12 @@ export function DealCard({ p, readOnly, onChanged }: { p: Pursuit; readOnly: boo
 
   return (
     <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
-      <h2 className={cardTitle}>{readOnly ? "Deal" : "Potential contract"}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className={cardTitle}>{p.outcome === "won" ? "Won contract" : "Potential contract"}</h2>
+        <span data-testid="deal-saved" aria-live="polite" className="text-xs text-[var(--muted-foreground)]">
+          {saved ? "Saved" : ""}
+        </span>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className={label}>Value</label>
@@ -452,10 +468,13 @@ function Picker({
   kind,
   onPick,
   exclude = [],
+  createLabel,
 }: {
   kind: "contact" | "company";
   onPick: (ref: ContactRef) => void;
   exclude?: string[];
+  /** Button text for adding a new contact; defaults to "Create lead". */
+  createLabel?: string;
 }) {
   const { error: showError } = useToast();
   const [q, setQ] = useState<string>("");
@@ -529,7 +548,7 @@ function Picker({
           )}
           <div className="flex gap-2">
             <button className={primaryBtn} disabled={!q.trim() || busy} onClick={create}>
-              {busy ? "Creating..." : `Create ${kind === "contact" ? "lead" : "company"}`}
+              {busy ? "Creating..." : (createLabel ?? `Create ${kind === "contact" ? "lead" : "company"}`)}
             </button>
             <button className={btn} onClick={() => setCreating(false)}>
               Back
@@ -778,6 +797,7 @@ export function WonDialog({
               )}
               <Picker
                 kind="contact"
+                createLabel="Add client"
                 onPick={(ref) => {
                   setClient(ref);
                   setPicking(false);
@@ -822,7 +842,9 @@ export function WonDialog({
                 ? "Pick the client first."
                 : !canGiveAccess
                   ? "This contact has no email."
-                  : "Off by default. Everything added so far stays internal; you can share items later."}
+                  : client.hasLogin
+                    ? "They'll see this project in their portal. Earlier items stay internal until you share them."
+                    : "They'll get an email invite to see this project. Earlier items stay internal until you share them."}
             </span>
           </span>
         </label>
@@ -884,15 +906,15 @@ export function LostDialog({
         />
       </div>
       <p className="text-xs text-[var(--muted-foreground)]">
-        It&apos;s archived, so it moves off your active list. Find it again with &ldquo;Show archived&rdquo;. You can reopen
-        it any time.
+        It moves off your active list. To find it again, filter Projects by &ldquo;Potential contracts&rdquo; with
+        &ldquo;Show archived&rdquo; on. You can reopen it any time.
       </p>
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className={btn}>
           Cancel
         </button>
         <button onClick={confirm} disabled={saving} className={primaryBtn}>
-          Mark lost
+          {saving ? "Saving..." : "Mark lost"}
         </button>
       </div>
     </Modal>
@@ -917,7 +939,18 @@ export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
       });
   }, []);
 
-  if (!rows) return null;
+  if (!rows) {
+    return (
+      <section
+        aria-busy="true"
+        className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-3 shadow-sm animate-pulse"
+      >
+        <div className="h-4 w-20 rounded bg-[var(--muted)]" />
+        <div className="h-6 w-32 rounded bg-[var(--muted)]" />
+        <div className="h-3 w-full rounded bg-[var(--muted)]" />
+      </section>
+    );
+  }
   if (rows.length === 0) {
     return (
       <section
@@ -959,7 +992,7 @@ export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="text-[11px] text-[var(--muted-foreground)]">Chasing</p>
+          <p className="text-[11px] text-[var(--muted-foreground)]">Pipeline value</p>
           <p className="text-lg font-bold">{money(value)}</p>
         </div>
         <div>
@@ -976,7 +1009,7 @@ export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
               <span
                 className={`w-14 text-[11px] font-semibold shrink-0 ${isPast(d.date) ? "text-rose-600 dark:text-rose-400" : "text-[var(--muted-foreground)]"}`}
               >
-                {isPast(d.date) ? "Overdue" : formatDay(d.date)}
+                {isPast(d.date) ? daysLate(d.date) : formatDay(d.date)}
               </span>
               <div className="min-w-0">
                 <Link

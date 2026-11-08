@@ -51,7 +51,7 @@ export function NewProjectModal({
   }
 
   return (
-    <Modal title="New project" onClose={onClose}>
+    <Modal title={kind === "pursuit" ? "New potential contract" : "New project"} onClose={onClose}>
       <form onSubmit={handleCreate} className="space-y-3">
         {oneProjectLeft && (
           <div className="flex items-center justify-between rounded-lg bg-[var(--muted)] border border-[var(--border)] px-3 py-2">

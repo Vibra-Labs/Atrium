@@ -180,7 +180,7 @@ export function projectTools(deps: {
     }),
     defineTool({
       name: "reopen_potential_contract",
-      description: "Reopens a lost potential contract at the Found stage.",
+      description: "Reopens a lost potential contract at the Lead stage.",
       inputSchema: z.object({ projectId: z.string() }),
       handler: async (input, actor) => pursuits.reopen(input.projectId, actor.organization.id),
     }),

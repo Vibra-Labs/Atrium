@@ -17,7 +17,7 @@ import { paginationArgs, paginatedResponse, SIGNED_PROJECT } from "../common";
 
 interface ProjectWhereInput {
   organizationId?: string;
-  pursuit?: { is: { outcome: string } | null };
+  pursuit?: { is: { outcome: string | { in: string[] } } | null };
   OR?: ProjectWhereInput[];
   archivedAt?: null | Date;
   name?: { contains: string; mode: "default" | "insensitive" };
@@ -113,7 +113,10 @@ export class ProjectsService implements OnApplicationBootstrap {
     if (status) {
       where.status = status;
     }
-    if (pursuit === "only") where.pursuit = { is: { outcome: "open" } };
+    // Lost ones are archived, so they only show alongside other archived projects.
+    if (pursuit === "only") {
+      where.pursuit = { is: { outcome: archived === "true" ? { in: ["open", "lost"] } : "open" } };
+    }
     if (pursuit === "exclude") where.OR = SIGNED_PROJECT.OR;
     if (labels) {
       const labelIds = labels.split(",").filter(Boolean);

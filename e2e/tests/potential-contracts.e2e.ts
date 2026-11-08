@@ -39,15 +39,18 @@ test.describe("Potential contracts", () => {
     const { context, page } = await createOwner(browser, "pc-create");
     await page.goto(`${WEB}/dashboard`);
     await page.getByRole("button", { name: "New Project" }).first().click();
-    const dialog = page.getByRole("dialog", { name: "New project" });
+    const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: /Potential contract/ }).click();
+    await expect(dialog.getByRole("heading", { name: "New potential contract" })).toBeVisible();
     await dialog.getByPlaceholder("County RFP: records system").fill("County RFP: records portal");
     await dialog.getByRole("button", { name: "Create" }).click();
 
     await expect(page).toHaveURL(/\/dashboard\/projects\/[^/?]+/, { timeout: 15000 });
-    await expect(await stageButton(page, "Found")).toHaveAttribute("aria-pressed", "true");
+    await expect(await stageButton(page, "Lead")).toHaveAttribute("aria-pressed", "true");
     // Opens on updates, like any project.
     await expect(page.getByTestId("project-tab-updates")).toHaveAttribute("aria-selected", "true");
+    // A quiet note by the composer says clients can't see updates yet.
+    await expect(page.getByTestId("updates-internal-note")).toHaveText("Internal: clients can't see this until it's won");
     // Pre-award: nothing for a client to see, so no preview.
     await expect(page.getByRole("button", { name: "View as client" })).toHaveCount(0);
     // Unsigned: no billing, no invoices.
@@ -67,6 +70,7 @@ test.describe("Potential contracts", () => {
     await value.fill("45000");
     await expect(value).toHaveValue("45,000");
     await value.blur();
+    await expect(page.getByTestId("deal-saved")).toHaveText("Saved");
     await expect(async () => {
       const res = await page.request.get(`${API}/projects/${id}`);
       expect(((await res.json()) as { pursuit: { valueCents: number } }).pursuit.valueCents).toBe(4500000);
@@ -126,7 +130,7 @@ test.describe("Potential contracts", () => {
     const { context, page } = await createOwner(browser, "pc-tabs");
     const id = await createPotential(page, "Tabs bid");
     await page.goto(`${WEB}/dashboard/projects/${id}`);
-    await expect(page.getByRole("tab")).toHaveText(["Updates", "Files", "Billing", "Internal"]);
+    await expect(page.getByRole("tab")).toHaveText(["Updates", "Files", "Time & billing", "Internal"]);
     // Tasks live on Updates, between the composer and the timeline.
     await expect(page.getByRole("heading", { name: /^Tasks/ })).toBeVisible();
     await page.goto(`${WEB}/dashboard/projects/${id}?tab=tasks`);
@@ -151,6 +155,10 @@ test.describe("Potential contracts", () => {
     await page.getByRole("button", { name: "Won" }).click();
     release();
     await expect(page.getByRole("dialog").locator("#won-status")).toHaveValue("in_progress", { timeout: 10000 });
+    // A new person typed here is the client, not a lead.
+    await page.getByRole("dialog").getByPlaceholder("Search or type a new name").fill("Ana Ruiz");
+    await page.getByRole("dialog").getByRole("button", { name: /Create .Ana Ruiz./ }).click();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Add client" })).toBeVisible();
     await context.close();
   });
 
@@ -167,9 +175,23 @@ test.describe("Potential contracts", () => {
     const card = page.getByTestId("pipeline-card");
     await expect(card).toContainText("Call the buyer");
     await expect(card).toContainText("1 contract");
+    await expect(card).toContainText("Pipeline value");
 
     const stats = await (await page.request.get(`${API}/projects/stats`)).json();
     expect(stats.total).toBe(0);
+    await context.close();
+  });
+
+  test("pipeline card says how late an overdue step is", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-late");
+    const id = await createPotential(page, "Late bid");
+    const patch = await page.request.patch(`${API}/projects/${id}/pursuit`, {
+      data: { nextStep: "Send pricing", nextStepAt: inDays(-2) },
+      headers: await headersFor(page),
+    });
+    expect(patch.ok()).toBe(true);
+    await page.goto(`${WEB}/dashboard`);
+    await expect(page.getByTestId("pipeline-card")).toContainText("2 days late", { timeout: 15000 });
     await context.close();
   });
 
@@ -185,9 +207,14 @@ test.describe("Potential contracts", () => {
 
     const active = await (await page.request.get(`${API}/projects`)).json();
     expect(active.data.map((p: { id: string }) => p.id)).not.toContain(id);
+    // Still findable: Potential contracts with archived on lists lost ones too.
+    const openOnly = await (await page.request.get(`${API}/projects?pursuit=only`)).json();
+    expect(openOnly.data.map((p: { id: string }) => p.id)).not.toContain(id);
+    const withLost = await (await page.request.get(`${API}/projects?pursuit=only&archived=true`)).json();
+    expect(withLost.data.map((p: { id: string }) => p.id)).toContain(id);
 
     await page.getByRole("button", { name: "Reopen" }).first().click();
-    await expect(await stageButton(page, "Found")).toHaveAttribute("aria-pressed", "true", { timeout: 10000 });
+    await expect(await stageButton(page, "Lead")).toHaveAttribute("aria-pressed", "true", { timeout: 10000 });
     await context.close();
   });
 
@@ -224,14 +251,19 @@ test.describe("Potential contracts", () => {
     await dialog.getByLabel(/Give portal access now/).check();
     await dialog.getByRole("button", { name: "Mark won" }).click();
     await expect(env.owner.getByTestId("project-tab-internal")).toBeVisible({ timeout: 15000 });
+    // Right after the win, a prompt points at what's still internal.
+    const banner = env.owner.getByTestId("won-internal-banner");
+    await expect(banner).toContainText("1 item from before the win is still internal");
+    await expect(env.owner.getByTestId("updates-internal-note")).toHaveCount(0);
 
     // The client gets the project, but not what was written before the win.
     await env.client.goto(`${WEB}/portal/projects/${id}`);
     await expect(env.client.getByRole("heading", { name: "Museum kiosk", exact: true })).toBeVisible({ timeout: 15000 });
     await expect(env.client.getByText("Our margin on this is thin")).toHaveCount(0);
 
-    // Shared from the Internal tab, it shows up.
-    await env.owner.getByTestId("project-tab-internal").click();
+    // Shared from the Internal tab, it shows up. Review on the prompt opens that tab.
+    await banner.getByRole("button", { name: "Review" }).click();
+    await expect(env.owner.getByTestId("project-tab-internal")).toHaveAttribute("aria-selected", "true");
     await env.owner.getByRole("button", { name: /^Share .* with client$/ }).first().click();
     // It asks first, since this was written for the team only.
     const confirm = env.owner.getByRole("dialog");
@@ -254,6 +286,7 @@ test.describe("Potential contracts", () => {
     await env.owner.getByRole("button", { name: "Won" }).click();
     const dialog = env.owner.getByRole("dialog");
     await expect(dialog.getByLabel(/Give portal access now/)).not.toBeChecked();
+    await expect(dialog).toContainText("They'll see this project in their portal");
     await dialog.getByRole("button", { name: "Mark won" }).click();
     await expect(env.owner.getByRole("dialog")).toHaveCount(0, { timeout: 10000 });
 

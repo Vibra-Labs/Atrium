@@ -47,7 +47,7 @@ test.describe("Customize dashboard", () => {
     await expect(card).toContainText("No potential contracts yet", { timeout: 15000 });
 
     await card.getByRole("button", { name: "Add a potential contract" }).click();
-    const dialog = page.getByRole("dialog", { name: "New project" });
+    const dialog = page.getByRole("dialog", { name: "New potential contract" });
     await expect(dialog.getByRole("button", { name: /Potential contract/ })).toHaveAttribute("aria-pressed", "true");
     await dialog.getByPlaceholder("County RFP: records system").fill("County bid");
     await dialog.getByRole("button", { name: "Create" }).click();

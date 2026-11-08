@@ -116,6 +116,14 @@ export function isPast(d: string): boolean {
   return (toDay(d) ?? "") < localDay(0);
 }
 
+/** "3 days late" for a past date. Both are calendar days, so there's no timezone shift. */
+export function daysLate(d: string, today: string = localDay(0)): string {
+  const [y1, m1, d1] = (toDay(d) ?? today).split("-").map(Number);
+  const [y2, m2, d2] = today.split("-").map(Number);
+  const days: number = Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
+  return `${days} day${days === 1 ? "" : "s"} late`;
+}
+
 export interface DueItem {
   projectId: string;
   date: string;

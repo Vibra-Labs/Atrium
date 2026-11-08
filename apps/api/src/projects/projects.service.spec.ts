@@ -718,6 +718,12 @@ describe("ProjectsService", () => {
       expect(where.pursuit).toEqual({ is: { outcome: "open" } });
     });
 
+    it("findAll with pursuit=only and archived also lists lost ones", async () => {
+      await service.findAll("org-1", { pursuit: "only", archived: "true" });
+      const where = (mockPrisma.project.findMany.mock.calls.at(-1) as [PrismaArgs])[0].where!;
+      expect(where.pursuit).toEqual({ is: { outcome: { in: ["open", "lost"] } } });
+    });
+
     it("findAll with pursuit=exclude leaves open and lost potential contracts out", async () => {
       await service.findAll("org-1", { pursuit: "exclude" });
       const where = (mockPrisma.project.findMany.mock.calls.at(-1) as [PrismaArgs])[0].where!;

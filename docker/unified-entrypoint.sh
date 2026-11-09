@@ -69,6 +69,9 @@ else
   # Extensions the schema needs (pg_trgm for the search indexes); must exist before db push
   DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/ensure-extensions.ts
 
+  # Old MCP OAuth tables (Better Auth <1.7) clash with the new ones; must go before db push
+  DATABASE_URL="$MIGRATION_URL" bun run ./packages/database/scripts/drop-legacy-oauth-tables.ts
+
   # First, create new tables without dropping old columns
   echo "Creating new tables..."
   DATABASE_URL="$MIGRATION_URL" ./packages/database/node_modules/.bin/prisma db push --schema=./packages/database/prisma/schema.prisma --skip-generate 2>/dev/null || true

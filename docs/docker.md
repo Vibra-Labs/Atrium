@@ -193,7 +193,7 @@ are handled for you, and Cloudflare filters attacks before they reach you.
   than a direct connection would.
 - If you put Cloudflare Access in front, your clients must pass it to reach the
   portal, and AI tools connecting over MCP can't. Bypass `/api/mcp`,
-  `/api/auth/mcp/` and `/.well-known/` if you use MCP. Atrium still requires an
+  `/api/auth/oauth2/` and `/.well-known/` if you use MCP. Atrium still requires an
   API key or an approved sign-in before an MCP client can read anything.
 
 ### Custom client domains

@@ -25,11 +25,11 @@ export class McpConsentController {
 
   @Get("consent-info")
   async consentInfo(
-    @Query("consentCode") consentCode: string,
+    @Query("oauthQuery") oauthQuery: string,
     @CurrentUser("id") userId: string,
   ): Promise<ConsentInfo> {
-    if (!consentCode) throw new BadRequestException("consentCode is required");
-    const request = await this.mcpAuth.consentRequest(consentCode, userId);
+    if (!oauthQuery) throw new BadRequestException("oauthQuery is required");
+    const request = await this.mcpAuth.consentRequest(oauthQuery);
     const [client, organizations] = await Promise.all([
       this.mcpAuth.getClient(request.clientId),
       this.mcpAuth.adminOrganizations(userId),
@@ -48,16 +48,10 @@ export class McpConsentController {
     if (req.apiKeyId) {
       throw new ForbiddenException("API keys cannot create MCP grants. Sign in to the dashboard.");
     }
-    // The client id comes from the consent code's own row, so the grant can
-    // only ever be written for the client the user is actually being asked about.
-    const { clientId, expiresAt } = await this.mcpAuth.consentRequest(dto.consentCode, userId);
-    await this.mcpAuth.savePendingGrant(
-      dto.consentCode,
-      userId,
-      clientId,
-      dto.organizationId,
-      expiresAt,
-    );
+    // The client id comes from the signed request, so the grant can only
+    // ever be written for the client the user is actually being asked about.
+    const request = await this.mcpAuth.consentRequest(dto.oauthQuery);
+    await this.mcpAuth.savePendingGrant(request, userId, dto.organizationId);
   }
 }
 

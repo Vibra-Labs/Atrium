@@ -1,10 +1,14 @@
 import { Controller, Get, Header, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { SkipThrottle } from "@nestjs/throttler";
-import { Public } from "../common";
+import { mcpOAuthEnabled, mcpResourceUrl, Public } from "../common";
+import { publicApiUrl } from "../common/helpers/public-api-url";
 import { AuthService } from "./auth.service";
 
-type MetadataFn = () => Promise<Record<string, unknown> | null>;
+type Metadata = Record<string, unknown>;
+
+/** The MCP plugin's server-only discovery endpoint, which `auth`'s plugin-less type leaves out. */
+type GetOAuthServerConfig = () => Promise<Metadata>;
 
 /**
  * OAuth discovery documents at the origin root, where MCP clients look for
@@ -23,22 +27,28 @@ export class WellKnownController {
 
   @Get(["oauth-authorization-server", "oauth-authorization-server/api/auth"])
   @Header("Cache-Control", "public, max-age=300")
-  authorizationServer(): Promise<Record<string, unknown>> {
-    return this.metadata("getMcpOAuthConfig");
+  async authorizationServer(): Promise<Metadata> {
+    this.assertEnabled();
+    const api = this.authService.auth.api as unknown as { getOAuthServerConfig?: GetOAuthServerConfig };
+    if (!api.getOAuthServerConfig) throw new NotFoundException();
+    // The MCP endpoint does not check DPoP proofs, so don't invite clients to use them.
+    const { dpop_signing_alg_values_supported: _dpop, ...doc } = await api.getOAuthServerConfig();
+    return doc;
   }
 
+  /** RFC 9728 metadata for the MCP endpoint, whose tokens this API issues itself. */
   @Get(["oauth-protected-resource", "oauth-protected-resource/api/mcp"])
   @Header("Cache-Control", "public, max-age=300")
-  protectedResource(): Promise<Record<string, unknown>> {
-    return this.metadata("getMCPProtectedResource");
+  protectedResource(): Metadata {
+    this.assertEnabled();
+    return {
+      resource: mcpResourceUrl(this.config),
+      authorization_servers: [`${publicApiUrl(this.config)}/api/auth`],
+      bearer_methods_supported: ["header"],
+    };
   }
 
-  private async metadata(name: "getMcpOAuthConfig" | "getMCPProtectedResource"): Promise<Record<string, unknown>> {
-    if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") throw new NotFoundException();
-    const api = this.authService.auth.api as unknown as Partial<Record<typeof name, MetadataFn>>;
-    const fn: MetadataFn | undefined = api[name];
-    const doc: Record<string, unknown> | null = fn ? await fn() : null;
-    if (!doc) throw new NotFoundException();
-    return doc;
+  private assertEnabled(): void {
+    if (!mcpOAuthEnabled(this.config)) throw new NotFoundException();
   }
 }

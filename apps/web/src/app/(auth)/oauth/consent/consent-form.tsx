@@ -21,10 +21,6 @@ interface ConsentInfo {
   redirect: { display: string; kind: "web" | "local" | "app" };
 }
 
-interface ConsentFormProps {
-  consentCode: string;
-}
-
 /** What approving will do, phrased for the destination the code actually carries. */
 function destinationLine(redirect: ConsentInfo["redirect"]): string {
   return redirect.kind === "web"
@@ -32,21 +28,30 @@ function destinationLine(redirect: ConsentInfo["redirect"]): string {
     : `This request comes from ${redirect.display}.`;
 }
 
-export function ConsentForm({ consentCode }: ConsentFormProps): React.ReactElement {
+const INCOMPLETE_LINK = "This link is incomplete. Start the connection again from your AI assistant.";
+
+export function ConsentForm(): React.ReactElement {
+  const [oauthQuery, setOauthQuery] = useState<string | null>(null);
   const [info, setInfo] = useState<ConsentInfo | null>(null);
   const [organizationId, setOrganizationId] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
-    // The consent code is exchangeable and the (auth) layout's operator
-    // analytics record full URLs, so take it out of the address bar as soon
-    // as the page has read it.
+    const query: string = window.location.search.replace(/^\?/, "");
+    if (!new URLSearchParams(query).get("sig")) {
+      setError(INCOMPLETE_LINK);
+      return;
+    }
+    setOauthQuery(query);
+    // The (auth) layout's operator analytics record full URLs, so take the
+    // request out of the address bar as soon as the page has read it.
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
   useEffect(() => {
-    apiFetch<ConsentInfo>(`/mcp-grants/consent-info?consentCode=${encodeURIComponent(consentCode)}`)
+    if (!oauthQuery) return;
+    apiFetch<ConsentInfo>(`/mcp-grants/consent-info?oauthQuery=${encodeURIComponent(oauthQuery)}`)
       .then((data) => {
         setInfo(data);
         if (data.organizations.length > 0) setOrganizationId(data.organizations[0].id);
@@ -55,31 +60,37 @@ export function ConsentForm({ consentCode }: ConsentFormProps): React.ReactEleme
         console.error(err);
         setError(err instanceof Error ? err.message : "Could not load this request");
       });
-  }, [consentCode]);
+  }, [oauthQuery]);
 
   const respond = async (accept: boolean): Promise<void> => {
-    if (submitting) return;
+    if (submitting || !oauthQuery) return;
     setSubmitting(true);
     setError("");
     try {
       if (accept) {
         await apiFetch("/mcp-grants", {
           method: "POST",
-          body: JSON.stringify({ consentCode, organizationId }),
+          body: JSON.stringify({ oauthQuery, organizationId }),
         });
       }
       const res = await fetch(`${API_URL}/api/auth/oauth2/consent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ accept, consent_code: consentCode }),
+        body: JSON.stringify({ accept, oauth_query: oauthQuery }),
       });
-      const data = (await res.json().catch(() => ({}))) as { redirectURI?: string; message?: string };
-      if (!res.ok || !data.redirectURI) throw new Error(data.message || "Could not complete the request");
-      if (!isSafeOAuthRedirect(data.redirectURI)) {
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        message?: string;
+        error_description?: string;
+      };
+      if (!res.ok || !data.url) {
+        throw new Error(data.error_description || data.message || "Could not complete the request");
+      }
+      if (!isSafeOAuthRedirect(data.url)) {
         throw new Error("This app registered an unsafe redirect address. The connection was cancelled.");
       }
-      window.location.href = data.redirectURI;
+      window.location.href = data.url;
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Something went wrong");

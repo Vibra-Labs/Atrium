@@ -157,7 +157,7 @@ export function updatePursuit(projectId: string, patch: PursuitPatch): Promise<P
 
 export function winPursuit(
   projectId: string,
-  body: { contactId: string; status: string; giveAccess: boolean },
+  body: { contactId?: string; status: string; giveAccess: boolean },
 ): Promise<{ projectId: string; inviteEmail: string | null }> {
   return apiFetch(`/projects/${projectId}/pursuit/win`, { method: "POST", body: JSON.stringify(body) });
 }
@@ -171,6 +171,11 @@ export function losePursuit(projectId: string, reason: string): Promise<void> {
 
 export function reopenPursuit(projectId: string): Promise<void> {
   return apiFetch(`/projects/${projectId}/pursuit/reopen`, { method: "POST" });
+}
+
+/** The link only if it's a normal web address, so a stored "javascript:" URL never becomes clickable. */
+export function webLink(url: string | null): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null;
 }
 
 /** "45000.5" -> "45,000.5". Keeps a trailing "." so you can keep typing cents. */

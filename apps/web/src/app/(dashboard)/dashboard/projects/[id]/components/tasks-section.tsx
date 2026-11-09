@@ -8,7 +8,6 @@ import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import {
   Trash2,
-  ListTodo,
   Vote,
   Lock,
   Download,
@@ -96,13 +95,21 @@ export function TasksSection({
   const [newOptions, setNewOptions] = useState<string[]>(["", ""]);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
+  const [otherCount, setOtherCount] = useState<number>(0);
   const loadTasks = useCallback(() => {
     apiFetch<PaginatedResponse<TaskRecord>>(
       `/tasks/project/${projectId}?page=${page}&limit=20&status=${statusFilter}`,
     )
-      .then((res) => {
+      .then(async (res) => {
         setTasks(res.data);
         setTotalPages(res.meta.totalPages);
+        // An empty Active list may still hide done or cancelled tasks.
+        if (statusFilter === "active" && res.data.length === 0) {
+          const all = await apiFetch<PaginatedResponse<TaskRecord>>(`/tasks/project/${projectId}?limit=1&status=all`);
+          setOtherCount(all.meta.total);
+        } else {
+          setOtherCount(0);
+        }
       })
       .catch(console.error);
   }, [projectId, page, statusFilter]);
@@ -241,60 +248,37 @@ export function TasksSection({
     if (found) setOpenTaskRecord(found);
   }, [openTaskId, tasks]);
 
+  const showFilters: boolean = tasks.length > 0 || statusFilter !== "active" || otherCount > 0;
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-medium">
+    <section className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-4 sm:p-5 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
           Tasks{tasks.length > 0 && ` (${tasks.length})`}
         </h2>
-        {tasks.length > 0 && (
-          <button
-            onClick={() => downloadCsv(`/tasks/project/${projectId}/export`)}
-            className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
-            title="Export tasks as CSV"
-          >
-            <Download size={13} />
-            Export
-          </button>
-        )}
-      </div>
-
-      {/* Status filter bar */}
-      <div className="flex gap-1 mb-3 flex-wrap">
-        {[
-          { key: "active", label: "Active" },
-          { key: "all", label: "All" },
-          { key: "done", label: "Done" },
-          { key: "cancelled", label: "Cancelled" },
-        ].map((f) => (
-          <button
-            key={f.key}
-            onClick={() => { setStatusFilter(f.key); setPage(1); }}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-              statusFilter === f.key
-                ? "bg-[var(--primary)] text-white"
-                : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {!isArchived && (
-        <div className="mb-3 space-y-2">
-          {!creating && (
+        <div className="flex items-center gap-3">
+          {tasks.length > 0 && (
+            <button
+              onClick={() => downloadCsv(`/tasks/project/${projectId}/export`)}
+              className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+              title="Export tasks as CSV"
+            >
+              <Download size={13} />
+              Export
+            </button>
+          )}
+          {!isArchived && !creating && (
             <div ref={createMenuRef} className="relative inline-block">
               <button
                 onClick={() => setCreateMenuOpen((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-[var(--border)] hover:bg-[var(--muted)]"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm text-[var(--primary)] hover:bg-[var(--muted)]"
               >
                 <Plus size={14} />
-                Create
+                Add
                 <ChevronDown size={14} className="text-[var(--muted-foreground)]" />
               </button>
               {createMenuOpen && (
-                <div className="absolute left-0 top-full mt-1 w-44 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-10 overflow-hidden">
+                <div className="absolute right-0 top-full mt-1 w-44 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-10 overflow-hidden">
                   <button
                     onClick={() => startCreating("checkbox")}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--muted)] text-left"
@@ -313,6 +297,35 @@ export function TasksSection({
               )}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Filters only once there's something to filter. */}
+      {showFilters && (
+        <div className="flex gap-1 flex-wrap">
+          {[
+            { key: "active", label: "Active" },
+            { key: "all", label: "All" },
+            { key: "done", label: "Done" },
+            { key: "cancelled", label: "Cancelled" },
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => { setStatusFilter(f.key); setPage(1); }}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                statusFilter === f.key
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!isArchived && creating && (
+        <div className="space-y-2">
 
           {creating && taskType === "checkbox" && (
             <div className="flex flex-col gap-2">
@@ -596,17 +609,23 @@ export function TasksSection({
           );
         })}
         {tasks.length === 0 && (
-          <div className="text-center py-6">
-            <ListTodo size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
-            <p className="text-sm text-[var(--muted-foreground)]">
-              {statusFilter === "active" ? "No active tasks." : "No tasks."}
-            </p>
-          </div>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {statusFilter !== "active" ? (
+              "No tasks here."
+            ) : otherCount > 0 ? (
+              <>
+                No open tasks.{" "}
+                <button onClick={() => { setStatusFilter("all"); setPage(1); }} className="text-[var(--primary)] hover:underline">
+                  Show all ({otherCount})
+                </button>
+              </>
+            ) : (
+              "No tasks yet."
+            )}
+          </p>
         )}
       </div>
-      <div className="mt-3">
-        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-      </div>
+      {totalPages > 1 && <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />}
 
       {openTaskRecord && (
         <TaskDetailModal
@@ -623,6 +642,6 @@ export function TasksSection({
           }}
         />
       )}
-    </div>
+    </section>
   );
 }

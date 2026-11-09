@@ -54,8 +54,16 @@ export class PursuitService {
 
   async update(projectId: string, dto: UpdatePursuitDto, orgId: string): Promise<ProjectPursuit> {
     const pursuit = await this.getOrThrow(projectId, orgId);
-    if (pursuit.outcome === "won") throw new BadRequestException("This deal was won and is read-only");
-    if (pursuit.outcome !== "open") throw new BadRequestException("Reopen it to make changes");
+    if (pursuit.outcome === "won") {
+      // The price can still change after signing; the rest is history.
+      if (pursuit.project.archivedAt) throw new BadRequestException("Unarchive it to make changes");
+      const fields: string[] = Object.keys(dto).filter((k) => dto[k as keyof UpdatePursuitDto] !== undefined);
+      if (fields.some((k) => k !== "valueCents")) {
+        throw new BadRequestException("Only the value can change on a won contract");
+      }
+    } else if (pursuit.outcome !== "open") {
+      throw new BadRequestException("Reopen it to make changes");
+    }
     let companyName: string | null = null;
     if (dto.companyId) {
       const company = await this.prisma.company.findFirst({ where: { id: dto.companyId, organizationId: orgId } });
@@ -96,15 +104,14 @@ export class PursuitService {
     }
     const status = await this.prisma.projectStatus.findFirst({ where: { slug: dto.status, organizationId: orgId } });
     if (!status) throw new BadRequestException(`Invalid status: ${dto.status}`);
-    const contact = await this.prisma.contact.findFirst({ where: { id: dto.contactId, organizationId: orgId } });
-    if (!contact) throw new NotFoundException("Contact not found");
-    if (dto.giveAccess && !contact.userId && !contact.email) {
+    if (dto.giveAccess && !dto.contactId) throw new BadRequestException("Pick a contact to give portal access");
+    const contact = dto.contactId
+      ? await this.prisma.contact.findFirst({ where: { id: dto.contactId, organizationId: orgId } })
+      : null;
+    if (dto.contactId && !contact) throw new NotFoundException("Contact not found");
+    if (dto.giveAccess && contact && !contact.userId && !contact.email) {
       throw new BadRequestException("This contact has no email");
     }
-    const name: string = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
-
-    // Idempotent, so it's safe before the transaction.
-    await this.contacts.linkProject(contact.id, projectId, orgId);
 
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.projectPursuit.updateMany({
@@ -125,17 +132,39 @@ export class PursuitService {
         where: { OR: [{ update: { projectId } }, { task: { projectId } }] },
         data,
       });
-      await tx.contact.update({ where: { id: contact.id }, data: { status: "client" } });
-      await this.log(tx, projectId, `Won. ${name} is now a client`);
+      if (contact) {
+        const name: string = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+        await tx.contact.update({ where: { id: contact.id }, data: { status: "client" } });
+        await this.log(tx, projectId, `Won. ${name} is now a client`);
+      } else {
+        await this.log(tx, projectId, "Won");
+      }
     });
 
-    if (!dto.giveAccess) return { projectId, inviteEmail: null };
-    if (contact.userId) {
+    // Only once the win is ours, so a lost race doesn't leave the contact linked.
+    if (contact) await this.contacts.linkProject(contact.id, projectId, orgId);
+
+    if (!dto.giveAccess || !contact) return { projectId, inviteEmail: null };
+    // The contact may not be linked to a login yet, though a portal client with that email exists.
+    const userId: string | null =
+      contact.userId ??
+      (
+        await this.prisma.member.findFirst({
+          where: {
+            organizationId: orgId,
+            role: "member",
+            user: { email: { equals: contact.email!, mode: "insensitive" } },
+          },
+          select: { userId: true },
+        })
+      )?.userId ??
+      null;
+    if (userId) {
       await this.prisma.projectClient.createMany({
-        data: [{ projectId, userId: contact.userId }],
+        data: [{ projectId, userId }],
         skipDuplicates: true,
       });
-      await this.contactSync.linkProjectClients(projectId, orgId, [contact.userId]);
+      await this.contactSync.linkProjectClients(projectId, orgId, [userId]);
       return { projectId, inviteEmail: null };
     }
     const email: string = contact.email!.toLowerCase();

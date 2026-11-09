@@ -294,6 +294,9 @@ export type DashboardWidget = (typeof DASHBOARD_WIDGETS)[number]["key"];
 export const DASHBOARD_WIDGET_KEYS: DashboardWidget[] = DASHBOARD_WIDGETS.map((w) => w.key);
 
 // Cost and margin on potential contracts.
+/** Largest amount in cents the database holds (a 32-bit int): about $21.4M. */
+export const MAX_CENTS = 2_147_483_647;
+
 export interface CostInput {
   valueCents: number | null;
   /** The cost typed in directly; used only while no cost details are set. */

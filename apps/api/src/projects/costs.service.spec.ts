@@ -106,6 +106,19 @@ describe("CostsService", () => {
     );
   });
 
+  it("the first cost line clears the typed cost, so removing every line can't bring an old one back", async () => {
+    pursuit!.costCents = 1000000;
+    await service.addLine("p1", { label: "Materials", amountCents: 500000 }, "org1");
+    expect(pursuit!.costCents).toBeNull();
+  });
+
+  it("later cost lines leave the cost alone", async () => {
+    lineCount = 1;
+    pursuit!.costCents = 1000000;
+    await service.addLine("p1", { label: "Paint", amountCents: 1 }, "org1");
+    expect(prisma.projectPursuit.update).not.toHaveBeenCalled();
+  });
+
   it("caps the number of cost lines", async () => {
     lineCount = 50;
     await expect(service.addLine("p1", { label: "One more", amountCents: 1 }, "org1")).rejects.toBeInstanceOf(

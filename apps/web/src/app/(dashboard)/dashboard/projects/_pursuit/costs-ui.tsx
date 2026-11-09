@@ -1,9 +1,12 @@
 "use client";
 
 // Cost, profit and margin on a potential contract. Stays editable after a win.
+// One typed total by default (a subcontractor quote, say). The breakdown is optional and,
+// once used, adds the total up for you.
 
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Info, Plus, X } from "lucide-react";
+import { Tooltip } from "@/components/tooltip";
 import { useAppConfig } from "@/lib/app-config";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
@@ -19,9 +22,18 @@ import {
 } from "@/lib/pursuit";
 import type { ContractCosts, CostSummary } from "@/lib/pursuit";
 
-const input =
-  "w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-60 read-only:bg-[var(--muted)]";
-const label = "block text-xs text-[var(--muted-foreground)] mb-1";
+/** Shared with pursuit-ui. */
+export const input =
+  "w-full h-10 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-60";
+export const label = "block text-xs text-[var(--muted-foreground)] mb-1";
+/** A fixed number shown where an input would be, so the two line up. */
+export const readValue = "h-10 flex items-center text-sm font-medium tabular-nums";
+/** Breakdown rows: name, amount, remove. */
+const row = "grid grid-cols-[minmax(0,1fr)_6.5rem_1.25rem] items-center gap-2";
+
+/** Costs most contracts have. "Create my own" lets you type a name. */
+const COMMON_COSTS: string[] = ["Labor", "Materials", "Subcontractor", "Equipment", "Permits & fees", "Travel"];
+const OTHER = "__other";
 
 /** 2500000 -> "25,000"; 506750 -> "5,067.50". */
 function centsText(cents: number | null): string {
@@ -29,40 +41,59 @@ function centsText(cents: number | null): string {
   return withCommas(cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2));
 }
 
+/** A money input with the currency symbol inside it, so "45" reads as $45. */
+export function CurrencyInput({
+  small = false,
+  className = input,
+  ...props
+}: React.ComponentProps<"input"> & { small?: boolean }) {
+  const config = useAppConfig();
+  const symbol: string = formatCurrency(0, config?.currency).replace(/[\d.,\s]/g, "");
+  const pad: string = symbol.length > 1 ? "pl-9" : small ? "pl-4" : "pl-6";
+  return (
+    <span className="relative block">
+      <span
+        aria-hidden
+        className={`absolute top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] pointer-events-none ${small ? "left-1.5 text-xs" : "left-3 text-sm"}`}
+      >
+        {symbol}
+      </span>
+      <input inputMode="decimal" {...props} className={`${className} ${pad}`} />
+    </span>
+  );
+}
+
 /** Money field that saves when you leave it, and only if it changed. */
 function MoneyField({
   ariaLabel,
   cents,
   onSave,
-  disabled,
-  readOnly,
-  placeholder,
+  placeholder = "0",
+  small = false,
+  className = input,
 }: {
   ariaLabel: string;
   cents: number | null;
-  onSave?: (cents: number | null) => Promise<boolean>;
-  disabled?: boolean;
-  readOnly?: boolean;
+  onSave: (cents: number | null) => Promise<boolean>;
   placeholder?: string;
+  small?: boolean;
+  className?: string;
 }) {
   const [text, setText] = useState<string>(centsText(cents));
   useEffect(() => setText(centsText(cents)), [cents]);
   return (
-    <input
+    <CurrencyInput
       aria-label={ariaLabel}
-      inputMode="decimal"
+      small={small}
       value={text}
-      disabled={disabled}
-      readOnly={readOnly}
       placeholder={placeholder}
       onChange={(e) => setText(withCommas(e.target.value))}
       onBlur={async () => {
-        if (readOnly || !onSave) return;
         const next: number | null = toCents(text);
         if (next === cents) return;
         if (!(await onSave(next))) setText(centsText(cents));
       }}
-      className={input}
+      className={className}
     />
   );
 }
@@ -78,7 +109,7 @@ export function CostSection({
   valueCents: number | null;
   /** Open or won, and not archived. */
   editable: boolean;
-  /** The Value field, shown beside Cost. */
+  /** The Value field (an input, or the fixed value), shown beside Cost. */
   valueField: React.ReactNode;
   onSaved: () => void;
 }) {
@@ -87,8 +118,14 @@ export function CostSection({
   const { error: showError } = useToast();
   const [costs, setCosts] = useState<ContractCosts | null>(null);
   const [open, setOpen] = useState<boolean>(false);
+  const [adding, setAdding] = useState<boolean>(false);
   const [newName, setNewName] = useState<string>("");
   const [newAmount, setNewAmount] = useState<string>("");
+  /** Typing a name of your own instead of picking a common one. */
+  const [customName, setCustomName] = useState<boolean>(false);
+  const amountRef = useRef<HTMLInputElement>(null);
+  /** Stops a quick second Enter from adding the same line twice. */
+  const saving = useRef<boolean>(false);
 
   useEffect(() => {
     getCosts(projectId)
@@ -123,142 +160,234 @@ export function CostSection({
       })
     : null;
   const hours: number = costs ? Number((costs.trackedSeconds / 3600).toFixed(1)) : 0;
+  const detailed: boolean = !!summary?.detailed;
 
   async function add(): Promise<void> {
+    if (!newName.trim() || saving.current) return;
+    saving.current = true;
     const amountCents: number = toCents(newAmount) ?? 0;
-    if (await run(() => addCostLine(projectId, { label: newName.trim(), amountCents }))) {
+    const ok: boolean = await run(() => addCostLine(projectId, { label: newName.trim(), amountCents }));
+    saving.current = false;
+    if (ok) closeAdd();
+  }
+
+  function closeAdd(): void {
+    setNewName("");
+    setNewAmount("");
+    setCustomName(false);
+    setAdding(false);
+  }
+
+  function pickName(value: string): void {
+    if (value === OTHER) {
+      setCustomName(true);
       setNewName("");
-      setNewAmount("");
+      return;
     }
+    setNewName(value);
+    amountRef.current?.focus();
+  }
+
+  function onAddKey(e: React.KeyboardEvent<HTMLElement>): void {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) void add();
+    if (e.key === "Escape") closeAdd();
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         {valueField}
         <div>
-          <label className={label}>
-            Cost
-            {summary?.detailed && (
-              <span data-testid="cost-from-details" className="ml-1 italic">
-                from details
-              </span>
-            )}
-          </label>
-          <MoneyField
-            ariaLabel="Cost"
-            cents={summary?.costCents ?? null}
-            disabled={!editable || !costs}
-            readOnly={summary?.detailed}
-            placeholder={editable ? money(0) : "—"}
-            onSave={(costCents) => run(() => updateCosts(projectId, { costCents }))}
-          />
+          <p className={label}>Cost{detailed && " (from breakdown)"}</p>
+          {editable && costs && !detailed ? (
+            <MoneyField
+              ariaLabel="Cost"
+              cents={costs.costCents}
+              onSave={(costCents) => run(() => updateCosts(projectId, { costCents }))}
+            />
+          ) : (
+            <p data-testid="cost-total" className={readValue}>
+              {summary?.costCents != null ? money(summary.costCents) : "—"}
+            </p>
+          )}
         </div>
       </div>
 
       {summary && summary.profitCents !== null && summary.marginPct !== null && (
         <p
           data-testid="profit-line"
-          className={`text-sm font-medium ${summary.profitCents < 0 ? "text-rose-600 dark:text-rose-400" : ""}`}
+          className={`text-sm font-medium tabular-nums ${summary.profitCents < 0 ? "text-rose-600 dark:text-rose-400" : ""}`}
         >
-          Profit {money(summary.profitCents)} · Margin {summary.marginPct}%
+          Profit {money(summary.profitCents)} · {summary.marginPct}% margin
         </p>
       )}
 
-      {costs && (
+      {costs && (editable || detailed) && (
         <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="text-sm">
-          <summary className="cursor-pointer text-xs text-[var(--muted-foreground)]">Cost details</summary>
-          <div className="mt-2 space-y-3">
-            <div className="space-y-1">
-              <p data-testid="labor-line" className="text-xs">
-                Labor (tracked time) · {hours}h
-                {costs.laborRateCents !== null &&
-                  ` × ${money(costs.laborRateCents)} = ${money(summary?.laborCents ?? 0)}`}
+          <summary className="cursor-pointer text-xs text-[var(--muted-foreground)]">Break down cost</summary>
+          <div className="mt-2 rounded-lg border border-[var(--border)] p-3 space-y-2">
+            {!detailed && (
+              <p className="text-xs text-[var(--muted-foreground)]">
+                List what goes into the cost and the total is added up for you.
               </p>
-              <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
-                <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">Cost per hour</span>
-                <MoneyField
-                  ariaLabel="Cost per hour"
-                  cents={costs.laborRateCents}
-                  disabled={!editable}
-                  placeholder={editable ? "What an hour costs you" : "—"}
-                  onSave={(laborRateCents) => run(() => updateCosts(projectId, { laborRateCents }))}
-                />
-              </div>
-            </div>
-
-            {costs.lines.length > 0 && (
-              <ul className="space-y-2">
-                {costs.lines.map((l) => (
-                  <li key={l.id} className="grid grid-cols-[minmax(0,1fr)_6.5rem_auto] items-center gap-2">
-                    <input
-                      aria-label="Cost name"
-                      defaultValue={l.label}
-                      disabled={!editable}
-                      onBlur={(e) => {
-                        const next: string = e.target.value.trim();
-                        if (!next) {
-                          e.target.value = l.label;
-                          return;
-                        }
-                        if (next !== l.label) void run(() => updateCostLine(projectId, l.id, { label: next }));
-                      }}
-                      className={input}
-                    />
-                    <MoneyField
-                      ariaLabel="Cost amount"
-                      cents={l.amountCents}
-                      disabled={!editable}
-                      onSave={(amountCents) =>
-                        run(() => updateCostLine(projectId, l.id, { amountCents: amountCents ?? 0 }))
-                      }
-                    />
-                    {editable && (
-                      <button
-                        type="button"
-                        aria-label={`Remove ${l.label}`}
-                        onClick={() => void run(() => removeCostLine(projectId, l.id))}
-                        className="shrink-0 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
             )}
 
-            {/* The card is narrow: name on its own line, then amount and the button. */}
-            {editable && (
-              <div className="space-y-2">
-                <input
-                  aria-label="New cost name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="New cost (e.g. Materials, Permits)"
-                  maxLength={100}
-                  className={input}
-                />
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            {/* Older contracts may have a cost per hour; show it so the total still adds up. Clearing it removes the row. */}
+            {costs.laborRateCents !== null && (
+              <div data-testid="tracked-time-row" className={row}>
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1">
+                    Tracked time
+                    <Tooltip
+                      wrap
+                      label="Hours your team logged on this project, times what an hour of work costs you (not what you bill). If you add labor as its own cost below, leave this blank so it isn't counted twice."
+                    >
+                      <button
+                        type="button"
+                        aria-label="About tracked time"
+                        className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      >
+                        <Info size={13} />
+                      </button>
+                    </Tooltip>
+                  </p>
+                  <div className="text-xs text-[var(--muted-foreground)] flex items-center gap-1 whitespace-nowrap">
+                    {hours}h ×
+                    {editable ? (
+                      <MoneyField
+                        ariaLabel="Cost per hour"
+                        cents={costs.laborRateCents}
+                        small
+                        onSave={(laborRateCents) => run(() => updateCosts(projectId, { laborRateCents }))}
+                        className="w-16 h-7 px-2 border border-[var(--border)] rounded-md bg-[var(--background)] text-xs outline-none focus:border-[var(--primary)]"
+                      />
+                    ) : (
+                      <span>{money(costs.laborRateCents)}</span>
+                    )}
+                    /hr
+                  </div>
+                </div>
+                <span className="text-right tabular-nums">{money(summary?.laborCents ?? 0)}</span>
+                <span />
+              </div>
+            )}
+
+            {costs.lines.map((l) =>
+              editable ? (
+                <div key={l.id} className={row}>
                   <input
+                    aria-label="Cost name"
+                    defaultValue={l.label}
+                    onBlur={async (e) => {
+                      const field: HTMLInputElement = e.target;
+                      const next: string = field.value.trim();
+                      if (next === l.label) return;
+                      if (!next || !(await run(() => updateCostLine(projectId, l.id, { label: next })))) {
+                        field.value = l.label;
+                      }
+                    }}
+                    className={input}
+                  />
+                  <MoneyField
+                    ariaLabel="Cost amount"
+                    cents={l.amountCents}
+                    onSave={(amountCents) =>
+                      run(() => updateCostLine(projectId, l.id, { amountCents: amountCents ?? 0 }))
+                    }
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove ${l.label}`}
+                    onClick={() => void run(() => removeCostLine(projectId, l.id))}
+                    className="flex justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div key={l.id} className={row}>
+                  <span className="truncate">{l.label}</span>
+                  <span className="text-right tabular-nums">{money(l.amountCents)}</span>
+                  <span />
+                </div>
+              ),
+            )}
+
+            {editable &&
+              (adding ? (
+                <div
+                  className={row}
+                  onBlur={(e) => {
+                    // Leaving an empty add row closes it.
+                    if (!e.currentTarget.contains(e.relatedTarget) && !newName.trim() && !newAmount) closeAdd();
+                  }}
+                >
+                  {customName ? (
+                    <input
+                      aria-label="New cost name"
+                      autoFocus
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={onAddKey}
+                      placeholder="Name it"
+                      maxLength={100}
+                      className={input}
+                    />
+                  ) : (
+                    <select
+                      aria-label="New cost name"
+                      autoFocus
+                      value={newName}
+                      onChange={(e) => pickName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Escape" && closeAdd()}
+                      className={input}
+                    >
+                      <option value="" disabled>
+                        Pick a cost
+                      </option>
+                      {COMMON_COSTS.filter((name) => !costs.lines.some((l) => l.label === name)).map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                      <option value={OTHER}>Create my own…</option>
+                    </select>
+                  )}
+                  <CurrencyInput
+                    ref={amountRef}
                     aria-label="New cost amount"
-                    inputMode="decimal"
                     value={newAmount}
                     onChange={(e) => setNewAmount(withCommas(e.target.value))}
-                    placeholder={money(0)}
+                    onKeyDown={onAddKey}
+                    placeholder="0"
                     className={input}
                   />
                   <button
                     type="button"
+                    aria-label="Add cost"
                     onClick={() => void add()}
                     disabled={!newName.trim()}
-                    className="px-3 py-2 border border-[var(--border)] rounded-lg text-sm whitespace-nowrap hover:bg-[var(--muted)] disabled:opacity-40"
+                    className="flex justify-center text-[var(--primary)] disabled:opacity-40"
                   >
-                    Add cost
+                    <Plus size={16} />
                   </button>
                 </div>
-              </div>
-            )}
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAdding(true)}
+                  className="py-1 text-xs text-[var(--primary)] hover:underline"
+                >
+                  + Add a cost
+                </button>
+              ))}
+
+            <div className="flex justify-between border-t border-[var(--border)] pt-2 font-medium">
+              <span>Total cost</span>
+              <span data-testid="breakdown-total" className="tabular-nums">
+                {money(detailed ? (summary?.costCents ?? 0) : 0)}
+              </span>
+            </div>
           </div>
         </details>
       )}

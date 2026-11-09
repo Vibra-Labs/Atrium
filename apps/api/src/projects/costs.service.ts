@@ -81,6 +81,8 @@ export class CostsService {
     await this.assertEditable(projectId, orgId);
     const count: number = await this.prisma.projectCostLine.count({ where: { projectId } });
     if (count >= MAX_LINES) throw new BadRequestException(`A contract can have up to ${MAX_LINES} cost lines`);
+    // The breakdown replaces a typed cost; clear it so removing every line later doesn't bring back a stale number.
+    if (count === 0) await this.prisma.projectPursuit.update({ where: { projectId }, data: { costCents: null } });
     await this.prisma.projectCostLine.create({
       data: { projectId, label: dto.label.trim(), amountCents: dto.amountCents, sortOrder: count },
     });

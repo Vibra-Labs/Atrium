@@ -233,6 +233,16 @@ describe("potential contracts", () => {
     expect(pursuits.update).toHaveBeenCalledWith("p1", { stage: "waiting", valueCents: 4500000 }, "org1");
   });
 
+  it("update_potential_contract only takes web links and amounts the database holds", async () => {
+    const { get } = build();
+    const schema = get("update_potential_contract").inputSchema;
+    for (const sourceUrl of ["javascript:alert(1)", "data:text/html,hi", "ftp://x.com/a"]) {
+      expect(schema.safeParse({ projectId: "p1", sourceUrl }).success).toBe(false);
+    }
+    expect(schema.safeParse({ projectId: "p1", sourceUrl: "https://sam.gov/opp/1" }).success).toBe(true);
+    expect(schema.safeParse({ projectId: "p1", valueCents: 2_147_483_648 }).success).toBe(false);
+  });
+
   it("mark_potential_contract_won defaults to no portal access", async () => {
     const { pursuits, get } = build();
     const input = get("mark_potential_contract_won").inputSchema.parse({ projectId: "p1", contactId: "c1", status: "in_progress" });

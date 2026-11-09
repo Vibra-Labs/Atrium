@@ -16,9 +16,17 @@ test.describe("Tasks", () => {
       await expect(page.getByRole("heading", { name: /^Tasks/ })).toBeVisible({ timeout: 10000 });
     });
 
+    test("an empty project shows one quiet line each, with no task filters", async ({ page, request }) => {
+      const emptyId = await getOrCreateProject(request, `Empty Task Project ${Date.now()}`);
+      await openProjectTab(page, emptyId, "tasks");
+      await expect(page.getByText("No tasks yet.")).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText("No updates yet. Post one above.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Active", exact: true })).toHaveCount(0);
+    });
+
     test("project detail has add task form when not archived", async ({ page }) => {
       await openProjectTab(page, projectId, "tasks");
-      await page.getByRole("button", { name: "Create", exact: true }).click();
+      await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByRole("button", { name: "Task", exact: true }).click();
       const input = page.getByPlaceholder("Add a task...");
       await expect(input).toBeVisible();

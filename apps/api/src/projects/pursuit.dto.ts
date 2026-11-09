@@ -1,5 +1,5 @@
-import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUrl, MaxLength, Min, ValidateIf } from "class-validator";
-import { PURSUIT_STAGES } from "@atrium/shared";
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min, ValidateIf } from "class-validator";
+import { MAX_CENTS, PURSUIT_STAGES } from "@atrium/shared";
 import type { PursuitStage } from "@atrium/shared";
 
 /** Deal fields on a potential contract. Null clears a field. */
@@ -11,6 +11,7 @@ export class UpdatePursuitDto {
   @ValidateIf((_o, v) => v !== null && v !== undefined)
   @IsInt()
   @Min(0)
+  @Max(MAX_CENTS)
   valueCents?: number | null;
 
   @ValidateIf((_o, v) => v !== null && v !== undefined)
@@ -51,9 +52,11 @@ export class UpdatePursuitDto {
 }
 
 export class WinPursuitDto {
+  /** Optional: a contract can be won before you add who it's for. */
+  @IsOptional()
   @IsString()
   @MaxLength(100)
-  contactId!: string;
+  contactId?: string;
 
   @IsString()
   @MaxLength(100)

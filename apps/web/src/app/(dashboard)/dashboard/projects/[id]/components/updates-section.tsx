@@ -99,7 +99,7 @@ export function UpdatesSection({
   onFileChange,
   currentUserId = null,
   currentRole = null,
-  afterComposer,
+  beforeComposer,
   internalNote,
 }: {
   projectId: string;
@@ -107,8 +107,8 @@ export function UpdatesSection({
   onFileChange?: () => void;
   currentUserId?: string | null;
   currentRole?: string | null;
-  /** Shown between the composer and the timeline (the project's tasks). */
-  afterComposer?: React.ReactNode;
+  /** Shown above the composer (the project's tasks), so the composer sits right over its timeline. */
+  beforeComposer?: React.ReactNode;
   /** A quiet line by the composer, e.g. that clients can't see updates yet. */
   internalNote?: string;
 }) {
@@ -286,6 +286,7 @@ export function UpdatesSection({
 
   return (
     <div>
+      {beforeComposer && <div className="mb-6">{beforeComposer}</div>}
       {!isArchived && (
         <div className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-4 sm:p-5 space-y-3 mb-6 shadow-sm">
           <div className="flex items-center justify-between gap-2">
@@ -366,8 +367,6 @@ export function UpdatesSection({
           </div>
         </div>
       )}
-
-      {afterComposer && <div className="mb-8">{afterComposer}</div>}
 
       <div className="space-y-3">
         {timeline.map((entry) => {
@@ -543,12 +542,9 @@ export function UpdatesSection({
           );
         })}
         {timeline.length === 0 && (
-          <div className="text-center py-8">
-            <MessageSquare size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
-            <p className="text-sm text-[var(--muted-foreground)]">
-              No updates posted yet.
-            </p>
-          </div>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {isArchived ? "No updates yet." : "No updates yet. Post one above."}
+          </p>
         )}
       </div>
       <div className="mt-3">

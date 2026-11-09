@@ -13,6 +13,7 @@ type ContactRow = { id: string; firstName: string; lastName: string | null; emai
 
 let pursuit: PursuitRow | null;
 let contact: ContactRow | null;
+let member: { userId: string } | null;
 
 const updateManyMock = (): ReturnType<typeof mock> => mock((_args: Args) => Promise.resolve({ count: 1 }));
 
@@ -27,6 +28,7 @@ const prisma = {
   projectStatus: {
     findFirst: mock((args: Args) => Promise.resolve({ slug: (args.where as { slug: string }).slug })),
   },
+  member: { findFirst: mock(() => Promise.resolve(member)) },
   contact: {
     findFirst: mock(() => Promise.resolve(contact)),
     update: mock(() => Promise.resolve({})),
@@ -63,6 +65,7 @@ describe("PursuitService", () => {
   beforeEach(() => {
     pursuit = { projectId: "p1", outcome: "open", stage: "found", project: { name: "County RFP", archivedAt: null } };
     contact = { id: "c1", firstName: "Lee", lastName: "Park", email: "lee@example.com", userId: null };
+    member = null;
     allMocks().forEach((m) => m.mockClear());
     service = new PursuitService(prisma as unknown as PrismaService, contactSync as never, contacts as never);
   });
@@ -92,6 +95,23 @@ describe("PursuitService", () => {
     expect(prisma.project.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { status: "in_progress" } });
   });
 
+  it("win without a contact still moves the project and keeps earlier items internal", async () => {
+    const result = await service.win("p1", { status: "in_progress", giveAccess: false }, "org-1");
+    expect(result).toEqual({ projectId: "p1", inviteEmail: null });
+    expect(prisma.project.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { status: "in_progress" } });
+    expect(prisma.file.updateMany).toHaveBeenCalledWith({ where: { projectId: "p1" }, data: { internal: true } });
+    expect(prisma.contact.findFirst).not.toHaveBeenCalled();
+    expect(prisma.contact.update).not.toHaveBeenCalled();
+    expect(contacts.linkProject).not.toHaveBeenCalled();
+  });
+
+  it("win with giveAccess but no contact is rejected before changing anything", async () => {
+    await expect(service.win("p1", { status: "in_progress", giveAccess: true }, "org-1")).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(prisma.projectPursuit.updateMany).not.toHaveBeenCalled();
+  });
+
   it("win rejects a pursuit that is not open", async () => {
     pursuit!.outcome = "won";
     await expect(win(false)).rejects.toThrow(BadRequestException);
@@ -113,6 +133,23 @@ describe("PursuitService", () => {
     const result = await win(false);
     expect(prisma.projectClient.createMany).not.toHaveBeenCalled();
     expect(result.inviteEmail).toBeNull();
+  });
+
+  it("win with giveAccess uses an existing portal login with the contact's email", async () => {
+    member = { userId: "u9" };
+    const result = await win(true);
+    expect(prisma.projectClient.createMany).toHaveBeenCalledWith({
+      data: [{ projectId: "p1", userId: "u9" }],
+      skipDuplicates: true,
+    });
+    expect(prisma.pendingProjectAccess.upsert).not.toHaveBeenCalled();
+    expect(result.inviteEmail).toBeNull();
+  });
+
+  it("win doesn't link the contact when another request claimed the win first", async () => {
+    prisma.projectPursuit.updateMany.mockImplementationOnce(() => Promise.resolve({ count: 0 }));
+    await expect(win(false)).rejects.toThrow(BadRequestException);
+    expect(contacts.linkProject).not.toHaveBeenCalled();
   });
 
   it("win with giveAccess and a contact login creates ProjectClient", async () => {
@@ -189,9 +226,21 @@ describe("PursuitService", () => {
     });
   });
 
+  it("update on a won pursuit can still change the value", async () => {
+    pursuit!.outcome = "won";
+    await service.update("p1", { valueCents: 100 }, "org-1");
+    expect(prisma.projectPursuit.update).toHaveBeenCalled();
+  });
+
+  it("update on an archived won pursuit is read-only", async () => {
+    pursuit!.outcome = "won";
+    pursuit!.project.archivedAt = new Date();
+    await expect(service.update("p1", { valueCents: 100 }, "org-1")).rejects.toThrow(BadRequestException);
+  });
+
   it("update on a won pursuit doesn't tell you to reopen it", async () => {
     pursuit!.outcome = "won";
-    await expect(service.update("p1", { valueCents: 100 }, "org-1")).rejects.toThrow("This deal was won and is read-only");
+    await expect(service.update("p1", { nextStep: "Call" }, "org-1")).rejects.toThrow("Only the value can change on a won contract");
   });
 
   it("win rejects an archived project", async () => {

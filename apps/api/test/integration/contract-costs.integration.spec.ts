@@ -92,13 +92,13 @@ describe("contract costs", () => {
     expect((await costs.update(d.projectId, { costCents: 1 }, d.orgId)).costCents).toBe(1);
   });
 
-  it("removing the last line and the rate goes back to the typed cost", async () => {
+  it("a breakdown replaces the typed cost, so removing every line leaves it blank, not the old number", async () => {
     const d = await seed();
     await costs.update(d.projectId, { costCents: 500000 }, d.orgId);
     const added = await costs.addLine(d.projectId, { label: "Paint", amountCents: 100 }, d.orgId);
     expect(added.summary.costCents).toBe(100);
     const removed = await costs.removeLine(d.projectId, added.lines[0].id, d.orgId);
-    expect(removed.summary).toMatchObject({ detailed: false, costCents: 500000 });
+    expect(removed.summary).toMatchObject({ detailed: false, costCents: null });
   });
 
   it("never reaches the client portal", async () => {

@@ -5,7 +5,7 @@ import type { McpTool } from "../tool-kit";
 import type { ProjectsService } from "../../projects/projects.service";
 import type { BillingService } from "../../billing/billing.service";
 import type { PursuitService } from "../../projects/pursuit.service";
-import { PURSUIT_STAGES } from "@atrium/shared";
+import { MAX_CENTS, PURSUIT_STAGES } from "@atrium/shared";
 
 const projectFields = {
   name: z.string().trim().min(1).max(255),
@@ -136,14 +136,14 @@ export function projectTools(deps: {
       inputSchema: z.object({
         projectId: z.string(),
         stage: z.enum(PURSUIT_STAGES).optional().describe("found, proposal_sent or waiting (on decision)"),
-        valueCents: z.number().int().min(0).nullable().optional(),
+        valueCents: z.number().int().min(0).max(MAX_CENTS).nullable().optional(),
         closeDate: nullableDate.describe("Expected close, or bid due when isBid"),
         nextStep: z.string().max(500).nullable().optional(),
         nextStepAt: nullableDate,
         isBid: z.boolean().optional().describe("A formal bid (RFP/RFQ)"),
         solicitationNumber: z.string().max(100).nullable().optional(),
         questionsDueAt: nullableDate,
-        sourceUrl: z.url().max(2000).nullable().optional(),
+        sourceUrl: z.url({ protocol: /^https?$/ }).max(2000).nullable().optional(),
         companyId: z.string().nullable().optional(),
       }),
       handler: async (input, actor) => {
@@ -154,10 +154,10 @@ export function projectTools(deps: {
     defineTool({
       name: "mark_potential_contract_won",
       description:
-        "Marks a potential contract won: it becomes active work, the contact becomes a client, and everything made so far stays internal. Portal access is only given when giveAccess is true.",
+        "Marks a potential contract won: it becomes active work, the contact (if given) becomes a client, and everything made so far stays internal. Portal access is only given when giveAccess is true.",
       inputSchema: z.object({
         projectId: z.string(),
-        contactId: z.string().describe("The client, from list_contacts"),
+        contactId: z.string().optional().describe("The client, from list_contacts. Optional; needed for giveAccess"),
         status: z.string().max(100).describe("A status slug from list_project_statuses (not cancelled or completed)"),
         giveAccess: z.boolean().default(false),
       }),

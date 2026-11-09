@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Trash2, Calendar, ChevronDown, Tag, Copy, Eye, Lock, X } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, ChevronDown, Tag, Copy, Eye, Lock, X } from "lucide-react";
 import { track } from "@/lib/track";
 import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
@@ -496,7 +496,7 @@ export default function ProjectDetailPage() {
           projectId={id}
           isArchived={isArchived}
           internalNote={isPursuit ? "Internal: clients can't see this until it's won" : undefined}
-          afterComposer={
+          beforeComposer={
             <TasksSection projectId={id} isArchived={isArchived} onGoToFiles={() => setActiveTab("files")} />
           }
           onFileChange={() => {
@@ -742,7 +742,7 @@ export default function ProjectDetailPage() {
           {pursuit && (
             <DealCard
               p={pursuit}
-              readOnly={pursuit.outcome !== "open"}
+              readOnly={pursuit.outcome !== "open" || isArchived}
               costsEditable={pursuit.outcome !== "lost" && !isArchived}
               onChanged={loadProject}
             />
@@ -777,8 +777,7 @@ export default function ProjectDetailPage() {
 
           {/* Timeline Card */}
           <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] flex items-center gap-1.5">
-              <Calendar size={13} />
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
               Timeline
             </h2>
             <DateField

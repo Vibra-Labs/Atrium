@@ -22,14 +22,12 @@ import {
   toDay,
   updatePursuit,
   winPursuit,
+  webLink,
   withCommas,
 } from "@/lib/pursuit";
 import type { ContactRef, PipelineRow, ProjectContactRow, Pursuit, PursuitPatch } from "@/lib/pursuit";
-import { CostSection } from "./costs-ui";
+import { CostSection, CurrencyInput, input, label, readValue } from "./costs-ui";
 
-const input =
-  "w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-60";
-const label = "block text-xs text-[var(--muted-foreground)] mb-1";
 /** Keyboard focus shows a ring in the brand color instead of the browser's outline. */
 const focusRing = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]";
 const btn = `px-3 py-2 border border-[var(--border)] rounded-lg text-sm whitespace-nowrap hover:bg-[var(--muted)] transition-colors disabled:opacity-40 ${focusRing}`;
@@ -197,7 +195,7 @@ export function PursuitPipeline({
           data-testid="pursuit-stage"
           aria-pressed={p.stage === stage}
           onClick={() => p.stage !== stage && setStage(stage)}
-          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${focusRing} ${
+          className={`px-2.5 py-1 rounded-full border border-transparent text-xs font-medium transition-all ${focusRing} ${
             p.stage === stage
               ? "bg-amber-500 text-white cursor-default"
               : "bg-[var(--muted)] text-[var(--foreground)] cursor-pointer hover:ring-1 hover:ring-amber-500/60"
@@ -313,7 +311,7 @@ export function DealCard({
 }: {
   p: Pursuit;
   readOnly: boolean;
-  /** Costs stay editable after a win; only a lost or archived contract locks them. */
+  /** Value and costs stay editable after a win; only a lost or archived contract locks them. */
   costsEditable: boolean;
   onChanged: () => void;
 }) {
@@ -347,8 +345,9 @@ export function DealCard({
     }
   }
 
+  const postingLink: string | null = webLink(p.sourceUrl);
   const dateField = (key: "closeDate" | "nextStepAt" | "questionsDueAt", aria: string) => (
-    <DateField ariaLabel={aria} value={p[key]} disabled={readOnly} onSave={(v) => save({ [key]: v })} />
+    <DateField ariaLabel={aria} value={p[key]} onSave={(v) => save({ [key]: v })} />
   );
 
   return (
@@ -366,85 +365,105 @@ export function DealCard({
         onSaved={flashSaved}
         valueField={
           <div>
-            <label className={label}>Value</label>
-            <input
-              aria-label="Value"
-              inputMode="decimal"
-              disabled={readOnly}
-              value={valueText}
-              onChange={(e) => setValueText(withCommas(e.target.value))}
-              onBlur={async () => {
-                const cents: number | null = toCents(valueText);
-                if (cents === null) setValueText("");
-                if (cents === p.valueCents) return;
-                if (!(await save({ valueCents: cents }))) setValueText(savedValueText);
-              }}
-              placeholder={readOnly ? "—" : money(0)}
-              className={input}
-            />
+            <p className={label}>Value</p>
+            {/* Like Cost, the value can still change after a win (a change order, say). */}
+            {!costsEditable ? (
+              <p data-testid="deal-value" className={readValue}>
+                {money(p.valueCents)}
+              </p>
+            ) : (
+              <CurrencyInput
+                aria-label="Value"
+                value={valueText}
+                onChange={(e) => setValueText(withCommas(e.target.value))}
+                onBlur={async () => {
+                  const cents: number | null = toCents(valueText);
+                  if (cents === null) setValueText("");
+                  if (cents === p.valueCents) return;
+                  if (!(await save({ valueCents: cents }))) setValueText(savedValueText);
+                }}
+                placeholder="0"
+              />
+            )}
           </div>
         }
       />
-      <div>
-        <label className={label}>{p.isBid ? "Bid due" : "Expected close"}</label>
-        {dateField("closeDate", p.isBid ? "Bid due" : "Expected close")}
-      </div>
-      <div>
-        <label className={label}>Next step</label>
-        <div className="space-y-2">
-          <SavedText
-            ariaLabel="Next step"
-            value={p.nextStep}
-            disabled={readOnly}
-            onSave={(nextStep) => save({ nextStep })}
-            placeholder={readOnly ? "—" : "Follow up Friday"}
-          />
-          {dateField("nextStepAt", "Next step date")}
-        </div>
-      </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={p.isBid}
-          disabled={readOnly}
-          onChange={(e) => save({ isBid: e.target.checked })}
-        />
-        Formal bid <span className="text-xs text-[var(--muted-foreground)]">(RFP, RFQ)</span>
-      </label>
-      {p.isBid && (
+      {/* After a win or a loss these are history, not things to do. */}
+      {readOnly ? (
+        p.isBid &&
+        (p.solicitationNumber || postingLink) && (
+          <p className="text-xs text-[var(--muted-foreground)] flex items-center gap-2">
+            {p.solicitationNumber && <span>Solicitation {p.solicitationNumber}</span>}
+            {postingLink && (
+              <a href={postingLink} target="_blank" rel="noreferrer" className="text-[var(--primary)] hover:underline">
+                Posting
+              </a>
+            )}
+          </p>
+        )
+      ) : (
         <>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={label}>Solicitation #</label>
-              <SavedText
-                ariaLabel="Solicitation number"
-                value={p.solicitationNumber}
-                disabled={readOnly}
-                onSave={(solicitationNumber) => save({ solicitationNumber })}
-              />
-            </div>
-            <div>
-              <label className={label}>Questions due</label>
-              {dateField("questionsDueAt", "Questions due")}
-            </div>
-          </div>
           <div>
-            <label className={label}>Posting link</label>
-            <div className="flex gap-2">
+            <label className={label}>{p.isBid ? "Bid due" : "Expected close"}</label>
+            {dateField("closeDate", p.isBid ? "Bid due" : "Expected close")}
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_9.5rem] gap-2">
+            <div>
+              <label className={label}>Next step</label>
               <SavedText
-                ariaLabel="Posting link"
-                value={p.sourceUrl}
-                disabled={readOnly}
-                onSave={(sourceUrl) => save({ sourceUrl })}
-                placeholder={readOnly ? "—" : "https://"}
+                ariaLabel="Next step"
+                value={p.nextStep}
+                onSave={(nextStep) => save({ nextStep })}
+                placeholder="Follow up Friday"
               />
-              {p.sourceUrl && (
-                <a href={p.sourceUrl} target="_blank" rel="noreferrer" className={btn} aria-label="Open posting">
-                  <ExternalLink size={14} />
-                </a>
-              )}
+            </div>
+            <div>
+              <label className={label}>Due</label>
+              {dateField("nextStepAt", "Next step date")}
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={p.isBid}
+              onChange={(e) => save({ isBid: e.target.checked })}
+            />
+            Formal bid <span className="text-xs text-[var(--muted-foreground)]">(RFP, RFQ)</span>
+          </label>
+          {p.isBid && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={label}>Solicitation #</label>
+                  <SavedText
+                    ariaLabel="Solicitation number"
+                    value={p.solicitationNumber}
+                    onSave={(solicitationNumber) => save({ solicitationNumber })}
+                  />
+                </div>
+                <div>
+                  <label className={label}>Questions due</label>
+                  {dateField("questionsDueAt", "Questions due")}
+                </div>
+              </div>
+              <div>
+                <label className={label}>Posting link</label>
+                <div className="flex gap-2">
+                  <SavedText
+                    ariaLabel="Posting link"
+                    value={p.sourceUrl}
+                    onSave={(sourceUrl) => save({ sourceUrl })}
+                    placeholder="https://"
+                  />
+                  {postingLink && (
+                    <a href={postingLink} target="_blank" rel="noreferrer" className={btn} aria-label="Open posting">
+                      <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
       {p.events && p.events.length > 0 && (
@@ -480,12 +499,15 @@ function Picker({
   onPick,
   exclude = [],
   createLabel,
+  onTyping,
 }: {
   kind: "contact" | "company";
   onPick: (ref: ContactRef) => void;
   exclude?: string[];
   /** Button text for adding a new contact; defaults to "Create lead". */
   createLabel?: string;
+  /** Tells the parent what's typed, so it can wait for a half-entered name. */
+  onTyping?: (text: string) => void;
 }) {
   const { error: showError } = useToast();
   const [q, setQ] = useState<string>("");
@@ -547,7 +569,10 @@ function Picker({
     <div className="space-y-2">
       <input
         value={q}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={(e) => {
+          setQ(e.target.value);
+          onTyping?.(e.target.value);
+        }}
         placeholder={kind === "contact" ? "Search or type a new name" : "Search or type a new company"}
         className={input}
         autoFocus
@@ -688,11 +713,11 @@ export function PursuitContactsCard({
       </ul>
       {editable && (
         <div className="flex gap-3 text-xs">
-          <button className="text-[var(--primary)] hover:underline" onClick={() => setAdding("contact")}>
+          <button className="py-1 text-[var(--primary)] hover:underline" onClick={() => setAdding("contact")}>
             + Contact
           </button>
           {!p.company && (
-            <button className="text-[var(--primary)] hover:underline" onClick={() => setAdding("company")}>
+            <button className="py-1 text-[var(--primary)] hover:underline" onClick={() => setAdding("company")}>
               + Company
             </button>
           )}
@@ -738,6 +763,7 @@ export function WonDialog({
 }) {
   const { success, error: showError } = useToast();
   const linked: ContactRef[] = contacts.map(contactRef);
+  // Optional. While picking, the current one stays until another is picked.
   const [client, setClient] = useState<ContactRef | null>(linked[0] ?? null);
   const [picking, setPicking] = useState<boolean>(linked.length === 0);
   const active: Status[] = statuses.filter((s) => s.slug !== "cancelled" && s.slug !== "completed");
@@ -749,16 +775,26 @@ export function WonDialog({
   }, [status, defaultStatus]);
   const [giveAccess, setGiveAccess] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  // A name typed but not picked or added would otherwise be dropped without a word.
+  const [typed, setTyped] = useState<string>("");
   const canGiveAccess: boolean = !!client && (client.hasLogin || !!client.email);
   // Why "Mark won" is disabled, if it is (besides saving).
-  const blocker: string | null = !client || picking ? "Pick the client" : !status ? "Loading statuses..." : null;
+  const blocker: string | null =
+    picking && typed.trim()
+      ? "Pick or add the client, or clear the name"
+      : !status
+        ? "Loading statuses..."
+        : null;
 
   async function confirm(): Promise<void> {
-    if (!client) return;
     setSaving(true);
     try {
-      const result = await winPursuit(projectId, { contactId: client.id, status, giveAccess: giveAccess && canGiveAccess });
-      success(`Won. ${client.name} is now a client`);
+      const result = await winPursuit(projectId, {
+        contactId: client?.id,
+        status,
+        giveAccess: giveAccess && canGiveAccess,
+      });
+      success(client ? `Won. ${client.name} is now a client` : "Won");
       if (result.inviteEmail) {
         // Accepting this invite gives them the project (the API remembered it at the win).
         try {
@@ -787,7 +823,9 @@ export function WonDialog({
     <Modal title={`Won: ${projectName}`} onClose={onClose}>
       <div className="space-y-4 text-sm">
         <div className="space-y-2">
-          <p className="font-medium">Who&apos;s the client?</p>
+          <p className="font-medium">
+            Who&apos;s the client? <span className="font-normal text-[var(--muted-foreground)]">Optional</span>
+          </p>
           {picking ? (
             <>
               {linked.length > 0 && (
@@ -809,9 +847,11 @@ export function WonDialog({
               <Picker
                 kind="contact"
                 createLabel="Add client"
+                onTyping={setTyped}
                 onPick={(ref) => {
                   setClient(ref);
                   setPicking(false);
+                  setTyped("");
                 }}
               />
             </>
@@ -838,27 +878,31 @@ export function WonDialog({
             ))}
           </select>
         </div>
-        <label className={`flex items-start gap-2 ${canGiveAccess ? "" : "opacity-50"}`}>
-          <input
-            type="checkbox"
-            checked={giveAccess && canGiveAccess}
-            disabled={!canGiveAccess}
-            onChange={(e) => setGiveAccess(e.target.checked)}
-            className={`mt-1 rounded ${focusRing}`}
-          />
-          <span>
-            <span className="font-medium">{client?.hasLogin ? "Give portal access now" : "Invite to the portal now"}</span>
-            <span className="block text-[var(--muted-foreground)]">
-              {!client
-                ? "Pick the client first."
-                : !canGiveAccess
+        {client ? (
+          <label className={`flex items-start gap-2 ${canGiveAccess ? "" : "opacity-50"}`}>
+            <input
+              type="checkbox"
+              checked={giveAccess && canGiveAccess}
+              disabled={!canGiveAccess}
+              onChange={(e) => setGiveAccess(e.target.checked)}
+              className={`mt-1 rounded ${focusRing}`}
+            />
+            <span>
+              <span className="font-medium">{client.hasLogin ? "Give portal access now" : "Invite to the portal now"}</span>
+              <span className="block text-[var(--muted-foreground)]">
+                {!canGiveAccess
                   ? "This contact has no email."
                   : client.hasLogin
                     ? "They'll see this project in their portal. Earlier items stay internal until you share them."
                     : "They'll get an email invite to see this project. Earlier items stay internal until you share them."}
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        ) : (
+          <p className="text-[var(--muted-foreground)]">
+            No client yet. You can add them later from Contacts and invite them to the portal.
+          </p>
+        )}
       </div>
       <div className="flex items-center justify-end gap-2">
         {blocker && <span className="mr-auto text-xs text-[var(--muted-foreground)]">{blocker}</span>}
@@ -1003,11 +1047,11 @@ export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="text-[11px] text-[var(--muted-foreground)]">Pipeline value</p>
+          <p className="text-xs text-[var(--muted-foreground)]">Pipeline value</p>
           <p className="text-lg font-bold">{money(value)}</p>
         </div>
         <div>
-          <p className="text-[11px] text-[var(--muted-foreground)]">Open</p>
+          <p className="text-xs text-[var(--muted-foreground)]">Open</p>
           <p className="text-lg font-bold">{plural(rows.length, "contract")}</p>
         </div>
       </div>
@@ -1018,7 +1062,7 @@ export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
           {due.map((d, i) => (
             <li key={`${d.projectId}-${i}`} className="flex items-center gap-3">
               <span
-                className={`w-20 text-[11px] font-semibold shrink-0 whitespace-nowrap ${isPast(d.date) ? "text-rose-600 dark:text-rose-400" : "text-[var(--muted-foreground)]"}`}
+                className={`w-20 text-xs font-semibold shrink-0 whitespace-nowrap ${isPast(d.date) ? "text-rose-600 dark:text-rose-400" : "text-[var(--muted-foreground)]"}`}
               >
                 {isPast(d.date) ? daysLate(d.date) : formatDay(d.date)}
               </span>
@@ -1029,7 +1073,7 @@ export function PipelineCard({ onAdd }: { onAdd?: () => void }) {
                 >
                   {d.title}
                 </Link>
-                <span className="block text-[11px] text-[var(--muted-foreground)] truncate">{d.sub}</span>
+                <span className="block text-xs text-[var(--muted-foreground)] truncate">{d.sub}</span>
               </div>
             </li>
           ))}

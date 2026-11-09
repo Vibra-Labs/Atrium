@@ -181,6 +181,29 @@ test.describe("Potential contracts", () => {
     await context.close();
   });
 
+  test("a contract can be won without a contact", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "pc-nocontact");
+    const id = await createPotential(page, "No client yet");
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    await page.getByRole("button", { name: "Won" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.locator("#won-status")).toHaveValue("in_progress", { timeout: 10000 });
+    // A typed name that wasn't picked or added holds the win, so it isn't dropped by accident.
+    const search = dialog.getByPlaceholder("Search or type a new name");
+    await search.fill("Half typed");
+    await expect(dialog.getByRole("button", { name: "Mark won" })).toBeDisabled();
+    await expect(dialog.getByText("Pick or add the client, or clear the name")).toBeVisible();
+    await search.fill("");
+    // No client picked: no portal option, and Mark won still works.
+    await expect(dialog.getByText("Invite to the portal now")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Mark won" }).click();
+    await expect(page.getByText("Won contract")).toBeVisible({ timeout: 10000 });
+    const project = await (await page.request.get(`${API}/projects/${id}`)).json();
+    expect(project.pursuit.outcome).toBe("won");
+    expect(project.status).toBe("in_progress");
+    await context.close();
+  });
+
   test("pipeline card shows the open contract and it stays out of active projects", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "pc-pipeline");
     const id = await createPotential(page, "Harbor bid");
@@ -224,9 +247,9 @@ test.describe("Potential contracts", () => {
     await page.getByLabel("Reason (optional)").fill("Price");
     await page.getByRole("button", { name: "Mark lost" }).click();
     await expect(page.getByText("Lost · Price")).toBeVisible({ timeout: 10000 });
-    // Read-only now: empty fields show a dash, not example text.
-    await expect(page.getByLabel("Value")).toHaveAttribute("placeholder", "—");
-    await expect(page.getByLabel("Next step", { exact: true })).toHaveAttribute("placeholder", "—");
+    // Read-only now: an empty value shows a dash, and next steps are gone.
+    await expect(page.getByTestId("deal-value")).toHaveText("—");
+    await expect(page.getByLabel("Next step", { exact: true })).toHaveCount(0);
 
     const active = await (await page.request.get(`${API}/projects`)).json();
     expect(active.data.map((p: { id: string }) => p.id)).not.toContain(id);

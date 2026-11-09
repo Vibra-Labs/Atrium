@@ -80,6 +80,8 @@ volumes:
 
 The database schema is automatically applied on startup. To skip this (e.g. when using a connection pooler like PgBouncer), set `SKIP_DB_PUSH=true` and provide a `DIRECT_URL` pointing to the non-pooled connection.
 
+If you skip it and apply the schema yourself, upgrading to the release built on Better Auth 1.7 needs one extra step first: run `bun run packages/database/scripts/drop-legacy-oauth-tables.ts` (with `DATABASE_URL` set to the direct connection). It removes the old MCP sign-in tables, which the new schema can't convert in place. AI assistants connected by signing in then sign in again.
+
 ## Public URL
 
 Set `WEB_URL` to the address people actually open in a browser, with its scheme

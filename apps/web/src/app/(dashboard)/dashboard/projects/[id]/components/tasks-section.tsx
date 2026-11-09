@@ -262,15 +262,19 @@ export function TasksSection({
     if (found) setOpenTaskRecord(found);
   }, [openTaskId, tasks]);
 
+  /** The small controls in the card header share one size, so they line up. */
+  const headerControl: string =
+    "h-7 inline-flex items-center rounded-md text-xs font-medium bg-transparent hover:bg-[var(--muted)] cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-[var(--primary)] transition-colors";
+  const quiet: string = "text-[var(--muted-foreground)] hover:text-[var(--foreground)]";
   const showFilters: boolean = tasks.length > 0 || statusFilter !== "active" || otherCount > 0;
 
   return (
-    <section className="space-y-2">
+    <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
           Tasks{tasks.length > 0 && ` (${tasks.length})`}
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
           {/* Filters only once there's something to filter. */}
           {showFilters && (
             <select
@@ -280,7 +284,14 @@ export function TasksSection({
                 setStatusFilter(e.target.value);
                 setPage(1);
               }}
-              className="text-xs bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] outline-none cursor-pointer"
+              // Tighter than the global dropdown arrow (globals.css), and only as wide as the chosen option.
+              style={{
+                paddingRight: "1.25rem",
+                backgroundPosition: "right 0.25rem center",
+                backgroundSize: "0.75rem",
+                fieldSizing: "content",
+              }}
+              className={`pl-2 ${headerControl} ${quiet}`}
             >
               <option value="active">Active</option>
               <option value="all">All</option>
@@ -291,22 +302,23 @@ export function TasksSection({
           {tasks.length > 0 && (
             <button
               onClick={() => downloadCsv(`/tasks/project/${projectId}/export`)}
-              className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+              className={`w-7 justify-center ${headerControl} ${quiet}`}
               title="Export tasks as CSV"
               aria-label="Export tasks"
             >
-              <Download size={14} />
+              <Download size={13} />
             </button>
           )}
           {!isArchived && !creating && (
             <div ref={createMenuRef} className="relative inline-block">
               <button
                 onClick={() => setCreateMenuOpen((v) => !v)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm text-[var(--primary)] hover:bg-[var(--muted)]"
+                aria-label="Add task"
+                className={`gap-1 px-2 ${headerControl} text-[var(--primary)]`}
               >
-                <Plus size={14} />
+                <Plus size={13} />
                 Add
-                <ChevronDown size={14} className="text-[var(--muted-foreground)]" />
+                <ChevronDown size={12} />
               </button>
               {createMenuOpen && (
                 <div className="absolute right-0 top-full mt-1 w-44 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-10 overflow-hidden">
@@ -442,7 +454,8 @@ export function TasksSection({
       )}
 
       {tasks.length > 0 ? (
-        <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+        // Capped and scrollable, so a long list doesn't push the cards below it off the screen.
+        <div className="divide-y divide-[var(--border)] max-h-80 overflow-y-auto">
           {tasks.map((task) => {
             if (task.type === "decision") {
               const totalVotes = task.options?.reduce((s, o) => s + o._count.votes, 0) || 0;

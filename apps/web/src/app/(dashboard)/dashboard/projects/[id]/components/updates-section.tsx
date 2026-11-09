@@ -99,7 +99,6 @@ export function UpdatesSection({
   onFileChange,
   currentUserId = null,
   currentRole = null,
-  beforeComposer,
   internalNote,
 }: {
   projectId: string;
@@ -107,8 +106,6 @@ export function UpdatesSection({
   onFileChange?: () => void;
   currentUserId?: string | null;
   currentRole?: string | null;
-  /** Shown above the composer (the project's tasks), so the composer sits right over its timeline. */
-  beforeComposer?: React.ReactNode;
   /** A quiet line by the composer, e.g. that clients can't see updates yet. */
   internalNote?: string;
 }) {
@@ -309,7 +306,6 @@ export function UpdatesSection({
 
   return (
     <div>
-      {beforeComposer && <div className="mb-6">{beforeComposer}</div>}
       {/* Stays open once clicked; folding back on blur would shift the page under the next click. */}
       {!isArchived && (
         <div className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-3 sm:p-4 space-y-3 mb-6 shadow-sm">

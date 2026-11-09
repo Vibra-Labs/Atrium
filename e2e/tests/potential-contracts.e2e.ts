@@ -316,7 +316,8 @@ test.describe("Potential contracts", () => {
     await expect(env.owner.getByTestId("project-tab-internal")).toHaveAttribute("aria-selected", "true");
     // What Review points at is first on the tab, not under the notes.
     await expect(env.owner.getByTestId("pre-win-items")).toBeInViewport();
-    // One Clients heading on a signed project.
+    // One Clients heading on a signed project (inside the sidebar's Details card).
+    await env.owner.getByText("Details", { exact: true }).click();
     await expect(env.owner.getByRole("heading", { name: /^Clients/ })).toHaveCount(1);
     await env.owner.getByRole("button", { name: /^Share .* with client$/ }).first().click();
     // It asks first, since this was written for the team only.

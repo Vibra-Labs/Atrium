@@ -26,7 +26,7 @@ import { useCachedApi } from "@/lib/cached";
 import { formatCurrency } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
 import { DealCard, LostDialog, PursuitContactsCard, PursuitPipeline, WonDialog } from "../_pursuit/pursuit-ui";
-import { reopenPursuit as reopenPursuitApi } from "@/lib/pursuit";
+import { formatDay, reopenPursuit as reopenPursuitApi } from "@/lib/pursuit";
 import { InternalTab, internalCount } from "./internal-tab";
 import type { InternalItems } from "./internal-tab";
 import type { ProjectContactRow, Pursuit } from "@/lib/pursuit";
@@ -489,6 +489,18 @@ export default function ProjectDetailPage() {
     </div>
   );
 
+  // The closed Details card still says the useful bits: who, when, what's owed.
+  const outstanding: number = billingStats?.outstandingAmount ?? 0;
+  const detailsSummary: string = [
+    !isPursuit && assignedIds.size > 0 ? `${assignedIds.size} client${assignedIds.size === 1 ? "" : "s"}` : null,
+    project.endDate ? `Due ${formatDay(project.endDate)}` : null,
+    !isPursuit && (currentRole === "owner" || currentRole === "admin") && outstanding > 0
+      ? `${formatCurrency(outstanding, currency)} owed`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   const tabContent = (
     <>
       {activeTab === "updates" && (
@@ -496,9 +508,6 @@ export default function ProjectDetailPage() {
           projectId={id}
           isArchived={isArchived}
           internalNote={isPursuit ? "Internal: clients can't see this until it's won" : undefined}
-          beforeComposer={
-            <TasksSection projectId={id} isArchived={isArchived} onGoToFiles={() => setActiveTab("files")} />
-          }
           onFileChange={() => {
             loadProject();
             loadBillingStats();
@@ -747,196 +756,203 @@ export default function ProjectDetailPage() {
               onChanged={loadProject}
             />
           )}
+          {/* In the sidebar, so a long task list never pushes the update box down. */}
+          <TasksSection projectId={id} isArchived={isArchived} onGoToFiles={() => setActiveTab("files")} />
           {isPursuit && pursuit && (
             <PursuitContactsCard p={pursuit} contacts={project.contacts ?? []} onChanged={loadProject} />
           )}
 
-          {/* Clients Card */}
-          {!isPursuit && (
-          <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              Clients{assignedIds.size > 0 && ` (${assignedIds.size})`}
-            </h2>
-            <ClientAssignment
-              clients={clients}
-              assignedIds={assignedIds}
-              onToggle={handleClientToggle}
-              onRemove={handleRemoveClient}
-              onPreview={
-                currentRole === "owner" || currentRole === "admin"
-                  ? handlePreviewAsClient
-                  : undefined
-              }
-              disabled={isArchived}
-            />
-            <p className="text-xs text-[var(--muted-foreground)]">
-              They see this project in their client portal
-            </p>
-          </section>
-          )}
-
-          {/* Timeline Card */}
-          <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              Timeline
-            </h2>
-            <DateField
-              label="Start"
-              value={project.startDate ? project.startDate.slice(0, 10) : ""}
-              onChange={(val) => handleDateChange("startDate", val)}
-              disabled={isArchived}
-            />
-            <DateField
-              label="Due"
-              value={project.endDate ? project.endDate.slice(0, 10) : ""}
-              onChange={(val) => handleDateChange("endDate", val)}
-              disabled={isArchived}
-            />
-            {project.startDate && project.endDate && (() => {
-              const start = new Date(project.startDate).getTime();
-              const end = new Date(project.endDate).getTime();
-              const now = Date.now();
-              const total = Math.max(1, end - start);
-              const elapsed = Math.min(total, Math.max(0, now - start));
-              const pct = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
-              return (
-                <div className="w-full bg-[var(--muted)] rounded-full h-1.5 overflow-hidden my-1">
-                  <div
-                    className="bg-[var(--primary)] h-full rounded-full transition-all"
-                    style={{ width: `${pct}%` }}
+          {/* Everything else in one card, closed by default so the sidebar stays short. */}
+          <details className="group p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)]">
+            <summary className="flex items-center justify-between gap-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span className="flex items-baseline gap-2 min-w-0">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Details</h2>
+                {detailsSummary && (
+                  <span data-testid="details-summary" className="text-xs text-[var(--muted-foreground)] truncate">
+                    {detailsSummary}
+                  </span>
+                )}
+              </span>
+              <ChevronDown size={14} className="shrink-0 text-[var(--muted-foreground)] transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-4 divide-y divide-[var(--border)]">
+              {!isPursuit && (
+                <div className="py-4 first:pt-0 last:pb-0 space-y-3">
+                  <h3 className="text-xs font-medium text-[var(--muted-foreground)]">
+                    Clients{assignedIds.size > 0 && ` (${assignedIds.size})`}
+                  </h3>
+                  <ClientAssignment
+                    clients={clients}
+                    assignedIds={assignedIds}
+                    onToggle={handleClientToggle}
+                    onRemove={handleRemoveClient}
+                    onPreview={
+                      currentRole === "owner" || currentRole === "admin"
+                        ? handlePreviewAsClient
+                        : undefined
+                    }
+                    disabled={isArchived}
                   />
-                </div>
-              );
-            })()}
-            {project.endDate && !isArchived && (() => {
-              const now = new Date();
-              const end = new Date(project.endDate);
-              const diffMs = end.getTime() - now.getTime();
-              const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-              if (diffDays < 0) {
-                return (
-                  <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-                    {Math.abs(diffDays)} day{Math.abs(diffDays) !== 1 ? "s" : ""} overdue
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    They see this project in their client portal
                   </p>
-                );
-              }
-              if (diffDays === 0) {
-                return <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Due today</p>;
-              }
-              return (
-                <p className={`text-xs font-medium ${diffDays <= 7 ? "text-amber-600 dark:text-amber-400" : "text-[var(--muted-foreground)]"}`}>
-                  {diffDays} day{diffDays !== 1 ? "s" : ""} left
-                </p>
-              );
-            })()}
-          </section>
-
-          {/* Billing Card (hidden while it's a potential contract) */}
-          {!isPursuit && (currentRole === "owner" || currentRole === "admin") && (
-            <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-2.5">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                Billing
-              </h2>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-[var(--muted-foreground)]">Invoiced</span>
-                <span className="font-semibold text-[var(--foreground)]">
-                  {formatCurrency(billingStats?.totalAmount ?? 0, currency)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-[var(--muted-foreground)]">Paid</span>
-                <span className="text-[var(--foreground)]">
-                  {formatCurrency(billingStats?.paidAmount ?? 0, currency)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center px-2.5 py-1.5 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 font-medium text-sm">
-                <span>Outstanding</span>
-                <span className="font-bold">
-                  {formatCurrency(billingStats?.outstandingAmount ?? 0, currency)}
-                </span>
-              </div>
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("billing")}
-                  className="text-xs font-semibold text-[var(--primary)] hover:underline"
-                >
-                  View invoices
-                </button>
-              </div>
-            </section>
-          )}
-
-          {/* Project Details Card */}
-          <section className="p-4 sm:p-5 rounded-2xl bg-[var(--background)] border border-[var(--border)] space-y-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              Project Details
-            </h2>
-
-            {/* Labels */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-[var(--muted-foreground)] flex items-center gap-1.5">
-                  <Tag size={12} />
-                  Labels
-                </span>
-                <LabelPicker
-                  labels={orgLabels}
-                  assigned={projectLabelIds}
-                  onToggle={handleLabelToggle}
-                  disabled={isArchived}
-                />
-              </div>
-              {projectLabelIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {(project.labels ?? []).map((l) => (
-                    <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
-                  ))}
                 </div>
               )}
-            </div>
 
-            {/* Default Rate */}
-            {(currentRole === "owner" || currentRole === "admin") && (
-              <div className="space-y-1.5 pt-2 border-t border-[var(--border)]">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-[var(--muted-foreground)]">Default rate ($/hr)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    placeholder="Member rate"
-                    defaultValue={
-                      project.hourlyRateCents != null
-                        ? (project.hourlyRateCents / 100).toString()
-                        : ""
-                    }
-                    key={project.hourlyRateCents ?? "empty"}
-                    onBlur={(e) => handleRateChange(e.target.value)}
-                    disabled={isArchived}
-                    className="w-24 text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 text-right disabled:opacity-50"
-                  />
+              <div className="py-4 first:pt-0 last:pb-0 space-y-3">
+                <h3 className="text-xs font-medium text-[var(--muted-foreground)]">Timeline</h3>
+                <DateField
+                  label="Start"
+                  value={project.startDate ? project.startDate.slice(0, 10) : ""}
+                  onChange={(val) => handleDateChange("startDate", val)}
+                  disabled={isArchived}
+                />
+                <DateField
+                  label="Due"
+                  value={project.endDate ? project.endDate.slice(0, 10) : ""}
+                  onChange={(val) => handleDateChange("endDate", val)}
+                  disabled={isArchived}
+                />
+                {project.startDate && project.endDate && (() => {
+                  const start = new Date(project.startDate).getTime();
+                  const end = new Date(project.endDate).getTime();
+                  const now = Date.now();
+                  const total = Math.max(1, end - start);
+                  const elapsed = Math.min(total, Math.max(0, now - start));
+                  const pct = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+                  return (
+                    <div className="w-full bg-[var(--muted)] rounded-full h-1.5 overflow-hidden my-1">
+                      <div
+                        className="bg-[var(--primary)] h-full rounded-full transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  );
+                })()}
+                {project.endDate && !isArchived && (() => {
+                  const now = new Date();
+                  const end = new Date(project.endDate);
+                  const diffMs = end.getTime() - now.getTime();
+                  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                  if (diffDays < 0) {
+                    return (
+                      <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                        {Math.abs(diffDays)} day{Math.abs(diffDays) !== 1 ? "s" : ""} overdue
+                      </p>
+                    );
+                  }
+                  if (diffDays === 0) {
+                    return <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Due today</p>;
+                  }
+                  return (
+                    <p className={`text-xs font-medium ${diffDays <= 7 ? "text-amber-600 dark:text-amber-400" : "text-[var(--muted-foreground)]"}`}>
+                      {diffDays} day{diffDays !== 1 ? "s" : ""} left
+                    </p>
+                  );
+                })()}
+              </div>
+
+              {/* Billing (hidden while it's a potential contract) */}
+              {!isPursuit && (currentRole === "owner" || currentRole === "admin") && (
+                <div className="py-4 first:pt-0 last:pb-0 space-y-2.5">
+                  <h3 className="text-xs font-medium text-[var(--muted-foreground)]">Billing</h3>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-[var(--muted-foreground)]">Invoiced</span>
+                    <span className="font-semibold text-[var(--foreground)]">
+                      {formatCurrency(billingStats?.totalAmount ?? 0, currency)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-[var(--muted-foreground)]">Paid</span>
+                    <span className="text-[var(--foreground)]">
+                      {formatCurrency(billingStats?.paidAmount ?? 0, currency)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center px-2.5 py-1.5 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 font-medium text-sm">
+                    <span>Outstanding</span>
+                    <span className="font-bold">
+                      {formatCurrency(outstanding, currency)}
+                    </span>
+                  </div>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("billing")}
+                      className="text-xs font-semibold text-[var(--primary)] hover:underline"
+                    >
+                      View invoices
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-[var(--muted-foreground)]">
-                  Overrides each member&apos;s default rate for this project.
-                </p>
-              </div>
-            )}
+              )}
 
-            {/* Delete Project */}
-            {isOwner && (
-              <div className="pt-2 border-t border-[var(--border)]">
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className="flex items-center gap-1.5 text-xs text-rose-600 hover:text-rose-700 transition-colors"
-                >
-                  <Trash2 size={13} />
-                  Delete project
-                </button>
+              <div className="py-4 first:pt-0 last:pb-0 space-y-4">
+                {/* Labels */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-[var(--muted-foreground)] flex items-center gap-1.5">
+                      <Tag size={12} />
+                      Labels
+                    </span>
+                    <LabelPicker
+                      labels={orgLabels}
+                      assigned={projectLabelIds}
+                      onToggle={handleLabelToggle}
+                      disabled={isArchived}
+                    />
+                  </div>
+                  {projectLabelIds.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {(project.labels ?? []).map((l) => (
+                        <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Default Rate */}
+                {(currentRole === "owner" || currentRole === "admin") && (
+                  <div className="space-y-1.5 pt-2 border-t border-[var(--border)]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-[var(--muted-foreground)]">Default rate ($/hr)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="Member rate"
+                        defaultValue={
+                          project.hourlyRateCents != null
+                            ? (project.hourlyRateCents / 100).toString()
+                            : ""
+                        }
+                        key={project.hourlyRateCents ?? "empty"}
+                        onBlur={(e) => handleRateChange(e.target.value)}
+                        disabled={isArchived}
+                        className="w-24 text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 text-right disabled:opacity-50"
+                      />
+                    </div>
+                    <p className="text-[11px] text-[var(--muted-foreground)]">
+                      Overrides each member&apos;s default rate for this project.
+                    </p>
+                  </div>
+                )}
+
+                {/* Delete Project */}
+                {isOwner && (
+                  <div className="pt-2 border-t border-[var(--border)]">
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      className="flex items-center gap-1.5 text-xs text-rose-600 hover:text-rose-700 transition-colors"
+                    >
+                      <Trash2 size={13} />
+                      Delete project
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </section>
+            </div>
+          </details>
         </aside>
       </div>
 

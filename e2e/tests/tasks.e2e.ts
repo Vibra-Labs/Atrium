@@ -52,7 +52,7 @@ test.describe("Tasks", () => {
 
     test("project detail has add task form when not archived", async ({ page }) => {
       await openProjectTab(page, projectId, "tasks");
-      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("button", { name: "Add task", exact: true }).click();
       await page.getByRole("button", { name: "Task", exact: true }).click();
       const input = page.getByPlaceholder("Add a task...");
       await expect(input).toBeVisible();

@@ -53,6 +53,8 @@ test.describe("Potential contracts", () => {
     await expect(page.getByTestId("updates-internal-note")).toHaveText("Internal: clients can't see this until it's won");
     // The rest of the composer agrees.
     await expect(page.getByPlaceholder("Write an update for your team…")).toBeVisible();
+    // Who sees it shows once you start writing.
+    await page.getByPlaceholder("Write an update for your team…").click();
     await expect(page.getByText("Team only", { exact: true })).toBeVisible();
     await expect(page.getByText("Visible to client", { exact: true })).toHaveCount(0);
     // Pre-award: nothing for a client to see, so no preview.

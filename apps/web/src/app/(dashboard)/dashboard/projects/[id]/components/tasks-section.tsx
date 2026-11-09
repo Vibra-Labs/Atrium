@@ -17,6 +17,7 @@ import {
   ChevronDown,
   CheckSquare,
   Calendar,
+  Check,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { LabelBadge } from "@/components/label-badge";
@@ -219,6 +220,19 @@ export function TasksSection({
     }
   };
 
+  async function toggleDone(task: TaskRecord): Promise<void> {
+    try {
+      await apiFetch(`/tasks/${task.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: task.status === "done" ? "open" : "done" }),
+      });
+      loadTasks();
+    } catch (err) {
+      console.error(err);
+      showError(err instanceof Error ? err.message : "Failed to update the task");
+    }
+  }
+
   const handleDelete = async (taskId: string) => {
     const ok = await confirm({
       title: "Delete Task",
@@ -251,20 +265,37 @@ export function TasksSection({
   const showFilters: boolean = tasks.length > 0 || statusFilter !== "active" || otherCount > 0;
 
   return (
-    <section className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-4 sm:p-5 space-y-3">
+    <section className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
           Tasks{tasks.length > 0 && ` (${tasks.length})`}
         </h2>
         <div className="flex items-center gap-3">
+          {/* Filters only once there's something to filter. */}
+          {showFilters && (
+            <select
+              aria-label="Show tasks"
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="text-xs bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] outline-none cursor-pointer"
+            >
+              <option value="active">Active</option>
+              <option value="all">All</option>
+              <option value="done">Done</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          )}
           {tasks.length > 0 && (
             <button
               onClick={() => downloadCsv(`/tasks/project/${projectId}/export`)}
-              className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+              className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
               title="Export tasks as CSV"
+              aria-label="Export tasks"
             >
-              <Download size={13} />
-              Export
+              <Download size={14} />
             </button>
           )}
           {!isArchived && !creating && (
@@ -299,30 +330,6 @@ export function TasksSection({
           )}
         </div>
       </div>
-
-      {/* Filters only once there's something to filter. */}
-      {showFilters && (
-        <div className="flex gap-1 flex-wrap">
-          {[
-            { key: "active", label: "Active" },
-            { key: "all", label: "All" },
-            { key: "done", label: "Done" },
-            { key: "cancelled", label: "Cancelled" },
-          ].map((f) => (
-            <button
-              key={f.key}
-              onClick={() => { setStatusFilter(f.key); setPage(1); }}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                statusFilter === f.key
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      )}
 
       {!isArchived && creating && (
         <div className="space-y-2">
@@ -434,11 +441,79 @@ export function TasksSection({
         </div>
       )}
 
-      <div className="space-y-1">
-        {tasks.map((task) => {
-          if (task.type === "decision") {
-            const totalVotes = task.options?.reduce((s, o) => s + o._count.votes, 0) || 0;
-            const isClosed = !!task.closedAt;
+      {tasks.length > 0 ? (
+        <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+          {tasks.map((task) => {
+            if (task.type === "decision") {
+              const totalVotes = task.options?.reduce((s, o) => s + o._count.votes, 0) || 0;
+              const isClosed = !!task.closedAt;
+
+              return (
+                <div
+                  key={task.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openTask(task.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openTask(task.id);
+                    }
+                  }}
+                  data-testid={`task-row-${task.id}`}
+                  className="group px-1 py-2.5 cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--primary)]"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--primary)]/10 text-[var(--primary)]">
+                      <Vote size={12} />
+                    </span>
+                    <span className={`flex-1 text-sm min-w-0 ${isClosed ? "text-[var(--muted-foreground)]" : ""}`}>
+                      <span className="break-words">{task.question || task.title}</span>
+                      {task.labels && task.labels.length > 0 && (
+                        <span className="inline-flex gap-1 ml-2 align-middle">
+                          {task.labels.map((l) => (
+                            <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                    {isClosed && (
+                      <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                        <Lock size={10} />
+                        Closed
+                      </span>
+                    )}
+                    {totalVotes > 0 && (
+                      <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                        {totalVotes} vote{totalVotes !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {task._count && task._count.comments > 0 && (
+                      <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                        <MessageSquare size={12} />
+                        {task._count.comments}
+                      </span>
+                    )}
+                    {!isArchived && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(task.id);
+                        }}
+                        className="shrink-0 p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        aria-label="Delete decision"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Checkbox / request task — clickable row opening the detail modal
+            const done: boolean = task.status === "done";
+            const strike: boolean = done || task.status === "cancelled";
 
             return (
               <div
@@ -453,14 +528,42 @@ export function TasksSection({
                   }
                 }}
                 data-testid={`task-row-${task.id}`}
-                className="p-2 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                className="group px-1 py-2.5 cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--primary)]"
               >
                 <div className="flex items-center gap-2">
-                  <span className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--primary)]/10 text-[var(--primary)]">
-                    <Vote size={12} />
-                  </span>
-                  <span className={`flex-1 text-sm min-w-0 ${isClosed ? "text-[var(--muted-foreground)]" : ""}`}>
-                    <span className="break-words">{task.question || task.title}</span>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={done}
+                    aria-label={done ? `Reopen ${task.title}` : `Mark ${task.title} done`}
+                    disabled={isArchived || task.status === "cancelled"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void toggleDone(task);
+                    }}
+                    className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center disabled:opacity-40 ${
+                      done ? "bg-[var(--primary)] border-[var(--primary)] text-white" : "border-[var(--muted-foreground)] hover:border-[var(--primary)]"
+                    }`}
+                  >
+                    {done && <Check size={12} strokeWidth={3} />}
+                  </button>
+
+                  <span className="flex-1 text-sm min-w-0">
+                    {/* Only the title is struck through, not the badges after it. */}
+                    <span className={`break-words ${strike ? "line-through text-[var(--muted-foreground)]" : ""}`}>
+                      {task.title}
+                    </span>
+                    {(task.status === "in_progress" || task.status === "cancelled") && (
+                      <span className={`ml-2 text-xs ${getTaskStatusBadge(task.status)} px-1.5 py-0.5 rounded-full`}>
+                        {getTaskStatusLabel(task.status)}
+                      </span>
+                    )}
+                    {task.isClientRequest && (
+                      <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium align-middle">
+                        <UserCircle size={10} />
+                        {task.requester?.name ?? "Client"}
+                      </span>
+                    )}
                     {task.labels && task.labels.length > 0 && (
                       <span className="inline-flex gap-1 ml-2 align-middle">
                         {task.labels.map((l) => (
@@ -469,31 +572,58 @@ export function TasksSection({
                       </span>
                     )}
                   </span>
-                  {isClosed && (
-                    <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                      <Lock size={10} />
-                      Closed
-                    </span>
-                  )}
-                  {totalVotes > 0 && (
-                    <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
-                      {totalVotes} vote{totalVotes !== 1 ? "s" : ""}
-                    </span>
-                  )}
+
                   {task._count && task._count.comments > 0 && (
                     <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
                       <MessageSquare size={12} />
                       {task._count.comments}
                     </span>
                   )}
+
+                  {task.dueDate && (() => {
+                    const due = new Date(task.dueDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const dueDay = new Date(due);
+                    dueDay.setHours(0, 0, 0, 0);
+                    const active = task.status !== "done" && task.status !== "cancelled";
+                    const overdue = active && dueDay.getTime() < today.getTime();
+                    const dueToday = active && dueDay.getTime() === today.getTime();
+                    const tone = overdue
+                      ? "bg-rose-500/20 text-rose-700 dark:text-rose-300"
+                      : dueToday
+                        ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                        : "bg-[var(--muted)] text-[var(--muted-foreground)]";
+                    return (
+                      <span className={`shrink-0 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${tone}`}>
+                        <Calendar size={10} />
+                        {due.toLocaleDateString()}
+                      </span>
+                    );
+                  })()}
+
+                  <span className="shrink-0" title={task.assignee?.name ?? "Unassigned"}>
+                    {task.assignee ? (
+                      <Avatar
+                        name={task.assignee.name}
+                        image={task.assignee.image}
+                        size={22}
+                      />
+                    ) : (
+                      <span className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-full border border-dashed border-[var(--border)] text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100">
+                        <UserCircle size={14} />
+                      </span>
+                    )}
+                  </span>
+
                   {!isArchived && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDelete(task.id);
                       }}
-                      className="shrink-0 p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
-                      aria-label="Delete decision"
+                      className="shrink-0 p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      aria-label="Delete task"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -501,130 +631,24 @@ export function TasksSection({
                 </div>
               </div>
             );
-          }
-
-          // Checkbox / request task — clickable row opening the detail modal
-          const statusBadgeClass = getTaskStatusBadge(task.status);
-          const statusText = getTaskStatusLabel(task.status);
-          const strike = task.status === "done" || task.status === "cancelled";
-
-          return (
-            <div
-              key={task.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openTask(task.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  openTask(task.id);
-                }
-              }}
-              data-testid={`task-row-${task.id}`}
-              className="p-2 border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/40 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusBadgeClass}`}
-                >
-                  {statusText}
-                </span>
-
-                <span
-                  className={`flex-1 text-sm min-w-0 ${strike ? "line-through text-[var(--muted-foreground)]" : ""}`}
-                >
-                  <span className="break-words">{task.title}</span>
-                  {task.isClientRequest && (
-                    <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium align-middle">
-                      <UserCircle size={10} />
-                      {task.requester?.name ?? "Client"}
-                    </span>
-                  )}
-                  {task.labels && task.labels.length > 0 && (
-                    <span className="inline-flex gap-1 ml-2 align-middle">
-                      {task.labels.map((l) => (
-                        <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
-                      ))}
-                    </span>
-                  )}
-                </span>
-
-                {task._count && task._count.comments > 0 && (
-                  <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                    <MessageSquare size={12} />
-                    {task._count.comments}
-                  </span>
-                )}
-
-                {task.dueDate && (() => {
-                  const due = new Date(task.dueDate);
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  const dueDay = new Date(due);
-                  dueDay.setHours(0, 0, 0, 0);
-                  const active = task.status !== "done" && task.status !== "cancelled";
-                  const overdue = active && dueDay.getTime() < today.getTime();
-                  const dueToday = active && dueDay.getTime() === today.getTime();
-                  const tone = overdue
-                    ? "bg-rose-500/20 text-rose-700 dark:text-rose-300"
-                    : dueToday
-                      ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                      : "bg-[var(--muted)] text-[var(--muted-foreground)]";
-                  return (
-                    <span className={`shrink-0 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${tone}`}>
-                      <Calendar size={10} />
-                      {due.toLocaleDateString()}
-                    </span>
-                  );
-                })()}
-
-                <span className="shrink-0" title={task.assignee?.name ?? "Unassigned"}>
-                  {task.assignee ? (
-                    <Avatar
-                      name={task.assignee.name}
-                      image={task.assignee.image}
-                      size={22}
-                    />
-                  ) : (
-                    <span className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-full border border-dashed border-[var(--border)] text-[var(--muted-foreground)]">
-                      <UserCircle size={14} />
-                    </span>
-                  )}
-                </span>
-
-                {!isArchived && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(task.id);
-                    }}
-                    className="shrink-0 p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
-                    aria-label="Delete task"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        {tasks.length === 0 && (
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {statusFilter !== "active" ? (
-              "No tasks here."
-            ) : otherCount > 0 ? (
-              <>
-                No open tasks.{" "}
-                <button onClick={() => { setStatusFilter("all"); setPage(1); }} className="text-[var(--primary)] hover:underline">
-                  Show all ({otherCount})
-                </button>
-              </>
-            ) : (
-              "No tasks yet."
-            )}
-          </p>
-        )}
-      </div>
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--muted-foreground)]">
+          {statusFilter !== "active" ? (
+            "No tasks here."
+          ) : otherCount > 0 ? (
+            <>
+              No open tasks.{" "}
+              <button onClick={() => { setStatusFilter("all"); setPage(1); }} className="text-[var(--primary)] hover:underline">
+                Show all ({otherCount})
+              </button>
+            </>
+          ) : (
+            "No tasks yet."
+          )}
+        </p>
+      )}
       {totalPages > 1 && <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />}
 
       {openTaskRecord && (

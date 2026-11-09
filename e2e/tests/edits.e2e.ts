@@ -101,6 +101,8 @@ test.describe("Edit flows", () => {
     const updateContainer = page.getByTestId(`update-entry-${updateId}`);
     await expect(updateContainer).toBeVisible({ timeout: 10000 });
 
+    // Edit and Delete live in the ⋯ menu.
+    await page.getByTestId(`update-menu-${updateId}`).click();
     await page.getByTestId(`edit-update-${updateId}`).click();
 
     const textarea = page.getByTestId(`edit-update-textarea-${updateId}`);

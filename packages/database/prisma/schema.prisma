@@ -122,6 +122,7 @@ model Organization {
   contacts         Contact[]
   companies        Company[]
   leadSources      LeadSource[]
+  pursuitStages    PursuitStage[]
 
   @@map("organization")
 }
@@ -1359,7 +1360,7 @@ model IntegrationDelivery {
 }
 
 // A project that isn't signed yet ("potential contract"). outcome: "open" | "won" | "lost".
-// stage: "found" | "proposal_sent" | "waiting".
+// stage: a PursuitStage slug in the contract's pipeline (isBid ? "bid" : "commercial").
 model ProjectPursuit {
   projectId          String    @id
   organizationId     String
@@ -1389,6 +1390,25 @@ model ProjectPursuit {
 
   @@index([organizationId, outcome])
   @@map("project_pursuit")
+}
+
+// A step a potential contract moves through. Each workspace has two pipelines, "bid" and
+// "commercial"; a contract's pipeline follows ProjectPursuit.isBid. The slug never changes.
+model PursuitStage {
+  id             String   @id @default(cuid())
+  organizationId String
+  pipeline       String // "bid" | "commercial"
+  name           String
+  slug           String
+  order          Int
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, pipeline, slug])
+  @@unique([organizationId, pipeline, name])
+  @@index([organizationId, pipeline])
+  @@map("pursuit_stage")
 }
 
 model ProjectPursuitEvent {

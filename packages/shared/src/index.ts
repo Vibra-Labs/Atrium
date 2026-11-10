@@ -81,13 +81,22 @@ export const CONTACT_RATINGS = ["hot", "warm", "cold"] as const;
 export type ContactRating = (typeof CONTACT_RATINGS)[number];
 
 // Potential contracts: projects that aren't signed yet.
-export const PURSUIT_STAGES = ["found", "proposal_sent", "waiting"] as const;
-export type PursuitStage = (typeof PURSUIT_STAGES)[number];
-export const PURSUIT_STAGE_LABELS: Record<PursuitStage, string> = {
-  found: "Lead",
-  proposal_sent: "Proposal sent",
-  waiting: "Waiting on decision",
-};
+// Each workspace has two pipelines with their own editable stages; a contract's pipeline follows its bid checkbox.
+export const PURSUIT_PIPELINES = ["bid", "commercial"] as const;
+export type PursuitPipeline = (typeof PURSUIT_PIPELINES)[number];
+export const PURSUIT_PIPELINE_LABELS: Record<PursuitPipeline, string> = { bid: "Bids", commercial: "Commercial" };
+export function pipelineOf(isBid: boolean): PursuitPipeline {
+  return isBid ? "bid" : "commercial";
+}
+/** A stage slug from the workspace's PursuitStage table. */
+export type PursuitStage = string;
+/** Seeded into both pipelines of every workspace. */
+export const DEFAULT_PURSUIT_STAGES: { slug: string; name: string }[] = [
+  { slug: "found", name: "Lead" },
+  { slug: "proposal_sent", name: "Proposal sent" },
+  { slug: "waiting", name: "Waiting on decision" },
+];
+export const MAX_PURSUIT_STAGES = 10;
 export const PURSUIT_OUTCOMES = ["open", "won", "lost"] as const;
 export type PursuitOutcome = (typeof PURSUIT_OUTCOMES)[number];
 

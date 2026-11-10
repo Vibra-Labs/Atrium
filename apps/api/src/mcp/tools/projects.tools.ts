@@ -164,6 +164,9 @@ export function projectTools(deps: {
       handler: async (input, actor) => {
         const { projectId, ...dto } = input;
         const result = await pursuits.win(projectId, dto, actor.organization.id);
+        if (result.accessFailed) {
+          return { ...result, note: "Won, but linking the contact or giving them access failed. Add them to the project by hand." };
+        }
         if (!result.inviteEmail) return result;
         return {
           ...result,

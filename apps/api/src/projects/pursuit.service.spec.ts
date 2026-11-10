@@ -97,7 +97,7 @@ describe("PursuitService", () => {
 
   it("win without a contact still moves the project and keeps earlier items internal", async () => {
     const result = await service.win("p1", { status: "in_progress", giveAccess: false }, "org-1");
-    expect(result).toEqual({ projectId: "p1", inviteEmail: null });
+    expect(result).toEqual({ projectId: "p1", inviteEmail: null, accessFailed: false });
     expect(prisma.project.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { status: "in_progress" } });
     expect(prisma.file.updateMany).toHaveBeenCalledWith({ where: { projectId: "p1" }, data: { internal: true } });
     expect(prisma.contact.findFirst).not.toHaveBeenCalled();
@@ -154,6 +154,7 @@ describe("PursuitService", () => {
 
   it("win with giveAccess and a contact login creates ProjectClient", async () => {
     contact!.userId = "u1";
+    member = { userId: "u1" };
     const result = await win(true);
     expect(prisma.projectClient.createMany).toHaveBeenCalledWith({
       data: [{ projectId: "p1", userId: "u1" }],
@@ -161,6 +162,20 @@ describe("PursuitService", () => {
     });
     expect(contactSync.linkProjectClients).toHaveBeenCalledWith("p1", "org-1", ["u1"]);
     expect(result.inviteEmail).toBeNull();
+  });
+
+  it("win with giveAccess invites rather than trusting a login that is no longer a portal client", async () => {
+    contact!.userId = "u-removed";
+    const result = await win(true);
+    expect(prisma.projectClient.createMany).not.toHaveBeenCalled();
+    expect(result.inviteEmail).toBe("lee@example.com");
+  });
+
+  it("win still succeeds when linking the contact fails, and says access wasn't given", async () => {
+    contacts.linkProject.mockImplementationOnce(() => Promise.reject(new Error("contact deleted")));
+    const result = await win(true);
+    expect(result).toEqual({ projectId: "p1", inviteEmail: null, accessFailed: true });
+    expect(prisma.projectPursuit.updateMany).toHaveBeenCalled();
   });
 
   it("win with giveAccess and no login stores pending access and returns the invite email", async () => {

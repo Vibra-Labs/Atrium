@@ -46,6 +46,8 @@ const prisma = {
     delete: mock(() => Promise.resolve(line)),
   },
   timeEntry: { aggregate: mock(() => Promise.resolve({ _sum: { durationSec: 5400 } })) },
+  $queryRaw: mock(() => Promise.resolve([])),
+  $transaction: mock((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
 };
 
 const service = new CostsService(prisma as unknown as PrismaService);
@@ -129,5 +131,18 @@ describe("CostsService", () => {
   it("404s on a line from another contract", async () => {
     line = null;
     await expect(service.removeLine("p1", "other", "org1")).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("setting a labor rate clears the typed cost, so clearing the rate can't bring it back", async () => {
+    pursuit!.costCents = 1000000;
+    await service.update("p1", { laborRateCents: 15000 }, "org-1");
+    expect(pursuit!.costCents).toBeNull();
+    expect(pursuit!.laborRateCents).toBe(15000);
+  });
+
+  it("adds a line under a lock on the contract", async () => {
+    lineCount = 0;
+    await service.addLine("p1", { label: "Hosting", amountCents: 5000 }, "org-1");
+    expect(prisma.$queryRaw).toHaveBeenCalled();
   });
 });

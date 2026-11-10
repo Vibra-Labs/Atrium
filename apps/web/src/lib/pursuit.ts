@@ -158,7 +158,7 @@ export function updatePursuit(projectId: string, patch: PursuitPatch): Promise<P
 export function winPursuit(
   projectId: string,
   body: { contactId?: string; status: string; giveAccess: boolean },
-): Promise<{ projectId: string; inviteEmail: string | null }> {
+): Promise<{ projectId: string; inviteEmail: string | null; accessFailed: boolean }> {
   return apiFetch(`/projects/${projectId}/pursuit/win`, { method: "POST", body: JSON.stringify(body) });
 }
 

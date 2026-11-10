@@ -795,12 +795,16 @@ export function WonDialog({
         giveAccess: giveAccess && canGiveAccess,
       });
       success(client ? `Won. ${client.name} is now a client` : "Won");
+      if (result.accessFailed) {
+        showError(`Won, but ${client?.name ?? "the client"} couldn't be linked or given access. Add them to the project by hand.`);
+      }
       if (result.inviteEmail) {
         // Accepting this invite gives them the project (the API remembered it at the win).
         try {
           await apiFetch("/auth/organization/invite-member", {
             method: "POST",
-            body: JSON.stringify({ email: result.inviteEmail, role: "member" }),
+            // Resend: they may already have a pending invite, e.g. one sent from Contacts.
+            body: JSON.stringify({ email: result.inviteEmail, role: "member", resend: true }),
           });
           success(`Portal invite sent to ${result.inviteEmail}`);
         } catch (err) {

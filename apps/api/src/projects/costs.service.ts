@@ -72,19 +72,25 @@ export class CostsService {
     await this.assertEditable(projectId, orgId);
     await this.prisma.projectPursuit.update({
       where: { projectId },
-      data: { costCents: dto.costCents, laborRateCents: dto.laborRateCents },
+      // A labor rate switches to the detailed breakdown, which replaces a typed cost; clear it so
+      // removing the rate later doesn't bring back a stale number.
+      data: { costCents: dto.laborRateCents ? null : dto.costCents, laborRateCents: dto.laborRateCents },
     });
     return this.get(projectId, orgId);
   }
 
   async addLine(projectId: string, dto: CostLineDto, orgId: string): Promise<ContractCosts> {
     await this.assertEditable(projectId, orgId);
-    const count: number = await this.prisma.projectCostLine.count({ where: { projectId } });
-    if (count >= MAX_LINES) throw new BadRequestException(`A contract can have up to ${MAX_LINES} cost lines`);
-    // The breakdown replaces a typed cost; clear it so removing every line later doesn't bring back a stale number.
-    if (count === 0) await this.prisma.projectPursuit.update({ where: { projectId }, data: { costCents: null } });
-    await this.prisma.projectCostLine.create({
-      data: { projectId, label: dto.label.trim(), amountCents: dto.amountCents, sortOrder: count },
+    await this.prisma.$transaction(async (tx) => {
+      // Locks the contract so concurrent adds can't pass the limit or share a sort order.
+      await tx.$queryRaw`SELECT 1 FROM project_pursuit WHERE "projectId" = ${projectId} FOR UPDATE`;
+      const count: number = await tx.projectCostLine.count({ where: { projectId } });
+      if (count >= MAX_LINES) throw new BadRequestException(`A contract can have up to ${MAX_LINES} cost lines`);
+      // The breakdown replaces a typed cost; clear it so removing every line later doesn't bring back a stale number.
+      if (count === 0) await tx.projectPursuit.update({ where: { projectId }, data: { costCents: null } });
+      await tx.projectCostLine.create({
+        data: { projectId, label: dto.label.trim(), amountCents: dto.amountCents, sortOrder: count },
+      });
     });
     return this.get(projectId, orgId);
   }

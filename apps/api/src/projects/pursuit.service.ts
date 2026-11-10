@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PROJECT_STATUSES, PURSUIT_STAGE_LABELS } from "@atrium/shared";
 import type { PursuitStage } from "@atrium/shared";
 import type { Prisma, ProjectPursuit } from "@atrium/database";
@@ -23,6 +23,8 @@ export interface WinResult {
   projectId: string;
   /** Set when the client still needs a portal invite; the caller sends it. */
   inviteEmail: string | null;
+  /** The win stands, but linking the contact or giving them access failed; staff add them by hand. */
+  accessFailed: boolean;
 }
 
 /** Statuses a won project can't move to: it's becoming active work. */
@@ -33,6 +35,8 @@ const toDate = (v: string | null | undefined): Date | null | undefined =>
 
 @Injectable()
 export class PursuitService {
+  private readonly logger: Logger = new Logger(PursuitService.name);
+
   constructor(
     private prisma: PrismaService,
     private contactSync: ContactSyncService,
@@ -141,39 +145,63 @@ export class PursuitService {
       }
     });
 
-    // Only once the win is ours, so a lost race doesn't leave the contact linked.
-    if (contact) await this.contacts.linkProject(contact.id, projectId, orgId);
+    if (!contact) return { projectId, inviteEmail: null, accessFailed: false };
+    // The win is committed. Linking and access run after it, so a failure here is reported in the
+    // result rather than as an error: retrying would fail, since the contract is no longer open.
+    try {
+      return await this.linkWonContact(projectId, contact, dto.giveAccess === true, orgId);
+    } catch (err) {
+      this.logger.error(
+        `Won ${projectId}, but linking contact ${contact.id} or granting access failed`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      return { projectId, inviteEmail: null, accessFailed: true };
+    }
+  }
 
-    if (!dto.giveAccess || !contact) return { projectId, inviteEmail: null };
-    // The contact may not be linked to a login yet, though a portal client with that email exists.
-    const userId: string | null =
-      contact.userId ??
-      (
-        await this.prisma.member.findFirst({
-          where: {
-            organizationId: orgId,
-            role: "member",
-            user: { email: { equals: contact.email!, mode: "insensitive" } },
-          },
-          select: { userId: true },
-        })
-      )?.userId ??
-      null;
+  private async linkWonContact(
+    projectId: string,
+    contact: { id: string; userId: string | null; email: string | null },
+    giveAccess: boolean,
+    orgId: string,
+  ): Promise<WinResult> {
+    // Only once the win is ours, so a lost race doesn't leave the contact linked.
+    await this.contacts.linkProject(contact.id, projectId, orgId);
+    if (!giveAccess) return { projectId, inviteEmail: null, accessFailed: false };
+
+    // Only a current portal client of this workspace gets access: the contact's own login, or one
+    // with the same email that isn't linked yet. A removed user or a staff login gets an invite instead.
+    const loginMatch = contact.userId
+      ? [{ userId: contact.userId }]
+      : [];
+    const client: { userId: string } | null = await this.prisma.member.findFirst({
+      where: {
+        organizationId: orgId,
+        role: "member",
+        OR: [
+          ...loginMatch,
+          ...(contact.email ? [{ user: { email: { equals: contact.email, mode: "insensitive" as const } } }] : []),
+        ],
+      },
+      select: { userId: true },
+    });
+    const userId: string | null = client?.userId ?? null;
     if (userId) {
       await this.prisma.projectClient.createMany({
         data: [{ projectId, userId }],
         skipDuplicates: true,
       });
       await this.contactSync.linkProjectClients(projectId, orgId, [userId]);
-      return { projectId, inviteEmail: null };
+      return { projectId, inviteEmail: null, accessFailed: false };
     }
-    const email: string = contact.email!.toLowerCase();
+    if (!contact.email) return { projectId, inviteEmail: null, accessFailed: true };
+    const email: string = contact.email.toLowerCase();
     await this.prisma.pendingProjectAccess.upsert({
       where: { projectId_email: { projectId, email } },
       create: { organizationId: orgId, projectId, email },
       update: {},
     });
-    return { projectId, inviteEmail: email };
+    return { projectId, inviteEmail: email, accessFailed: false };
   }
 
   async lose(projectId: string, dto: LosePursuitDto, orgId: string): Promise<void> {

@@ -2,6 +2,49 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.14.0] — 2026-11-09
+
+### Added
+
+- **Potential contracts** — Track work before it's signed. Any project can start as a potential contract, with a stage (Lead, Proposal sent, Waiting on decision), value, expected close, next step and bid details. Mark it Won to turn it into active work, or Lost to archive it; a lost contract can be reopened. A pipeline card on the dashboard shows what's due this week, and new MCP tools list, update, win, lose and reopen potential contracts.
+- **Kept internal until won** — Updates, files, tasks, documents, comments and activity made before the win are visible to your team only, and clients can't see open or lost contracts in the portal. After the win, share earlier items one at a time from the project's Internal tab.
+- **Cost and margin** — Enter one total cost, or break it down into lines (Labor, Materials, Subcontractor, or your own) or a labor rate times tracked time. Profit and margin update as you go, and value and cost stay editable after the win.
+- **Passwordless sign-in for portal clients** — A newly invited client is signed straight in. The login page offers "Email me a sign-in link" whenever the install can send email, and clients who joined by link can set a password later.
+
+### Changed
+
+- **Simpler project page** — Tasks move to the sidebar as a checklist, the update box stays one line until used, updates are a plain feed, and clients, timeline, billing and details share one collapsible card. Settings always shows the Account tab.
+- **Dashboard cards can be customized per person.**
+- **MCP sign-in rebuilt on `@better-auth/mcp`.** Access tokens are now opaque and stored hashed, and the sign-in endpoints moved to `/api/auth/oauth2/*`. MCP sign-in turns off on its own when the API's public address (`API_URL`, which the Docker image sets from `WEB_URL`) is neither `https://` nor `localhost`; connect with an API key instead. Set `MCP_OAUTH_ENABLED=false` to turn it off yourself.
+
+### Security
+
+- **Better Auth 1.7 closes a critical advisory** (GHSA-965c-763c-88jm), and dependency updates close the other open advisories. One low-severity advisory in `deepmerge` has no fix yet.
+
+### Upgrading
+
+- **AI assistants that connected by signing in must sign in again.** Connections made with API keys keep working.
+- **The old MCP sign-in tables are removed before the schema update**, which can't convert them. The Docker image, `bun run dev` and `bun run setup` do this for you. If you apply the schema yourself (`SKIP_DB_PUSH=true`, or `bun run db:push`), first run `bun run packages/database/scripts/drop-legacy-oauth-tables.ts` with `DATABASE_URL` set. See [docs/docker.md](docs/docker.md).
+
+## [1.13.0] — 2026-10-28
+
+### Added
+
+- **Preview as client** — Owners and admins can view any project the way a client sees it, even before a client is assigned. Preview is read-only: the API refuses writes while it's active.
+
+### Changed
+
+- **Client portal project page redesigned** — A milestone progress track, a "Needs your review" banner for deliverables awaiting approval, a project feed paired with a quick-reply composer, and a sticky sidebar with open invoices, recent files and your project lead.
+- **Dashboard overview** — KPI cards (active projects, waiting on clients, completed, outstanding), a "Needs your attention" feed for pending reviews and overdue invoices, and a live client activity stream.
+- **Agency project page** — Status pipeline, breadcrumbs, sidebar cards for clients, timeline, billing and details, and an inline update composer with an AI weekly summary draft.
+- **Settings streamlined** — Logo, color and custom domain now live in one Branding tab with a live portal preview. Settings are General, Branding, Team, Billing & Payments and Integrations; your personal profile moved to the sidebar footer.
+- **`STRIPE_CURRENCY` applies to every amount shown** — the dashboard, portal, invoice PDFs and emails, not just the Stripe charge (#90). No rebuild needed.
+- **Analytics trackers are read at runtime from `ATRIUM_TRACKERS`.** Tracker tags had been empty in the Docker images since September. Set the variable at runtime and redeploy once. `NEXT_PUBLIC_TRACKERS` still works but is deprecated. The published image ships with no trackers.
+
+### Security
+
+- **Supabase installs: row-level security now covers every table.** It covered 28 of 55, so contacts, documents, comments, notifications and integrations, among others, could be read through the Supabase Data API with the anon key on installs with `SUPABASE=true`. Upgrading applies it; other installs aren't affected.
+
 ## [1.12.1] — 2026-10-22
 
 ### Security

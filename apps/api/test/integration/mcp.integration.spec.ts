@@ -14,6 +14,7 @@ import { PrismaService } from "../../src/prisma/prisma.service";
 import { ApiKeysService } from "../../src/api-keys/api-keys.service";
 import { SessionMiddleware } from "../../src/auth/session.middleware";
 import { McpService } from "../../src/mcp/mcp.service";
+import { PursuitStagesService } from "../../src/projects/pursuit-stages.service";
 import { ProjectsService } from "../../src/projects/projects.service";
 import { NotesService } from "../../src/notes/notes.service";
 import { TasksService } from "../../src/tasks/tasks.service";
@@ -89,7 +90,7 @@ beforeAll(async () => {
   const lastSeenStub = { touch: async (): Promise<void> => undefined } as never;
   const middleware = new SessionMiddleware(authStub, apiKeys, mcpAuthStub, configStub, lastSeenStub, prisma);
   const mcp = new McpService(
-    new ProjectsService(prisma, {} as never),
+    new ProjectsService(prisma, {} as never, new PursuitStagesService(prisma)),
     new TasksService(prisma, noop, noop, noop),
     new UpdatesService(prisma, noop, noop, noop),
     new NotesService(prisma),
@@ -99,6 +100,7 @@ beforeAll(async () => {
     new DocumentsService(prisma, noop, noop, noop, noop, noop, billingStub),
     configStub,
     noop,
+    new PursuitStagesService(prisma),
   );
 
   const app = express();
@@ -124,7 +126,7 @@ describe("MCP endpoint", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toContain("create_project");
     expect(tools.map((t) => t.name)).toContain("list_pending_approvals");
-    expect(tools.length).toBe(27);
+    expect(tools.length).toBe(28);
     await client.close();
   });
 

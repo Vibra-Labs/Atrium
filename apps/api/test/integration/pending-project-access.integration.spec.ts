@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { assertDisposableDatabase } from "./guard";
 import { PrismaService } from "../../src/prisma/prisma.service";
 import { ContactSyncService } from "../../src/contact-sync/contact-sync.service";
+import { PursuitStagesService } from "../../src/projects/pursuit-stages.service";
 import { ProjectsService } from "../../src/projects/projects.service";
 
 let prisma: PrismaService;
@@ -13,7 +14,7 @@ const userIds: string[] = [];
 beforeAll(async () => {
   assertDisposableDatabase();
   const mod = await Test.createTestingModule({
-    providers: [ContactSyncService, ProjectsService, PrismaService],
+    providers: [ContactSyncService, ProjectsService, PursuitStagesService, PrismaService],
   }).compile();
   prisma = mod.get(PrismaService);
   projects = mod.get(ProjectsService);

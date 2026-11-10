@@ -5,7 +5,8 @@ import type { McpTool } from "../tool-kit";
 import type { ProjectsService } from "../../projects/projects.service";
 import type { BillingService } from "../../billing/billing.service";
 import type { PursuitService } from "../../projects/pursuit.service";
-import { MAX_CENTS, PURSUIT_STAGES } from "@atrium/shared";
+import type { PursuitStagesService } from "../../projects/pursuit-stages.service";
+import { MAX_CENTS } from "@atrium/shared";
 
 const projectFields = {
   name: z.string().trim().min(1).max(255),
@@ -51,8 +52,9 @@ export function projectTools(deps: {
   projects: ProjectsService;
   billing: BillingService;
   pursuits: PursuitService;
+  stages: PursuitStagesService;
 }): McpTool[] {
-  const { projects, billing, pursuits } = deps;
+  const { projects, billing, pursuits, stages } = deps;
   return [
     defineTool({
       name: "list_projects",
@@ -130,12 +132,23 @@ export function projectTools(deps: {
       handler: async (_input, actor) => projects.getStatuses(actor.organization.id),
     }),
     defineTool({
+      name: "list_pipeline_stages",
+      description:
+        "Lists the workspace's potential-contract stages for both pipelines: bid (contracts marked isBid) and commercial. Use a stage's slug with update_potential_contract.",
+      inputSchema: z.object({}),
+      handler: async (_input, actor) => stages.findAll(actor.organization.id),
+    }),
+    defineTool({
       name: "update_potential_contract",
       description:
         "Updates deal fields on an open potential contract. Only the fields you pass change; null clears one. Values are in cents.",
       inputSchema: z.object({
         projectId: z.string(),
-        stage: z.enum(PURSUIT_STAGES).optional().describe("found, proposal_sent or waiting (on decision)"),
+        stage: z
+          .string()
+          .max(64)
+          .optional()
+          .describe("A stage slug from list_pipeline_stages, in the contract's pipeline (bid when isBid, else commercial)"),
         valueCents: z.number().int().min(0).max(MAX_CENTS).nullable().optional(),
         closeDate: nullableDate.describe("Expected close, or bid due when isBid"),
         nextStep: z.string().max(500).nullable().optional(),

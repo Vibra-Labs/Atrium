@@ -36,15 +36,23 @@ function build() {
     lose: mock(() => Promise.resolve()),
     reopen: mock(() => Promise.resolve()),
   };
-  const tools = projectTools({ projects: projects as never, billing: billing as never, pursuits: pursuits as never });
+  const stages = {
+    findAll: mock(() => Promise.resolve([{ id: "st1", pipeline: "commercial", slug: "verbal_yes", name: "Verbal yes" }])),
+  };
+  const tools = projectTools({
+    projects: projects as never,
+    billing: billing as never,
+    pursuits: pursuits as never,
+    stages: stages as never,
+  });
   const get = (name: string): McpTool => tools.find((t) => t.name === name)!;
-  return { projects, billing, pursuits, tools, get };
+  return { projects, billing, pursuits, stages, tools, get };
 }
 
 describe("project tools", () => {
   it("exposes the expected tool names", () => {
     expect(build().tools.map((t) => t.name).sort()).toEqual([
-      "archive_project", "create_project", "delete_project", "get_project",
+      "archive_project", "create_project", "delete_project", "get_project", "list_pipeline_stages",
       "list_project_statuses", "list_projects", "mark_potential_contract_lost",
       "mark_potential_contract_won", "reopen_potential_contract", "update_potential_contract", "update_project",
     ]);
@@ -231,6 +239,20 @@ describe("potential contracts", () => {
     const input = get("update_potential_contract").inputSchema.parse({ projectId: "p1", stage: "waiting", valueCents: 4500000 });
     await runTool(get("update_potential_contract"), input, admin);
     expect(pursuits.update).toHaveBeenCalledWith("p1", { stage: "waiting", valueCents: 4500000 }, "org1");
+  });
+
+  it("update_potential_contract accepts a custom stage slug", async () => {
+    const { pursuits, get } = build();
+    const input = get("update_potential_contract").inputSchema.parse({ projectId: "p1", stage: "verbal_yes" });
+    await runTool(get("update_potential_contract"), input, admin);
+    expect(pursuits.update).toHaveBeenCalledWith("p1", { stage: "verbal_yes" }, "org1");
+  });
+
+  it("list_pipeline_stages returns both pipelines of the actor's org", async () => {
+    const { stages, get } = build();
+    const result = await runTool(get("list_pipeline_stages"), {}, admin);
+    expect(stages.findAll).toHaveBeenCalledWith("org1");
+    expect(JSON.stringify(result)).toContain("verbal_yes");
   });
 
   it("update_potential_contract only takes web links and amounts the database holds", async () => {

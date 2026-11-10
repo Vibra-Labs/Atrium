@@ -71,11 +71,13 @@ const mockContactSync = {
   endProjectClients: mock(() => Promise.resolve()),
 };
 
+const mockStages = { firstSlug: mock((_org: string, _pipeline: string) => Promise.resolve("intro")) };
+
 describe("ProjectsService", () => {
   let service: ProjectsService;
 
   beforeEach(() => {
-    service = new ProjectsService(mockPrisma as unknown as PrismaService, mockContactSync as never);
+    service = new ProjectsService(mockPrisma as unknown as PrismaService, mockContactSync as never, mockStages as never);
     mockContactSync.linkProjectClients.mockClear();
     mockContactSync.endProjectClients.mockClear();
     // Reset mocks
@@ -662,11 +664,16 @@ describe("ProjectsService", () => {
   });
 
   describe("potential contracts", () => {
-    it("create with potential creates a pursuit", async () => {
+    it("create with potential creates a pursuit in the commercial pipeline's first stage", async () => {
       await service.create({ name: "County RFP", potential: true }, "org-1");
       const data = (mockPrisma.project.create.mock.calls.at(-1) as [PrismaArgs])[0].data!;
+      expect(mockStages.firstSlug).toHaveBeenCalledWith("org-1", "commercial");
       expect(data.pursuit).toEqual({
-        create: { organizationId: "org-1", events: { create: { text: "Created as a potential contract" } } },
+        create: {
+          organizationId: "org-1",
+          stage: "intro",
+          events: { create: { text: "Created as a potential contract" } },
+        },
       });
       expect(data.potential).toBeUndefined();
     });

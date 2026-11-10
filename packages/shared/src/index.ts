@@ -97,6 +97,15 @@ export const DEFAULT_PURSUIT_STAGES: { slug: string; name: string }[] = [
   { slug: "waiting", name: "Waiting on decision" },
 ];
 export const MAX_PURSUIT_STAGES = 10;
+/** A stage's name for a contract, by its pipeline and slug; the slug when the stage is unknown. */
+export function stageLabel(
+  stages: readonly { pipeline: string; slug: string; name: string }[] | null,
+  isBid: boolean,
+  slug: string,
+): string {
+  const pipeline: PursuitPipeline = pipelineOf(isBid);
+  return stages?.find((s) => s.pipeline === pipeline && s.slug === slug)?.name ?? slug;
+}
 export const PURSUIT_OUTCOMES = ["open", "won", "lost"] as const;
 export type PursuitOutcome = (typeof PURSUIT_OUTCOMES)[number];
 

@@ -107,6 +107,7 @@ and similar) at the same URL with the same header. Nothing leaves your network.
 | `list_projects`, `get_project` | Browse projects |
 | `create_project`, `update_project`, `archive_project` | Manage projects (`create_project` with `potential: true` makes a potential contract) |
 | `update_potential_contract`, `mark_potential_contract_won`, `mark_potential_contract_lost`, `reopen_potential_contract` | Track work that isn't signed yet: stage, value, dates, win or lose it |
+| `list_pipeline_stages` | The workspace's potential-contract stages, for the Bids and Commercial pipelines |
 | `delete_project` | Permanently delete a project (owner only) |
 | `list_project_statuses` | The workspace's status options |
 | `list_clients`, `get_client` | Members of the workspace (team and portal clients); a client's profile (from their contact) and projects |
@@ -116,7 +117,7 @@ and similar) at the same URL with the same header. Nothing leaves your network.
 | `list_pending_approvals` | Deliverables awaiting client approval |
 | `list_contacts`, `get_contact`, `add_contact_note` | CRM contacts (filterable by portal access) and their internal notes (team only) |
 
-27 tools in total. List tools take `page` and `limit` (max 50). `post_update` is
+28 tools in total. List tools take `page` and `limit` (max 50). `post_update` is
 visible to clients and may trigger email notifications.
 
 ## Limits and security

@@ -8,6 +8,7 @@ import {
 import { randomUUID } from "crypto";
 import * as Sentry from "@sentry/nestjs";
 import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
+import { PursuitStagesService } from "./pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
@@ -52,6 +53,7 @@ export class ProjectsService implements OnApplicationBootstrap {
   constructor(
     private prisma: PrismaService,
     private contactSync: ContactSyncService,
+    private stages: PursuitStagesService,
   ) {}
 
   private async syncClients(
@@ -360,7 +362,11 @@ export class ProjectsService implements OnApplicationBootstrap {
         ...(potential
           ? {
               pursuit: {
-                create: { organizationId, events: { create: { text: "Created as a potential contract" } } },
+                create: {
+                  organizationId,
+                  stage: await this.stages.firstSlug(organizationId, "commercial"),
+                  events: { create: { text: "Created as a potential contract" } },
+                },
               },
             }
           : {}),

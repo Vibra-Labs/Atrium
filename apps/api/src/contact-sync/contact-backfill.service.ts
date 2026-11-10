@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
-import { DEFAULT_LEAD_SOURCES, DEFAULT_PURSUIT_STAGES, PURSUIT_PIPELINES } from "@atrium/shared";
+import { DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { PORTAL_INVITATION_ROLE } from "../clients/invitations";
 import { calculateInvoiceTotal } from "../payments/invoice-total";
@@ -22,7 +22,7 @@ interface ProfileFill {
  * Bump when a new backfill step must run for workspaces that already finished an earlier pass.
  * Steps must stay idempotent: a bump re-runs every step for every workspace.
  */
-export const CONTACTS_BACKFILL_VERSION = 2;
+export const CONTACTS_BACKFILL_VERSION = 1;
 
 /**
  * How long a workspace's backfill claim holds without renewal. A running pass renews it, so only
@@ -141,7 +141,6 @@ export class ContactBackfillService implements OnApplicationBootstrap {
       });
     }
 
-    await this.backfillPursuitStages(orgId);
     await this.backfillMembers(orgId);
     await this.backfillInvitees(orgId);
     await this.backfillDescriptions(orgId);
@@ -149,17 +148,6 @@ export class ContactBackfillService implements OnApplicationBootstrap {
     await this.backfillLabels(orgId);
     await this.backfillPaidInvoices(orgId);
     await this.backfillContactFields(orgId);
-  }
-
-  /** Gives each pipeline the default stages if it has none. Edited pipelines are left alone. */
-  async backfillPursuitStages(orgId: string): Promise<void> {
-    for (const pipeline of PURSUIT_PIPELINES) {
-      if ((await this.prisma.pursuitStage.count({ where: { organizationId: orgId, pipeline } })) > 0) continue;
-      await this.prisma.pursuitStage.createMany({
-        data: DEFAULT_PURSUIT_STAGES.map((s, order) => ({ organizationId: orgId, pipeline, slug: s.slug, name: s.name, order })),
-        skipDuplicates: true,
-      });
-    }
   }
 
   private logFailure(message: string, err: unknown): void {

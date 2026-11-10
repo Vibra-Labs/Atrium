@@ -287,7 +287,7 @@ describe("ContactBackfillService.run", () => {
   it("only visits workspaces below the current backfill version, and stamps the version when the pass succeeds", async () => {
     const { svc, db, calls } = build([{ id: "org-1" }]);
     await svc.run();
-    expect(CONTACTS_BACKFILL_VERSION).toBe(2);
+    expect(CONTACTS_BACKFILL_VERSION).toBe(1);
     expect(db.organization.findMany.mock.calls[0][0]).toEqual({
       where: { contactsBackfillVersion: { lt: CONTACTS_BACKFILL_VERSION } },
       select: { id: true },
@@ -374,46 +374,5 @@ describe("ContactBackfillService.run", () => {
     });
     await svc.run();
     expect(claimAndRelease(db).release.data).toEqual({ contactsBackfillClaimedAt: null });
-  });
-});
-
-describe("ContactBackfillService.backfillPursuitStages", () => {
-  const db = {
-    pursuitStage: {
-      count: mock((_args: { where: { organizationId: string; pipeline: string } }) => Promise.resolve(0)),
-      createMany: mock((_args: unknown) => Promise.resolve({ count: 3 })),
-    },
-  };
-  let service: ContactBackfillService;
-
-  beforeEach(() => {
-    db.pursuitStage.count.mockReset();
-    db.pursuitStage.createMany.mockReset();
-    db.pursuitStage.createMany.mockImplementation(() => Promise.resolve({ count: 3 }));
-    service = new ContactBackfillService(db as unknown as PrismaService, {} as ContactSyncService);
-  });
-
-  it("seeds default stages for each pipeline that has none", async () => {
-    db.pursuitStage.count.mockImplementation(({ where }) => Promise.resolve(where.pipeline === "bid" ? 0 : 2));
-
-    await service.backfillPursuitStages("org-1");
-
-    expect(db.pursuitStage.createMany).toHaveBeenCalledTimes(1);
-    expect(db.pursuitStage.createMany).toHaveBeenCalledWith({
-      data: [
-        { organizationId: "org-1", pipeline: "bid", slug: "found", name: "Lead", order: 0 },
-        { organizationId: "org-1", pipeline: "bid", slug: "proposal_sent", name: "Proposal sent", order: 1 },
-        { organizationId: "org-1", pipeline: "bid", slug: "waiting", name: "Waiting on decision", order: 2 },
-      ],
-      skipDuplicates: true,
-    });
-  });
-
-  it("leaves edited pipelines alone", async () => {
-    db.pursuitStage.count.mockImplementation(() => Promise.resolve(2));
-
-    await service.backfillPursuitStages("org-1");
-
-    expect(db.pursuitStage.createMany).not.toHaveBeenCalled();
   });
 });

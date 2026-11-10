@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { DEFAULT_PURSUIT_STAGES, MAX_PURSUIT_STAGES } from "@atrium/shared";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import type { OnApplicationBootstrap } from "@nestjs/common";
+import { DEFAULT_PURSUIT_STAGES, MAX_PURSUIT_STAGES, PURSUIT_PIPELINES } from "@atrium/shared";
 import type { PursuitPipeline } from "@atrium/shared";
 import type { PursuitStage } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
@@ -19,8 +20,37 @@ function uniqueSlug(name: string, taken: string[]): string {
 
 /** The stages of a workspace's two pipelines, Bids and Commercial. */
 @Injectable()
-export class PursuitStagesService {
+export class PursuitStagesService implements OnApplicationBootstrap {
+  private readonly logger: Logger = new Logger(PursuitStagesService.name);
+
   constructor(private prisma: PrismaService) {}
+
+  onApplicationBootstrap(): void {
+    // Don't hold up boot; new workspaces get their stages when they're created.
+    void this.seedMissing().catch((err: unknown) => {
+      this.logger.error("Failed to seed pipeline stages", err);
+    });
+  }
+
+  /**
+   * Gives every pipeline with no stages the defaults: workspaces made before stages existed.
+   * A pipeline can't be emptied by hand, so an edited one is never re-seeded. Safe to run on every boot.
+   */
+  async seedMissing(): Promise<void> {
+    const orgs: { id: string }[] = await this.prisma.organization.findMany({
+      where: { OR: PURSUIT_PIPELINES.map((pipeline) => ({ pursuitStages: { none: { pipeline } } })) },
+      select: { id: true },
+    });
+    for (const { id } of orgs) {
+      for (const pipeline of PURSUIT_PIPELINES) {
+        if ((await this.prisma.pursuitStage.count({ where: { organizationId: id, pipeline } })) > 0) continue;
+        await this.prisma.pursuitStage.createMany({
+          data: DEFAULT_PURSUIT_STAGES.map((s, order) => ({ organizationId: id, pipeline, slug: s.slug, name: s.name, order })),
+          skipDuplicates: true,
+        });
+      }
+    }
+  }
 
   findAll(orgId: string): Promise<PursuitStage[]> {
     return this.prisma.pursuitStage.findMany({
@@ -97,12 +127,18 @@ export class PursuitStagesService {
   /** Deletes a stage after moving every contract in it (any outcome) to `moveTo`. */
   async remove(id: string, moveTo: string, orgId: string): Promise<void> {
     const stage: PursuitStage = await this.getOrThrow(id, orgId);
-    const stages: PursuitStage[] = await this.list(orgId, stage.pipeline);
-    if (stages.length <= 1) throw new BadRequestException("A pipeline needs at least one stage");
-    const target: PursuitStage | undefined = stages.find((s) => s.id === moveTo && s.id !== id);
-    if (!target) throw new BadRequestException("Pick another stage in this pipeline to move its contracts to");
-
     await this.prisma.$transaction(async (tx) => {
+      // One remove per pipeline at a time, so two admins can't each delete the other's target
+      // or empty the pipeline between them. Checks below read the state after the lock.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pursuit-stages:${orgId}:${stage.pipeline}`}))`;
+      const stages: PursuitStage[] = await tx.pursuitStage.findMany({
+        where: { organizationId: orgId, pipeline: stage.pipeline },
+      });
+      if (!stages.some((s) => s.id === id)) throw new NotFoundException("Stage not found");
+      if (stages.length <= 1) throw new BadRequestException("A pipeline needs at least one stage");
+      const target: PursuitStage | undefined = stages.find((s) => s.id === moveTo && s.id !== id);
+      if (!target) throw new BadRequestException("Pick another stage in this pipeline to move its contracts to");
+
       await tx.projectPursuit.updateMany({
         where: { organizationId: orgId, isBid: stage.pipeline === "bid", stage: stage.slug },
         data: { stage: target.slug },

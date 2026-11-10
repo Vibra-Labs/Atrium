@@ -19,15 +19,32 @@ interface Pursuit {
 }
 type Where = Record<string, unknown>;
 
+const ORG = "org-1";
+
 const matches = (row: object, where: Where = {}): boolean =>
   Object.entries(where).every(([k, v]) => (row as Record<string, unknown>)[k] === v);
 const byOrder = (a: Stage, b: Stage): number => a.pipeline.localeCompare(b.pipeline) || a.order - b.order;
 
 /** Just enough of Prisma for the service: two tables kept in arrays. */
-function fakeDb(stages: Stage[], pursuits: Pursuit[]) {
+function fakeDb(stages: Stage[], pursuits: Pursuit[], orgIds: string[] = [ORG]) {
   let next = 100;
   const db = {
+    /** Runs when a transaction starts, standing in for another admin's commit that lands first. */
+    beforeTransaction: null as null | (() => void),
+    locks: [] as string[],
+    organization: {
+      findMany: async () => orgIds.map((id) => ({ id })),
+    },
+    $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      db.locks.push(`${strings.join("?")}|${values.join(",")}`);
+      return 1;
+    },
     pursuitStage: {
+      count: async ({ where }: { where: Where }) => stages.filter((s) => matches(s, where)).length,
+      createMany: async ({ data }: { data: Omit<Stage, "id">[] }) => {
+        data.forEach((d) => stages.push({ id: `s-${next++}`, ...d }));
+        return { count: data.length };
+      },
       findMany: async ({ where }: { where: Where }) => stages.filter((s) => matches(s, where)).sort(byOrder),
       findFirst: async ({ where }: { where: Where }) => stages.filter((s) => matches(s, where)).sort(byOrder)[0] ?? null,
       create: async ({ data }: { data: Omit<Stage, "id"> }) => {
@@ -51,13 +68,15 @@ function fakeDb(stages: Stage[], pursuits: Pursuit[]) {
         return { count: rows.length };
       },
     },
-    $transaction: async (arg: unknown) =>
-      typeof arg === "function" ? (arg as (tx: unknown) => Promise<unknown>)(db) : Promise.all(arg as Promise<unknown>[]),
+    $transaction: async (arg: unknown) => {
+      db.beforeTransaction?.();
+      db.beforeTransaction = null;
+      return typeof arg === "function" ? (arg as (tx: unknown) => Promise<unknown>)(db) : Promise.all(arg as Promise<unknown>[]);
+    },
   };
   return db;
 }
 
-const ORG = "org-1";
 function defaults(pipeline: string, prefix: string): Stage[] {
   return [
     { id: `${prefix}1`, organizationId: ORG, pipeline, name: "Lead", slug: "found", order: 0 },
@@ -70,6 +89,7 @@ describe("PursuitStagesService", () => {
   let stages: Stage[];
   let pursuits: Pursuit[];
   let service: PursuitStagesService;
+  let db: ReturnType<typeof fakeDb>;
 
   beforeEach(() => {
     stages = [
@@ -78,7 +98,8 @@ describe("PursuitStagesService", () => {
       { id: "x1", organizationId: "org-2", pipeline: "commercial", name: "Theirs", slug: "theirs", order: 0 },
     ];
     pursuits = [];
-    service = new PursuitStagesService(fakeDb(stages, pursuits) as never);
+    db = fakeDb(stages, pursuits);
+    service = new PursuitStagesService(db as never);
   });
 
   const names = async (pipeline: string): Promise<string[]> =>
@@ -184,5 +205,48 @@ describe("PursuitStagesService", () => {
     const verbal = await service.create({ pipeline: "commercial", name: "Verbal yes" }, ORG);
     expect(await service.find(ORG, "commercial", "verbal_yes")).toMatchObject({ id: verbal.id });
     expect(await service.find(ORG, "bid", "verbal_yes")).toBeNull();
+  });
+
+  it("remove re-checks the move target under a pipeline lock", async () => {
+    pursuits.push({ projectId: "p1", organizationId: ORG, isBid: false, stage: "waiting", outcome: "open" });
+    // Another admin removes the target stage just before this transaction gets the lock.
+    db.beforeTransaction = () => stages.splice(stages.findIndex((s) => s.id === "c2"), 1);
+
+    await expect(service.remove("c3", "c2", ORG)).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(db.locks).toHaveLength(1);
+    expect(db.locks[0]).toContain("pg_advisory_xact_lock");
+    expect(pursuits[0].stage).toBe("waiting");
+    expect(stages.some((s) => s.id === "c3")).toBe(true);
+  });
+
+  it("remove re-checks the last-stage rule under the lock", async () => {
+    await service.remove("b3", "b1", ORG);
+    // Another admin removes b1 meanwhile, leaving b2 as the only stage.
+    db.beforeTransaction = () => stages.splice(stages.findIndex((s) => s.id === "b1"), 1);
+    await expect(service.remove("b2", "b1", ORG)).rejects.toBeInstanceOf(BadRequestException);
+    expect(stages.filter((s) => s.organizationId === ORG && s.pipeline === "bid").map((s) => s.id)).toEqual(["b2"]);
+  });
+});
+
+describe("PursuitStagesService.seedMissing", () => {
+  it("seeds the default stages into each pipeline that has none", async () => {
+    const stages: Stage[] = [
+      { id: "c9", organizationId: ORG, pipeline: "commercial", name: "Intro call", slug: "intro_call", order: 0 },
+    ];
+    const service = new PursuitStagesService(fakeDb(stages, [], [ORG, "org-2"]) as never);
+
+    await service.seedMissing();
+
+    const of = (org: string, pipeline: string): string[] =>
+      stages.filter((s) => s.organizationId === org && s.pipeline === pipeline).map((s) => `${s.order}:${s.slug}`);
+    expect(of(ORG, "bid")).toEqual(["0:found", "1:proposal_sent", "2:waiting"]);
+    // An edited pipeline is left as it is.
+    expect(of(ORG, "commercial")).toEqual(["0:intro_call"]);
+    expect(of("org-2", "commercial")).toEqual(["0:found", "1:proposal_sent", "2:waiting"]);
+
+    // Running again changes nothing.
+    await service.seedMissing();
+    expect(stages).toHaveLength(10);
   });
 });

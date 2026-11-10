@@ -66,6 +66,12 @@ async function main() {
     console.warn("Warning: Could not create the pg_trgm extension — the schema push will fail");
   }
   try {
+    // Old MCP OAuth tables (Better Auth <1.7) clash with the new ones.
+    await $`bun run ./scripts/drop-legacy-oauth-tables.ts`.cwd(dbDir);
+  } catch {
+    console.warn("Warning: Could not remove the old MCP OAuth tables — the schema push may fail");
+  }
+  try {
     await $`bunx prisma db push --skip-generate`.cwd(dbDir).quiet();
   } catch {
     console.warn("Warning: Could not push database schema — the API may fail to start");

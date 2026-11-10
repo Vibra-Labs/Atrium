@@ -7,7 +7,7 @@ import { McpAuthService } from "../mcp-auth/mcp-auth.service";
 import { LastSeenTracker } from "./last-seen.tracker";
 import { isStaffOnlyOrgRoute, parseOriginalUrl } from "./staff-only-org-routes";
 import { PrismaService } from "../prisma/prisma.service";
-import { bearerToken, isMcpPath, ORG_MEMBER_FIELDS, RateLimiter } from "../common";
+import { bearerToken, isMcpPath, mcpOAuthEnabled, ORG_MEMBER_FIELDS, RateLimiter } from "../common";
 import type {
   Actor, AuthenticatedRequest, AuthUser, AuthSession, BearerKind, FullOrganization, OrgMember,
 } from "../common";
@@ -101,7 +101,7 @@ export class SessionMiddleware implements NestMiddleware {
    * Connected apps UI that would disconnect them is hidden.
    */
   private extractOAuthToken(req: Request): string | undefined {
-    if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") return undefined;
+    if (!mcpOAuthEnabled(this.config)) return undefined;
     if (!isMcpPath(req.originalUrl)) return undefined;
     const token: string | undefined = bearerToken(req.headers.authorization);
     return token && !token.startsWith(API_KEY_PREFIX) ? token : undefined;

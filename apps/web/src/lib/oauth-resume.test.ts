@@ -11,13 +11,20 @@ describe("oauthResumeUrl", () => {
   it("rebuilds the authorize URL with the original query", () => {
     const search = "?response_type=code&client_id=abc&redirect_uri=https%3A%2F%2Fclaude.ai%2Fcb&state=s&code_challenge=x&code_challenge_method=S256";
     expect(oauthResumeUrl(search, "https://api.test")).toBe(
-      `https://api.test/api/auth/mcp/authorize${search}`,
+      `https://api.test/api/auth/oauth2/authorize${search}`,
+    );
+  });
+
+  it("drops the signature Better Auth put on the login URL", () => {
+    const search = "?response_type=code&client_id=abc&exp=123&ba_iat=456&ba_param=client_id&ba_param=exp&sig=zzz";
+    expect(oauthResumeUrl(search, "https://api.test")).toBe(
+      "https://api.test/api/auth/oauth2/authorize?response_type=code&client_id=abc",
     );
   });
 
   it("works with a same-origin API (empty apiUrl)", () => {
     expect(oauthResumeUrl("?response_type=code&client_id=abc", "")).toBe(
-      "/api/auth/mcp/authorize?response_type=code&client_id=abc",
+      "/api/auth/oauth2/authorize?response_type=code&client_id=abc",
     );
   });
 });

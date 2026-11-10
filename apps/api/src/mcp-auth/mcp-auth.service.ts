@@ -1,25 +1,12 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
-import { MCP_ACTOR_ROLES, ORG_MEMBER_FIELDS } from "../common";
+import { hashOAuthToken, MCP_ACTOR_ROLES, ORG_MEMBER_FIELDS } from "../common";
 import type { Actor } from "../common";
+import { readSignedConsentRequest } from "./consent-hooks";
+import type { SignedConsentRequest } from "./consent-hooks";
 
 export type ResolvedOAuthToken = Actor & { oauthClientId: string };
-
-/** The parts of a pending authorization the consent screen is allowed to act on. */
-export interface ConsentRequest {
-  clientId: string;
-  redirectURI: string;
-  /** When the code stops being exchangeable; a parked choice dies with it. */
-  expiresAt: Date;
-}
-
-/** What Better Auth's mcp plugin stores in the consent code's verification row. */
-interface AuthorizationCodeValue {
-  clientId?: unknown;
-  redirectURI?: unknown;
-  userId?: unknown;
-  requireConsent?: unknown;
-}
 
 const EXPIRED_CONSENT =
   "This request has expired. Start the connection again from your AI assistant.";
@@ -35,60 +22,36 @@ export interface GrantSummary {
 
 @Injectable()
 export class McpAuthService {
-  private readonly logger = new Logger(McpAuthService.name);
-
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
 
   /**
-   * The pending authorization a consent code stands for.
+   * The authorization request the consent page was opened for.
    *
-   * The consent screen learns the client id from here, never from its own URL:
-   * the two are otherwise unrelated, so a phishing link could name one client
-   * in the query string while the code it carries authorizes another, and the
-   * grant would be written for the client the URL chose. Reading both the
-   * client and the destination out of the code's own row removes the gap.
+   * The client and destination are read from the request Better Auth signed
+   * onto the page's URL, never from plain query parameters, so a phishing
+   * link cannot name one client while approving another.
    */
-  async consentRequest(consentCode: string, userId: string): Promise<ConsentRequest> {
-    // Identifiers are not unique, and the plugin's own findVerificationValue
-    // sorts by createdAt desc with limit 1 — read the same row it will.
-    const row = await this.prisma.verification.findFirst({
-      where: { identifier: consentCode },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!row || row.expiresAt.getTime() <= Date.now()) {
-      throw new NotFoundException(EXPIRED_CONSENT);
-    }
-    let value: AuthorizationCodeValue;
-    try {
-      value = JSON.parse(row.value) as AuthorizationCodeValue;
-    } catch (err) {
-      // Some other feature's verification row happens to share this identifier.
-      this.logger.warn(
-        `Consent code did not hold an authorization request: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new NotFoundException(EXPIRED_CONSENT);
-    }
-    if (
-      value.userId !== userId ||
-      value.requireConsent !== true ||
-      typeof value.clientId !== "string" ||
-      typeof value.redirectURI !== "string"
-    ) {
-      throw new NotFoundException(EXPIRED_CONSENT);
-    }
-    return {
-      clientId: value.clientId,
-      redirectURI: value.redirectURI,
-      expiresAt: row.expiresAt,
-    };
+  async consentRequest(oauthQuery: string): Promise<SignedConsentRequest> {
+    const request: SignedConsentRequest | null = await readSignedConsentRequest(
+      oauthQuery,
+      this.config.getOrThrow<string>("BETTER_AUTH_SECRET"),
+    );
+    if (!request) throw new NotFoundException(EXPIRED_CONSENT);
+    return request;
   }
 
-  /** OAuth access token → actor. Same role rule as API keys; expiry is checked here
-   * because the OAuth plugin's own token lookup does not check it. */
+  /** OAuth access token → actor. Same role rule as API keys. */
   async resolve(token: string): Promise<ResolvedOAuthToken | null> {
-    const row = await this.prisma.oauthAccessToken.findUnique({ where: { accessToken: token } });
-    if (!row || !row.userId) return null;
-    if (row.accessTokenExpiresAt.getTime() <= Date.now()) return null;
+    const row = await this.prisma.oauthAccessToken.findUnique({ where: { token: hashOAuthToken(token) } });
+    if (!row || !row.userId || row.revoked) return null;
+    if (row.expiresAt.getTime() <= Date.now()) return null;
+    // A DPoP-bound token needs a proof this endpoint does not check. The token
+    // endpoint never issues one (see auth.service.ts), so refuse rather than
+    // treat it as a bearer token.
+    if (row.confirmation !== null) return null;
 
     const grant = await this.prisma.mcpGrant.findUnique({
       where: { userId_clientId: { userId: row.userId, clientId: row.clientId } },
@@ -106,12 +69,12 @@ export class McpAuthService {
   }
 
   async getClient(clientId: string): Promise<{ clientId: string; name: string }> {
-    const app = await this.prisma.oauthApplication.findUnique({
+    const client = await this.prisma.oauthClient.findUnique({
       where: { clientId },
       select: { clientId: true, name: true },
     });
-    if (!app) throw new NotFoundException("Unknown application");
-    return app;
+    if (!client) throw new NotFoundException("Unknown application");
+    return { clientId: client.clientId, name: client.name || "Unnamed app" };
   }
 
   async adminOrganizations(userId: string): Promise<{ id: string; name: string }[]> {
@@ -125,31 +88,28 @@ export class McpAuthService {
   }
 
   /**
-   * Records which workspace the user picked for this consent code.
+   * Records which workspace the user picked for this authorization request.
    *
-   * Deliberately writes nothing but the pending row: Better Auth consumes the
-   * consent code when the user presses Allow, so the grant cannot be written
-   * first and consent second without a failed consent leaving a working
-   * connection re-pointed at a workspace it was never approved for.
-   * `promoteGrantOnConsent` turns this into an `McpGrant` once the consent
-   * endpoint has actually succeeded.
+   * Deliberately writes nothing but the pending row, so a consent that then
+   * fails cannot leave a working connection re-pointed at a workspace it was
+   * never approved for. `promoteGrantOnConsent` turns this into an `McpGrant`
+   * once the consent endpoint has actually succeeded.
    */
   async savePendingGrant(
-    consentCode: string,
+    request: SignedConsentRequest,
     userId: string,
-    clientId: string,
     organizationId: string,
-    expiresAt: Date,
   ): Promise<void> {
+    const { requestId, clientId, expiresAt } = request;
     const member = await this.prisma.member.findFirst({ where: { userId, organizationId } });
     if (!member || !MCP_ACTOR_ROLES.includes(member.role)) {
       throw new ForbiddenException("You must be an owner or admin of that workspace");
     }
     await this.getClient(clientId);
     await this.prisma.mcpPendingGrant.upsert({
-      where: { consentCode },
-      create: { consentCode, userId, clientId, organizationId, expiresAt },
-      update: { userId, clientId, organizationId, expiresAt },
+      where: { requestId_userId: { requestId, userId } },
+      create: { requestId, userId, clientId, organizationId, expiresAt },
+      update: { clientId, organizationId, expiresAt },
     });
   }
 
@@ -160,11 +120,11 @@ export class McpAuthService {
       include: { user: { select: { name: true } }, organization: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     });
-    const apps = await this.prisma.oauthApplication.findMany({
+    const clients = await this.prisma.oauthClient.findMany({
       where: { clientId: { in: grants.map((g) => g.clientId) } },
       select: { clientId: true, name: true },
     });
-    const names = new Map(apps.map((a) => [a.clientId, a.name]));
+    const names = new Map(clients.map((c) => [c.clientId, c.name || "Unnamed app"]));
     return grants.map((g) => ({
       id: g.id,
       clientName: names.get(g.clientId) ?? "Unknown app",
@@ -189,6 +149,7 @@ export class McpAuthService {
     // invalid_client page it cannot recover from.
     await this.prisma.$transaction([
       this.prisma.oauthAccessToken.deleteMany({ where: scope }),
+      this.prisma.oauthRefreshToken.deleteMany({ where: scope }),
       this.prisma.mcpGrant.delete({ where: { id: grant.id } }),
     ]);
   }

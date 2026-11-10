@@ -31,10 +31,12 @@ export class OAuthCleanupTask {
   async pruneUnusedClients(): Promise<void> {
     try {
       const granted = await this.prisma.mcpGrant.findMany({ select: { clientId: true }, distinct: ["clientId"] });
-      const result = await this.prisma.oauthApplication.deleteMany({
+      const result = await this.prisma.oauthClient.deleteMany({
         where: {
-          createdAt: { lt: new Date(Date.now() - UNUSED_CLIENT_TTL_MS) },
+          // createdAt is nullable in the plugin's schema; a row without one counts as old.
+          OR: [{ createdAt: { lt: new Date(Date.now() - UNUSED_CLIENT_TTL_MS) } }, { createdAt: null }],
           accessTokens: { none: {} },
+          refreshTokens: { none: {} },
           // A client the user once approved keeps its registration even after
           // Disconnect: clients cache their client_id, and deleting the row
           // strands them on Better Auth's invalid_client page with nothing to
@@ -68,13 +70,14 @@ export class OAuthCleanupTask {
     }
   }
 
-  /** Drops token rows whose refresh token can no longer be redeemed. */
+  /** Drops access and refresh tokens that can no longer be used. */
   async pruneExpiredTokens(): Promise<void> {
     try {
-      const result = await this.prisma.oauthAccessToken.deleteMany({
-        where: { refreshTokenExpiresAt: { lt: new Date() } },
-      });
-      if (result.count > 0) this.logger.log(`Deleted ${result.count} expired OAuth token row(s)`);
+      const now: Date = new Date();
+      const access: { count: number } = await this.prisma.oauthAccessToken.deleteMany({ where: { expiresAt: { lt: now } } });
+      const refresh: { count: number } = await this.prisma.oauthRefreshToken.deleteMany({ where: { expiresAt: { lt: now } } });
+      const count: number = access.count + refresh.count;
+      if (count > 0) this.logger.log(`Deleted ${count} expired OAuth token row(s)`);
     } catch (err) {
       this.logger.error("Failed to delete expired OAuth tokens", err instanceof Error ? err.stack : String(err));
     }

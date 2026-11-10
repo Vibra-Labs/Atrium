@@ -50,7 +50,7 @@ The API uses `nest start --watch` for hot reload. The web app uses Next.js dev s
 - **Mail**: `mail/` -- Resend integration with React Email templates
 - **API keys**: `api-keys/` -- `atr_` bearer keys (hashed), resolved in `SessionMiddleware` into the same `req.user/organization/member` as cookie sessions
 - **MCP**: `mcp/` -- stateless MCP server at `POST /api/mcp`; tools in `mcp/tools/*.tools.ts` are thin adapters over existing services. The controller is `@Public()` and checks identity itself
-- **MCP auth**: `mcp-auth/` -- OAuth tokens (Better Auth `mcp` plugin) → workspace-bound actor via `McpGrant`; honoured only on `/api/mcp`. Kept out of `mcp/` to avoid a module cycle with `AuthModule`
+- **MCP auth**: `mcp-auth/` -- OAuth tokens (`@better-auth/mcp` plugin, opaque tokens stored hashed) → workspace-bound actor via `McpGrant`; honoured only on `/api/mcp`. Kept out of `mcp/` to avoid a module cycle with `AuthModule`
 - **Integrations**: `integrations/` -- Slack/Discord/signed-webhook destinations. `NotificationsService` calls `IntegrationDispatcher.dispatch()` from each `notify*` method; deliveries are rows retried by a per-minute cron (`SKIP LOCKED` claim). Pro feature (`integrations`)
 - **Contacts**: `contacts/` -- contacts, companies, lead sources, revenue, follow-up reminders cron, CSV import/export, portal access (a client is a contact with a login; `access=portal|pending|none` filter). Owner/admin only, free on all plans
 - **Contact sync**: `contact-sync/` -- keeps `Contact`/`ProjectContact` in step with invites, project clients, account deletion and invoice payments; boot backfill

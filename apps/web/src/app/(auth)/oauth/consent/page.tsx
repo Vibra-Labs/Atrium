@@ -1,27 +1,16 @@
 import { ConsentForm } from "./consent-form";
 
-interface ConsentPageProps {
-  searchParams: Promise<{ consent_code?: string }>;
-}
-
 /**
- * The plugin also puts `client_id` on this URL. It is ignored on purpose: the
- * client the user is being asked about is read out of the consent code's own
- * row, so a link that names a different one changes nothing.
+ * Better Auth signs the whole authorization request onto this page's URL. The
+ * form reads it from the address bar and sends it back as-is; the client and
+ * destination it shows come from the API's check of that signature, never
+ * from the plain query parameters.
  */
-export default async function ConsentPage({ searchParams }: ConsentPageProps): Promise<React.ReactElement> {
-  const { consent_code: consentCode } = await searchParams;
-
+export default function ConsentPage(): React.ReactElement {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
-        {!consentCode ? (
-          <p className="text-sm text-red-600">
-            This link is incomplete. Start the connection again from your AI assistant.
-          </p>
-        ) : (
-          <ConsentForm consentCode={consentCode} />
-        )}
+        <ConsentForm />
       </div>
     </div>
   );

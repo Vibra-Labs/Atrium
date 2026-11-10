@@ -64,6 +64,7 @@ async function run() {
   // 5. Push schema to database
   console.log("\nPushing database schema...");
   await $`bun run ./scripts/ensure-extensions.ts`.cwd(dbDir);
+  await $`bun run ./scripts/drop-legacy-oauth-tables.ts`.cwd(dbDir);
   await $`bunx prisma db push`.cwd(dbDir);
 
   // 6. Seed demo data

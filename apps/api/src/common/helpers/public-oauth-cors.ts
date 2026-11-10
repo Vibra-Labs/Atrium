@@ -1,12 +1,13 @@
 /**
  * The OAuth surface that third-party MCP clients must be able to reach from
- * any origin: dynamic client registration, the token endpoint, and the
- * discovery documents. Everything else on this API is first-party only and
+ * any origin: dynamic client registration, the token and revocation
+ * endpoints, and the discovery documents. Everything else on this API is first-party only and
  * keeps the credentialed, single-origin CORS policy.
  */
 const PUBLIC_OAUTH_PATHS: ReadonlySet<string> = new Set([
-  "/api/auth/mcp/register",
-  "/api/auth/mcp/token",
+  "/api/auth/oauth2/register",
+  "/api/auth/oauth2/token",
+  "/api/auth/oauth2/revoke",
 ]);
 
 /** Discovery documents, served at the origin root (see main.ts prefix excludes). */

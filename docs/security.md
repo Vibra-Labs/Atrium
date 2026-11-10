@@ -34,21 +34,24 @@ an attacker vary the bucket.
 
 ## MCP OAuth
 
-Atrium acts as an OAuth 2.1 authorization server for MCP clients (Better Auth `mcp`
-plugin): PKCE with S256 is required (the `plain` method is refused), redirect URIs are
-exact-match, access tokens last 1 hour and refresh tokens 30 days. Dynamic client
-registration is open, as the MCP spec expects; it refuses redirect URIs that are
-unparseable, contain a comma, or use the `javascript:`, `data:`, `vbscript:`, `blob:`,
-`file:`, or `about:` schemes (checked again at authorize time), is rate limited to 10
-per hour per IP, and unused registrations are pruned after 7 days.
+Atrium acts as an OAuth 2.1 authorization server for MCP clients (Better Auth's
+`@better-auth/mcp` plugin): PKCE with S256 is required (the `plain` method is refused),
+redirect URIs are exact-match, access tokens last 1 hour and refresh tokens 30 days.
+Dynamic client registration is open, as the MCP spec expects; it refuses redirect URIs
+that are unparseable, contain a comma, or use the `javascript:`, `data:`, `vbscript:`,
+`blob:`, `file:`, or `about:` schemes (checked again at authorize time), is rate limited
+to 10 per hour per IP, and unused registrations are pruned after 7 days.
 
-An authorization code cannot be exchanged before the user has pressed Allow. In this
-Better Auth version the consent code *is* the authorization code, and the token endpoint
-checks only that the code exists and has not expired, so Atrium checks the code's own
-`requireConsent` flag first and answers `400 invalid_grant` until consent has actually
-been given. The token endpoint also accepts a JSON body of any shape and coerces the
-presented code with `toString()`, so the check coerces it identically -- a code wrapped
-in an array or sent as a number is refused just the same.
+The consent page is shown on every authorization, even for a client the user approved
+before and even when the client sends `prompt=none`, because it is where the user picks
+the workspace. The plugin issues an authorization code only after the user presses Allow,
+and it signs the request it hands the consent page, so the page (and the API behind it)
+reads the client and redirect URI from that signed request, never from bare query
+parameters.
+
+MCP sign-in needs an `https://` public URL (or `localhost` for development). On a
+plain-HTTP install it is switched off with a warning at startup, and MCP clients connect
+with an API key instead.
 
 OAuth access tokens are honoured **only** on `POST /api/mcp` (with or without a trailing
 slash -- both reach the same route), and only when they arrive as a bearer token: a
@@ -59,28 +62,25 @@ grants -- both require a dashboard session. Each grant is bound to one workspace
 on the consent screen, and resolves only while the user is an owner or admin there.
 
 The workspace choice takes effect only once consent succeeds. The consent screen records
-the chosen workspace against the consent code before it submits the approval
-(`mcp_pending_grant`), and that parked choice grants nothing on its own: the grant is
+the chosen workspace against the signed request and the signed-in user before it submits
+the approval (`mcp_pending_grant`), and that parked choice grants nothing on its own: the grant is
 written afterwards by a server-side hook, only once the plugin's consent endpoint has
 returned successfully, in the same transaction that clears the parked row. Abandoning the
 consent page -- or a consent that fails -- therefore leaves any existing connection
 exactly as it was. When a
 completed consent does move a client to a different workspace, that client's older tokens
 are deleted in that transaction, so a session authorized for the previous workspace is
-signed out rather than silently moved. Parked choices whose consent code has expired are
+signed out rather than silently moved. Parked choices whose request has expired are
 deleted nightly.
 
 The endpoint refuses JSON-RPC batches (`400`, error `-32600`). The current MCP spec has
 no batching, and the per-key rate limit counts HTTP requests, so one request carrying an
 array of calls would have spent a single token and run all of them.
 
-The plugin stores access **and refresh** tokens unhashed. A database leak therefore
-exposes refresh tokens that stay redeemable for 30 days, and MCP clients are public
-clients that refresh with `client_id` alone -- no secret is involved. The
-single-endpoint rule, not the access token's one-hour lifetime, is what bounds the
-impact. The plugin's own `GET /api/auth/mcp/get-session` endpoint, which returns the
-whole token row (refresh token included) for any presented access token, is blocked and
-answers 404. Token rows whose refresh window has closed are deleted nightly.
+Access tokens are opaque and stored as SHA-256 hashes, as are refresh tokens and
+authorization codes, so a database leak does not expose usable tokens. Tokens are
+ordinary bearer tokens: the token endpoint ignores DPoP proofs, because the MCP endpoint
+does not check them. Expired tokens are deleted nightly.
 
 Disconnecting an app deletes its tokens and workspace grant; because of the 30-second
 auth cache, a token can keep working for up to 30 seconds after disconnect or expiry.

@@ -29,7 +29,8 @@ model User {
   tasksAssigned      Task[]              @relation("TaskAssignee")
   timeEntries        TimeEntry[]
   apiKeys            ApiKey[]
-  oauthApplications  OauthApplication[]
+  oauthClients       OauthClient[]
+  oauthRefreshTokens OauthRefreshToken[]
   oauthAccessTokens  OauthAccessToken[]
   oauthConsents      OauthConsent[]
   mcpGrants          McpGrant[]
@@ -50,6 +51,9 @@ model Session {
 
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganizationId String?
+
+  oauthRefreshTokens OauthRefreshToken[]
+  oauthAccessTokens  OauthAccessToken[]
 
   @@index([userId])
   @@map("session")
@@ -198,66 +202,185 @@ model ApiKey {
   @@map("api_key")
 }
 
-// ─── OAuth provider (Better Auth mcp plugin) ───
-// Field names are dictated by better-auth/dist/plugins/oidc-provider/schema.mjs.
+// ─── OAuth provider (Better Auth @better-auth/mcp plugin) ───
+// Generated with the Better Auth CLI from the oauth-provider schema; table
+// names are Atrium's. Do not rename fields: the plugin reads and writes them.
+// The plugin's string-list fields are Json, not String[]: it tells an unset
+// list (null) from an empty one, and Prisma reads a NULL String[] back as [].
 
-model OauthApplication {
-  id           String   @id
-  name         String
-  icon         String?
-  metadata     String?
-  clientId     String   @unique
-  clientSecret String?
-  redirectUrls String
-  type         String
-  disabled     Boolean? @default(false)
-  userId       String?
-  createdAt    DateTime
-  updatedAt    DateTime
+model OauthClient {
+  id                               String    @id
+  clientId                         String    @unique
+  clientSecret                     String?
+  clientDiscoveryId                String?
+  disabled                         Boolean?  @default(false)
+  skipConsent                      Boolean?
+  enableEndSession                 Boolean?
+  subjectType                      String?
+  scopes                           Json?
+  clientCredentialsScopes          Json?     @default("[]")
+  userId                           String?
+  createdAt                        DateTime?
+  updatedAt                        DateTime?
+  name                             String?
+  uri                              String?
+  icon                             String?
+  contacts                         Json?
+  tos                              String?
+  policy                           String?
+  softwareId                       String?
+  softwareVersion                  String?
+  softwareStatement                String?
+  redirectUris                     Json?
+  postLogoutRedirectUris           Json?
+  backchannelLogoutUri             String?
+  backchannelLogoutSessionRequired Boolean?
+  tokenEndpointAuthMethod          String?
+  applicationType                  String?
+  jwks                             String?
+  jwksUri                          String?
+  grantTypes                       Json?
+  responseTypes                    Json?
+  requirePKCE                      Boolean?
+  dpopBoundAccessTokens            Boolean?  @default(false)
+  referenceId                      String?
+  metadata                         Json?
 
-  user         User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessTokens OauthAccessToken[]
-  consents     OauthConsent[]
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resources     OauthClientResource[]
+  refreshTokens OauthRefreshToken[]
+  accessTokens  OauthAccessToken[]
+  consents      OauthConsent[]
 
   @@index([userId])
-  @@map("oauth_application")
+  @@map("oauth_client")
+}
+
+model OauthResource {
+  id                            String    @id
+  identifier                    String    @unique
+  name                          String
+  accessTokenTtl                Int?
+  refreshTokenTtl               Int?
+  signingAlgorithm              String?
+  signingKeyId                  String?
+  allowedScopes                 Json?
+  customClaims                  Json?
+  dpopBoundAccessTokensRequired Boolean?  @default(false)
+  disabled                      Boolean?  @default(false)
+  createdAt                     DateTime?
+  updatedAt                     DateTime?
+  policyVersion                 Int?      @default(1)
+  metadata                      Json?
+
+  clients OauthClientResource[]
+
+  @@map("oauth_resource")
+}
+
+model OauthClientResource {
+  id         String    @id
+  clientId   String
+  resourceId String
+  metadata   Json?
+  createdAt  DateTime?
+
+  client   OauthClient   @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  resource OauthResource @relation(fields: [resourceId], references: [identifier], onDelete: Cascade)
+
+  @@unique([clientId, resourceId])
+  @@index([clientId])
+  @@index([resourceId])
+  @@map("oauth_client_resource")
+}
+
+model OauthRefreshToken {
+  id                      String    @id
+  token                   String    @unique
+  clientId                String
+  sessionId               String?
+  userId                  String
+  referenceId             String?
+  authorizationCodeId     String?
+  resources               Json?
+  requestedUserInfoClaims Json?
+  expiresAt               DateTime
+  createdAt               DateTime
+  revoked                 DateTime?
+  rotatedAt               DateTime?
+  rotationReplayResponse  String?
+  rotationReplayExpiresAt DateTime?
+  authTime                DateTime?
+  confirmation            Json?
+  scopes                  Json?
+
+  client       OauthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  session      Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokens OauthAccessToken[]
+
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([authorizationCodeId])
+  @@map("oauth_refresh_token")
 }
 
 model OauthAccessToken {
-  id                    String   @id
-  accessToken           String   @unique
-  refreshToken          String   @unique
-  accessTokenExpiresAt  DateTime
-  refreshTokenExpiresAt DateTime
-  clientId              String
-  userId                String?
-  scopes                String
-  createdAt             DateTime
-  updatedAt             DateTime
+  id                      String    @id
+  token                   String    @unique
+  clientId                String
+  sessionId               String?
+  userId                  String?
+  referenceId             String?
+  authorizationCodeId     String?
+  resources               Json?
+  requestedUserInfoClaims Json?
+  refreshId               String?
+  expiresAt               DateTime
+  createdAt               DateTime
+  revoked                 DateTime?
+  confirmation            Json?
+  scopes                  Json?
 
-  application OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
-  user        User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client       OauthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  session      Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  user         User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken OauthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+  @@index([sessionId])
   @@index([userId])
+  @@index([authorizationCodeId])
+  @@index([refreshId])
   @@map("oauth_access_token")
 }
 
 model OauthConsent {
-  id           String   @id
-  clientId     String
-  userId       String
-  scopes       String
-  createdAt    DateTime
-  updatedAt    DateTime
-  consentGiven Boolean
+  id                      String   @id
+  clientId                String
+  userId                  String?
+  referenceId             String?
+  resources               Json?
+  requestedUserInfoClaims Json?
+  scopes                  Json?
+  createdAt               DateTime
+  updatedAt               DateTime
 
-  application OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client OauthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user   User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@index([userId])
   @@map("oauth_consent")
+}
+
+/// Replay guard for private_key_jwt client assertions.
+model OauthClientAssertion {
+  id        String   @id
+  expiresAt DateTime
+
+  @@map("oauth_client_assertion")
 }
 
 /// Which workspace an OAuth client acts in for a given user. Chosen on the consent screen.
@@ -284,7 +407,8 @@ model McpGrant {
 /// yet confirmed. Promoted to an McpGrant only when /oauth2/consent succeeds,
 /// so abandoning the consent page leaves an existing connection untouched.
 model McpPendingGrant {
-  consentCode    String   @id
+  /// The `sig` of the signed authorization request the consent screen showed.
+  requestId      String
   userId         String
   clientId       String
   organizationId String
@@ -294,6 +418,7 @@ model McpPendingGrant {
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@id([requestId, userId])
   @@index([userId])
   @@index([organizationId])
   @@index([expiresAt])

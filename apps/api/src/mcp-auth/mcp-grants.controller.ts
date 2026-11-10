@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Post, Query, Req, UseGuards,
+  Body, Controller, Delete, ForbiddenException, Get, Param, Post, Query, Req, UseGuards,
 } from "@nestjs/common";
 import { AuthGuard, CurrentMember, CurrentOrg, CurrentUser, Roles, RolesGuard } from "../common";
 import type { AuthenticatedRequest } from "../common";
@@ -8,7 +8,8 @@ import { McpAuthService } from "./mcp-auth.service";
 import type { GrantSummary } from "./mcp-auth.service";
 import { describeRedirect } from "./redirect-display";
 import type { RedirectDisplay } from "./redirect-display";
-import { CreateMcpGrantDto } from "./mcp-grants.dto";
+import { ConsentInfoQueryDto, CreateMcpGrantDto } from "./mcp-grants.dto";
+import type { SignedConsentRequest } from "./consent-hooks";
 
 interface ConsentInfo {
   client: { clientId: string; name: string };
@@ -25,11 +26,10 @@ export class McpConsentController {
 
   @Get("consent-info")
   async consentInfo(
-    @Query("consentCode") consentCode: string,
+    @Query() query: ConsentInfoQueryDto,
     @CurrentUser("id") userId: string,
   ): Promise<ConsentInfo> {
-    if (!consentCode) throw new BadRequestException("consentCode is required");
-    const request = await this.mcpAuth.consentRequest(consentCode, userId);
+    const request: SignedConsentRequest = await this.mcpAuth.consentRequest(query.oauthQuery);
     const [client, organizations] = await Promise.all([
       this.mcpAuth.getClient(request.clientId),
       this.mcpAuth.adminOrganizations(userId),
@@ -48,16 +48,10 @@ export class McpConsentController {
     if (req.apiKeyId) {
       throw new ForbiddenException("API keys cannot create MCP grants. Sign in to the dashboard.");
     }
-    // The client id comes from the consent code's own row, so the grant can
-    // only ever be written for the client the user is actually being asked about.
-    const { clientId, expiresAt } = await this.mcpAuth.consentRequest(dto.consentCode, userId);
-    await this.mcpAuth.savePendingGrant(
-      dto.consentCode,
-      userId,
-      clientId,
-      dto.organizationId,
-      expiresAt,
-    );
+    // The client id comes from the signed request, so the grant can only
+    // ever be written for the client the user is actually being asked about.
+    const request: SignedConsentRequest = await this.mcpAuth.consentRequest(dto.oauthQuery);
+    await this.mcpAuth.savePendingGrant(request, userId, dto.organizationId);
   }
 }
 

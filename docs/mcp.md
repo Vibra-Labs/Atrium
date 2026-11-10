@@ -134,6 +134,6 @@ visible to clients and may trigger email notifications.
 
 ## Troubleshooting
 
-- A harmless Prisma `P2025` ("record to delete does not exist") in the API logs on a
-  successful sign-in token exchange comes from Better Auth's `mcp` plugin, not from
-  Atrium -- it can be ignored.
+- After upgrading to a version built on Better Auth 1.7, AI assistants that were
+  connected by signing in must sign in again: client registrations changed format.
+  Connections made with an API key are unaffected.

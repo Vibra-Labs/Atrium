@@ -1,19 +1,21 @@
 import { describe, expect, it, mock } from "bun:test";
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
+import { plainToInstance } from "class-transformer";
+import { validate } from "class-validator";
 import { McpConsentController, McpGrantsController } from "./mcp-grants.controller";
+import { ConsentInfoQueryDto } from "./mcp-grants.dto";
 import type { AuthenticatedRequest } from "../common";
 
-const CODE_EXPIRY = new Date(Date.now() + 60_000);
+const REQUEST = {
+  requestId: "sig1",
+  clientId: "c1",
+  redirectURI: "http://localhost:9999/callback",
+  expiresAt: new Date(Date.now() + 60_000),
+};
 
 function build() {
   const service = {
-    consentRequest: mock(() =>
-      Promise.resolve({
-        clientId: "c1",
-        redirectURI: "http://localhost:9999/callback",
-        expiresAt: CODE_EXPIRY,
-      }),
-    ),
+    consentRequest: mock(() => Promise.resolve(REQUEST)),
     getClient: mock(() => Promise.resolve({ clientId: "c1", name: "Claude" })),
     adminOrganizations: mock(() => Promise.resolve([{ id: "org1", name: "Acme" }])),
     savePendingGrant: mock(() => Promise.resolve()),
@@ -30,34 +32,34 @@ function build() {
 describe("MCP grants controllers", () => {
   it("consent-info describes the client, the destination, and the bindable workspaces", async () => {
     const { consent, service } = build();
-    const info = await consent.consentInfo("code1", "u1");
+    const info = await consent.consentInfo({ oauthQuery: "q1" }, "u1");
     expect(info).toEqual({
       client: { clientId: "c1", name: "Claude" },
       organizations: [{ id: "org1", name: "Acme" }],
       redirect: { display: "an app on this computer", kind: "local" },
     });
-    expect(service.consentRequest).toHaveBeenCalledWith("code1", "u1");
-    // The client is the one the code was minted for, never one named in the URL.
+    expect(service.consentRequest).toHaveBeenCalledWith("q1");
+    // The client is the one the signed request names, never a bare URL parameter.
     expect(service.getClient).toHaveBeenCalledWith("c1");
     expect(service.adminOrganizations).toHaveBeenCalledWith("u1");
   });
 
-  it("consent-info requires consentCode", async () => {
-    await expect(build().consent.consentInfo("", "u1")).rejects.toBeInstanceOf(BadRequestException);
+  it("consent-info requires exactly one signed request string", async () => {
+    const errors = async (query: unknown): Promise<number> =>
+      (await validate(plainToInstance(ConsentInfoQueryDto, query))).length;
+    expect(await errors({ oauthQuery: "q1" })).toBe(0);
+    expect(await errors({})).toBeGreaterThan(0);
+    expect(await errors({ oauthQuery: "" })).toBeGreaterThan(0);
+    // A repeated parameter arrives as an array.
+    expect(await errors({ oauthQuery: ["a", "b"] })).toBeGreaterThan(0);
   });
 
-  it("create parks the choice for the client the consent code names, with the code's expiry", async () => {
+  it("create parks the choice for the request the signature vouches for", async () => {
     const { consent, service } = build();
     const req = {} as AuthenticatedRequest;
-    await consent.create({ consentCode: "code1", organizationId: "org1" }, req, "u1");
-    expect(service.consentRequest).toHaveBeenCalledWith("code1", "u1");
-    expect(service.savePendingGrant).toHaveBeenCalledWith(
-      "code1",
-      "u1",
-      "c1",
-      "org1",
-      CODE_EXPIRY,
-    );
+    await consent.create({ oauthQuery: "q1", organizationId: "org1" }, req, "u1");
+    expect(service.consentRequest).toHaveBeenCalledWith("q1");
+    expect(service.savePendingGrant).toHaveBeenCalledWith(REQUEST, "u1", "org1");
   });
 
   it("refuses to create a grant when the request itself used an API key", async () => {
@@ -65,7 +67,7 @@ describe("MCP grants controllers", () => {
     const req = { apiKeyId: "k0" } as AuthenticatedRequest;
     let error: Error | null = null;
     try {
-      await consent.create({ consentCode: "code1", organizationId: "org1" }, req, "u1");
+      await consent.create({ oauthQuery: "q1", organizationId: "org1" }, req, "u1");
     } catch (e) {
       error = e as Error;
     }

@@ -23,7 +23,7 @@ async function anonymousContext(
 }
 
 async function startFlow(request: APIRequestContext, name: string): Promise<Flow> {
-  const reg = await request.post(`${API_URL}/api/auth/mcp/register`, {
+  const reg = await request.post(`${API_URL}/api/auth/oauth2/register`, {
     data: { client_name: name, redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: "none" },
   });
   expect(reg.ok()).toBeTruthy();
@@ -35,7 +35,7 @@ async function startFlow(request: APIRequestContext, name: string): Promise<Flow
     scope: "openid profile email offline_access", state: "e2e",
     code_challenge: challenge, code_challenge_method: "S256",
   });
-  return { clientId, verifier, authorizeUrl: `${API_URL}/api/auth/mcp/authorize?${query}` };
+  return { clientId, verifier, authorizeUrl: `${API_URL}/api/auth/oauth2/authorize?${query}` };
 }
 
 /**
@@ -53,7 +53,7 @@ async function captureCallback(page: Page, action: () => Promise<void>): Promise
 }
 
 async function exchange(request: APIRequestContext, flow: Flow, code: string): Promise<string> {
-  const res = await request.post(`${API_URL}/api/auth/mcp/token`, {
+  const res = await request.post(`${API_URL}/api/auth/oauth2/token`, {
     form: {
       grant_type: "authorization_code", code, redirect_uri: REDIRECT_URI,
       client_id: flow.clientId, code_verifier: flow.verifier,
@@ -108,7 +108,7 @@ test.describe("MCP OAuth login", () => {
     const pr = await request.get(`${API_URL}/.well-known/oauth-protected-resource`);
     expect((await pr.json()).resource).toContain("/api/mcp");
     const as = await request.get(`${API_URL}/.well-known/oauth-authorization-server`);
-    expect((await as.json()).registration_endpoint).toContain("/api/auth/mcp/register");
+    expect((await as.json()).registration_endpoint).toContain("/api/auth/oauth2/register");
   });
 
   test("consent → token → MCP call → disconnect", async ({ page, playwright }) => {

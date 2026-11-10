@@ -1,7 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { makeSignature } from "better-auth/crypto";
 import { McpAuthService } from "./mcp-auth.service";
-import { ORG_MEMBER_FIELDS } from "../common";
+import { hashOAuthToken, ORG_MEMBER_FIELDS } from "../common";
+
+const SECRET: string = "s".repeat(32);
 
 const future = new Date(Date.now() + 60_000);
 const past = new Date(Date.now() - 60_000);
@@ -17,7 +20,6 @@ function build(
     members?: unknown[];
     grants?: unknown[];
     apps?: unknown[];
-    verification?: unknown;
   } = {},
 ) {
   const prisma = {
@@ -25,8 +27,9 @@ function build(
       findUnique: mock(() => Promise.resolve(opts.token ?? null)),
       deleteMany: mock(() => Promise.resolve({ count: 1 })),
     },
+    oauthRefreshToken: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
     oauthConsent: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
-    oauthApplication: {
+    oauthClient: {
       findUnique: mock(() => Promise.resolve(opts.app ?? null)),
       findMany: mock(() => Promise.resolve(opts.apps ?? [])),
     },
@@ -40,30 +43,27 @@ function build(
     mcpPendingGrant: {
       upsert: mock(() => Promise.resolve({})),
     },
-    verification: {
-      findFirst: mock(() => Promise.resolve(opts.verification ?? null)),
-    },
     member: {
       findFirst: mock(() => Promise.resolve(opts.member ?? null)),
       findMany: mock(() => Promise.resolve(opts.members ?? [])),
     },
     $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
-  const service = new McpAuthService(prisma as never);
-  // One case feeds consentRequest a row that is not the plugin's JSON, which
-  // logs a warning by design; keep the test output pristine.
-  (service as unknown as { logger: { warn: () => void } }).logger = { warn: mock(() => {}) };
+  const config = { getOrThrow: () => SECRET };
+  const service = new McpAuthService(prisma as never, config as never);
   return { service, prisma };
 }
 
-const token = { accessToken: "tok", userId: "u1", clientId: "c1", accessTokenExpiresAt: future };
+const token = { token: hashOAuthToken("tok"), userId: "u1", clientId: "c1", expiresAt: future, revoked: null, confirmation: null };
 const grant = { id: "g1", userId: "u1", clientId: "c1", organizationId: "org1", memberId: "m1", user, organization };
 const owner = { id: "m1", userId: "u1", organizationId: "org1", role: "owner" };
 
 describe("McpAuthService.resolve", () => {
   it("returns the actor for a live token with a grant and an admin-level member", async () => {
-    const { service } = build({ token, grant, member: owner });
+    const { service, prisma } = build({ token, grant, member: owner });
     const actor = await service.resolve("tok");
+    // Tokens are stored hashed, so the lookup is by hash.
+    expect(prisma.oauthAccessToken.findUnique).toHaveBeenCalledWith({ where: { token: hashOAuthToken("tok") } });
     expect(actor?.user.id).toBe("u1");
     expect(actor?.organization.id).toBe("org1");
     expect(actor?.member.role).toBe("owner");
@@ -83,9 +83,14 @@ describe("McpAuthService.resolve", () => {
     expect(await build().service.resolve("nope")).toBeNull();
   });
 
-  it("returns null for an expired token (the plugin's own lookup does not check)", async () => {
-    const { service } = build({ token: { ...token, accessTokenExpiresAt: past }, grant, member: owner });
-    expect(await service.resolve("tok")).toBeNull();
+  it("returns null for an expired, revoked or DPoP-bound token", async () => {
+    for (const row of [
+      { ...token, expiresAt: past },
+      { ...token, revoked: past },
+      { ...token, confirmation: { jkt: "k" } },
+    ]) {
+      expect(await build({ token: row, grant, member: owner }).service.resolve("tok")).toBeNull();
+    }
   });
 
   it("returns null when there is no grant, or the user is no longer owner/admin", async () => {
@@ -96,42 +101,37 @@ describe("McpAuthService.resolve", () => {
 });
 
 describe("McpAuthService grants", () => {
+  const request = { requestId: "sig1", clientId: "c1", redirectURI: "https://claude.ai/cb", expiresAt: future };
+
   it("savePendingGrant refuses an org where the user is not owner or admin", async () => {
     const { service, prisma } = build({ app: { clientId: "c1" }, member: { ...owner, role: "member" } });
-    await expect(
-      service.savePendingGrant("code1", "u1", "c1", "org1", future),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.savePendingGrant(request, "u1", "org1")).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.mcpPendingGrant.upsert).not.toHaveBeenCalled();
   });
 
   it("savePendingGrant refuses an unknown client", async () => {
     const { service, prisma } = build({ member: owner });
     await expect(
-      service.savePendingGrant("code1", "u1", "ghost", "org1", future),
+      service.savePendingGrant({ ...request, clientId: "ghost" }, "u1", "org1"),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.mcpPendingGrant.upsert).not.toHaveBeenCalled();
   });
 
-  it("savePendingGrant parks the choice on the consent code, touching no grant", async () => {
+  it("savePendingGrant parks the choice for this request and user, touching no grant", async () => {
     // Pressing Allow is what turns this into a grant; until then an existing
     // connection must keep working exactly as it did.
     const { service, prisma } = build({ app: { clientId: "c1" }, member: owner });
-    await service.savePendingGrant("code1", "u1", "c1", "org1", future);
+    await service.savePendingGrant(request, "u1", "org1");
     const args = prisma.mcpPendingGrant.upsert.mock.calls[0][0];
-    expect(args.where).toEqual({ consentCode: "code1" });
+    expect(args.where).toEqual({ requestId_userId: { requestId: "sig1", userId: "u1" } });
     expect(args.create).toEqual({
-      consentCode: "code1",
+      requestId: "sig1",
       userId: "u1",
       clientId: "c1",
       organizationId: "org1",
       expiresAt: future,
     });
-    expect(args.update).toEqual({
-      userId: "u1",
-      clientId: "c1",
-      organizationId: "org1",
-      expiresAt: future,
-    });
+    expect(args.update).toEqual({ clientId: "c1", organizationId: "org1", expiresAt: future });
     expect(prisma.mcpGrant.upsert).not.toHaveBeenCalled();
     expect(prisma.oauthAccessToken.deleteMany).not.toHaveBeenCalled();
   });
@@ -140,6 +140,7 @@ describe("McpAuthService grants", () => {
     const { service, prisma } = build({ grant });
     await service.revokeGrant("g1", "u1", "org1", "admin");
     expect(prisma.oauthAccessToken.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1", clientId: "c1" } });
+    expect(prisma.oauthRefreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1", clientId: "c1" } });
     expect(prisma.mcpGrant.delete).toHaveBeenCalledWith({ where: { id: "g1" } });
     // The consent row carries no authority — consent is forced on every
     // authorize and the grant is the gate — but it is what stops the nightly
@@ -219,52 +220,36 @@ describe("McpAuthService.listGrants", () => {
 });
 
 describe("McpAuthService.consentRequest", () => {
-  const value = (overrides: Record<string, unknown> = {}): string =>
-    JSON.stringify({
+  /** Signs a query the way Better Auth signs the consent page's URL. */
+  async function signed(params: Record<string, string>): Promise<string> {
+    const query = new URLSearchParams(Object.entries(params).sort(([a], [b]) => (a < b ? -1 : 1)));
+    query.set("sig", await makeSignature(query.toString(), SECRET));
+    return query.toString();
+  }
+  const exp = (date: Date): string => String(Math.floor(date.getTime() / 1000));
+  const base = { client_id: "c1", redirect_uri: "https://claude.ai/cb", response_type: "code" };
+
+  it("returns the client and destination the signed request names", async () => {
+    const query: string = await signed({ ...base, exp: exp(future) });
+    const request = await build().service.consentRequest(query);
+    expect(request).toEqual({
+      requestId: new URLSearchParams(query).get("sig")!,
       clientId: "c1",
       redirectURI: "https://claude.ai/cb",
-      userId: "u1",
-      requireConsent: true,
-      ...overrides,
+      expiresAt: new Date(Number(exp(future)) * 1000),
     });
-  const row = (overrides: Record<string, unknown> = {}) => ({
-    identifier: "code1",
-    value: value(),
-    expiresAt: future,
-    ...overrides,
   });
 
-  it("returns the client and destination recorded when the code was minted", async () => {
-    const { service, prisma } = build({ verification: row() });
-    expect(await service.consentRequest("code1", "u1")).toEqual({
-      clientId: "c1",
-      redirectURI: "https://claude.ai/cb",
-      expiresAt: future,
-    });
-    expect(prisma.verification.findFirst.mock.calls[0][0].where).toEqual({ identifier: "code1" });
-  });
-
-  it("rejects an unknown code", async () => {
-    await expect(build().service.consentRequest("ghost", "u1")).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it("rejects an expired code", async () => {
-    const { service } = build({ verification: row({ expiresAt: past }) });
-    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it("rejects a code minted for somebody else", async () => {
-    const { service } = build({ verification: row({ value: value({ userId: "u2" }) }) });
-    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it("rejects a code that is not a consent code", async () => {
-    const { service } = build({ verification: row({ value: value({ requireConsent: false }) }) });
-    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it("rejects a row whose value is not the JSON the plugin writes", async () => {
-    const { service } = build({ verification: row({ value: "not json" }) });
-    await expect(service.consentRequest("code1", "u1")).rejects.toBeInstanceOf(NotFoundException);
+  it("rejects an unsigned, tampered or expired request", async () => {
+    const { service } = build();
+    const good: string = await signed({ ...base, exp: exp(future) });
+    for (const query of [
+      "client_id=c1&redirect_uri=x&exp=9999999999",
+      good.replace("client_id=c1", "client_id=c2"),
+      await signed({ ...base, exp: exp(past) }),
+      await signed({ ...base, exp: exp(future), client_id: "c1" }).then((q) => q.replace(/sig=[^&]+/, "sig=forged")),
+    ]) {
+      await expect(service.consentRequest(query)).rejects.toBeInstanceOf(NotFoundException);
+    }
   });
 });

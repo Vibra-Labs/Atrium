@@ -4,7 +4,7 @@ import type { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { MCP_ACTOR_ROLES, RateLimiter } from "../common";
+import { MCP_ACTOR_ROLES, mcpOAuthEnabled, RateLimiter } from "../common";
 import type { Actor, AuthenticatedRequest } from "../common";
 import { ProjectsService } from "../projects/projects.service";
 import { TasksService } from "../tasks/tasks.service";
@@ -48,7 +48,7 @@ export class McpService {
 
   /** RFC 9728 challenge pointing MCP clients at this API's OAuth metadata. */
   private challenge(): string {
-    if (this.config.get("MCP_OAUTH_ENABLED", "true") === "false") return "Bearer";
+    if (!mcpOAuthEnabled(this.config)) return "Bearer";
     const apiUrl: string = publicApiUrl(this.config);
     return `Bearer resource_metadata="${apiUrl}/.well-known/oauth-protected-resource"`;
   }

@@ -368,7 +368,8 @@ export async function latestMagicLinkToken(email: string): Promise<string> {
       select: { identifier: true },
     });
     if (!row) throw new Error(`No magic link issued for ${email}`);
-    return row.identifier;
+    // Better Auth 1.7 stores the token as "magic-link:<token>"; the link carries the bare token.
+    return row.identifier.replace(/^magic-link:/, "");
   } finally {
     await prisma.$disconnect();
   }

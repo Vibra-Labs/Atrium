@@ -11,11 +11,12 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { organization, magicLink, mcp } from "better-auth/plugins";
+import { organization, magicLink } from "better-auth/plugins";
+import { mcp } from "@better-auth/mcp";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
-import { applyConsentOutcome, guardTokenExchange } from "../mcp-auth/consent-hooks";
+import { applyConsentOutcome } from "../mcp-auth/consent-hooks";
 import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { MailService } from "../mail/mail.service";
@@ -31,6 +32,7 @@ import {
 } from "../clients/invitations";
 import { cookieUrlWarning, secureCookies } from "../common/helpers/secure-cookies";
 import { publicApiUrl } from "../common/helpers/public-api-url";
+import { hashOAuthToken, mcpOAuthUnavailableReason, mcpResourceUrl } from "../common/helpers/mcp-oauth";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import { SendLimiter } from "./send-limiter";
 
@@ -63,6 +65,18 @@ type SignInMagicLink = (input: {
 
 export const MAGIC_LINK_EXPIRES_IN_SECONDS: number = 60 * 60;
 
+/** The MCP OAuth plugin's `/oauth2/*` endpoints that Atrium serves; the rest answer 404. */
+const MCP_OAUTH_PUBLIC_PATHS: ReadonlySet<string> = new Set<string>([
+  "/oauth2/register",
+  "/oauth2/authorize",
+  "/oauth2/token",
+  "/oauth2/consent",
+  "/oauth2/revoke",
+  "/oauth2/introspect",
+  "/oauth2/userinfo",
+  "/oauth2/end-session",
+]);
+
 /** Sign-in emails per address per window, so nobody can flood someone's inbox from the login page. */
 const MAGIC_LINK_EMAILS_PER_WINDOW = 3;
 const MAGIC_LINK_EMAIL_WINDOW_MS: number = 15 * 60 * 1000;
@@ -90,61 +104,29 @@ export class AuthService {
   ) {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     const apiUrl: string = publicApiUrl(this.config);
-    // Lets MCP clients sign in instead of pasting an API key. Opt-out only.
-    const mcpOAuthEnabled: boolean =
-      this.config.get("MCP_OAUTH_ENABLED", "true") !== "false";
+    const betterAuthSecret: string = this.config.getOrThrow("BETTER_AUTH_SECRET");
+    // Lets MCP clients sign in instead of pasting an API key. Opt-out only,
+    // and off on plain-HTTP installs, where the plugin cannot work.
+    const mcpOAuthOff: string | null = mcpOAuthUnavailableReason(this.config);
+    const mcpOAuthEnabled: boolean = mcpOAuthOff === null;
+    if (mcpOAuthOff && this.config.get("MCP_OAUTH_ENABLED") !== "false") {
+      this.logger.warn(`MCP sign-in (OAuth) is off: ${mcpOAuthOff}. MCP clients can still connect with an API key.`);
+    }
 
     // Shared with the CSRF guard so both cookies agree. See secure-cookies.ts.
     const useSecure: boolean = secureCookies();
     const cookieWarning: string | null = cookieUrlWarning();
     if (cookieWarning) this.logger.warn(cookieWarning);
 
-    // Hardening applied to the mcp plugin's endpoints before they run.
-    //
-    // /mcp/authorize: force the consent step on every MCP authorization. The
-    // plugin only shows its consent page when the client sends
-    // `prompt=consent`, and no real MCP client (claude.ai, ChatGPT, Claude
-    // Code, Cursor) does — so without this a silently registered client would
-    // get an authorization code with no human in the loop. The consent page is
-    // also where the user picks which workspace the client acts in, so it is
-    // never optional.
-    //
-    // `prompt` is overwritten rather than merged, on purpose: authorize.mjs
-    // tests `query.prompt !== "consent"` by strict equality, so a multi-valued
-    // prompt like "login consent" — legal per OIDC — would skip consent.
-    //
-    // Rewriting ctx.query rather than the URL matters for the signed-out path:
-    // the plugin stashes ctx.query in the signed `oidc_login_prompt` cookie and
-    // replays it after login, so the continuation lands on the consent page too.
+    // Hardening applied to the MCP plugin's endpoints before they run.
     const mcpOAuthBeforeHook = createAuthMiddleware(async (ctx) => {
-      // /mcp/get-session hands back the whole oauthAccessToken row — refresh
-      // token and client id included — for any presented access token, with
-      // no expiry and no grant check. That turns a leaked or expired one-hour
-      // access token into 30 days of renewable access, since public clients
-      // refresh with `client_id` alone. Atrium never calls this endpoint, so
-      // take it off the air rather than leave the downgrade path open.
-      if (ctx.path === "/mcp/get-session") {
-        throw new APIError("NOT_FOUND");
-      }
-
-      // /mcp/token hands out an access token for any unexpired verification
-      // row, without ever checking whether the user actually pressed Allow.
-      // See guardTokenExchange.
-      if (ctx.path === "/mcp/token") {
-        await guardTokenExchange(this.prisma, ctx.body);
-        return;
-      }
-
-      if (ctx.path === "/mcp/register") {
+      if (ctx.path === "/oauth2/register") {
         // Dynamic registration is anonymous, and the consent page navigates
-        // the browser to whatever redirect URI was registered — a
-        // `javascript:` or `data:` URI would run script in the Atrium web
-        // origin. The plugin only checks that the list is a non-empty array of
-        // strings, so the scheme check has to happen here. The body reaches a
-        // before-hook unvalidated, hence the shape guards.
-        const redirectUris: unknown = (
-          ctx.body as { redirect_uris?: unknown } | undefined
-        )?.redirect_uris;
+        // the browser to the registered redirect URI — a `javascript:` or
+        // `data:` URI would run script in the Atrium web origin. The body
+        // reaches a before-hook unvalidated, hence the shape guards.
+        const body: Record<string, unknown> = (ctx.body ?? {}) as Record<string, unknown>;
+        const redirectUris: unknown = body.redirect_uris;
         const acceptable: boolean =
           Array.isArray(redirectUris) &&
           redirectUris.length > 0 &&
@@ -159,17 +141,43 @@ export class AuthService {
               "redirect_uris must be a non-empty list of absolute URIs, and may not use the javascript, data, vbscript, blob, file or about schemes.",
           });
         }
-        return;
+        // Tokens are never DPoP-bound (see /oauth2/token below), so register a
+        // client asking for that as plain Bearer. Set to false, not removed:
+        // hook output is merged with defu, which ignores undefined.
+        if (body.dpop_bound_access_tokens === undefined) return;
+        return { context: { body: { ...body, dpop_bound_access_tokens: false } } };
       }
 
-      if (ctx.path !== "/mcp/authorize") return;
+      // Endpoints the plugin adds that Atrium does not use. They are
+      // session-authenticated client and consent management, outside the
+      // registration rate limit and the redirect URI check above.
+      if (
+        ctx.path.startsWith("/oauth2/") &&
+        !MCP_OAUTH_PUBLIC_PATHS.has(ctx.path)
+      ) {
+        throw new APIError("NOT_FOUND");
+      }
 
-      // Defence in depth for rows that predate the registration check above,
-      // or were written some other way: a comma-smuggled entry splits back
-      // into a second registered URI that the plugin will exact-match without
-      // re-checking its scheme. Refuse here, before the plugin ever looks the
-      // client up.
-      const redirectUri: unknown = ctx.query?.redirect_uri;
+      // The MCP endpoint accepts plain bearer tokens only and does not check
+      // DPoP proofs, so never bind a token to a DPoP key: without the header
+      // the plugin issues an ordinary Bearer token, which RFC 9449 lets the
+      // client use as one.
+      if (ctx.path === "/oauth2/token") {
+        // Hook headers are merged into the request's, so blank it rather than
+        // delete it; the plugin treats an empty DPoP header as none.
+        if (!ctx.headers?.has("dpop")) return;
+        return { context: { headers: new Headers({ dpop: "" }) } };
+      }
+
+      if (ctx.path !== "/oauth2/authorize") return;
+
+      // Authorize takes its parameters from the query, or from a form body
+      // on POST. Patch whichever one the plugin will read.
+      const fromBody: boolean = ctx.method === "POST";
+      const params = ((fromBody ? ctx.body : ctx.query) ?? {}) as Record<string, unknown>;
+
+      // Defence in depth for clients registered before the check above.
+      const redirectUri: unknown = params.redirect_uri;
       if (
         redirectUri !== undefined &&
         (typeof redirectUri !== "string" || !isAllowedRedirectUri(redirectUri))
@@ -179,29 +187,41 @@ export class AuthService {
           error_description: "redirect_uri is not an acceptable absolute URI.",
         });
       }
+      // A dpop_jkt binds the code to a DPoP key, and the token endpoint would
+      // then demand a proof Atrium strips. Discovery doesn't advertise DPoP.
+      if (params.dpop_jkt !== undefined) {
+        throw new APIError("BAD_REQUEST", {
+          error: "invalid_request",
+          error_description: "DPoP is not supported. Use a plain Bearer token.",
+        });
+      }
 
-      // Replaying this on the post-login continuation is safe: the plugin
-      // writes the signed `oidc_login_prompt` cookie from ctx.query only after
-      // this hook has run, so the query it stashes already carries the forced
-      // prompt=consent and a redirect_uri that passed the check above.
-      return { context: { query: { ...ctx.query, prompt: "consent" } } };
+      // Always show the consent page. The plugin skips it once a user has
+      // consented to a client, and no real MCP client sends prompt=consent,
+      // but the consent page is where the user picks the workspace the
+      // client acts in, so it is never optional. Overwritten rather than
+      // merged, so a `prompt=none` cannot turn consent into an error.
+      // That also drops login/create/select_account: Atrium resumes from its
+      // own login page by rebuilding the authorize URL, so a kept
+      // prompt=login would send the user back to sign in forever.
+      const forced: Record<string, unknown> = { ...params, prompt: "consent" };
+      return { context: fromBody ? { body: forced } : { query: forced } };
     });
 
-    // The other half of R2's two-step consent: /oauth2/consent consumes the
-    // consent code, so the workspace choice is parked as an McpPendingGrant
-    // beforehand and only becomes a grant here, after the endpoint has
-    // actually succeeded. A user who closes the tab mid-consent therefore
-    // keeps whatever connection they already had.
+    // The other half of the two-step consent: /oauth2/consent is where the
+    // user's Allow takes effect, so the workspace choice is parked as an
+    // McpPendingGrant beforehand and only becomes a grant here, after the
+    // endpoint has actually succeeded. See applyConsentOutcome.
     const mcpOAuthAfterHook = createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/oauth2/consent") return;
       // /oauth2/consent runs behind sessionMiddleware, so the signed-in user
       // is on the context by the time an after-hook sees it; `returned` holds
-      // the endpoint's APIError when it failed. See applyConsentOutcome.
+      // the endpoint's APIError when it failed.
       const context = ctx.context as {
         returned?: unknown;
         session?: { user?: { id?: string } };
       };
-      await applyConsentOutcome(this.prisma, {
+      await applyConsentOutcome(this.prisma, betterAuthSecret, {
         returned: context.returned,
         body: ctx.body,
         sessionUserId: context.session?.user?.id,
@@ -212,7 +232,7 @@ export class AuthService {
     // instance no longer assigns to the default-typed field.
     this.auth = betterAuth({
       database: prismaAdapter(this.prisma, { provider: "postgresql" }),
-      secret: this.config.getOrThrow("BETTER_AUTH_SECRET"),
+      secret: betterAuthSecret,
       baseURL: apiUrl,
       basePath: "/api/auth",
       session: {
@@ -223,7 +243,7 @@ export class AuthService {
         // Dynamic client registration is unauthenticated by design, so cap it
         // well below the global default.
         customRules: {
-          "/mcp/register": { window: 3600, max: 10 },
+          "/oauth2/register": { window: 3600, max: 10 },
         },
       },
       databaseHooks: {
@@ -444,21 +464,21 @@ export class AuthService {
           ? [
               mcp({
                 loginPage: `${webUrl}/login`,
-                resource: `${apiUrl}/api/mcp`,
-                oidcConfig: {
-                  loginPage: `${webUrl}/login`,
-                  consentPage: `${webUrl}/oauth/consent`,
-                  allowDynamicClientRegistration: true,
-                  requirePKCE: true,
-                  // The plugin defaults this to true, which lets a client send
-                  // code_challenge_method=plain — the challenge then equals the
-                  // verifier and sits in the authorization URL, so PKCE stops
-                  // protecting anything. Our metadata advertises S256 only.
-                  allowPlainCodeChallengeMethod: false,
-                  scopes: ["openid", "profile", "email", "offline_access"],
-                  accessTokenExpiresIn: 3600,
-                  refreshTokenExpiresIn: 60 * 60 * 24 * 30,
-                },
+                consentPage: `${webUrl}/oauth/consent`,
+                resource: mcpResourceUrl(this.config),
+                // Opaque access tokens, stored (hashed) in the database, so
+                // Disconnect and a workspace change take effect at once.
+                disableJwtPlugin: true,
+                storeTokens: { hash: hashOAuthToken },
+                // MCP clients register themselves (RFC 7591) with no account.
+                allowDynamicClientRegistration: true,
+                allowUnauthenticatedClientRegistration: true,
+                // Native clients (Claude Code, Cursor) register loopback or
+                // custom-scheme redirects without saying they are native.
+                clientRegistrationDefaultApplicationType: "infer",
+                scopes: ["openid", "profile", "email", "offline_access"],
+                accessTokenExpiresIn: 3600,
+                refreshTokenExpiresIn: 60 * 60 * 24 * 30,
               }),
             ]
           : []),

@@ -3,13 +3,14 @@ import { isPublicOAuthPath } from "./public-oauth-cors";
 
 describe("isPublicOAuthPath", () => {
   it("matches the dynamic client registration endpoint", () => {
-    expect(isPublicOAuthPath("/api/auth/mcp/register")).toBe(true);
-    expect(isPublicOAuthPath("/api/auth/mcp/register?x=1")).toBe(true);
+    expect(isPublicOAuthPath("/api/auth/oauth2/register")).toBe(true);
+    expect(isPublicOAuthPath("/api/auth/oauth2/register?x=1")).toBe(true);
   });
 
-  it("matches the token endpoint", () => {
-    expect(isPublicOAuthPath("/api/auth/mcp/token")).toBe(true);
-    expect(isPublicOAuthPath("/api/auth/mcp/token?x=1")).toBe(true);
+  it("matches the token and revocation endpoints", () => {
+    expect(isPublicOAuthPath("/api/auth/oauth2/token")).toBe(true);
+    expect(isPublicOAuthPath("/api/auth/oauth2/token?x=1")).toBe(true);
+    expect(isPublicOAuthPath("/api/auth/oauth2/revoke")).toBe(true);
   });
 
   it("matches the OAuth discovery documents", () => {
@@ -21,10 +22,11 @@ describe("isPublicOAuthPath", () => {
   });
 
   it("does not match the rest of the auth proxy", () => {
-    expect(isPublicOAuthPath("/api/auth/mcp/authorize")).toBe(false);
+    expect(isPublicOAuthPath("/api/auth/oauth2/authorize")).toBe(false);
+    expect(isPublicOAuthPath("/api/auth/oauth2/consent")).toBe(false);
     expect(isPublicOAuthPath("/api/auth/sign-in/email")).toBe(false);
-    expect(isPublicOAuthPath("/api/auth/mcp/tokenx")).toBe(false);
-    expect(isPublicOAuthPath("/api/auth/mcp/registerx")).toBe(false);
+    expect(isPublicOAuthPath("/api/auth/oauth2/tokenx")).toBe(false);
+    expect(isPublicOAuthPath("/api/auth/oauth2/registerx")).toBe(false);
   });
 
   it("does not match the MCP endpoint or other well-known documents", () => {

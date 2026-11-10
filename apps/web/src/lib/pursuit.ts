@@ -1,12 +1,35 @@
 // Potential contracts: projects that aren't signed yet.
 
-import { PURSUIT_STAGES, PURSUIT_STAGE_LABELS, costSummary } from "@atrium/shared";
-import type { CostSummary, PursuitOutcome, PursuitStage } from "@atrium/shared";
+import { costSummary, pipelineOf, stageLabel } from "@atrium/shared";
+import type { CostSummary, PursuitOutcome, PursuitPipeline, PursuitStage } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
+import { useCachedApi } from "@/lib/cached";
 
-export { PURSUIT_STAGES, PURSUIT_STAGE_LABELS, costSummary };
+export { costSummary, stageLabel };
 export type { CostSummary };
-export type { PursuitOutcome, PursuitStage };
+export type { PursuitOutcome, PursuitPipeline, PursuitStage };
+
+/** A stage in one of the workspace's two pipelines (from GET /pursuit-stages). */
+export interface PipelineStage {
+  id: string;
+  pipeline: PursuitPipeline;
+  name: string;
+  slug: string;
+  order: number;
+}
+
+export const PIPELINE_STAGES_PATH = "/pursuit-stages";
+
+/** Both pipelines' stages, cached; null while loading. Call invalidate(PIPELINE_STAGES_PATH) after a change. */
+export function usePipelineStages(): PipelineStage[] | null {
+  return useCachedApi<PipelineStage[]>(PIPELINE_STAGES_PATH);
+}
+
+/** The stages a contract can be in: its pipeline's, in order. */
+export function stagesFor(stages: PipelineStage[] | null, isBid: boolean): PipelineStage[] {
+  const pipeline: PursuitPipeline = pipelineOf(isBid);
+  return (stages ?? []).filter((s) => s.pipeline === pipeline).sort((a, b) => a.order - b.order);
+}
 
 export interface PursuitEvent {
   id: string;

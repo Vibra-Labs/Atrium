@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { daysLate, webLink } from "./pursuit";
+import { daysLate, stagesFor, webLink } from "./pursuit";
+import type { PipelineStage } from "./pursuit";
 
 describe("daysLate", () => {
   it("says how many days past due", () => {
@@ -21,5 +22,25 @@ describe("webLink", () => {
     expect(webLink(" javascript:alert(1)")).toBeNull();
     expect(webLink("data:text/html,hi")).toBeNull();
     expect(webLink(null)).toBeNull();
+  });
+});
+
+describe("stagesFor", () => {
+  const stage = (id: string, pipeline: "bid" | "commercial", order: number): PipelineStage => ({
+    id,
+    pipeline,
+    name: id,
+    slug: id,
+    order,
+  });
+
+  it("gives the contract's pipeline in order", () => {
+    const all: PipelineStage[] = [stage("c2", "commercial", 1), stage("b1", "bid", 0), stage("c1", "commercial", 0)];
+    expect(stagesFor(all, false).map((s) => s.id)).toEqual(["c1", "c2"]);
+    expect(stagesFor(all, true).map((s) => s.id)).toEqual(["b1"]);
+  });
+
+  it("is empty while stages load", () => {
+    expect(stagesFor(null, false)).toEqual([]);
   });
 });

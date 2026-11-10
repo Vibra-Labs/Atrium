@@ -10,17 +10,18 @@ import { useAppConfig } from "@/lib/app-config";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import {
-  PURSUIT_STAGES,
-  PURSUIT_STAGE_LABELS,
   contactRef,
   daysLate,
   dueSoon,
   formatDay,
   isPast,
   losePursuit,
+  stageLabel,
+  stagesFor,
   toCents,
   toDay,
   updatePursuit,
+  usePipelineStages,
   winPursuit,
   webLink,
   withCommas,
@@ -107,8 +108,9 @@ export function KindPicker({ value, onChange }: { value: NewKind; onChange: (k: 
 
 export function PursuitBadge({ p }: { p: Pursuit }) {
   const money = useMoney();
+  const stages = usePipelineStages();
   if (p.outcome === "won") return null;
-  const text: string = p.outcome === "lost" ? "Lost" : PURSUIT_STAGE_LABELS[p.stage];
+  const text: string = p.outcome === "lost" ? "Lost" : stageLabel(stages, p.isBid, p.stage);
   return (
     <div className="flex flex-col items-end gap-1 shrink-0">
       <span
@@ -152,8 +154,9 @@ export function PursuitPipeline({
 }) {
   const { error: showError } = useToast();
   const [reopening, setReopening] = useState<boolean>(false);
+  const stages = stagesFor(usePipelineStages(), p.isBid);
 
-  async function setStage(stage: Pursuit["stage"]): Promise<void> {
+  async function setStage(stage: string): Promise<void> {
     try {
       await updatePursuit(p.projectId, { stage });
       onChanged();
@@ -189,19 +192,19 @@ export function PursuitPipeline({
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className="text-xs text-[var(--muted-foreground)] mr-1">Potential contract</span>
-      {PURSUIT_STAGES.map((stage) => (
+      {stages.map(({ slug, name }) => (
         <button
-          key={stage}
+          key={slug}
           data-testid="pursuit-stage"
-          aria-pressed={p.stage === stage}
-          onClick={() => p.stage !== stage && setStage(stage)}
+          aria-pressed={p.stage === slug}
+          onClick={() => p.stage !== slug && setStage(slug)}
           className={`px-2.5 py-1 rounded-full border border-transparent text-xs font-medium transition-all ${focusRing} ${
-            p.stage === stage
+            p.stage === slug
               ? "bg-amber-500 text-white cursor-default"
               : "bg-[var(--muted)] text-[var(--foreground)] cursor-pointer hover:ring-1 hover:ring-amber-500/60"
           }`}
         >
-          {PURSUIT_STAGE_LABELS[stage]}
+          {name}
         </button>
       ))}
       <span className="w-px h-5 bg-[var(--border)] mx-1" />

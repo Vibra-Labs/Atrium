@@ -401,6 +401,54 @@ describe("Better Auth MCP plugin on Atrium's schema", () => {
     });
     expect(row.confirmation).toBeNull();
   });
+
+  it("registers a client that asks for DPoP-bound tokens as a plain Bearer client", async () => {
+    const res = await call("/oauth2/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_name: clientName("IT Client DPoP Bound"),
+        redirect_uris: [REDIRECT_URI],
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        dpop_bound_access_tokens: true,
+      }),
+    }, "");
+    expect(res.status, await res.clone().text()).toBe(201);
+    const clientId: string = ((await res.json()) as { client_id: string }).client_id;
+    const { oauthQuery, verifier } = await startConsent(clientId);
+    const callback = await sendConsent(oauthQuery, true);
+
+    const tokens = await exchange(clientId, callback.searchParams.get("code")!, verifier, { DPoP: "not-a-proof" });
+
+    expect(tokens.token_type).toBe("Bearer");
+  });
+
+  it("refuses an authorize request that binds the code to a DPoP key", async () => {
+    const clientId = await registerClient("IT Client DPoP JKT");
+    const { query } = authorizeQuery(clientId, { dpop_jkt: "a".repeat(43) });
+
+    const res = await call(`/oauth2/authorize?${query}`);
+
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("DPoP is not supported");
+  });
+
+  it("does not serve the plugin's client and consent management endpoints", async () => {
+    const post = (path: string): Promise<Response> => call(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ redirect_uris: [REDIRECT_URI], client_name: clientName("IT Client Managed") }),
+    });
+    for (const path of ["/oauth2/create-client", "/oauth2/update-client", "/oauth2/delete-client", "/oauth2/update-consent", "/oauth2/delete-consent", "/oauth2/continue"]) {
+      expect((await post(path)).status, path).toBe(404);
+    }
+    for (const path of ["/oauth2/get-clients", "/oauth2/get-consents"]) {
+      expect((await call(path)).status, path).toBe(404);
+    }
+    expect(await prisma.oauthClient.count({ where: { name: clientName("IT Client Managed") } })).toBe(0);
+  });
 });
 
 describe("redirect URI validation at client registration", () => {
@@ -504,7 +552,7 @@ describe("the consent page's view of a request", () => {
     const clientId = await registerClient("IT Client Consent Info");
     const { oauthQuery } = await startConsent(clientId);
 
-    const info = await consentController().consentInfo(oauthQuery, userId);
+    const info = await consentController().consentInfo({ oauthQuery }, userId);
 
     expect(info.client).toEqual({ clientId, name: clientName("IT Client Consent Info") });
     expect(info.redirect).toEqual({ display: "an app on this computer", kind: "local" });
@@ -517,7 +565,7 @@ describe("the consent page's view of a request", () => {
     const { oauthQuery } = await startConsent(asked);
     const tampered = oauthQuery.replace(`client_id=${asked}`, `client_id=${swapped}`);
 
-    await expect(consentController().consentInfo(tampered, userId)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(consentController().consentInfo({ oauthQuery: tampered }, userId)).rejects.toBeInstanceOf(NotFoundException);
     await expect(
       consentController().create({ oauthQuery: tampered, organizationId: orgId }, anyRequest, userId),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -577,6 +625,27 @@ describe("the workspace choice takes effect only when consent succeeds", () => {
     expect(await mcpAuth.resolve(first.access_token)).toBeNull();
     expect((await refresh(clientId, first.refresh_token)).status).toBeGreaterThanOrEqual(400);
     expect((await mcpAuth.resolve(second.access_token))?.organization.id).toBe(next.orgId);
+  });
+
+  it("keeps the current workspace when an accepted consent issues no code", async () => {
+    const mcpAuth = mcpAuthService();
+    const clientId = await registerClient("IT Client Failed Move");
+    const tokens = (await connectViaConsentPage(clientId, orgId))!;
+    const other = await addWorkspace("failed-move");
+    const { oauthQuery } = await startConsent(clientId);
+    await consentController().create({ oauthQuery, organizationId: other.orgId }, anyRequest, userId);
+
+    // The client is switched off between the consent page loading and Allow.
+    await prisma.oauthClient.update({ where: { clientId }, data: { disabled: true } });
+    const res = await call("/oauth2/consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accept: true, oauth_query: oauthQuery }),
+    });
+    await prisma.oauthClient.update({ where: { clientId }, data: { disabled: false } });
+
+    expect(res.headers.get("location") ?? (await res.text())).not.toContain("code=");
+    expect((await mcpAuth.resolve(tokens.access_token))?.organization.id).toBe(orgId);
   });
 
   it("Deny drops the parked choice and writes no grant", async () => {

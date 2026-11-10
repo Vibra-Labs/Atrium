@@ -33,7 +33,8 @@ export class OAuthCleanupTask {
       const granted = await this.prisma.mcpGrant.findMany({ select: { clientId: true }, distinct: ["clientId"] });
       const result = await this.prisma.oauthClient.deleteMany({
         where: {
-          createdAt: { lt: new Date(Date.now() - UNUSED_CLIENT_TTL_MS) },
+          // createdAt is nullable in the plugin's schema; a row without one counts as old.
+          OR: [{ createdAt: { lt: new Date(Date.now() - UNUSED_CLIENT_TTL_MS) } }, { createdAt: null }],
           accessTokens: { none: {} },
           refreshTokens: { none: {} },
           // A client the user once approved keeps its registration even after
@@ -72,9 +73,9 @@ export class OAuthCleanupTask {
   /** Drops access and refresh tokens that can no longer be used. */
   async pruneExpiredTokens(): Promise<void> {
     try {
-      const now = new Date();
-      const access = await this.prisma.oauthAccessToken.deleteMany({ where: { expiresAt: { lt: now } } });
-      const refresh = await this.prisma.oauthRefreshToken.deleteMany({ where: { expiresAt: { lt: now } } });
+      const now: Date = new Date();
+      const access: { count: number } = await this.prisma.oauthAccessToken.deleteMany({ where: { expiresAt: { lt: now } } });
+      const refresh: { count: number } = await this.prisma.oauthRefreshToken.deleteMany({ where: { expiresAt: { lt: now } } });
       const count: number = access.count + refresh.count;
       if (count > 0) this.logger.log(`Deleted ${count} expired OAuth token row(s)`);
     } catch (err) {

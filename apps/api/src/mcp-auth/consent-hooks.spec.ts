@@ -165,6 +165,17 @@ describe("applyConsentOutcome", () => {
     expect(prisma.mcpPendingGrant.findUnique).not.toHaveBeenCalled();
   });
 
+  it("leaves the parked choice alone when an accepted consent redirects with an error", async () => {
+    const prisma = grantPrisma({ pending });
+    await applyConsentOutcome(prisma as never, SECRET, {
+      returned: { redirect: true, url: "https://client.test/cb?error=invalid_client" },
+      body: { accept: true, oauth_query: await signed(base) },
+      sessionUserId: "u1",
+    });
+    expect(prisma.mcpPendingGrant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.mcpGrant.upsert).not.toHaveBeenCalled();
+  });
+
   it("discards the user's parked choice on Deny", async () => {
     const prisma = grantPrisma({ pending });
     const oauthQuery: string = await signed(base);
@@ -201,7 +212,7 @@ describe("applyConsentOutcome", () => {
     try {
       await expect(
         applyConsentOutcome(prisma as never, SECRET, {
-          returned: {},
+          returned: { redirect: true, url: "https://client.test/cb?code=x" },
           body: { accept: true, oauth_query: await signed(base) },
           sessionUserId: "u1",
         }),

@@ -11,3 +11,10 @@ export class CreateMcpGrantDto {
   @MaxLength(255)
   organizationId!: string;
 }
+
+export class ConsentInfoQueryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(8192)
+  oauthQuery!: string;
+}

@@ -1,6 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
+import { plainToInstance } from "class-transformer";
+import { validate } from "class-validator";
 import { McpConsentController, McpGrantsController } from "./mcp-grants.controller";
+import { ConsentInfoQueryDto } from "./mcp-grants.dto";
 import type { AuthenticatedRequest } from "../common";
 
 const REQUEST = {
@@ -29,7 +32,7 @@ function build() {
 describe("MCP grants controllers", () => {
   it("consent-info describes the client, the destination, and the bindable workspaces", async () => {
     const { consent, service } = build();
-    const info = await consent.consentInfo("q1", "u1");
+    const info = await consent.consentInfo({ oauthQuery: "q1" }, "u1");
     expect(info).toEqual({
       client: { clientId: "c1", name: "Claude" },
       organizations: [{ id: "org1", name: "Acme" }],
@@ -41,8 +44,14 @@ describe("MCP grants controllers", () => {
     expect(service.adminOrganizations).toHaveBeenCalledWith("u1");
   });
 
-  it("consent-info requires the signed request", async () => {
-    await expect(build().consent.consentInfo("", "u1")).rejects.toBeInstanceOf(BadRequestException);
+  it("consent-info requires exactly one signed request string", async () => {
+    const errors = async (query: unknown): Promise<number> =>
+      (await validate(plainToInstance(ConsentInfoQueryDto, query))).length;
+    expect(await errors({ oauthQuery: "q1" })).toBe(0);
+    expect(await errors({})).toBeGreaterThan(0);
+    expect(await errors({ oauthQuery: "" })).toBeGreaterThan(0);
+    // A repeated parameter arrives as an array.
+    expect(await errors({ oauthQuery: ["a", "b"] })).toBeGreaterThan(0);
   });
 
   it("create parks the choice for the request the signature vouches for", async () => {

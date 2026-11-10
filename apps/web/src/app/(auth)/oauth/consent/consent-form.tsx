@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { isSafeOAuthRedirect } from "@/lib/safe-redirect";
 
@@ -37,7 +37,13 @@ export function ConsentForm(): React.ReactElement {
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // The effect below empties the address bar, so a second run (StrictMode
+  // mounts twice in development) must not read it again.
+  const queryRead = useRef<boolean>(false);
+
   useEffect(() => {
+    if (queryRead.current) return;
+    queryRead.current = true;
     const query: string = window.location.search.replace(/^\?/, "");
     if (!new URLSearchParams(query).get("sig")) {
       setError(INCOMPLETE_LINK);

@@ -65,6 +65,18 @@ type SignInMagicLink = (input: {
 
 export const MAGIC_LINK_EXPIRES_IN_SECONDS: number = 60 * 60;
 
+/** The MCP OAuth plugin's `/oauth2/*` endpoints that Atrium serves; the rest answer 404. */
+const MCP_OAUTH_PUBLIC_PATHS: ReadonlySet<string> = new Set<string>([
+  "/oauth2/register",
+  "/oauth2/authorize",
+  "/oauth2/token",
+  "/oauth2/consent",
+  "/oauth2/revoke",
+  "/oauth2/introspect",
+  "/oauth2/userinfo",
+  "/oauth2/end-session",
+]);
+
 /** Sign-in emails per address per window, so nobody can flood someone's inbox from the login page. */
 const MAGIC_LINK_EMAILS_PER_WINDOW = 3;
 const MAGIC_LINK_EMAIL_WINDOW_MS: number = 15 * 60 * 1000;
@@ -113,9 +125,8 @@ export class AuthService {
         // the browser to the registered redirect URI — a `javascript:` or
         // `data:` URI would run script in the Atrium web origin. The body
         // reaches a before-hook unvalidated, hence the shape guards.
-        const redirectUris: unknown = (
-          ctx.body as { redirect_uris?: unknown } | undefined
-        )?.redirect_uris;
+        const body: Record<string, unknown> = (ctx.body ?? {}) as Record<string, unknown>;
+        const redirectUris: unknown = body.redirect_uris;
         const acceptable: boolean =
           Array.isArray(redirectUris) &&
           redirectUris.length > 0 &&
@@ -130,7 +141,21 @@ export class AuthService {
               "redirect_uris must be a non-empty list of absolute URIs, and may not use the javascript, data, vbscript, blob, file or about schemes.",
           });
         }
-        return;
+        // Tokens are never DPoP-bound (see /oauth2/token below), so register a
+        // client asking for that as plain Bearer. Set to false, not removed:
+        // hook output is merged with defu, which ignores undefined.
+        if (body.dpop_bound_access_tokens === undefined) return;
+        return { context: { body: { ...body, dpop_bound_access_tokens: false } } };
+      }
+
+      // Endpoints the plugin adds that Atrium does not use. They are
+      // session-authenticated client and consent management, outside the
+      // registration rate limit and the redirect URI check above.
+      if (
+        ctx.path.startsWith("/oauth2/") &&
+        !MCP_OAUTH_PUBLIC_PATHS.has(ctx.path)
+      ) {
+        throw new APIError("NOT_FOUND");
       }
 
       // The MCP endpoint accepts plain bearer tokens only and does not check
@@ -162,13 +187,24 @@ export class AuthService {
           error_description: "redirect_uri is not an acceptable absolute URI.",
         });
       }
+      // A dpop_jkt binds the code to a DPoP key, and the token endpoint would
+      // then demand a proof Atrium strips. Discovery doesn't advertise DPoP.
+      if (params.dpop_jkt !== undefined) {
+        throw new APIError("BAD_REQUEST", {
+          error: "invalid_request",
+          error_description: "DPoP is not supported. Use a plain Bearer token.",
+        });
+      }
 
       // Always show the consent page. The plugin skips it once a user has
       // consented to a client, and no real MCP client sends prompt=consent,
       // but the consent page is where the user picks the workspace the
       // client acts in, so it is never optional. Overwritten rather than
       // merged, so a `prompt=none` cannot turn consent into an error.
-      const forced = { ...params, prompt: "consent" };
+      // That also drops login/create/select_account: Atrium resumes from its
+      // own login page by rebuilding the authorize URL, so a kept
+      // prompt=login would send the user back to sign in forever.
+      const forced: Record<string, unknown> = { ...params, prompt: "consent" };
       return { context: fromBody ? { body: forced } : { query: forced } };
     });
 

@@ -53,7 +53,7 @@ export async function promoteGrantOnConsent(
 ): Promise<void> {
   // Keyed by user as well as request, so only the person consenting can have
   // parked the choice that their consent promotes.
-  const key = { requestId_userId: { requestId: request.requestId, userId: sessionUserId } };
+  const key: { requestId_userId: { requestId: string; userId: string } } = { requestId_userId: { requestId: request.requestId, userId: sessionUserId } };
   const pending = await prisma.mcpPendingGrant.findUnique({ where: key });
   if (!pending) return;
   if (pending.clientId !== request.clientId) {
@@ -90,6 +90,18 @@ export async function promoteGrantOnConsent(
     });
     await tx.mcpPendingGrant.delete({ where: key });
   });
+}
+
+/** Whether the consent endpoint's `{ url }` result redirects back with an authorization code. */
+function issuedCode(returned: unknown): boolean {
+  const url: unknown = (returned as { url?: unknown } | null | undefined)?.url;
+  if (typeof url !== "string") return false;
+  try {
+    return new URL(url, "http://localhost").searchParams.has("code");
+  } catch (err) {
+    logger.warn(`Consent returned an unparseable redirect: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
 }
 
 /** What the `hooks.after` on `/oauth2/consent` observed. */
@@ -131,6 +143,11 @@ export async function applyConsentOutcome(
     });
     return;
   }
+
+  // An accepted consent re-runs authorize, which reports its failures (client
+  // disabled, bad scope, ...) as a redirect to an error URL, not an APIError.
+  // Only a redirect that carries a code means the client was let in.
+  if (!issuedCode(outcome.returned)) return;
 
   try {
     await promoteGrantOnConsent(prisma, request, outcome.sessionUserId);

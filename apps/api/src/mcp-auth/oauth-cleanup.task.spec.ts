@@ -32,8 +32,10 @@ describe("OAuthCleanupTask.pruneUnusedClients", () => {
     // cached its client_id would otherwise land on an invalid_client dead end.
     expect(where.consents).toEqual({ none: {} });
     expect(where.clientId).toEqual({ notIn: ["kept-by-grant"] });
-    const ageMs: number = Date.now() - where.createdAt.lt.getTime();
+    const ageMs: number = Date.now() - where.OR[0].createdAt.lt.getTime();
     expect(Math.round(ageMs / 86_400_000)).toBe(7);
+    // A row with no createdAt counts as old rather than living forever.
+    expect(where.OR[1]).toEqual({ createdAt: null });
   });
 });
 

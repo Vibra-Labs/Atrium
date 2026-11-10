@@ -179,7 +179,7 @@ test.describe("Decision Tasks", () => {
   test.describe("Dashboard UI", () => {
     test("project detail creates a decision from the Create menu", async ({ page }) => {
       await openProjectTab(page, projectId, "tasks");
-      await page.getByRole("button", { name: "Create", exact: true }).click();
+      await page.getByRole("button", { name: "Add task", exact: true }).click();
       await expect(page.getByRole("button", { name: "Task", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Decision", exact: true }).click();
 

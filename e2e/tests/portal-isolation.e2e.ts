@@ -79,7 +79,7 @@ test.describe("Portal Isolation", () => {
     test("portal project page does NOT show add task form", async () => {
       const client = await openTab("tasks");
       await expect(client.getByRole("button", { name: /new request/i })).toBeVisible();
-      await expect(client.getByRole("button", { name: "Create", exact: true })).toHaveCount(0);
+      await expect(client.getByRole("button", { name: "Add task", exact: true })).toHaveCount(0);
       await expect(client.getByPlaceholder(/add a task/i)).toHaveCount(0);
       await expect(client.getByRole("button", { name: /add note/i })).toHaveCount(0);
     });

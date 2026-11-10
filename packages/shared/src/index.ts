@@ -80,6 +80,17 @@ export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 export const CONTACT_RATINGS = ["hot", "warm", "cold"] as const;
 export type ContactRating = (typeof CONTACT_RATINGS)[number];
 
+// Potential contracts: projects that aren't signed yet.
+export const PURSUIT_STAGES = ["found", "proposal_sent", "waiting"] as const;
+export type PursuitStage = (typeof PURSUIT_STAGES)[number];
+export const PURSUIT_STAGE_LABELS: Record<PursuitStage, string> = {
+  found: "Lead",
+  proposal_sent: "Proposal sent",
+  waiting: "Waiting on decision",
+};
+export const PURSUIT_OUTCOMES = ["open", "won", "lost"] as const;
+export type PursuitOutcome = (typeof PURSUIT_OUTCOMES)[number];
+
 // A type alias (not an interface) so it is assignable to Prisma's Json input.
 export type ContactPhone = {
   label: string;
@@ -265,4 +276,55 @@ export const DEFAULT_CURRENCY = "usd";
 /** Formats an amount in minor units (cents) as a localized currency string. */
 export function formatMoney(cents: number, currency: string = DEFAULT_CURRENCY): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
+}
+
+/** Cards on the staff dashboard that each person can hide or show. */
+export const DASHBOARD_WIDGETS = [
+  { key: "stats", label: "Summary numbers" },
+  { key: "attention", label: "Needs your attention" },
+  { key: "weeklyUpdates", label: "Weekly updates" },
+  { key: "recentProjects", label: "Recent projects" },
+  { key: "activity", label: "Client activity" },
+  { key: "pipeline", label: "Pipeline" },
+  { key: "thisWeek", label: "This week" },
+] as const;
+
+export type DashboardWidget = (typeof DASHBOARD_WIDGETS)[number]["key"];
+
+export const DASHBOARD_WIDGET_KEYS: DashboardWidget[] = DASHBOARD_WIDGETS.map((w) => w.key);
+
+// Cost and margin on potential contracts.
+/** Largest amount in cents the database holds (a 32-bit int): about $21.4M. */
+export const MAX_CENTS = 2_147_483_647;
+
+export interface CostInput {
+  valueCents: number | null;
+  /** The cost typed in directly; used only while no cost details are set. */
+  costCents: number | null;
+  /** What an hour of tracked time costs (not the billing rate). */
+  laborRateCents: number | null;
+  /** Finished time entries on the project, billable or not. */
+  trackedSeconds: number;
+  lineCents: number[];
+}
+
+export interface CostSummary {
+  /** True once a cost rate or a cost line is set: cost is then their total. */
+  detailed: boolean;
+  laborCents: number;
+  costCents: number | null;
+  profitCents: number | null;
+  /** Whole-number percent of value. */
+  marginPct: number | null;
+}
+
+export function costSummary(i: CostInput): CostSummary {
+  const detailed: boolean = i.laborRateCents !== null || i.lineCents.length > 0;
+  const laborCents: number = Math.round((i.trackedSeconds / 3600) * (i.laborRateCents ?? 0));
+  const costCents: number | null = detailed ? laborCents + i.lineCents.reduce((sum, c) => sum + c, 0) : i.costCents;
+  const hasBoth: boolean = costCents !== null && i.valueCents !== null && i.valueCents > 0;
+  const profitCents: number | null = hasBoth ? (i.valueCents as number) - (costCents as number) : null;
+  const marginPct: number | null =
+    profitCents === null ? null : Math.round((profitCents / (i.valueCents as number)) * 100);
+  return { detailed, laborCents, costCents, profitCents, marginPct };
 }

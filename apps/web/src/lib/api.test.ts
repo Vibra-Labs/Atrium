@@ -105,3 +105,30 @@ describe("apiFetch errors", () => {
     expect((err as ApiError).message).toBe("No active organization");
   });
 });
+
+describe("apiFetch preview mode", () => {
+  const g = globalThis as unknown as { window?: unknown };
+  const originalWindow: unknown = g.window;
+
+  function inTab(pathname: string): void {
+    g.window = {
+      location: { pathname },
+      sessionStorage: { getItem: () => JSON.stringify({ clientId: "client-1", clientName: "C", clientEmail: "c@x.com" }) },
+    };
+  }
+
+  afterEach(() => {
+    g.window = originalWindow;
+  });
+
+  it("is read-only on portal pages", async () => {
+    inTab("/portal/projects/p1");
+    await expect(apiFetch("/updates", { method: "POST", body: "{}" })).rejects.toThrow("Read-only preview mode");
+  });
+
+  it("doesn't apply once the tab is back on the dashboard", async () => {
+    inTab("/dashboard/projects/p1");
+    globalThis.fetch = mock(async () => new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    await expect(apiFetch("/updates", { method: "POST", body: "{}" })).resolves.toEqual({});
+  });
+});

@@ -216,7 +216,7 @@ test.describe("Activity Feed", () => {
 
       // The updates tab should be active by default
       await expect(
-        page.getByRole("button", { name: "Updates" }),
+        page.getByRole("tab", { name: "Updates" }),
       ).toBeVisible({ timeout: 5000 });
 
       // Wait for timeline to load - check for either update content or activity entries

@@ -164,6 +164,8 @@ export function usePreviewMode(): PreviewModeContextValue {
   return useContext(PreviewModeContext);
 }
 
+/** Preview only covers the portal: a preview tab that goes back to the dashboard works normally again. */
 export function getStoredPreviewClientId(): string | null {
+  if (typeof window === "undefined" || !window.location.pathname.startsWith("/portal")) return null;
   return readStored()?.clientId ?? null;
 }

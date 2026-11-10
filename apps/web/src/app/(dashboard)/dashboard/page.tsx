@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Eye,
@@ -19,6 +20,9 @@ import { initials } from "@/lib/initials";
 import { projectProgress } from "./progress";
 import { WeeklyUpdatesCard } from "./weekly-updates-card";
 import { ThisWeekCard } from "./this-week-card";
+import { PipelineCard, type NewKind } from "./projects/_pursuit/pursuit-ui";
+import { NewProjectModal } from "./projects/new-project-modal";
+import { CustomizeDashboard, useDashboardLayout } from "./customize-dashboard";
 
 interface ProjectClient {
   userId: string;
@@ -122,12 +126,18 @@ export default function DashboardPage() {
   const { userName } = useSession();
 
   const [stats, setStats] = useState<ProjectStats | null>(null);
+  const router = useRouter();
+  const [newKind, setNewKind] = useState<NewKind | null>(null);
   const [invoiceStats, setInvoiceStats] = useState<InvoiceStats | null>(null);
+  const hasOutstanding: boolean = (invoiceStats?.outstandingAmount ?? 0) > 0;
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [overdueInvoices, setOverdueInvoices] = useState<OverdueInvoice[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState("");
+  const layout = useDashboardLayout();
+  const showLeft: boolean = layout.shows("attention") || layout.shows("weeklyUpdates") || layout.shows("recentProjects");
+  const showRight: boolean = layout.shows("activity") || layout.shows("pipeline") || layout.shows("thisWeek");
 
   // Read the clock after mount: the server render runs in the server's timezone,
   // which would give the wrong greeting and a hydration mismatch.
@@ -152,7 +162,8 @@ export default function DashboardPage() {
       .catch(console.error);
 
     // 3. Recent projects
-    apiFetch<PaginatedResponse<Project>>("/projects?limit=5")
+    // Potential contracts aren't active work; they show in the Pipeline card instead.
+    apiFetch<PaginatedResponse<Project>>("/projects?limit=5&pursuit=exclude")
       .then((res) => setRecentProjects(res.data))
       .catch(console.error);
 
@@ -245,13 +256,21 @@ export default function DashboardPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2.5">
-          <Link
-            href="/dashboard/projects?new=1"
+          <CustomizeDashboard layout={layout} />
+          <button
+            onClick={() => setNewKind("project")}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
           >
             <Plus size={16} />
             <span>New Project</span>
-          </Link>
+          </button>
+          {newKind && (
+            <NewProjectModal
+              initialKind={newKind}
+              onClose={() => setNewKind(null)}
+              onCreated={(p) => router.push(`/dashboard/projects/${p.id}`)}
+            />
+          )}
         </div>
       </div>
 
@@ -261,7 +280,14 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {layout.hidden !== null && !layout.shows("stats") && !showLeft && !showRight && (
+        <div className="p-8 text-center text-sm text-[var(--muted-foreground)] border border-dashed border-[var(--border)] rounded-2xl">
+          Every card is hidden. Use Customize to bring some back.
+        </div>
+      )}
+
       {/* KPI Stats Grid */}
+      {layout.shows("stats") && (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {stats === null ? (
           <>
@@ -333,7 +359,7 @@ export default function DashboardPage() {
               </p>
             </Link>
 
-            {/* Outstanding (Highlighted Brass / Amber Card) */}
+            {/* Outstanding: amber only when money is owed, neutral at zero */}
             <a
               href="#overdue-invoices"
               data-testid="outstanding-card"
@@ -342,30 +368,59 @@ export default function DashboardPage() {
                 const target = document.getElementById("overdue-invoices") || document.getElementById("attention");
                 target?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="p-4 sm:p-5 border border-amber-500/20 bg-amber-500/10 dark:bg-amber-950/30 dark:border-amber-800/40 rounded-2xl space-y-1 block hover:border-amber-500/50 hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer"
+              className={`p-4 sm:p-5 border rounded-2xl space-y-1 block hover:shadow-md transition-all active:scale-[0.98] group cursor-pointer ${
+                hasOutstanding
+                  ? "border-amber-500/20 bg-amber-500/10 dark:bg-amber-950/30 dark:border-amber-800/40 hover:border-amber-500/50"
+                  : "border-[var(--border)] bg-[var(--background)] hover:border-[var(--primary)]"
+              }`}
             >
               <div className="flex items-center justify-between">
-                <p className="text-xs sm:text-sm text-amber-900 dark:text-amber-200 font-medium group-hover:text-amber-700 dark:group-hover:text-amber-100 transition-colors">
+                <p
+                  className={`text-xs sm:text-sm font-medium transition-colors ${
+                    hasOutstanding
+                      ? "text-amber-900 dark:text-amber-200 group-hover:text-amber-700 dark:group-hover:text-amber-100"
+                      : "text-[var(--muted-foreground)] group-hover:text-[var(--primary)]"
+                  }`}
+                >
                   Outstanding
                 </p>
-                <ChevronRight size={14} className="text-amber-700/60 dark:text-amber-400/60 group-hover:text-amber-900 dark:group-hover:text-amber-100 transition-colors" />
+                <ChevronRight
+                  size={14}
+                  className={`transition-colors ${
+                    hasOutstanding
+                      ? "text-amber-700/60 dark:text-amber-400/60 group-hover:text-amber-900 dark:group-hover:text-amber-100"
+                      : "text-[var(--muted-foreground)] group-hover:text-[var(--primary)]"
+                  }`}
+                />
               </div>
-              <p className="text-2xl sm:text-3xl font-bold tracking-tight text-amber-950 dark:text-amber-100">
+              <p
+                className={`text-2xl sm:text-3xl font-bold tracking-tight ${
+                  hasOutstanding ? "text-amber-950 dark:text-amber-100" : "text-[var(--foreground)]"
+                }`}
+              >
                 {formatCurrency(invoiceStats?.outstandingAmount ?? 0, currency)}
               </p>
-              <p className="text-xs text-amber-800/80 dark:text-amber-300/80 pt-0.5">
+              <p
+                className={`text-xs pt-0.5 ${
+                  hasOutstanding ? "text-amber-800/80 dark:text-amber-300/80" : "text-[var(--muted-foreground)]"
+                }`}
+              >
                 {invoiceStats?.openCount ?? 0} open invoices · {invoiceStats?.overdueCount ?? 0} overdue
               </p>
             </a>
           </>
         )}
       </div>
+      )}
 
-      {/* Main 2-Column Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      {/* Main 2-Column Grid: one column fills the width when the other's cards are all hidden */}
+      {(showLeft || showRight) && (
+      <div className={`grid grid-cols-1 gap-6 items-start ${showLeft && showRight ? "lg:grid-cols-3" : ""}`}>
         {/* Left Column (2 cols) */}
-        <div className="lg:col-span-2 space-y-6 min-w-0">
+        {showLeft && (
+        <div className={`space-y-6 min-w-0 ${showRight ? "lg:col-span-2" : ""}`}>
           {/* Needs your attention Card */}
+          {layout.shows("attention") && (
           <section
             id="attention"
             className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm scroll-mt-6"
@@ -449,10 +504,12 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+          )}
 
-          <WeeklyUpdatesCard />
+          {layout.shows("weeklyUpdates") && <WeeklyUpdatesCard />}
 
           {/* Recent projects Table Card */}
+          {layout.shows("recentProjects") && (
           <section className="border border-[var(--border)] rounded-2xl bg-[var(--background)] overflow-hidden shadow-sm">
             <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[var(--border)]">
               <h2 className="text-sm sm:text-base font-semibold text-[var(--foreground)]">Recent projects</h2>
@@ -468,9 +525,9 @@ export default function DashboardPage() {
             {recentProjects.length === 0 ? (
               <div className="p-8 text-center text-sm text-[var(--muted-foreground)]">
                 No projects yet.{" "}
-                <Link href="/dashboard/projects?new=1" className="text-[var(--primary)] hover:underline font-medium">
+                <button onClick={() => setNewKind("project")} className="text-[var(--primary)] hover:underline font-medium">
                   Create your first project
-                </Link>
+                </button>
               </div>
             ) : (
               <>
@@ -559,11 +616,15 @@ export default function DashboardPage() {
               </>
             )}
           </section>
+          )}
         </div>
+        )}
 
         {/* Right Column (1 col) */}
+        {showRight && (
         <div className="space-y-6 min-w-0">
           {/* Client activity Card */}
+          {layout.shows("activity") && (
           <section className="p-4 sm:p-5 border border-[var(--border)] rounded-2xl bg-[var(--background)] space-y-4 shadow-sm">
             <h2 className="text-sm sm:text-base font-semibold text-[var(--foreground)]">Client activity</h2>
             {activity.length === 0 ? (
@@ -596,10 +657,14 @@ export default function DashboardPage() {
               </ol>
             )}
           </section>
+          )}
 
-          <ThisWeekCard />
+          {layout.shows("pipeline") && <PipelineCard onAdd={() => setNewKind("pursuit")} />}
+          {layout.shows("thisWeek") && <ThisWeekCard />}
         </div>
+        )}
       </div>
+      )}
     </div>
   );
 }

@@ -50,6 +50,7 @@ export class MondayDigestService {
       dueDate: { lte: new Date(now.getTime() + WEEK_MS) },
       OR: [{ assigneeId: userId }, { assigneeId: null }],
       project: { archivedAt: null },
+      internal: false,
     };
     // Unread notifications cover what clients did: comments, requests, signatures, payments.
     const activityWhere = {

@@ -11,6 +11,8 @@ export interface CreateActivityDto {
   detail?: string;
   projectId: string;
   organizationId: string;
+  /** Staff-only, like the item it's about. */
+  internal?: boolean;
 }
 
 @Injectable()
@@ -28,6 +30,7 @@ export class ActivityService {
         detail: dto.detail,
         projectId: dto.projectId,
         organizationId: dto.organizationId,
+        internal: dto.internal ?? false,
       },
     });
   }

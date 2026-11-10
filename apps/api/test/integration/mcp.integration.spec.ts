@@ -98,6 +98,7 @@ beforeAll(async () => {
     billingStub,
     new DocumentsService(prisma, noop, noop, noop, noop, noop, billingStub),
     configStub,
+    noop,
   );
 
   const app = express();
@@ -123,7 +124,7 @@ describe("MCP endpoint", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toContain("create_project");
     expect(tools.map((t) => t.name)).toContain("list_pending_approvals");
-    expect(tools.length).toBe(23);
+    expect(tools.length).toBe(27);
     await client.close();
   });
 

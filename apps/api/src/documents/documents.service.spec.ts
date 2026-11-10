@@ -1363,6 +1363,14 @@ describe("DocumentsService", () => {
       }
     });
 
+    it("refuses an internal document", async () => {
+      mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({ internal: true })));
+      mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve({ id: "pc-1" }));
+      await expect(service.generateAccessToken(DOC_ID, CLIENT_USER, ORG)).rejects.toThrow(
+        "Share this document with the client first",
+      );
+    });
+
     it("throws BadRequestException when user is not a project client", async () => {
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc()));
       mockPrisma.projectClient.findFirst.mockReturnValue(Promise.resolve(null));
@@ -1481,6 +1489,12 @@ describe("DocumentsService", () => {
         expect(e).toBeInstanceOf(NotFoundException);
         expect((e as NotFoundException).message).toContain("Invalid or expired link");
       }
+    });
+
+    it("treats a link to an internal document as invalid", async () => {
+      const record = makeTokenRecord({ document: makeDoc({ status: "pending", internal: true }) });
+      mockPrisma.documentAccessToken.findUnique.mockReturnValue(Promise.resolve(record));
+      await expect(service.validateAccessToken(RAW_TOKEN)).rejects.toThrow(NotFoundException);
     });
 
     it("throws BadRequestException when token has expired", async () => {
@@ -1882,6 +1896,18 @@ describe("DocumentsService", () => {
       );
     }
 
+    it("doesn't notify clients or log client activity for an internal document", async () => {
+      setupLinkDoc({ internal: true });
+      mockPrisma.document.update.mockReturnValue(
+        Promise.resolve(makeDoc({ type: "deliverable", status: "pending", currentVersion: 2, file: {}, internal: true })),
+      );
+      mockNotifications.notifyDocumentUploaded.mockClear();
+      mockActivityService.create.mockClear();
+      await service.linkVersion(DOC_ID, ORG, USER, "https://staging.example.com/v2");
+      expect(mockNotifications.notifyDocumentUploaded).not.toHaveBeenCalled();
+      expect(mockActivityService.create).not.toHaveBeenCalled();
+    });
+
     it("snapshots the current link, creates a new LINK file and resets to pending", async () => {
       setupLinkDoc();
       await service.linkVersion(DOC_ID, ORG, USER, "https://staging.example.com/v2", "Fixed nav");
@@ -2252,8 +2278,9 @@ describe("DocumentsService", () => {
 
       expect(mockPrisma.document.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: expect.objectContaining({
-          organizationId: ORG, projectId: PROJECT_ID, requiresApproval: true,
-          project: { archivedAt: null },
+          organizationId: ORG, projectId: PROJECT_ID, requiresApproval: true, internal: false,
+          // Unsigned potential contracts don't show in "Needs attention".
+          project: { archivedAt: null, OR: [{ pursuit: { is: null } }, { pursuit: { is: { outcome: "won" } } }] },
           OR: [
             { type: "deliverable", status: { in: ["pending", "declined"] } },
             { type: { not: "deliverable" }, status: "pending" },

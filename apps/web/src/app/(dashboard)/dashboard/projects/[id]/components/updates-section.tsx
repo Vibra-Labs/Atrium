@@ -9,7 +9,6 @@ import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
 import {
   Trash2,
-  Plus,
   MessageSquare,
   Paperclip,
   FileText,
@@ -19,6 +18,7 @@ import {
   Lock,
   Pencil,
   Sparkles,
+  MoreHorizontal,
 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
 import { Embeds, type PreviewPrefs } from "@/lib/embeds";
@@ -99,12 +99,15 @@ export function UpdatesSection({
   onFileChange,
   currentUserId = null,
   currentRole = null,
+  internalNote,
 }: {
   projectId: string;
   isArchived: boolean;
   onFileChange?: () => void;
   currentUserId?: string | null;
   currentRole?: string | null;
+  /** A quiet line by the composer, e.g. that clients can't see updates yet. */
+  internalNote?: string;
 }) {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
@@ -118,6 +121,8 @@ export function UpdatesSection({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  /** The update whose ⋯ menu is open. */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const isPrivileged = currentRole === "owner" || currentRole === "admin";
   const [drafting, setDrafting] = useState(false);
@@ -278,35 +283,64 @@ export function UpdatesSection({
     }
   };
 
+  const expanded: boolean = showCompose || !!newContent || !!newAttachment || !!draftStats;
+
+  const internalNoteBadge: React.ReactNode = internalNote && (
+    <span data-testid="updates-internal-note" className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+      <Lock size={12} />
+      {internalNote}
+    </span>
+  );
+
+  const draftButton = (className: string): React.ReactNode => (
+    <button
+      type="button"
+      onClick={() => void loadWeeklyDraft()}
+      disabled={drafting}
+      className={`flex items-center gap-1.5 text-xs text-[var(--primary)] hover:underline disabled:opacity-50 font-medium ${className}`}
+    >
+      <Sparkles size={13} />
+      {drafting ? "Drafting..." : "Draft from this week"}
+    </button>
+  );
+
   return (
     <div>
+      {/* Stays open once clicked; folding back on blur would shift the page under the next click. */}
       {!isArchived && (
-        <div className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-4 sm:p-5 space-y-3 mb-6 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <label htmlFor="update-content" className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              Write an update
-            </label>
-            {isPrivileged && !newContent.trim() && (
-              <button
-                type="button"
-                onClick={() => void loadWeeklyDraft()}
-                disabled={drafting}
-                className="flex items-center gap-1.5 text-xs text-[var(--primary)] hover:underline disabled:opacity-50 font-medium"
-              >
-                <Sparkles size={13} />
-                {drafting ? "Drafting..." : "Draft from this week"}
-              </button>
-            )}
+        <div className="border border-[var(--border)] rounded-2xl bg-[var(--background)] p-3 sm:p-4 space-y-3 mb-6 shadow-sm">
+          {expanded ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3 flex-wrap min-w-0">
+                <label htmlFor="update-content" className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Write an update
+                </label>
+                {internalNoteBadge}
+              </div>
+              {isPrivileged && !newContent.trim() && draftButton("")}
+            </div>
+          ) : (
+            internalNoteBadge
+          )}
+          <div className="flex items-start gap-2">
+            <textarea
+              id="update-content"
+              aria-label="Write an update"
+              // Opens on the textarea only, so clicking "Draft from this week" isn't swallowed by a re-render.
+              onFocus={() => setShowCompose(true)}
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              placeholder={internalNote ? "Write an update for your team…" : "Write an update for your client…"}
+              maxLength={5000}
+              rows={expanded ? (draftStats ? 8 : 3) : 1}
+              className={
+                expanded
+                  ? "w-full px-3.5 py-2.5 border border-[var(--border)] rounded-xl bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                  : "flex-1 px-1 py-1 bg-transparent text-sm resize-none outline-none"
+              }
+            />
+            {!expanded && isPrivileged && draftButton("shrink-0 py-1")}
           </div>
-          <textarea
-            id="update-content"
-            value={newContent}
-            onChange={(e) => setNewContent(e.target.value)}
-            placeholder="Write an update for your client…"
-            maxLength={5000}
-            rows={draftStats ? 8 : 3}
-            className="w-full px-3.5 py-2.5 border border-[var(--border)] rounded-xl bg-[var(--background)] text-sm resize-none outline-none focus:ring-1 focus:ring-[var(--primary)]"
-          />
           {draftStats && (
             <p className="text-xs text-[var(--muted-foreground)]" data-testid="weekly-draft-hint">
               Drafted from {draftStats.completedTasks} finished {draftStats.completedTasks === 1 ? "task" : "tasks"} and{" "}
@@ -315,45 +349,47 @@ export function UpdatesSection({
               {draftStats.hoursLogged > 0 && ` The ${draftStats.hoursLogged}h logged this week is left out.`}
             </p>
           )}
-          <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs cursor-pointer hover:bg-[var(--muted)] transition-colors">
-                <Paperclip size={13} />
-                Attach file
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => setNewAttachment(e.target.files?.[0] ?? null)}
-                />
-              </label>
-              {newAttachment && (
-                <span className="text-xs text-[var(--muted-foreground)] flex items-center gap-1">
-                  {newAttachment.name}
-                  <button
-                    type="button"
-                    onClick={() => setNewAttachment(null)}
-                    className="hover:text-red-500"
-                  >
-                    &times;
-                  </button>
-                </span>
-              )}
+          {expanded && (
+            <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs cursor-pointer hover:bg-[var(--muted)] transition-colors">
+                  <Paperclip size={13} />
+                  Attach file
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => setNewAttachment(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {newAttachment && (
+                  <span className="text-xs text-[var(--muted-foreground)] flex items-center gap-1">
+                    {newAttachment.name}
+                    <button
+                      type="button"
+                      onClick={() => setNewAttachment(null)}
+                      className="hover:text-red-500"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[var(--muted-foreground)]">{internalNote ? "Team only" : "Visible to client"}</span>
+                <button
+                  onClick={handlePost}
+                  disabled={posting || !newContent.trim()}
+                  className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs sm:text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  {posting ? "Posting…" : "Post Update"}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-[var(--muted-foreground)]">Visible to client</span>
-              <button
-                onClick={handlePost}
-                disabled={posting || !newContent.trim()}
-                className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-xs sm:text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                {posting ? "Posting…" : "Post Update"}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="divide-y divide-[var(--border)]">
         {timeline.map((entry) => {
           if (entry.kind === "activity") {
             const colors = actionColors[entry.action || ""] || actionColors.closed;
@@ -364,7 +400,7 @@ export function UpdatesSection({
               <div
                 key={entry.id}
                 data-testid="activity-entry"
-                className="flex items-start gap-3 px-4 py-3 border border-[var(--border)] rounded-lg bg-[var(--muted)]/30"
+                className="flex items-start gap-3 py-3"
               >
                 <div className="mt-0.5">
                   <ActivityIcon type={entry.type} />
@@ -417,7 +453,7 @@ export function UpdatesSection({
             <div
               key={entry.id}
               data-testid={`update-entry-${entry.id}`}
-              className="border border-[var(--border)] rounded-lg p-4"
+              className="py-4"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -435,25 +471,49 @@ export function UpdatesSection({
                   )}
                 </div>
                 {!isArchived && !isEditing && (
-                  <div className="flex items-center gap-1">
-                    {canEdit && (
-                      <button
-                        onClick={() => startEdit(entry)}
-                        aria-label="Edit update"
-                        data-testid={`edit-update-${entry.id}`}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:underline"
-                      >
-                        <Pencil size={12} />
-                        Edit
-                      </button>
-                    )}
+                  <div
+                    className="relative"
+                    onBlur={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget)) setMenuFor(null);
+                    }}
+                  >
                     <button
-                      onClick={() => handleDelete(entry.id)}
-                      className="flex items-center gap-1 px-2 py-1 text-xs text-red-500 hover:underline"
+                      onClick={() => setMenuFor(menuFor === entry.id ? null : entry.id)}
+                      aria-label="Update actions"
+                      aria-expanded={menuFor === entry.id}
+                      data-testid={`update-menu-${entry.id}`}
+                      className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
                     >
-                      <Trash2 size={12} />
-                      Delete
+                      <MoreHorizontal size={16} />
                     </button>
+                    {menuFor === entry.id && (
+                      <div className="absolute right-0 top-full mt-1 w-32 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-10 overflow-hidden">
+                        {canEdit && (
+                          <button
+                            onClick={() => {
+                              setMenuFor(null);
+                              startEdit(entry);
+                            }}
+                            aria-label="Edit update"
+                            data-testid={`edit-update-${entry.id}`}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--muted)] text-left"
+                          >
+                            <Pencil size={13} />
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setMenuFor(null);
+                            handleDelete(entry.id);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-[var(--muted)] text-left"
+                        >
+                          <Trash2 size={13} />
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -527,12 +587,9 @@ export function UpdatesSection({
           );
         })}
         {timeline.length === 0 && (
-          <div className="text-center py-8">
-            <MessageSquare size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
-            <p className="text-sm text-[var(--muted-foreground)]">
-              No updates posted yet.
-            </p>
-          </div>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {isArchived ? "No updates yet." : "No updates yet. Post one above."}
+          </p>
         )}
       </div>
       <div className="mt-3">

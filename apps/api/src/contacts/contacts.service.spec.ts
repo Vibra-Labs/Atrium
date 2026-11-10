@@ -77,6 +77,8 @@ const prisma = {
   user: { findMany: mock(() => Promise.resolve([] as unknown[])) },
   invitation: { findMany: mock(() => Promise.resolve([] as unknown[])) },
   member: { findFirst: mock(() => Promise.resolve(null as unknown)) },
+  projectPursuit: { findFirst: mock(() => Promise.resolve(null as unknown)) },
+  projectPursuitEvent: { create: mock(() => Promise.resolve({})) },
 };
 
 const revenue = {
@@ -110,6 +112,7 @@ function resetAll(): void {
   prisma.leadSource.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.project.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.label.findFirst.mockImplementation(() => Promise.resolve(null));
+  prisma.projectPursuit.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.projectContact.findUnique.mockImplementation(() => Promise.resolve(null));
   prisma.projectClient.findFirst.mockImplementation(() => Promise.resolve(null));
   prisma.contactNote.findMany.mockImplementation(() => Promise.resolve([]));
@@ -210,6 +213,23 @@ describe("ContactsService", () => {
     await service.linkProject("c-1", "p-1", "org-1");
     expect(prisma.projectContact.create).not.toHaveBeenCalled();
     expect(prisma.contactEvent.create).not.toHaveBeenCalled();
+  });
+
+  it("linking and unlinking a contact on an open potential contract are logged in its deal history", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", firstName: "Lee", lastName: "Park" }));
+    prisma.project.findFirst.mockImplementation(() => Promise.resolve({ id: "p-1", name: "Bid" }));
+    prisma.projectPursuit.findFirst.mockImplementation(() => Promise.resolve({ projectId: "p-1" }));
+    await service.linkProject("c-1", "p-1", "org-1");
+    expect(prisma.projectPursuitEvent.create).toHaveBeenCalledWith({ data: { projectId: "p-1", text: "Linked Lee Park" } });
+    await service.unlinkProject("c-1", "p-1", "org-1");
+    expect(prisma.projectPursuitEvent.create).toHaveBeenCalledWith({ data: { projectId: "p-1", text: "Removed Lee Park" } });
+  });
+
+  it("linking a contact on a regular project writes no deal history", async () => {
+    prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", firstName: "Lee", lastName: null }));
+    prisma.project.findFirst.mockImplementation(() => Promise.resolve({ id: "p-1", name: "Site" }));
+    await service.linkProject("c-1", "p-1", "org-1");
+    expect(prisma.projectPursuitEvent.create).not.toHaveBeenCalled();
   });
 
   it("create 404s for companyId and referredById in another org", async () => {

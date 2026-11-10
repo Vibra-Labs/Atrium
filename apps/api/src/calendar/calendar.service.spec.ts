@@ -24,6 +24,12 @@ describe("CalendarService.list activeOnly", () => {
     expect(whereOf(prisma.invoice.findMany)).not.toHaveProperty("OR");
   });
 
+  it("leaves out internal tasks from before a potential contract was won", async () => {
+    const { prisma, service } = build();
+    await service.list("org-1", range);
+    expect(whereOf(prisma.task.findMany).internal).toBe(false);
+  });
+
   it("skips archived projects and finished project deadlines when asked", async () => {
     const { prisma, service } = build();
     await service.list("org-1", { ...range, activeOnly: "true" });

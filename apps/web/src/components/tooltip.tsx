@@ -12,10 +12,13 @@ const SIDE_CLASS: Record<Side, string> = {
 export function Tooltip({
   label,
   side = "top",
+  wrap = false,
   children,
 }: {
   label: string;
   side?: Side;
+  /** Lets a longer explanation wrap onto a few lines. */
+  wrap?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -31,7 +34,7 @@ export function Tooltip({
       {open && (
         <span
           role="tooltip"
-          className={`absolute z-50 whitespace-nowrap rounded-md bg-[var(--muted)] border border-[var(--border)] px-2 py-1 text-[11px] font-medium text-[var(--foreground)] shadow-md pointer-events-none ${SIDE_CLASS[side]}`}
+          className={`absolute z-50 ${wrap ? "w-64 whitespace-normal" : "whitespace-nowrap"} rounded-md bg-[var(--muted)] border border-[var(--border)] px-2 py-1 text-[11px] font-medium text-[var(--foreground)] shadow-md pointer-events-none ${SIDE_CLASS[side]}`}
         >
           {label}
         </span>

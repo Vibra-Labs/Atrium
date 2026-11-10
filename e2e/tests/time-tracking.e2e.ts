@@ -183,12 +183,8 @@ test.describe("Time tracking", () => {
       await noThanks.click();
     }
 
-    // Switch to the Invoices tab
-    await page
-      .locator("main")
-      .getByRole("button", { name: /^invoices$/i })
-      .first()
-      .click();
+    // Switch to the Time & billing tab (invoices live there)
+    await page.getByTestId("project-tab-billing").click();
 
     // Open the "New Invoice" dropdown and pick "Generate from time".
     await page

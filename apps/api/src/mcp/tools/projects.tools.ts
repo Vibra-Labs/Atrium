@@ -4,6 +4,8 @@ import { defineTool, isoDate, paging } from "../tool-kit";
 import type { McpTool } from "../tool-kit";
 import type { ProjectsService } from "../../projects/projects.service";
 import type { BillingService } from "../../billing/billing.service";
+import type { PursuitService } from "../../projects/pursuit.service";
+import { MAX_CENTS, PURSUIT_STAGES } from "@atrium/shared";
 
 const projectFields = {
   name: z.string().trim().min(1).max(255),
@@ -13,6 +15,8 @@ const projectFields = {
   endDate: isoDate.optional(),
   clientUserIds: z.array(z.string()).optional().describe("User IDs from list_clients to give portal access"),
 };
+
+const nullableDate = isoDate.nullable().optional();
 
 /**
  * The tool description tells agents to take a slug from
@@ -46,8 +50,9 @@ function assertDateOrder(startDate: string | undefined, endDate: string | undefi
 export function projectTools(deps: {
   projects: ProjectsService;
   billing: BillingService;
+  pursuits: PursuitService;
 }): McpTool[] {
-  const { projects, billing } = deps;
+  const { projects, billing, pursuits } = deps;
   return [
     defineTool({
       name: "list_projects",
@@ -57,6 +62,10 @@ export function projectTools(deps: {
         search: z.string().max(200).optional().describe("Matches project names"),
         status: z.string().max(100).optional().describe("A status slug from list_project_statuses"),
         archived: z.boolean().default(false),
+        pursuit: z
+          .enum(["only", "exclude"])
+          .optional()
+          .describe("only: open potential contracts (unsigned work). exclude: signed work only."),
         ...paging,
       }),
       handler: async (input, actor) =>
@@ -66,6 +75,7 @@ export function projectTools(deps: {
           search: input.search,
           status: input.status,
           archived: input.archived ? "true" : undefined,
+          pursuit: input.pursuit,
         }),
     }),
     defineTool({
@@ -76,8 +86,12 @@ export function projectTools(deps: {
     }),
     defineTool({
       name: "create_project",
-      description: "Creates a project. Only name is required.",
-      inputSchema: z.object(projectFields),
+      description:
+        "Creates a project. Only name is required. Set potential to create a potential contract: work that isn't signed yet, with no portal access until it's won.",
+      inputSchema: z.object({
+        ...projectFields,
+        potential: z.boolean().optional().describe("Create as a potential contract (not signed yet)"),
+      }),
       handler: async (input, actor) => {
         assertDateOrder(input.startDate, input.endDate);
         await assertKnownStatus(projects, actor.organization.id, input.status);
@@ -114,6 +128,64 @@ export function projectTools(deps: {
       description: "Lists the workspace's project statuses. Use a status slug when creating or filtering projects.",
       inputSchema: z.object({}),
       handler: async (_input, actor) => projects.getStatuses(actor.organization.id),
+    }),
+    defineTool({
+      name: "update_potential_contract",
+      description:
+        "Updates deal fields on an open potential contract. Only the fields you pass change; null clears one. Values are in cents.",
+      inputSchema: z.object({
+        projectId: z.string(),
+        stage: z.enum(PURSUIT_STAGES).optional().describe("found, proposal_sent or waiting (on decision)"),
+        valueCents: z.number().int().min(0).max(MAX_CENTS).nullable().optional(),
+        closeDate: nullableDate.describe("Expected close, or bid due when isBid"),
+        nextStep: z.string().max(500).nullable().optional(),
+        nextStepAt: nullableDate,
+        isBid: z.boolean().optional().describe("A formal bid (RFP/RFQ)"),
+        solicitationNumber: z.string().max(100).nullable().optional(),
+        questionsDueAt: nullableDate,
+        sourceUrl: z.url({ protocol: /^https?$/ }).max(2000).nullable().optional(),
+        companyId: z.string().nullable().optional(),
+      }),
+      handler: async (input, actor) => {
+        const { projectId, ...patch } = input;
+        return pursuits.update(projectId, patch, actor.organization.id);
+      },
+    }),
+    defineTool({
+      name: "mark_potential_contract_won",
+      description:
+        "Marks a potential contract won: it becomes active work, the contact (if given) becomes a client, and everything made so far stays internal. Portal access is only given when giveAccess is true.",
+      inputSchema: z.object({
+        projectId: z.string(),
+        contactId: z.string().optional().describe("The client, from list_contacts. Optional; needed for giveAccess"),
+        status: z.string().max(100).describe("A status slug from list_project_statuses (not cancelled or completed)"),
+        giveAccess: z.boolean().default(false),
+      }),
+      handler: async (input, actor) => {
+        const { projectId, ...dto } = input;
+        const result = await pursuits.win(projectId, dto, actor.organization.id);
+        if (result.accessFailed) {
+          return { ...result, note: "Won, but linking the contact or giving them access failed. Add them to the project by hand." };
+        }
+        if (!result.inviteEmail) return result;
+        return {
+          ...result,
+          note: `${result.inviteEmail} has no portal login yet. Send them a portal invite from Contacts; accepting it gives them this project.`,
+        };
+      },
+    }),
+    defineTool({
+      name: "mark_potential_contract_lost",
+      description: "Marks a potential contract lost and archives it. reopen_potential_contract brings it back.",
+      inputSchema: z.object({ projectId: z.string(), reason: z.string().max(500).optional() }),
+      handler: async (input, actor) =>
+        pursuits.lose(input.projectId, { reason: input.reason }, actor.organization.id),
+    }),
+    defineTool({
+      name: "reopen_potential_contract",
+      description: "Reopens a lost potential contract at the Lead stage.",
+      inputSchema: z.object({ projectId: z.string() }),
+      handler: async (input, actor) => pursuits.reopen(input.projectId, actor.organization.id),
     }),
     defineTool({
       name: "delete_project",

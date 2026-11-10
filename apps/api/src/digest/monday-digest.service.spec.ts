@@ -47,6 +47,7 @@ describe("MondayDigestService.collect", () => {
       dueDate: { lte: NEXT_WEEK },
       OR: [{ assigneeId: "u1" }, { assigneeId: null }],
       project: { archivedAt: null },
+      internal: false,
     });
     expect(digest.tasks).toEqual([
       { title: "Send proofs", projectName: "Living Unlimited", dueDate: new Date("2026-10-09T00:00:00Z"), overdue: true },

@@ -7,6 +7,7 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { MCP_ACTOR_ROLES, mcpOAuthEnabled, RateLimiter } from "../common";
 import type { Actor, AuthenticatedRequest } from "../common";
 import { ProjectsService } from "../projects/projects.service";
+import { PursuitService } from "../projects/pursuit.service";
 import { TasksService } from "../tasks/tasks.service";
 import { UpdatesService } from "../updates/updates.service";
 import { NotesService } from "../notes/notes.service";
@@ -44,6 +45,7 @@ export class McpService {
     private billing: BillingService,
     private documents: DocumentsService,
     private config: ConfigService,
+    private pursuits: PursuitService,
   ) {}
 
   /** RFC 9728 challenge pointing MCP clients at this API's OAuth metadata. */
@@ -56,7 +58,7 @@ export class McpService {
   tools(): McpTool[] {
     return [
       ...workspaceTools(),
-      ...projectTools({ projects: this.projects, billing: this.billing }),
+      ...projectTools({ projects: this.projects, billing: this.billing, pursuits: this.pursuits }),
       ...clientTools({ clients: this.clients, projects: this.projects }),
       ...taskTools({ tasks: this.tasks }),
       ...updateTools({ updates: this.updates }),

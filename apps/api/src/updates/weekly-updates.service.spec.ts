@@ -74,6 +74,9 @@ describe("WeeklyUpdatesService.getDue", () => {
       status: { notIn: ["completed", "cancelled"] },
       clients: { some: {} },
     });
+    // Internal updates (from before a potential contract was won) don't count: clients never saw them.
+    const select = (prisma.project.findMany.mock.calls[0] as unknown as [{ select: { updates: { where?: unknown } } }])[0].select;
+    expect(select.updates.where).toEqual({ internal: false });
     expect(due.map((p) => p.projectId)).toEqual(["c", "b"]);
     expect(due[1]).toEqual({
       projectId: "b",

@@ -55,7 +55,7 @@ test.describe("Invoices", () => {
     test("project detail page shows invoices tab", async ({ page }) => {
       await page.goto(`/dashboard/projects/${projectId}`);
       await expect(async () => {
-        await page.getByTestId("project-tab-invoices").click();
+        await page.getByTestId("project-tab-billing").click();
         await expect(page.getByRole("heading", { name: "Invoices", exact: true })).toBeVisible({ timeout: 1000 });
       }).toPass({ timeout: 15000 });
     });

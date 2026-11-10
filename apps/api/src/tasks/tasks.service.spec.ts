@@ -194,6 +194,41 @@ describe("TasksService", () => {
     });
   });
 
+  describe("internal tasks (from before a potential contract was won)", () => {
+    const internalTask = {
+      id: "task1", title: "Pick vendor", question: "Which vendor?", type: "decision", status: "open",
+      closedAt: null, assigneeId: null, requestedById: "client-1", projectId: "proj1", organizationId: "org1",
+      internal: true,
+    };
+
+    function makeService(): TasksService {
+      const mockPrisma = {
+        task: {
+          findFirst: mock(() => Promise.resolve(internalTask)),
+          update: mock(() => Promise.resolve({ ...internalTask, status: "done" })),
+        },
+      };
+      return new TasksService(mockPrisma as never, mockNotifications as never, mockActivity as never, mockLogger as never);
+    }
+
+    beforeEach(() => {
+      mockNotifications.notifyDecisionClosed.mockClear();
+      mockNotifications.notifyTaskStatusChanged.mockClear();
+      mockActivity.create.mockClear();
+    });
+
+    it("closing an internal decision doesn't notify clients and logs internal activity", async () => {
+      await makeService().closeVoting("task1", "org1");
+      expect(mockNotifications.notifyDecisionClosed).not.toHaveBeenCalled();
+      expect(mockActivity.create).toHaveBeenCalledWith(expect.objectContaining({ internal: true }));
+    });
+
+    it("changing an internal task's status sends no notification", async () => {
+      await makeService().update("task1", { status: "done" } as never, "org1");
+      expect(mockNotifications.notifyTaskStatusChanged).not.toHaveBeenCalled();
+    });
+  });
+
   describe("update — assigneeId validation and notifications", () => {
     const baseTask = {
       id: "task1",

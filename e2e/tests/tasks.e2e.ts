@@ -16,9 +16,43 @@ test.describe("Tasks", () => {
       await expect(page.getByRole("heading", { name: /^Tasks/ })).toBeVisible({ timeout: 10000 });
     });
 
+    test("an empty project shows one quiet line each, with no task filters", async ({ page, request }) => {
+      const emptyId = await getOrCreateProject(request, `Empty Task Project ${Date.now()}`);
+      await openProjectTab(page, emptyId, "tasks");
+      await expect(page.getByText("No tasks yet.")).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText("No updates yet. Post one above.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Active", exact: true })).toHaveCount(0);
+    });
+
+    test("a task's checkbox marks it done and back", async ({ page, request }) => {
+      const id = await getOrCreateProject(request, `Checkbox Project ${Date.now()}`);
+      const res = await request.post(`${API}/tasks?projectId=${id}`, {
+        data: { title: "Tick me" },
+        headers: { "x-csrf-token": getCsrfToken() },
+      });
+      expect(res.ok()).toBe(true);
+      await openProjectTab(page, id, "tasks");
+      await page.getByRole("checkbox", { name: "Mark Tick me done" }).click();
+      // Done tasks leave the Active list.
+      await expect(page.getByText("Tick me")).toHaveCount(0, { timeout: 10000 });
+      await page.getByLabel("Show tasks").selectOption("done");
+      await page.getByRole("checkbox", { name: "Reopen Tick me" }).click();
+      await expect(page.getByText("Tick me")).toHaveCount(0, { timeout: 10000 });
+    });
+
+    test("the update box is one line until you click into it", async ({ page, request }) => {
+      const id = await getOrCreateProject(request, `Composer Project ${Date.now()}`);
+      await openProjectTab(page, id, "tasks");
+      const box = page.getByLabel("Write an update");
+      await expect(box).toBeVisible({ timeout: 10000 });
+      await expect(page.getByRole("button", { name: "Post Update" })).toHaveCount(0);
+      await box.click();
+      await expect(page.getByRole("button", { name: "Post Update" })).toBeVisible();
+    });
+
     test("project detail has add task form when not archived", async ({ page }) => {
       await openProjectTab(page, projectId, "tasks");
-      await page.getByRole("button", { name: "Create", exact: true }).click();
+      await page.getByRole("button", { name: "Add task", exact: true }).click();
       await page.getByRole("button", { name: "Task", exact: true }).click();
       const input = page.getByPlaceholder("Add a task...");
       await expect(input).toBeVisible();

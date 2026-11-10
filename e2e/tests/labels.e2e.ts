@@ -92,8 +92,9 @@ test.describe("Labels", () => {
       await projectLinks.first().click();
       await page.waitForURL(/\/dashboard\/projects\/.+/);
 
-      // Check for label section in sidebar
-      await expect(page.getByRole("heading", { name: "Labels" }).first()).toBeVisible({ timeout: 5000 });
+      // Labels sit in the sidebar's Details card, which starts closed.
+      await page.getByText("Details", { exact: true }).click();
+      await expect(page.getByRole("button", { name: "Edit labels" }).first()).toBeVisible({ timeout: 5000 });
     }
   });
 

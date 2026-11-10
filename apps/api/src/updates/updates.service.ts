@@ -17,7 +17,7 @@ import { Readable } from "stream";
 import { extname } from "path";
 import type { Response } from "express";
 import { DOWNLOAD_CACHE } from "../common/helpers/http-cache";
-import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess, BLOCKED_EXTENSIONS, isPrivilegedRole } from "../common";
+import { paginationArgs, paginatedResponse, sanitizeFilename, contentDisposition, assertProjectAccess, BLOCKED_EXTENSIONS, isPrivilegedRole, assertVisibleToRole } from "../common";
 
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
@@ -128,7 +128,8 @@ export class UpdatesService {
     page = 1,
     limit = 20,
   ) {
-    const where = { projectId, organizationId };
+    // Internal updates and activity (from before a potential contract was won) are left out.
+    const where = { projectId, organizationId, internal: false };
     const [updates, total] = await Promise.all([
       this.prisma.projectUpdate.findMany({
         where,
@@ -211,8 +212,10 @@ export class UpdatesService {
     organizationId: string,
     page = 1,
     limit = 20,
+    forClient = false,
   ) {
-    const where = { projectId, organizationId };
+    // Internal updates and activity (from before a potential contract was won) are left out.
+    const where = { projectId, organizationId, internal: false };
     const skip = (page - 1) * limit;
 
     // Fetch counts and page-sized batches in parallel
@@ -224,7 +227,8 @@ export class UpdatesService {
         take: limit,
         include: {
           file: { select: { id: true } },
-          _count: { select: { comments: true } },
+          // Clients don't see comments from before a potential contract was won.
+          _count: { select: { comments: forClient ? { where: { internal: false } } : true } },
         },
       }),
       this.prisma.projectUpdate.count({ where }),
@@ -315,7 +319,7 @@ export class UpdatesService {
       }
     }
 
-    return this.findTimeline(projectId, organizationId, page, limit);
+    return this.findTimeline(projectId, organizationId, page, limit, !isPrivileged);
   }
 
   async update(
@@ -329,6 +333,7 @@ export class UpdatesService {
       where: { id, organizationId },
     });
     if (!update) throw new NotFoundException("Update not found");
+    assertVisibleToRole(update, role);
 
     const isPrivileged = isPrivilegedRole(role);
     const isAuthor = update.authorId === userId;
@@ -357,6 +362,7 @@ export class UpdatesService {
       where: { id, organizationId },
     });
     if (!update) throw new NotFoundException("Update not found");
+    assertVisibleToRole(update, role);
 
     // Anyone with access to the project can tweak preview prefs on an update.
     // Prefs are a display hint, not content — no stricter guard needed.
@@ -393,6 +399,7 @@ export class UpdatesService {
     if (!update || !update.attachmentKey) {
       throw new NotFoundException("Attachment not found");
     }
+    assertVisibleToRole(update, role);
 
     await assertProjectAccess(this.prisma, update.projectId, userId, role, organizationId);
 

@@ -19,6 +19,8 @@ import {
   assertProjectAccess,
   sanitizeFilename,
   isPrivilegedRole,
+  SIGNED_PROJECT,
+  assertVisibleToRole,
 } from "../common";
 import type { StorageProvider } from "../files/storage/storage.interface";
 import { STORAGE_PROVIDER } from "../files/storage/storage.interface";
@@ -186,7 +188,7 @@ export class DocumentsService {
     });
 
     this.auditService.log(id, "sent", { userId });
-    this.notifications.notifyDocumentUploaded(id);
+    if (!updated.internal) this.notifications.notifyDocumentUploaded(id);
 
     return updated;
   }
@@ -242,6 +244,7 @@ export class DocumentsService {
       where: { id, organizationId: orgId },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    assertVisibleToRole(doc, role);
 
     // The audit trail is printed on the signing certificate as evidence, so
     // only people who can see the document may add to it.
@@ -265,7 +268,8 @@ export class DocumentsService {
     page = 1,
     limit = 20,
   ) {
-    const where = { projectId, organizationId: orgId };
+    // Internal documents (from before a potential contract was won) show in the Internal tab only.
+    const where = { projectId, organizationId: orgId, internal: false };
     const [data, total] = await Promise.all([
       this.prisma.document.findMany({
         where,
@@ -300,6 +304,7 @@ export class DocumentsService {
       projectId,
       organizationId: orgId,
       status: { not: "draft" },
+      internal: false,
     };
     const [data, total] = await Promise.all([
       this.prisma.document.findMany({
@@ -346,7 +351,8 @@ export class DocumentsService {
       where: {
         organizationId: orgId,
         requiresApproval: true,
-        project: { archivedAt: null },
+        internal: false,
+        project: { archivedAt: null, ...SIGNED_PROJECT },
         OR: [
           { type: "deliverable", status: { in: ["pending", "declined"] } },
           { type: { not: "deliverable" }, status: "pending" },
@@ -414,6 +420,7 @@ export class DocumentsService {
       where: { id, organizationId: orgId },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    assertVisibleToRole(doc, "member");
 
     const isDeliverable: boolean = doc.type === "deliverable";
     const blocked: Set<string> = isDeliverable ? DELIVERABLE_RESPOND_BLOCKED_STATUSES : RESPOND_BLOCKED_STATUSES;
@@ -619,6 +626,7 @@ export class DocumentsService {
       include: { file: true, signedFile: true },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    assertVisibleToRole(doc, role);
 
     await assertProjectAccess(this.prisma, doc.projectId, userId, role);
 
@@ -710,6 +718,7 @@ export class DocumentsService {
         include: { signatureFields: true, file: true, signedFile: true },
       });
       if (!doc) throw new NotFoundException("Document not found");
+      assertVisibleToRole(doc, role);
       if (!doc.requiresSignature) {
         throw new BadRequestException("This document does not require a signature");
       }
@@ -1071,6 +1080,7 @@ export class DocumentsService {
       include: { signatureFields: true },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    assertVisibleToRole(doc, role);
 
     await assertProjectAccess(this.prisma, doc.projectId, userId, role);
 
@@ -1273,7 +1283,8 @@ export class DocumentsService {
       metadata: { version: result.currentVersion, filename: file.originalname, note },
     });
 
-    if (result.type === "deliverable" && result.status === "pending") {
+    // Internal documents are hidden from clients, so they aren't told about new versions.
+    if (result.type === "deliverable" && result.status === "pending" && !result.internal) {
       this.notifications.notifyDocumentUploaded(id);
       this.logVersionActivity(result, userId, orgId);
     }
@@ -1352,7 +1363,7 @@ export class DocumentsService {
       userId,
       metadata: { version: result.currentVersion, url: parsed.toString(), note },
     });
-    if (result.status === "pending") {
+    if (result.status === "pending" && !result.internal) {
       this.notifications.notifyDocumentUploaded(id);
       this.logVersionActivity(result, userId, orgId);
     }
@@ -1532,6 +1543,7 @@ export class DocumentsService {
       where: { id: documentId, organizationId: orgId },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    if (doc.internal) throw new BadRequestException("Share this document with the client first");
 
     // Verify userId is a project client on this document's project
     const assignment = await this.prisma.projectClient.findFirst({
@@ -1580,7 +1592,8 @@ export class DocumentsService {
       },
     });
 
-    if (!record) throw new NotFoundException("Invalid or expired link");
+    // An internal document is hidden from clients, so its link reads as invalid.
+    if (!record || record.document.internal) throw new NotFoundException("Invalid or expired link");
     if (record.revokedAt) {
       throw new BadRequestException("This signing link has been revoked");
     }
@@ -1622,6 +1635,7 @@ export class DocumentsService {
       },
     });
     if (!doc) throw new NotFoundException("Document not found");
+    assertVisibleToRole(doc, role);
     // Checked before the status so a client cannot probe other clients'
     // documents for whether they are signed.
     await assertProjectAccess(this.prisma, doc.projectId, userId, role);

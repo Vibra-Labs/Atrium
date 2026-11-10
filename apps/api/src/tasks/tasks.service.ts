@@ -138,7 +138,8 @@ export class TasksService {
         : status && status !== "all"
         ? { status }
         : {};
-    const where = { projectId, organizationId: orgId, ...statusFilter };
+    // Internal tasks (from before a potential contract was won) show in the Internal tab only.
+    const where = { projectId, organizationId: orgId, internal: false, ...statusFilter };
     const [data, total] = await Promise.all([
       this.prisma.task.findMany({
         where,
@@ -197,7 +198,7 @@ export class TasksService {
       }
     }
 
-    const where = { projectId, organizationId: orgId };
+    const where = { projectId, organizationId: orgId, internal: false };
     const [data, total] = await Promise.all([
       this.prisma.task.findMany({
         where,
@@ -215,7 +216,7 @@ export class TasksService {
           labels: { include: { label: true } },
           requester: { select: { id: true, name: true, image: true } },
           assignee: { select: { id: true, name: true, image: true } },
-          _count: { select: { votes: true, comments: true } },
+          _count: { select: { votes: true, comments: { where: { internal: false } } } },
         },
         orderBy: { order: "asc" },
         ...paginationArgs(page, limit),
@@ -247,14 +248,14 @@ export class TasksService {
 
   async exportByProject(projectId: string, orgId: string) {
     return this.prisma.task.findMany({
-      where: { projectId, organizationId: orgId },
+      where: { projectId, organizationId: orgId, internal: false },
       orderBy: { order: "asc" },
     });
   }
 
   async vote(taskId: string, optionId: string, userId: string, orgId: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id: taskId, organizationId: orgId, type: "decision" },
+      where: { id: taskId, organizationId: orgId, type: "decision", internal: false },
       include: { options: true },
     });
     if (!task) throw new NotFoundException("Decision task not found");
@@ -313,7 +314,8 @@ export class TasksService {
       },
     });
 
-    this.notifications.notifyDecisionClosed(taskId);
+    // Internal tasks are hidden from clients, so they aren't told about them.
+    if (!task.internal) this.notifications.notifyDecisionClosed(taskId);
 
     this.activityService
       .create({
@@ -324,6 +326,7 @@ export class TasksService {
         targetTitle: task.question || task.title,
         projectId: task.projectId,
         organizationId: orgId,
+        internal: task.internal,
       })
       .catch((err) => this.logger.warn({ err }, "Failed to log decision closed activity"));
 
@@ -362,7 +365,7 @@ export class TasksService {
       },
     });
 
-    if (dto.status && dto.status !== task.status) {
+    if (dto.status && dto.status !== task.status && !task.internal) {
       this.notifications.notifyTaskStatusChanged(
         task.id,
         task.title,
@@ -392,7 +395,7 @@ export class TasksService {
    */
   async cancelClientTask(taskId: string, userId: string, orgId: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id: taskId, organizationId: orgId },
+      where: { id: taskId, organizationId: orgId, internal: false },
     });
     if (!task) throw new NotFoundException("Task not found");
     if (task.requestedById !== userId) throw new ForbiddenException("Cannot cancel this task");

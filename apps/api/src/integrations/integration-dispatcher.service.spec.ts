@@ -14,6 +14,7 @@ function destination(overrides: Row = {}): Row {
 
 function buildDeps(opts: {
   destinations?: Row[]; delivery?: Row | null; hasFeature?: boolean; failures?: number; disableCount?: number;
+  pursuitOutcome?: string;
 } = {}) {
   const prisma = {
     integrationDestination: {
@@ -29,6 +30,9 @@ function buildDeps(opts: {
     },
     organization: { findUnique: mock(async () => ({ name: "Acme" })) },
     project: { findUnique: mock(async () => ({ name: "Website" })) },
+    projectPursuit: {
+      findUnique: mock(async () => (opts.pursuitOutcome ? { outcome: opts.pursuitOutcome } : null)),
+    },
     user: { findUnique: mock(async () => ({ name: "Jane" })) },
     member: { findMany: mock(async () => [{ userId: "owner1" }]) },
     notification: { createMany: mock(async () => ({ count: 1 })) },
@@ -62,6 +66,24 @@ const input = {
 };
 
 describe("IntegrationDispatcher.run", () => {
+  it("skips projects that are open or lost potential contracts", async () => {
+    for (const pursuitOutcome of ["open", "lost"]) {
+      const { prisma, dispatcher } = buildDeps({ pursuitOutcome });
+      await dispatcher.run(input);
+      expect(prisma.integrationDestination.findMany).not.toHaveBeenCalled();
+      expect(prisma.integrationDelivery.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("delivers for a won potential contract", async () => {
+    const { prisma, dispatcher } = buildDeps({
+      pursuitOutcome: "won",
+      delivery: { id: "del_1", attempts: 0, status: "pending", payload: {}, destination: destination() },
+    });
+    await dispatcher.run(input);
+    expect(prisma.integrationDelivery.create).toHaveBeenCalledTimes(1);
+  });
+
   it("creates a delivery with the canonical payload and attempts it", async () => {
     const { prisma, send, dispatcher } = buildDeps({
       delivery: { id: "del_1", attempts: 0, status: "pending", payload: {}, destination: destination() },

@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { paginationArgs, paginatedResponse, assertProjectAccess, isPrivilegedRole } from "../common";
+import { paginationArgs, paginatedResponse, assertProjectAccess, isPrivilegedRole, assertVisibleToRole } from "../common";
 import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
@@ -18,8 +18,10 @@ export class CommentsService {
     targetType: "update" | "task",
     targetId: string,
     orgId: string,
+    role: string,
   ): Promise<string> {
     const resolved = await this.resolveTarget(targetType, targetId, orgId);
+    assertVisibleToRole(resolved, role);
     return resolved.projectId;
   }
 
@@ -27,21 +29,21 @@ export class CommentsService {
     targetType: "update" | "task",
     targetId: string,
     orgId: string,
-  ): Promise<{ projectId: string; requestedById: string | null; assigneeId: string | null }> {
+  ): Promise<{ projectId: string; requestedById: string | null; assigneeId: string | null; internal: boolean }> {
     if (targetType === "update") {
       const update = await this.prisma.projectUpdate.findFirst({
         where: { id: targetId, organizationId: orgId },
-        select: { projectId: true },
+        select: { projectId: true, internal: true },
       });
       if (!update) throw new NotFoundException("Update not found");
-      return { projectId: update.projectId, requestedById: null, assigneeId: null };
+      return { projectId: update.projectId, requestedById: null, assigneeId: null, internal: update.internal };
     }
     const task = await this.prisma.task.findFirst({
       where: { id: targetId, organizationId: orgId },
-      select: { projectId: true, requestedById: true, assigneeId: true },
+      select: { projectId: true, requestedById: true, assigneeId: true, internal: true },
     });
     if (!task) throw new NotFoundException("Task not found");
-    return { projectId: task.projectId, requestedById: task.requestedById, assigneeId: task.assigneeId };
+    return { projectId: task.projectId, requestedById: task.requestedById, assigneeId: task.assigneeId, internal: task.internal };
   }
 
   async create(
@@ -53,6 +55,7 @@ export class CommentsService {
     role: string,
   ) {
     const target = await this.resolveTarget(targetType, targetId, orgId);
+    assertVisibleToRole(target, role);
     await assertProjectAccess(this.prisma, target.projectId, userId, role, orgId);
 
     const comment = await this.prisma.comment.create({
@@ -69,7 +72,7 @@ export class CommentsService {
       .notifyComment(target.projectId, orgId, userId, role, content, targetType, {
         requestedById: target.requestedById,
         assigneeId: target.assigneeId,
-      })
+      }, target.internal)
       .catch(() => {});
 
     return comment;
@@ -84,12 +87,14 @@ export class CommentsService {
     page = 1,
     limit = 50,
   ) {
-    const projectId = await this.resolveProjectId(targetType, targetId, orgId);
+    const projectId = await this.resolveProjectId(targetType, targetId, orgId, role);
     await assertProjectAccess(this.prisma, projectId, userId, role, orgId);
 
     const where = {
       organizationId: orgId,
       ...(targetType === "update" ? { updateId: targetId } : { taskId: targetId }),
+      // Comments from before a potential contract was won stay staff-only.
+      ...(isPrivilegedRole(role) ? {} : { internal: false }),
     };
 
     const [comments, total] = await Promise.all([

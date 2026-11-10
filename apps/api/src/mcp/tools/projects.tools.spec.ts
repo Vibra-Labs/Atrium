@@ -30,16 +30,23 @@ function build() {
     ),
   };
   const billing = { assertPlanLimit: mock(() => Promise.resolve()) };
-  const tools = projectTools({ projects: projects as never, billing: billing as never });
+  const pursuits = {
+    update: mock(() => Promise.resolve({ projectId: "p1" })),
+    win: mock(() => Promise.resolve({ projectId: "p1", inviteEmail: null as string | null })),
+    lose: mock(() => Promise.resolve()),
+    reopen: mock(() => Promise.resolve()),
+  };
+  const tools = projectTools({ projects: projects as never, billing: billing as never, pursuits: pursuits as never });
   const get = (name: string): McpTool => tools.find((t) => t.name === name)!;
-  return { projects, billing, tools, get };
+  return { projects, billing, pursuits, tools, get };
 }
 
 describe("project tools", () => {
   it("exposes the expected tool names", () => {
     expect(build().tools.map((t) => t.name).sort()).toEqual([
       "archive_project", "create_project", "delete_project", "get_project",
-      "list_project_statuses", "list_projects", "update_project",
+      "list_project_statuses", "list_projects", "mark_potential_contract_lost",
+      "mark_potential_contract_won", "reopen_potential_contract", "update_potential_contract", "update_project",
     ]);
   });
 
@@ -202,5 +209,62 @@ describe("blank text is refused, not stored", () => {
   it("update_project rejects a whitespace-only name", () => {
     const schema = build().get("update_project").inputSchema;
     expect(schema.safeParse({ projectId: "p1", name: "  " }).success).toBe(false);
+  });
+});
+
+describe("potential contracts", () => {
+  it("create_project passes potential", async () => {
+    const { projects, get } = build();
+    await runTool(get("create_project"), { name: "County RFP", potential: true }, admin);
+    expect(projects.create).toHaveBeenCalledWith({ name: "County RFP", potential: true }, "org1");
+  });
+
+  it("list_projects passes the pursuit filter", async () => {
+    const { projects, get } = build();
+    const input = get("list_projects").inputSchema.parse({ pursuit: "only" });
+    await runTool(get("list_projects"), input, admin);
+    expect(projects.findAll).toHaveBeenCalledWith("org1", expect.objectContaining({ pursuit: "only" }));
+  });
+
+  it("update_potential_contract updates deal fields in the actor's org", async () => {
+    const { pursuits, get } = build();
+    const input = get("update_potential_contract").inputSchema.parse({ projectId: "p1", stage: "waiting", valueCents: 4500000 });
+    await runTool(get("update_potential_contract"), input, admin);
+    expect(pursuits.update).toHaveBeenCalledWith("p1", { stage: "waiting", valueCents: 4500000 }, "org1");
+  });
+
+  it("update_potential_contract only takes web links and amounts the database holds", async () => {
+    const { get } = build();
+    const schema = get("update_potential_contract").inputSchema;
+    for (const sourceUrl of ["javascript:alert(1)", "data:text/html,hi", "ftp://x.com/a"]) {
+      expect(schema.safeParse({ projectId: "p1", sourceUrl }).success).toBe(false);
+    }
+    expect(schema.safeParse({ projectId: "p1", sourceUrl: "https://sam.gov/opp/1" }).success).toBe(true);
+    expect(schema.safeParse({ projectId: "p1", valueCents: 2_147_483_648 }).success).toBe(false);
+  });
+
+  it("mark_potential_contract_won defaults to no portal access", async () => {
+    const { pursuits, get } = build();
+    const input = get("mark_potential_contract_won").inputSchema.parse({ projectId: "p1", contactId: "c1", status: "in_progress" });
+    await runTool(get("mark_potential_contract_won"), input, admin);
+    expect(pursuits.win).toHaveBeenCalledWith("p1", { contactId: "c1", status: "in_progress", giveAccess: false }, "org1");
+  });
+
+  it("mark_potential_contract_won tells the agent when an invite still has to be sent", async () => {
+    const { pursuits, get } = build();
+    pursuits.win.mockImplementationOnce(() => Promise.resolve({ projectId: "p1", inviteEmail: "lee@x.com" }));
+    const input = get("mark_potential_contract_won").inputSchema.parse({
+      projectId: "p1", contactId: "c1", status: "in_progress", giveAccess: true,
+    });
+    const result = await runTool(get("mark_potential_contract_won"), input, admin);
+    expect(result.content[0].text).toContain("lee@x.com");
+  });
+
+  it("mark_potential_contract_lost and reopen_potential_contract use the actor's org", async () => {
+    const { pursuits, get } = build();
+    await runTool(get("mark_potential_contract_lost"), { projectId: "p1", reason: "Price" }, admin);
+    expect(pursuits.lose).toHaveBeenCalledWith("p1", { reason: "Price" }, "org1");
+    await runTool(get("reopen_potential_contract"), { projectId: "p1" }, admin);
+    expect(pursuits.reopen).toHaveBeenCalledWith("p1", "org1");
   });
 });

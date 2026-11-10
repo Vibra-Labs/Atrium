@@ -271,9 +271,14 @@ export async function applyContactFilter(page: Page, category: string, value: st
 export type ProjectTab = "updates" | "tasks" | "files" | "time" | "invoices" | "notes";
 
 /** Opens a dashboard project straight on one tab (the page honours ?tab=). */
+/** The project page merged some tabs: tasks live on Updates, time and invoices on Billing, notes on Internal. */
+const TAB_HOME: Record<ProjectTab, string> = {
+  updates: "updates", tasks: "updates", files: "files", time: "billing", invoices: "billing", notes: "internal",
+};
+
 export async function openProjectTab(page: Page, projectId: string, tab: ProjectTab): Promise<void> {
   await page.goto(`${WEB_URL}/dashboard/projects/${projectId}?tab=${tab}`);
-  await expect(page.getByTestId(`project-tab-${tab}`)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId(`project-tab-${TAB_HOME[tab]}`)).toHaveAttribute("aria-selected", "true", { timeout: 15000 });
 }
 
 export interface PortalClientProject {

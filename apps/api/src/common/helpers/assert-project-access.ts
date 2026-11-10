@@ -1,5 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
 import type { PrismaService } from "../../prisma/prisma.service";
+import { SIGNED_PROJECT } from "./signed-project";
 
 const PRIVILEGED_ROLES = new Set(["owner", "admin"]);
 
@@ -16,7 +17,7 @@ export async function assertProjectAccess(
     where: {
       projectId,
       userId,
-      ...(organizationId ? { project: { organizationId } } : {}),
+      project: { ...(organizationId ? { organizationId } : {}), ...SIGNED_PROJECT },
     },
   });
   if (!assignment) {

@@ -229,11 +229,17 @@ test.describe("Client Requests", () => {
       uiProjectId = await getOrCreateProject(request, "Client Requests Dashboard UI Project");
     });
 
-    test("tasks section shows status filter bar", async ({ page }) => {
+    test("tasks section shows the status filter", async ({ page, request }) => {
+      // The filter shows once there's a task to filter.
+      const res = await request.post(`${API}/tasks?projectId=${uiProjectId}`, {
+        data: { title: "Filter me" },
+        headers: { "x-csrf-token": getCsrfToken() },
+      });
+      expect(res.ok()).toBe(true);
       await openProjectTab(page, uiProjectId, "tasks");
-      // Scoped to the bar: the status pipeline also has a "Cancelled" button.
-      const bar = page.getByRole("button", { name: "Active", exact: true }).locator("..");
-      await expect(bar.getByRole("button")).toHaveText(["Active", "All", "Done", "Cancelled"], { timeout: 10000 });
+      await expect(page.getByLabel("Show tasks").locator("option")).toHaveText(["Active", "All", "Done", "Cancelled"], {
+        timeout: 10000,
+      });
     });
 
     test("clicking a task row opens the detail modal and ?task= deep link", async ({ page, request }) => {

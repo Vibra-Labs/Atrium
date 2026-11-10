@@ -35,8 +35,9 @@ test.describe("Layouts seed the session on the client", () => {
       await expect(page.getByRole("heading", { name: "Session Context E2E" }).first()).toBeVisible({
         timeout: 15000,
       });
-      // Owner-only control: proves the role reached the page.
-      await expect(page.getByRole("button", { name: /delete/i }).first()).toBeVisible();
+      // Owner-only control: proves the role reached the page. It's in the sidebar's Details card.
+      await page.getByText("Details", { exact: true }).click();
+      await expect(page.getByRole("button", { name: "Delete project" })).toBeVisible();
       expect(projectPageRequests, "project page").toEqual([]);
 
       const teamPageRequests: string[] = watchSessionRequests(page);

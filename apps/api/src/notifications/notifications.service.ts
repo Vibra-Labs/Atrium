@@ -1116,6 +1116,8 @@ export class NotificationsService {
     content: string,
     targetType: "update" | "task",
     taskContext?: { requestedById: string | null; assigneeId: string | null },
+    /** The update or task is internal (from before a potential contract was won): clients aren't told. */
+    parentInternal = false,
   ): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -1194,6 +1196,7 @@ export class NotificationsService {
 
       // Dedup across audiences: dashboard takes precedence (agency members)
       for (const id of dashboardTargets) portalTargets.delete(id);
+      if (parentInternal) portalTargets.clear();
 
       if (dashboardTargets.size > 0) {
         this.createInAppAndPush(
@@ -1231,7 +1234,7 @@ export class NotificationsService {
         truncatedContent,
         `/dashboard/projects/${projectId}`,
       );
-    } else {
+    } else if (!parentInternal) {
       // Notify project clients
       const clients = await this.getProjectClients(projectId);
       const clientIds = clients

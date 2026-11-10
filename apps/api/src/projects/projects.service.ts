@@ -9,13 +9,16 @@ import { randomUUID } from "crypto";
 import * as Sentry from "@sentry/nestjs";
 import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { lockProjectClients } from "../contact-sync/project-links";
-import { paginationArgs, paginatedResponse } from "../common";
+import { paginationArgs, paginatedResponse, SIGNED_PROJECT } from "../common";
 
 interface ProjectWhereInput {
   organizationId?: string;
+  pursuit?: { is: { outcome: string | { in: string[] } } | null };
+  OR?: ProjectWhereInput[];
   archivedAt?: null | Date;
   name?: { contains: string; mode: "default" | "insensitive" };
   status?: string | { not: string };
@@ -35,6 +38,9 @@ const STANDALONE_FILES = {
   signedDocuments: { none: {} },
   documentVersions: { none: {} },
 };
+
+/** Leaves open potential contracts out of counts of active work. */
+const NOT_OPEN_PURSUIT = { NOT: { pursuit: { is: { outcome: "open" } } } };
 
 /** Checkbox-task progress for one project. */
 type TaskProgress = { total: number; done: number; lastAt: Date | null };
@@ -89,9 +95,10 @@ export class ProjectsService implements OnApplicationBootstrap {
       status?: string;
       archived?: string;
       labels?: string;
+      pursuit?: "only" | "exclude";
     },
   ) {
-    const { page = 1, limit = 20, search, status, archived, labels } = query;
+    const { page = 1, limit = 20, search, status, archived, labels, pursuit } = query;
     const where: ProjectWhereInput = { organizationId };
 
     // Archived and cancelled projects are "inactive": hidden unless asked for.
@@ -106,6 +113,11 @@ export class ProjectsService implements OnApplicationBootstrap {
     if (status) {
       where.status = status;
     }
+    // Lost ones are archived, so they only show alongside other archived projects.
+    if (pursuit === "only") {
+      where.pursuit = { is: { outcome: archived === "true" ? { in: ["open", "lost"] } : "open" } };
+    }
+    if (pursuit === "exclude") where.OR = SIGNED_PROJECT.OR;
     if (labels) {
       const labelIds = labels.split(",").filter(Boolean);
       if (labelIds.length > 0) {
@@ -124,6 +136,7 @@ export class ProjectsService implements OnApplicationBootstrap {
             },
           },
           labels: { include: { label: true } },
+          pursuit: { include: { company: { select: { id: true, name: true } } } },
         },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
@@ -157,6 +170,7 @@ export class ProjectsService implements OnApplicationBootstrap {
         projectId: { in: projectIds },
         organizationId,
         type: "checkbox",
+        internal: false,
         status: { not: "cancelled" },
       },
       _count: { _all: true },
@@ -179,9 +193,23 @@ export class ProjectsService implements OnApplicationBootstrap {
     const project = await this.prisma.project.findFirst({
       where: { id, organizationId },
       include: {
-        files: { where: STANDALONE_FILES },
+        files: { where: { ...STANDALONE_FILES, internal: false } },
         clients: { select: { userId: true } },
         labels: { include: { label: true } },
+        pursuit: {
+          include: {
+            company: { select: { id: true, name: true } },
+            events: { orderBy: { createdAt: "desc" }, take: 50 },
+          },
+        },
+        contacts: {
+          where: { endedAt: null },
+          select: {
+            contact: {
+              select: { id: true, firstName: true, lastName: true, email: true, userId: true, status: true },
+            },
+          },
+        },
       },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -195,9 +223,10 @@ export class ProjectsService implements OnApplicationBootstrap {
     organizationId: string,
     isPrivileged = false,
   ) {
+    // Clients never see an open or lost potential contract.
     const clientFilter = isPrivileged
       ? {}
-      : { clients: { some: { userId: clientUserId } } };
+      : { clients: { some: { userId: clientUserId } }, ...SIGNED_PROJECT };
 
     // The project lead is shown by name only, never with the owner's email.
     const [project, org] = await Promise.all([
@@ -209,13 +238,14 @@ export class ProjectsService implements OnApplicationBootstrap {
           ...clientFilter,
         },
         include: {
-          files: { where: STANDALONE_FILES, orderBy: { createdAt: "desc" } },
+          files: { where: { ...STANDALONE_FILES, internal: false }, orderBy: { createdAt: "desc" } },
           // Counted server-side so the portal banner isn't limited to the task page it has loaded.
           _count: {
             select: {
               tasks: {
                 where: {
                   type: "decision",
+                  internal: false,
                   closedAt: null,
                   status: { notIn: ["done", "cancelled"] },
                   votes: { none: { userId: clientUserId } },
@@ -249,9 +279,10 @@ export class ProjectsService implements OnApplicationBootstrap {
     isPrivileged = false,
   ) {
     const { page = 1, limit = 20, search } = query;
+    // Clients never see an open or lost potential contract.
     const clientFilter = isPrivileged
       ? {}
-      : { clients: { some: { userId: clientUserId } } };
+      : { clients: { some: { userId: clientUserId } }, ...SIGNED_PROJECT };
 
     const where: ProjectWhereInput = {
       organizationId,
@@ -267,12 +298,12 @@ export class ProjectsService implements OnApplicationBootstrap {
       this.prisma.project.findMany({
         where,
         include: {
-          _count: { select: { documents: { where: { requiresApproval: true, status: "pending" } } } },
+          _count: { select: { documents: { where: { requiresApproval: true, status: "pending", internal: false } } } },
           // Latest progress update and file, for "last updated". Document files
           // are left out so a draft upload doesn't read as client-visible activity.
-          updates: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+          updates: { where: { internal: false }, select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
           files: {
-            where: { documents: { none: {} }, signedDocuments: { none: {} }, documentVersions: { none: {} } },
+            where: { ...STANDALONE_FILES, internal: false },
             select: { createdAt: true },
             orderBy: { createdAt: "desc" },
             take: 1,
@@ -306,7 +337,10 @@ export class ProjectsService implements OnApplicationBootstrap {
   }
 
   async create(data: CreateProjectDto, organizationId: string) {
-    const { clientUserIds, startDate, endDate, ...rest } = data;
+    const { clientUserIds, startDate, endDate, potential, ...rest } = data;
+    if (potential && clientUserIds?.length) {
+      throw new BadRequestException("Mark it won to give portal access");
+    }
 
     if (clientUserIds?.length) {
       const validMembers = await this.prisma.member.count({
@@ -323,6 +357,13 @@ export class ProjectsService implements OnApplicationBootstrap {
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
         organizationId,
+        ...(potential
+          ? {
+              pursuit: {
+                create: { organizationId, events: { create: { text: "Created as a potential contract" } } },
+              },
+            }
+          : {}),
         ...(clientUserIds?.length
           ? {
               clients: {
@@ -340,10 +381,14 @@ export class ProjectsService implements OnApplicationBootstrap {
   async update(id: string, data: UpdateProjectDto, organizationId: string) {
     const existing = await this.prisma.project.findFirst({
       where: { id, organizationId },
+      include: { pursuit: { select: { outcome: true } } },
     });
     if (!existing) throw new NotFoundException("Project not found");
     if (existing.archivedAt) {
       throw new BadRequestException("Cannot update an archived project");
+    }
+    if (data.clientUserIds?.length && existing.pursuit && existing.pursuit.outcome !== "won") {
+      throw new BadRequestException("Mark it won to give portal access");
     }
 
     const { clientUserIds, startDate, endDate, ...rest } = data;
@@ -415,7 +460,10 @@ export class ProjectsService implements OnApplicationBootstrap {
       include: {
         clients: { select: { userId: true } },
         labels: { select: { labelId: true } },
+        pursuit: { select: { outcome: true } },
+        // Internal tasks (from before a potential contract was won) aren't copied into client-visible work.
         tasks: {
+          where: { internal: false },
           include: {
             options: { select: { label: true, order: true } },
             labels: { select: { labelId: true } },
@@ -427,6 +475,9 @@ export class ProjectsService implements OnApplicationBootstrap {
 
     const includeTasks = dto.includeTasks ?? true;
     const includeClients = dto.includeClients ?? false;
+    if (includeClients && source.pursuit && source.pursuit.outcome !== "won") {
+      throw new BadRequestException("A potential contract has no portal clients to copy");
+    }
 
     const duplicated = await this.prisma.$transaction(async (tx) => {
       // Duplicate = fresh copy semantics:
@@ -529,24 +580,30 @@ export class ProjectsService implements OnApplicationBootstrap {
   async getStats(organizationId: string) {
     const [total, inProgress, inReview, completed, waitingReviews, waitingSignatures] = await Promise.all([
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: { not: PROJECT_STATUSES.CANCELLED } },
+        where: { organizationId, archivedAt: null, status: { not: PROJECT_STATUSES.CANCELLED }, ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: "in_progress" },
+        where: { organizationId, archivedAt: null, status: "in_progress", ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: "in_review" },
+        where: { organizationId, archivedAt: null, status: "in_review", ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.project.count({
-        where: { organizationId, archivedAt: null, status: "completed" },
+        where: { organizationId, archivedAt: null, status: "completed", ...NOT_OPEN_PURSUIT },
       }),
       this.prisma.document.count({
-        where: { project: { organizationId, archivedAt: null }, type: "deliverable", status: "pending" },
+        where: {
+          project: { organizationId, archivedAt: null, ...NOT_OPEN_PURSUIT },
+          internal: false,
+          type: "deliverable",
+          status: "pending",
+        },
       }),
       // Deliverables are counted above, so a deliverable that also needs a signature isn't counted twice.
       this.prisma.document.count({
         where: {
-          project: { organizationId, archivedAt: null },
+          project: { organizationId, archivedAt: null, ...NOT_OPEN_PURSUIT },
+          internal: false,
           type: { not: "deliverable" },
           requiresSignature: true,
           status: "pending",
@@ -567,9 +624,36 @@ export class ProjectsService implements OnApplicationBootstrap {
   async exportAll(organizationId: string) {
     return this.prisma.project.findMany({
       where: { organizationId },
-      include: { clients: { select: { userId: true } } },
+      include: { clients: { select: { userId: true } }, pursuit: true },
       orderBy: { createdAt: "desc" },
     });
+  }
+
+  /**
+   * Gives a newly joined client the won projects they were invited to from the Won dialog.
+   * Rows for projects that aren't won (yet) are left in place.
+   */
+  async grantPendingAccess(organizationId: string, userId: string, email: string): Promise<number> {
+    const emailMatch = { equals: email.toLowerCase(), mode: "insensitive" as const };
+    // Access promised by an invite that has since expired is dropped, so a later invite doesn't revive it.
+    const expiredBefore = new Date(Date.now() - INVITATION_EXPIRES_IN_SECONDS * 1000);
+    await this.prisma.pendingProjectAccess.deleteMany({
+      where: { organizationId, email: emailMatch, createdAt: { lt: expiredBefore } },
+    });
+    const rows = await this.prisma.pendingProjectAccess.findMany({
+      where: {
+        organizationId,
+        email: emailMatch,
+        project: { archivedAt: null, pursuit: { is: { outcome: "won" } } },
+      },
+      select: { id: true, projectId: true },
+    });
+    for (const row of rows) {
+      await this.prisma.projectClient.createMany({ data: [{ projectId: row.projectId, userId }], skipDuplicates: true });
+      await this.syncClients(row.projectId, organizationId, [userId]);
+      await this.prisma.pendingProjectAccess.delete({ where: { id: row.id } });
+    }
+    return rows.length;
   }
 
   async archive(id: string, organizationId: string) {
@@ -581,6 +665,15 @@ export class ProjectsService implements OnApplicationBootstrap {
   }
 
   async unarchive(id: string, organizationId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id, organizationId },
+      select: { pursuit: { select: { outcome: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    // A lost deal comes back through Reopen, which also clears its lost state.
+    if (project.pursuit?.outcome === "lost") {
+      throw new BadRequestException("This potential contract was lost. Reopen it instead");
+    }
     const result = await this.prisma.project.updateMany({
       where: { id, organizationId },
       data: { archivedAt: null },

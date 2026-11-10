@@ -55,10 +55,6 @@ export function ClientAssignment({
 
   return (
     <div>
-      <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-2">
-        Clients{assignedIds.size > 0 && ` (${assignedIds.size})`}
-      </h2>
-
       {clients.length > 0 ? (
         <div ref={containerRef} className="relative">
           <div

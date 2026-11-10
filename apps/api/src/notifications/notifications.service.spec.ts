@@ -577,6 +577,19 @@ describe("NotificationsService", () => {
     expect(createCall[0].message).toBe("Client comment content");
   });
 
+  test("notifyComment does not notify clients about a comment on an internal update", async () => {
+    await service.notifyComment("proj-1", "org-1", "user-1", "admin", "Margin is thin", "update", undefined, true);
+    expect(inApp.createMany).not.toHaveBeenCalled();
+  });
+
+  test("notifyComment does not notify clients about a comment on an internal task", async () => {
+    await service.notifyComment(
+      "proj-1", "org-1", "user-1", "admin", "Internal note", "task",
+      { requestedById: null, assigneeId: null }, true,
+    );
+    expect(inApp.createMany).not.toHaveBeenCalled();
+  });
+
   test("notifyComment from admin on an update notifies project clients (excluding author)", async () => {
     await service.notifyComment(
       "proj-1",

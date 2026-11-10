@@ -93,6 +93,22 @@ describe("InvoicesService", () => {
     mockContactSync.recordInvoicePaid.mockClear();
   });
 
+  test("create refuses an open potential contract", async () => {
+    prisma.project.findFirst.mockImplementation(() =>
+      Promise.resolve({ id: "proj-1", organizationId: "org-1", pursuit: { outcome: "open" } } as never),
+    );
+    await expect(service.create(createDto, orgId)).rejects.toThrow("Mark it won before invoicing");
+  });
+
+  test("createUploaded refuses an open potential contract", async () => {
+    prisma.project.findFirst.mockImplementation(() =>
+      Promise.resolve({ id: "proj-1", organizationId: "org-1", pursuit: { outcome: "open" } } as never),
+    );
+    await expect(
+      service.createUploaded({ projectId: "proj-1", amount: 100 } as never, "file-1", orgId),
+    ).rejects.toThrow("Mark it won before invoicing");
+  });
+
   // --- Invoice number format ---
 
   test("first invoice gets number INV-0001", async () => {

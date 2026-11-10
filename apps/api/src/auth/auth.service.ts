@@ -18,6 +18,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
 import { applyConsentOutcome } from "../mcp-auth/consent-hooks";
 import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials";
+import { ProjectsService } from "../projects/projects.service";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
@@ -101,6 +102,7 @@ export class AuthService {
     private mail: MailService,
     private billingService: BillingService,
     private contactSync: ContactSyncService,
+    private projects: ProjectsService,
   ) {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     const apiUrl: string = publicApiUrl(this.config);
@@ -410,6 +412,13 @@ export class AuthService {
               } catch (err) {
                 Sentry.captureException(err);
                 this.logger.error("Failed to sync contact after invitation accepted", err);
+              }
+              try {
+                // A potential contract won with "Invite to the portal now" promised this client access.
+                await this.projects.grantPendingAccess(invitation.organizationId, user.id, user.email);
+              } catch (err) {
+                Sentry.captureException(err);
+                this.logger.error("Failed to grant project access after invitation accepted", err);
               }
             },
             afterCreateOrganization: async ({ organization }) => {

@@ -1,5 +1,7 @@
 "use client";
 
+import { statusLabel, useProjectStatuses } from "@/lib/project-status";
+import type { ProjectStatus } from "@/lib/project-status";
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -33,13 +35,6 @@ interface Project {
   createdAt: string;
   labels?: { label: LabelRecord }[];
   pursuit?: Pursuit | null;
-}
-
-interface ProjectStatus {
-  id: string;
-  name: string;
-  slug: string;
-  color: string;
 }
 
 interface PaginatedResponse<T> {
@@ -77,7 +72,7 @@ export default function ProjectsPage() {
     setStatusFilter(searchParams.get("status") ?? "");
     setShowArchived(searchParams.get("archived") === "true");
   }, [searchParams]);
-  const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
+  const statuses: ProjectStatus[] = useProjectStatuses() ?? [];
   const orgLabels: LabelRecord[] = useCachedApi<LabelRecord[]>("/labels") ?? [];
   const [labelFilter, setLabelFilter] = useState<string[]>([]);
   const filterKey: string = JSON.stringify([debouncedSearch, statusFilter, showArchived, labelFilter]);
@@ -380,7 +375,7 @@ export default function ProjectsPage() {
                     <PursuitBadge p={project.pursuit} />
                   ) : (
                     <span className="text-xs px-2 py-1 bg-[var(--muted)] rounded-full shrink-0 self-start">
-                      {project.status.replace(/_/g, " ")}
+                      {statusLabel(statuses, project.status)}
                     </span>
                   )}
                 </div>

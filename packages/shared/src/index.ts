@@ -27,6 +27,10 @@ export const PROJECT_STATUSES = {
 export type ProjectStatusValue =
   (typeof PROJECT_STATUSES)[keyof typeof PROJECT_STATUSES];
 
+/** The statuses every workspace has. They can be renamed, recolored and reordered, but not deleted: the app relies on them. */
+export const BUILT_IN_STATUS_SLUGS: readonly string[] = Object.values(PROJECT_STATUSES);
+export const MAX_PROJECT_STATUSES = 15;
+
 export const DEFAULT_STATUSES = [
   { name: "Not Started", slug: "not_started", order: 0, color: "#6b7280" },
   { name: "In Progress", slug: "in_progress", order: 1, color: "#3b82f6" },

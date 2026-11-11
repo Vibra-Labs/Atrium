@@ -4,6 +4,7 @@ import { BrandingPageSection } from "../branding/branding-page-section";
 import { GeneralSection } from "../general/general-section";
 import { LeadSourcesSection } from "../lead-sources/lead-sources-section";
 import { PipelineStagesSection } from "../pipeline-stages/pipeline-stages-section";
+import { ProjectStatusesSection } from "../project-statuses/project-statuses-section";
 
 export default function WorkspaceSettingsPage(): React.ReactElement {
   return (
@@ -16,6 +17,9 @@ export default function WorkspaceSettingsPage(): React.ReactElement {
       </section>
       <section className="py-10">
         <PipelineStagesSection />
+      </section>
+      <section className="py-10">
+        <ProjectStatusesSection />
       </section>
       <section className="pt-10">
         <GeneralSection />

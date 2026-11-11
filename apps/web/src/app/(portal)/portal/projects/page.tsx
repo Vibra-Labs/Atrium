@@ -8,6 +8,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Pagination } from "@/components/pagination";
 import { ProjectCardSkeleton } from "@/components/skeletons";
 import { Search, FolderOpen } from "lucide-react";
+import { statusLabel, useProjectStatuses } from "@/lib/project-status";
 
 interface Project {
   id: string;
@@ -47,6 +48,7 @@ interface PaginatedResponse<T> {
 }
 
 export default function PortalProjectsPage() {
+  const statuses = useProjectStatuses();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -135,7 +137,7 @@ export default function PortalProjectsPage() {
                   </p>
                 )}
                 <span className="inline-block mt-2 text-xs px-2 py-1 bg-[var(--muted)] rounded-full">
-                  {project.status.replace(/_/g, " ")}
+                  {statusLabel(statuses, project.status)}
                 </span>
                 {(project.pendingApprovals ?? 0) > 0 && (
                   <span className="inline-block mt-2 ml-2 text-xs px-2 py-1 rounded-full font-medium bg-amber-100 text-amber-800" data-testid="to-review-chip">

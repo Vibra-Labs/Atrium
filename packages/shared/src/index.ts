@@ -27,6 +27,10 @@ export const PROJECT_STATUSES = {
 export type ProjectStatusValue =
   (typeof PROJECT_STATUSES)[keyof typeof PROJECT_STATUSES];
 
+/** The statuses every workspace has. They can be renamed, recolored and reordered, but not deleted: the app relies on them. */
+export const BUILT_IN_STATUS_SLUGS: readonly string[] = Object.values(PROJECT_STATUSES);
+export const MAX_PROJECT_STATUSES = 15;
+
 export const DEFAULT_STATUSES = [
   { name: "Not Started", slug: "not_started", order: 0, color: "#6b7280" },
   { name: "In Progress", slug: "in_progress", order: 1, color: "#3b82f6" },
@@ -81,13 +85,35 @@ export const CONTACT_RATINGS = ["hot", "warm", "cold"] as const;
 export type ContactRating = (typeof CONTACT_RATINGS)[number];
 
 // Potential contracts: projects that aren't signed yet.
-export const PURSUIT_STAGES = ["found", "proposal_sent", "waiting"] as const;
-export type PursuitStage = (typeof PURSUIT_STAGES)[number];
-export const PURSUIT_STAGE_LABELS: Record<PursuitStage, string> = {
-  found: "Lead",
-  proposal_sent: "Proposal sent",
-  waiting: "Waiting on decision",
-};
+// Each workspace has its own pipelines, each with its own editable stages.
+/** Every workspace starts with this one pipeline; owners add more if they want them. */
+export const DEFAULT_PURSUIT_PIPELINES: string[] = ["Sales"];
+export const MAX_PURSUIT_PIPELINES = 10;
+/** A stage slug from the workspace's PursuitStage table. */
+export type PursuitStage = string;
+/** Seeded into every new pipeline. */
+export const DEFAULT_PURSUIT_STAGES: { slug: string; name: string }[] = [
+  { slug: "found", name: "Lead" },
+  { slug: "proposal_sent", name: "Proposal sent" },
+  { slug: "waiting", name: "Waiting on decision" },
+];
+export const MAX_PURSUIT_STAGES = 10;
+
+interface PipelineLike {
+  id: string;
+  stages: readonly { slug: string; name: string }[];
+}
+
+/** A contract's pipeline; null (not assigned yet) or unknown means the first one. */
+export function pipelineFor<T extends PipelineLike>(pipelines: readonly T[] | null, pipelineId: string | null): T | null {
+  return pipelines?.find((p) => p.id === pipelineId) ?? pipelines?.[0] ?? null;
+}
+
+/** A stage's name for a contract, by its pipeline and slug; the slug when the stage is unknown. */
+export function stageLabel(pipelines: readonly PipelineLike[] | null, pipelineId: string | null, slug: string): string {
+  return pipelineFor(pipelines, pipelineId)?.stages.find((s) => s.slug === slug)?.name ?? slug;
+}
+
 export const PURSUIT_OUTCOMES = ["open", "won", "lost"] as const;
 export type PursuitOutcome = (typeof PURSUIT_OUTCOMES)[number];
 

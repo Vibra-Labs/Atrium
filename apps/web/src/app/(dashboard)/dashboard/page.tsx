@@ -1,5 +1,6 @@
 "use client";
 
+import { statusColor, statusLabel, useProjectStatuses } from "@/lib/project-status";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -103,6 +104,11 @@ interface PaginatedResponse<T> {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
+/** Tint plus text mixed with the foreground, so pale workspace colours stay legible. */
+function statusBadgeStyle(color: string): React.CSSProperties {
+  return { backgroundColor: `${color}1a`, color: `color-mix(in srgb, ${color} 65%, var(--foreground))` };
+}
+
 function ProgressBar({ value, label, className }: { value: number; label: string; className: string }): React.ReactElement {
   return (
     <div
@@ -185,46 +191,12 @@ export default function DashboardPage() {
 
   const totalAttentionItems = pendingApprovals.length + overdueInvoices.length;
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "in_progress":
-        return {
-          label: "In Progress",
-          bg: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
-          dot: "bg-blue-600",
-        };
-      case "in_review":
-        return {
-          label: "In Review",
-          bg: "bg-purple-500/10 text-purple-700 dark:text-purple-300",
-          dot: "bg-purple-600",
-        };
-      case "completed":
-        return {
-          label: "Completed",
-          bg: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-          dot: "bg-emerald-600",
-        };
-      case "not_started":
-        return {
-          label: "Not Started",
-          bg: "bg-[var(--muted)] text-[var(--muted-foreground)]",
-          dot: "bg-neutral-400",
-        };
-      case "cancelled":
-        return {
-          label: "Cancelled",
-          bg: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
-          dot: "bg-rose-600",
-        };
-      default:
-        return {
-          label: status.replace(/_/g, " "),
-          bg: "bg-[var(--muted)] text-[var(--foreground)]",
-          dot: "bg-neutral-400",
-        };
-    }
-  };
+  // The workspace's own names and colors, as set in Settings → Workspace.
+  const projectStatuses = useProjectStatuses();
+  const getStatusBadge = (status: string): { label: string; color: string } => ({
+    label: statusLabel(projectStatuses, status),
+    color: statusColor(projectStatuses, status),
+  });
 
   const getClientDisplayName = (project: Project): string => {
     if (project.clients && project.clients.length > 0) {
@@ -555,9 +527,10 @@ export default function DashboardPage() {
                         </span>
                         <div className="mt-3 flex items-center gap-3">
                           <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${badge.bg}`}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium shrink-0"
+                            style={statusBadgeStyle(badge.color)}
                           >
-                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: badge.color }} />
                             {badge.label}
                           </span>
                           <ProgressBar className="flex-1" label={`${p.name} progress`} value={progress} />
@@ -595,9 +568,10 @@ export default function DashboardPage() {
                             </td>
                             <td className="py-3 px-3">
                               <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.bg}`}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                style={statusBadgeStyle(badge.color)}
                               >
-                                <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: badge.color }} />
                                 {badge.label}
                               </span>
                             </td>

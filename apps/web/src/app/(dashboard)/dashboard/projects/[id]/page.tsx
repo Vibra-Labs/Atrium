@@ -23,6 +23,8 @@ import { NotesSection } from "./components/notes-section";
 import { TimeTab } from "./time-tab";
 import { useSession } from "@/lib/session-context";
 import { useCachedApi } from "@/lib/cached";
+import { useProjectStatuses } from "@/lib/project-status";
+import type { ProjectStatus } from "@/lib/project-status";
 import { formatCurrency } from "@/lib/format";
 import { useCurrency } from "@/lib/app-config";
 import { DealCard, LostDialog, PursuitContactsCard, PursuitPipeline, WonDialog } from "../_pursuit/pursuit-ui";
@@ -62,14 +64,6 @@ interface Project {
   labels?: { label: LabelRecord }[];
   pursuit?: Pursuit | null;
   contacts?: ProjectContactRow[];
-}
-
-interface ProjectStatus {
-  id: string;
-  name: string;
-  slug: string;
-  color: string;
-  order: number;
 }
 
 interface ClientMember {
@@ -159,7 +153,7 @@ export default function ProjectDetailPage() {
   const confirm = useConfirm();
   const { success, error: showError } = useToast();
   const [project, setProject] = useState<Project | null>(null);
-  const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
+  const statuses: ProjectStatus[] = useProjectStatuses() ?? [];
   const pursuit: Pursuit | null = project?.pursuit ?? null;
   // Open or lost: not signed yet, so no clients, billing or invoices.
   const isPursuit: boolean = !!pursuit && pursuit.outcome !== "won";

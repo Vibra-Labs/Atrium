@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { assertDisposableDatabase } from "./guard";
 import { PrismaService } from "../../src/prisma/prisma.service";
+import { PursuitStagesService } from "../../src/projects/pursuit-stages.service";
 import { ProjectsService } from "../../src/projects/projects.service";
 import { ContactSyncService } from "../../src/contact-sync/contact-sync.service";
 
@@ -16,6 +17,7 @@ beforeAll(async () => {
   const mod = await Test.createTestingModule({
     providers: [
       ProjectsService,
+      PursuitStagesService,
       PrismaService,
       { provide: ContactSyncService, useValue: { linkProjectClients: async (): Promise<void> => undefined } },
     ],

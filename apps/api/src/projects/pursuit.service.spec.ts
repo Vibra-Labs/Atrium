@@ -8,7 +8,14 @@ interface Args {
   data?: Record<string, unknown>;
 }
 
-type PursuitRow = { projectId: string; outcome: string; stage: string; project: { name: string; archivedAt: Date | null } };
+type PursuitRow = {
+  projectId: string;
+  outcome: string;
+  stage: string;
+  isBid: boolean;
+  pipelineId: string | null;
+  project: { name: string; archivedAt: Date | null };
+};
 type ContactRow = { id: string; firstName: string; lastName: string | null; email: string | null; userId: string | null };
 
 let pursuit: PursuitRow | null;
@@ -23,6 +30,8 @@ const prisma = {
     update: mock((args: Args) => Promise.resolve({ ...pursuit, ...args.data })),
     updateMany: updateManyMock(),
   },
+  pursuitStage: { findFirst: mock((_args: Args) => Promise.resolve({ id: "st" }) as Promise<unknown>) },
+  $executeRaw: mock((..._args: unknown[]) => Promise.resolve(1)),
   projectPursuitEvent: { create: mock(() => Promise.resolve({})) },
   company: { findFirst: mock(() => Promise.resolve({ id: "co1", name: "Harbor County" })) },
   projectStatus: {
@@ -48,6 +57,17 @@ const prisma = {
   $transaction: mock((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
 };
 
+// The workspace's pipelines, first one first; each with its stages in order.
+type FakePipeline = { id: string; name: string; stages: { slug: string; name: string }[] };
+let pipelines: FakePipeline[] = [];
+const stages = {
+  pipelineFor: mock(async (_org: string, id: string | null) => {
+    const found = id === null ? pipelines[0] : pipelines.find((p) => p.id === id);
+    if (!found) throw new BadRequestException("Unknown pipeline");
+    return found;
+  }),
+};
+
 const contactSync = { linkProjectClients: mock(() => Promise.resolve()) };
 const contacts = { linkProject: mock(() => Promise.resolve()) };
 
@@ -56,6 +76,9 @@ function allMocks(): ReturnType<typeof mock>[] {
     ...Object.values(prisma).flatMap((m) => (typeof m === "function" ? [m] : Object.values(m))),
     contactSync.linkProjectClients,
     contacts.linkProject,
+    stages.pipelineFor,
+    prisma.$executeRaw,
+    prisma.pursuitStage.findFirst,
   ] as ReturnType<typeof mock>[];
 }
 
@@ -63,11 +86,42 @@ describe("PursuitService", () => {
   let service: PursuitService;
 
   beforeEach(() => {
-    pursuit = { projectId: "p1", outcome: "open", stage: "found", project: { name: "County RFP", archivedAt: null } };
+    pursuit = {
+      projectId: "p1",
+      outcome: "open",
+      stage: "found",
+      isBid: false,
+      pipelineId: "com",
+      project: { name: "County RFP", archivedAt: null },
+    };
+    pipelines = [
+      {
+        id: "com",
+        name: "Commercial",
+        stages: [
+          { slug: "found", name: "Lead" },
+          { slug: "proposal_sent", name: "Proposal sent" },
+          { slug: "verbal_yes", name: "Verbal yes" },
+        ],
+      },
+      {
+        id: "gov",
+        name: "Government",
+        stages: [
+          { slug: "identified", name: "Identified" },
+          { slug: "sent", name: "PROPOSAL SENT" },
+        ],
+      },
+    ];
     contact = { id: "c1", firstName: "Lee", lastName: "Park", email: "lee@example.com", userId: null };
     member = null;
     allMocks().forEach((m) => m.mockClear());
-    service = new PursuitService(prisma as unknown as PrismaService, contactSync as never, contacts as never);
+    service = new PursuitService(
+      prisma as unknown as PrismaService,
+      contactSync as never,
+      contacts as never,
+      stages as never,
+    );
   });
 
   const win = (giveAccess: boolean, status: string = "in_progress") =>
@@ -207,13 +261,14 @@ describe("PursuitService", () => {
     await expect(service.lose("p1", {}, "org-1")).rejects.toThrow(BadRequestException);
   });
 
-  it("reopen unarchives and resets to found", async () => {
+  it("reopen unarchives and puts it in its pipeline's first stage", async () => {
     pursuit!.outcome = "lost";
+    pursuit!.pipelineId = "gov";
     await service.reopen("p1", "org-1");
     expect(prisma.project.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { archivedAt: null } });
     expect(prisma.projectPursuit.updateMany).toHaveBeenCalledWith({
       where: { projectId: "p1", outcome: "lost" },
-      data: { outcome: "open", stage: "found", lostReason: null },
+      data: { outcome: "open", stage: "identified", lostReason: null },
     });
   });
 
@@ -234,11 +289,77 @@ describe("PursuitService", () => {
     await expect(service.reopen("p1", "org-1")).rejects.toThrow(BadRequestException);
   });
 
-  it("update logs a stage change", async () => {
-    await service.update("p1", { stage: "proposal_sent" }, "org-1");
-    expect(prisma.projectPursuitEvent.create).toHaveBeenCalledWith({
-      data: { projectId: "p1", text: "Moved to Proposal sent" },
-    });
+  const updateData = (): Record<string, unknown> =>
+    (prisma.projectPursuit.update.mock.calls[0][0] as Args).data as Record<string, unknown>;
+  const events = (): string[] =>
+    prisma.projectPursuitEvent.create.mock.calls.map((c) => (c as unknown as [{ data: { text: string } }])[0].data.text);
+
+  it("update logs the stage's current name", async () => {
+    await service.update("p1", { stage: "verbal_yes" }, "org-1");
+    expect(updateData().stage).toBe("verbal_yes");
+    expect(events()).toEqual(["Moved to Verbal yes"]);
+  });
+
+  it("update rejects a stage not in the contract's pipeline", async () => {
+    await expect(service.update("p1", { stage: "identified" }, "org-1")).rejects.toThrow("Unknown stage");
+    await expect(service.update("p1", { stage: "gone" }, "org-1")).rejects.toThrow("Unknown stage");
+    expect(prisma.projectPursuit.update).not.toHaveBeenCalled();
+  });
+
+  it("an unassigned contract uses the first pipeline", async () => {
+    pursuit!.pipelineId = null;
+    await service.update("p1", { stage: "verbal_yes" }, "org-1");
+    expect(stages.pipelineFor).toHaveBeenCalledWith("org-1", null);
+    expect(updateData()).toMatchObject({ stage: "verbal_yes", pipelineId: "com" });
+  });
+
+  it("the bid box no longer changes the pipeline", async () => {
+    await service.update("p1", { isBid: true }, "org-1");
+    expect(updateData()).toMatchObject({ isBid: true, stage: undefined, pipelineId: undefined });
+    expect(events()).toEqual([]);
+  });
+
+  it("moving pipeline keeps the stage by name, storing the target's slug", async () => {
+    pursuit!.stage = "proposal_sent";
+    await service.update("p1", { pipelineId: "gov" }, "org-1");
+    expect(updateData()).toMatchObject({ pipelineId: "gov", stage: "sent" });
+    expect(events()).toEqual(["Moved to the Government pipeline", "Moved to PROPOSAL SENT"]);
+  });
+
+  it("moving pipeline does not match a stage that only shares a slug", async () => {
+    pipelines[1].stages = [{ slug: "proposal_sent", name: "Other" }, ...pipelines[1].stages];
+    pursuit!.stage = "proposal_sent";
+    await service.update("p1", { pipelineId: "gov" }, "org-1");
+    expect(updateData()).toMatchObject({ pipelineId: "gov", stage: "sent" });
+  });
+
+  it("a stage write takes the target pipeline's stage lock and rejects a stage deleted meanwhile", async () => {
+    await service.update("p1", { stage: "verbal_yes" }, "org-1");
+    expect(prisma.$executeRaw.mock.calls[0]).toContain("pursuit-stages:com");
+
+    prisma.pursuitStage.findFirst.mockImplementationOnce(() => Promise.resolve(null));
+    prisma.projectPursuit.update.mockClear();
+    await expect(service.update("p1", { stage: "verbal_yes" }, "org-1")).rejects.toThrow("Unknown stage");
+    expect(prisma.projectPursuit.update).not.toHaveBeenCalled();
+  });
+
+  it("moving pipeline goes to its first stage when the stage is missing", async () => {
+    pursuit!.stage = "verbal_yes";
+    await service.update("p1", { pipelineId: "gov" }, "org-1");
+    expect(updateData()).toMatchObject({ pipelineId: "gov", stage: "identified" });
+    expect(events()).toEqual(["Moved to the Government pipeline", "Moved to Identified"]);
+  });
+
+  it("moving pipeline checks a stage sent with it against the new pipeline", async () => {
+    await expect(service.update("p1", { pipelineId: "gov", stage: "verbal_yes" }, "org-1")).rejects.toThrow("Unknown stage");
+    prisma.projectPursuit.update.mockClear();
+    await service.update("p1", { pipelineId: "gov", stage: "sent" }, "org-1");
+    expect(updateData()).toMatchObject({ pipelineId: "gov", stage: "sent" });
+  });
+
+  it("an unknown pipeline is rejected", async () => {
+    await expect(service.update("p1", { pipelineId: "theirs" }, "org-1")).rejects.toThrow("Unknown pipeline");
+    expect(prisma.projectPursuit.update).not.toHaveBeenCalled();
   });
 
   it("update on a won pursuit can still change the value", async () => {

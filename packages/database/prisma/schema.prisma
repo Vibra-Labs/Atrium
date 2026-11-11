@@ -122,6 +122,8 @@ model Organization {
   contacts         Contact[]
   companies        Company[]
   leadSources      LeadSource[]
+  pursuitPipelines PursuitPipeline[]
+  pursuitStages    PursuitStage[]
 
   @@map("organization")
 }
@@ -1359,10 +1361,11 @@ model IntegrationDelivery {
 }
 
 // A project that isn't signed yet ("potential contract"). outcome: "open" | "won" | "lost".
-// stage: "found" | "proposal_sent" | "waiting".
+// stage: a PursuitStage slug in the contract's pipeline. pipelineId null = the workspace's first pipeline.
 model ProjectPursuit {
   projectId          String    @id
   organizationId     String
+  pipelineId         String?
   stage              String    @default("found")
   outcome            String    @default("open")
   lostReason         String?
@@ -1384,11 +1387,49 @@ model ProjectPursuit {
 
   project   Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   company   Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  pipeline  PursuitPipeline?      @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
   events    ProjectPursuitEvent[]
   costLines ProjectCostLine[]
 
   @@index([organizationId, outcome])
+  @@index([pipelineId])
   @@map("project_pursuit")
+}
+
+// A workspace's sales pipeline for potential contracts. The first by `order` is where new contracts go.
+model PursuitPipeline {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  order          Int
+  createdAt      DateTime @default(now())
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stages       PursuitStage[]
+  pursuits     ProjectPursuit[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("pursuit_pipeline")
+}
+
+// A step a potential contract moves through, in one pipeline. The slug never changes.
+model PursuitStage {
+  id             String   @id @default(cuid())
+  organizationId String
+  pipelineId     String
+  name           String
+  slug           String
+  order          Int
+  createdAt      DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pipeline     PursuitPipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@unique([pipelineId, slug])
+  @@unique([pipelineId, name])
+  @@index([organizationId])
+  @@map("pursuit_stage")
 }
 
 model ProjectPursuitEvent {

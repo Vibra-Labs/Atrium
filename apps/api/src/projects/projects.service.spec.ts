@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { ProjectsService } from "./projects.service";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
 
 interface PrismaArgs {
@@ -58,6 +58,7 @@ const mockPrisma = {
     findUnique: mock(() => Promise.resolve({ name: "Acme", members: [] })),
   },
   $queryRaw: mock(() => Promise.resolve([] as unknown[])),
+  $executeRaw: mock((strings: TemplateStringsArray) => Promise.resolve(strings.length)),
   $transaction: mock((arg: unknown) => {
     if (typeof arg === "function") {
       return (arg as (tx: typeof mockPrisma) => Promise<unknown>)(mockPrisma);
@@ -71,11 +72,17 @@ const mockContactSync = {
   endProjectClients: mock(() => Promise.resolve()),
 };
 
+const mockStages = {
+  pipelineFor: mock((_org: string, _id: string | null) =>
+    Promise.resolve({ id: "pl-1", name: "Commercial", stages: [{ slug: "intro", name: "Intro" }] }),
+  ),
+};
+
 describe("ProjectsService", () => {
   let service: ProjectsService;
 
   beforeEach(() => {
-    service = new ProjectsService(mockPrisma as unknown as PrismaService, mockContactSync as never);
+    service = new ProjectsService(mockPrisma as unknown as PrismaService, mockContactSync as never, mockStages as never);
     mockContactSync.linkProjectClients.mockClear();
     mockContactSync.endProjectClients.mockClear();
     // Reset mocks
@@ -331,6 +338,32 @@ describe("ProjectsService", () => {
     expect(result).toBeDefined();
   });
 
+  it("update checks a new status under a shared lock in the same transaction as the write", async () => {
+    mockPrisma.project.findFirst.mockReturnValue(
+      Promise.resolve({ id: "p1", organizationId: "org-1", archivedAt: null }),
+    );
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve({ id: "s1" }) as never);
+    mockPrisma.$executeRaw.mockClear();
+
+    await service.update("p1", { status: "design" }, "org-1");
+
+    // The shared lock blocks a concurrent delete of "design" until this write commits.
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    const sql: string = (mockPrisma.$executeRaw.mock.calls[0] as unknown as [TemplateStringsArray])[0].join("?");
+    expect(sql).toContain("pg_advisory_xact_lock_shared");
+    expect(mockPrisma.project.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("update rejects a status the workspace doesn't have, without writing", async () => {
+    mockPrisma.project.findFirst.mockReturnValue(
+      Promise.resolve({ id: "p1", organizationId: "org-1", archivedAt: null }),
+    );
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve(null));
+
+    await expect(service.update("p1", { status: "gone" }, "org-1")).rejects.toThrow("Invalid status: gone");
+    expect(mockPrisma.project.updateMany).not.toHaveBeenCalled();
+  });
+
   it("create links contacts for clientUserIds", async () => {
     mockPrisma.member.count.mockReturnValue(Promise.resolve(1));
     await service.create({ name: "X", clientUserIds: ["u1"] }, "org-1");
@@ -348,6 +381,22 @@ describe("ProjectsService", () => {
       },
       include: { clients: { select: { userId: true } } },
     });
+  });
+
+  it("create rejects a status the workspace doesn't have, under the shared status lock", async () => {
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve(null));
+    mockPrisma.$executeRaw.mockClear();
+
+    await expect(service.create({ name: "X", status: "gone" }, "org-1")).rejects.toThrow("Invalid status: gone");
+    expect(mockPrisma.$executeRaw).toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+  });
+
+  it("create accepts one of the workspace's statuses", async () => {
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve({ id: "s1" }) as never);
+
+    await service.create({ name: "X", status: "in_review" }, "org-1");
+    expect(mockPrisma.project.create).toHaveBeenCalledTimes(1);
   });
 
   it("remove deletes existing project", async () => {
@@ -662,13 +711,39 @@ describe("ProjectsService", () => {
   });
 
   describe("potential contracts", () => {
-    it("create with potential creates a pursuit", async () => {
+    it("create with potential creates a pursuit in the first pipeline's first stage", async () => {
       await service.create({ name: "County RFP", potential: true }, "org-1");
       const data = (mockPrisma.project.create.mock.calls.at(-1) as [PrismaArgs])[0].data!;
+      expect(mockStages.pipelineFor).toHaveBeenCalledWith("org-1", null);
       expect(data.pursuit).toEqual({
-        create: { organizationId: "org-1", events: { create: { text: "Created as a potential contract" } } },
+        create: {
+          organizationId: "org-1",
+          pipelineId: "pl-1",
+          stage: "intro",
+          events: { create: { text: "Created as a potential contract" } },
+        },
       });
       expect(data.potential).toBeUndefined();
+    });
+
+    it("create with a pipeline starts in that pipeline's first stage", async () => {
+      mockStages.pipelineFor.mockImplementationOnce(() =>
+        Promise.resolve({ id: "pl-2", name: "Government", stages: [{ slug: "identified", name: "Identified" }] }),
+      );
+      await service.create({ name: "County RFP", potential: true, pipelineId: "pl-2" }, "org-1");
+      const data = (mockPrisma.project.create.mock.calls.at(-1) as [PrismaArgs])[0].data!;
+      expect(mockStages.pipelineFor).toHaveBeenLastCalledWith("org-1", "pl-2");
+      expect((data.pursuit as { create: Record<string, unknown> }).create).toMatchObject({
+        pipelineId: "pl-2",
+        stage: "identified",
+      });
+    });
+
+    it("create with another workspace's pipeline is rejected", async () => {
+      mockStages.pipelineFor.mockImplementationOnce(() => Promise.reject(new BadRequestException("Unknown pipeline")));
+      await expect(service.create({ name: "x", potential: true, pipelineId: "theirs" }, "org-1")).rejects.toThrow(
+        "Unknown pipeline",
+      );
     });
 
     it("create without potential creates no pursuit", async () => {

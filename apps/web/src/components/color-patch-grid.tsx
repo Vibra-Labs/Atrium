@@ -23,7 +23,8 @@ export function ColorPatchGrid({
   const isCustom = !PRESET_COLORS.some((c) => c.hex === value);
 
   return (
-    <div className="flex items-center gap-1.5" role="radiogroup" aria-label="Label color">
+    // 5px centres the first swatch under the 28px colour preview above it.
+    <div className="flex items-center gap-1.5 px-[5px]" role="radiogroup" aria-label="Label color">
       {PRESET_COLORS.map((color) => {
         const selected = value === color.hex;
         return (

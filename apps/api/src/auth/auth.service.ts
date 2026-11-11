@@ -14,6 +14,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { organization, magicLink } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
 import { APIError, createAuthMiddleware } from "better-auth/api";
+import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
 import { applyConsentOutcome } from "../mcp-auth/consent-hooks";
@@ -22,7 +23,11 @@ import { ProjectsService } from "../projects/projects.service";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { MailService } from "../mail/mail.service";
 import { BillingService } from "../billing/billing.service";
-import { DEFAULT_STATUSES, DEFAULT_BRANDING, DEFAULT_LEAD_SOURCES } from "@atrium/shared";
+import {
+  DEFAULT_STATUSES,
+  DEFAULT_BRANDING,
+  DEFAULT_LEAD_SOURCES,
+} from "@atrium/shared";
 import { render } from "@react-email/render";
 import { InvitationEmail, MagicLinkEmail, ResetPasswordEmail, VerifyEmail } from "@atrium/email";
 import {
@@ -525,6 +530,7 @@ export class AuthService {
         data: DEFAULT_LEAD_SOURCES.map((name) => ({ organizationId, name })),
         skipDuplicates: true,
       });
+      await seedDefaultPipelines(tx, organizationId);
     });
   }
 

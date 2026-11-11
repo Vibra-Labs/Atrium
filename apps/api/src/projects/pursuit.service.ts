@@ -1,15 +1,17 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { PROJECT_STATUSES, PURSUIT_STAGE_LABELS } from "@atrium/shared";
-import type { PursuitStage } from "@atrium/shared";
-import type { Prisma, ProjectPursuit } from "@atrium/database";
+import { PROJECT_STATUSES } from "@atrium/shared";
+import type { Prisma, ProjectPursuit, PursuitStage } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { ContactsService } from "../contacts/contacts.service";
+import { PursuitStagesService, lockStages } from "./pursuit-stages.service";
+import type { PipelineWithStages } from "./pursuit-stages.service";
 import { LosePursuitDto, UpdatePursuitDto, WinPursuitDto } from "./pursuit.dto";
 
 export interface PipelineRow {
   projectId: string;
   name: string;
+  pipelineId: string | null;
   stage: string;
   valueCents: number | null;
   closeDate: Date | null;
@@ -41,6 +43,7 @@ export class PursuitService {
     private prisma: PrismaService,
     private contactSync: ContactSyncService,
     private contacts: ContactsService,
+    private stages: PursuitStagesService,
   ) {}
 
   private async getOrThrow(projectId: string, orgId: string) {
@@ -56,6 +59,42 @@ export class PursuitService {
     return tx.projectPursuitEvent.create({ data: { projectId, text } });
   }
 
+  /**
+   * The pipeline and stage to save. A null pipeline means the workspace's first one. Moving to
+   * another pipeline keeps the stage when the target has one with the same name (ignoring case),
+   * otherwise goes to its first stage.
+   */
+  private async resolveStage(
+    pursuit: ProjectPursuit,
+    dto: UpdatePursuitDto,
+    orgId: string,
+  ): Promise<{ targetId: string | null; pipelineId?: string; pipelineName: string | null; stage?: string; stageName: string | null }> {
+    const target = await this.stages.pipelineFor(orgId, dto.pipelineId ?? pursuit.pipelineId);
+    const moved: boolean = target.id !== pursuit.pipelineId;
+    const pipelineId: string | undefined = moved ? target.id : undefined;
+    // Only worth a history line when someone picked it, not when an unassigned contract is filed.
+    const pipelineName: string | null = dto.pipelineId !== undefined && moved ? target.name : null;
+    if (dto.stage !== undefined) {
+      const found = target.stages.find((s) => s.slug === dto.stage);
+      if (!found) throw new BadRequestException("Unknown stage");
+      return { targetId: target.id, pipelineId, pipelineName, stage: found.slug, stageName: found.name };
+    }
+    if (!moved) return { targetId: target.id, pipelineId, pipelineName, stage: undefined, stageName: null };
+    const source: PipelineWithStages = await this.stages.pipelineFor(orgId, pursuit.pipelineId);
+    const currentName: string | undefined = source.stages.find((s) => s.slug === pursuit.stage)?.name.toLowerCase();
+    const match: PursuitStage = target.stages.find((s) => s.name.toLowerCase() === currentName) ?? target.stages[0];
+    const stage: string | undefined = match.slug === pursuit.stage ? undefined : match.slug;
+    return { targetId: target.id, pipelineId, pipelineName, stage, stageName: stage ? match.name : null };
+  }
+
+  /** Under the pipeline's stage lock (so a stage delete can't slip in), confirms the stage still exists. */
+  private async lockStage(tx: Prisma.TransactionClient, pipelineId: string, slug: string): Promise<void> {
+    await lockStages(tx, pipelineId);
+    if (!(await tx.pursuitStage.findFirst({ where: { pipelineId, slug }, select: { id: true } }))) {
+      throw new BadRequestException("Unknown stage");
+    }
+  }
+
   async update(projectId: string, dto: UpdatePursuitDto, orgId: string): Promise<ProjectPursuit> {
     const pursuit = await this.getOrThrow(projectId, orgId);
     if (pursuit.outcome === "won") {
@@ -68,6 +107,10 @@ export class PursuitService {
     } else if (pursuit.outcome !== "open") {
       throw new BadRequestException("Reopen it to make changes");
     }
+    const { targetId, pipelineId, pipelineName, stage, stageName } =
+      pursuit.outcome === "open"
+        ? await this.resolveStage(pursuit, dto, orgId)
+        : { targetId: null, pipelineId: undefined, pipelineName: null, stage: undefined, stageName: null };
     let companyName: string | null = null;
     if (dto.companyId) {
       const company = await this.prisma.company.findFirst({ where: { id: dto.companyId, organizationId: orgId } });
@@ -75,23 +118,30 @@ export class PursuitService {
       companyName = company.name;
     }
 
-    const updated: ProjectPursuit = await this.prisma.projectPursuit.update({
-      where: { projectId },
-      data: {
-        stage: dto.stage,
-        valueCents: dto.valueCents,
-        closeDate: toDate(dto.closeDate),
-        nextStep: dto.nextStep,
-        nextStepAt: toDate(dto.nextStepAt),
-        isBid: dto.isBid,
-        solicitationNumber: dto.solicitationNumber,
-        questionsDueAt: toDate(dto.questionsDueAt),
-        sourceUrl: dto.sourceUrl === "" ? null : dto.sourceUrl,
-        companyId: dto.companyId,
-      },
+    const updated: ProjectPursuit = await this.prisma.$transaction(async (tx) => {
+      if (targetId && (stage !== undefined || pipelineId !== undefined)) {
+        await this.lockStage(tx, targetId, stage ?? pursuit.stage);
+      }
+      return tx.projectPursuit.update({
+        where: { projectId },
+        data: {
+          pipelineId,
+          stage,
+          valueCents: dto.valueCents,
+          closeDate: toDate(dto.closeDate),
+          nextStep: dto.nextStep,
+          nextStepAt: toDate(dto.nextStepAt),
+          isBid: dto.isBid,
+          solicitationNumber: dto.solicitationNumber,
+          questionsDueAt: toDate(dto.questionsDueAt),
+          sourceUrl: dto.sourceUrl === "" ? null : dto.sourceUrl,
+          companyId: dto.companyId,
+        },
+      });
     });
-    if (dto.stage && dto.stage !== pursuit.stage) {
-      await this.log(this.prisma, projectId, `Moved to ${PURSUIT_STAGE_LABELS[dto.stage as PursuitStage]}`);
+    if (pipelineName) await this.log(this.prisma, projectId, `Moved to the ${pipelineName} pipeline`);
+    if (stage && stage !== pursuit.stage) {
+      await this.log(this.prisma, projectId, `Moved to ${stageName}`);
     }
     if (dto.companyId !== undefined && dto.companyId !== pursuit.companyId) {
       await this.log(this.prisma, projectId, companyName ? `Company set to ${companyName}` : "Company cleared");
@@ -224,10 +274,13 @@ export class PursuitService {
   async reopen(projectId: string, orgId: string): Promise<void> {
     const pursuit = await this.getOrThrow(projectId, orgId);
     if (pursuit.outcome !== "lost") throw new BadRequestException("Only a lost potential contract can be reopened");
+    const pipeline: PipelineWithStages = await this.stages.pipelineFor(orgId, pursuit.pipelineId);
+    const stage: string = pipeline.stages[0].slug;
     await this.prisma.$transaction(async (tx) => {
+      await this.lockStage(tx, pipeline.id, stage);
       const claimed = await tx.projectPursuit.updateMany({
         where: { projectId, outcome: "lost" },
-        data: { outcome: "open", stage: "found", lostReason: null },
+        data: { outcome: "open", stage, lostReason: null },
       });
       if (claimed.count === 0) throw new BadRequestException("Only a lost potential contract can be reopened");
       await tx.project.update({ where: { id: projectId }, data: { archivedAt: null } });
@@ -244,6 +297,7 @@ export class PursuitService {
     return rows.map((p) => ({
       projectId: p.projectId,
       name: p.project.name,
+      pipelineId: p.pipelineId,
       stage: p.stage,
       valueCents: p.valueCents,
       closeDate: p.closeDate,

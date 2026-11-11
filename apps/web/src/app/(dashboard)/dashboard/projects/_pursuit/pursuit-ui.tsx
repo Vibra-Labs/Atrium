@@ -10,22 +10,25 @@ import { useAppConfig } from "@/lib/app-config";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import {
-  PURSUIT_STAGES,
-  PURSUIT_STAGE_LABELS,
   contactRef,
   daysLate,
   dueSoon,
   formatDay,
   isPast,
   losePursuit,
+  pipelineFor,
+  stageLabel,
+  stagesFor,
   toCents,
   toDay,
   updatePursuit,
+  usePipelines,
   winPursuit,
   webLink,
   withCommas,
 } from "@/lib/pursuit";
 import type { ContactRef, PipelineRow, ProjectContactRow, Pursuit, PursuitPatch } from "@/lib/pursuit";
+import { StageTracker, TrackerDot } from "@/components/stage-tracker";
 import { CostSection, CurrencyInput, input, label, readValue } from "./costs-ui";
 
 /** Keyboard focus shows a ring in the brand color instead of the browser's outline. */
@@ -107,8 +110,9 @@ export function KindPicker({ value, onChange }: { value: NewKind; onChange: (k: 
 
 export function PursuitBadge({ p }: { p: Pursuit }) {
   const money = useMoney();
+  const pipelines = usePipelines();
   if (p.outcome === "won") return null;
-  const text: string = p.outcome === "lost" ? "Lost" : PURSUIT_STAGE_LABELS[p.stage];
+  const text: string = p.outcome === "lost" ? "Lost" : stageLabel(pipelines, p.pipelineId, p.stage);
   return (
     <div className="flex flex-col items-end gap-1 shrink-0">
       <span
@@ -152,16 +156,19 @@ export function PursuitPipeline({
 }) {
   const { error: showError } = useToast();
   const [reopening, setReopening] = useState<boolean>(false);
+  const pipelines = usePipelines();
+  const stages = stagesFor(pipelines, p.pipelineId);
 
-  async function setStage(stage: Pursuit["stage"]): Promise<void> {
+  async function change(patch: PursuitPatch, failure: string): Promise<void> {
     try {
-      await updatePursuit(p.projectId, { stage });
+      await updatePursuit(p.projectId, patch);
       onChanged();
     } catch (err) {
       console.error(err);
-      showError(err instanceof Error ? err.message : "Failed to change the stage");
+      showError(err instanceof Error ? err.message : failure);
     }
   }
+  const setStage = (stage: string): Promise<void> => change({ stage }, "Failed to change the stage");
 
   if (p.outcome === "lost") {
     return (
@@ -187,37 +194,55 @@ export function PursuitPipeline({
     );
   }
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <span className="text-xs text-[var(--muted-foreground)] mr-1">Potential contract</span>
-      {PURSUIT_STAGES.map((stage) => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+        <span>Potential contract</span>
+        {/* With more than one pipeline, the name is the switcher. */}
+        {pipelines && pipelines.length > 1 && (
+          <>
+            <span aria-hidden>·</span>
+            <select
+              aria-label="Pipeline"
+              value={pipelineFor(pipelines, p.pipelineId)?.id ?? ""}
+              onChange={(e) => change({ pipelineId: e.target.value }, "Failed to change the pipeline")}
+              // A compact version of the app-wide dropdown arrow, so it reads as text.
+              style={{ backgroundPosition: "right center", backgroundSize: "0.75rem", paddingRight: "1rem" }}
+              className={`bg-transparent font-medium text-[var(--foreground)] cursor-pointer rounded hover:underline ${focusRing}`}
+            >
+              {pipelines.map((pl) => (
+                <option key={pl.id} value={pl.id}>
+                  {pl.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+        <div className="min-w-0 overflow-x-auto p-1.5 -m-1.5">
+          <StageTracker
+            steps={stages.map((s) => ({ key: s.slug, label: s.name }))}
+            currentKey={p.stage}
+            onSelect={(slug) => p.stage !== slug && setStage(slug)}
+            stepTestId="pursuit-stage"
+            end={
+              <button onClick={onWon} className={`rounded-lg group ${focusRing}`}>
+                <TrackerDot
+                  dot={<Trophy size={13} aria-hidden />}
+                  label={<span className="text-green-700 dark:text-green-400 font-medium">Won</span>}
+                  dotClassName="border-green-600/60 text-green-600 group-hover:bg-green-600/10"
+                />
+              </button>
+            }
+          />
+        </div>
         <button
-          key={stage}
-          data-testid="pursuit-stage"
-          aria-pressed={p.stage === stage}
-          onClick={() => p.stage !== stage && setStage(stage)}
-          className={`px-2.5 py-1 rounded-full border border-transparent text-xs font-medium transition-all ${focusRing} ${
-            p.stage === stage
-              ? "bg-amber-500 text-white cursor-default"
-              : "bg-[var(--muted)] text-[var(--foreground)] cursor-pointer hover:ring-1 hover:ring-amber-500/60"
-          }`}
+          onClick={onLost}
+          className={`self-start px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] ${focusRing}`}
         >
-          {PURSUIT_STAGE_LABELS[stage]}
+          Lost
         </button>
-      ))}
-      <span className="w-px h-5 bg-[var(--border)] mx-1" />
-      {/* Outcomes are actions, so they're outlined; only the current stage is filled. */}
-      <button
-        onClick={onWon}
-        className={`px-2.5 py-1 rounded-full text-xs font-medium border border-green-600/60 text-green-700 dark:text-green-400 hover:bg-green-600/10 flex items-center gap-1 ${focusRing}`}
-      >
-        <Trophy size={12} /> Won
-      </button>
-      <button
-        onClick={onLost}
-        className={`px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] ${focusRing}`}
-      >
-        Lost
-      </button>
+      </div>
     </div>
   );
 }

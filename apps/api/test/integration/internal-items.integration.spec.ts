@@ -10,6 +10,7 @@ import { DocumentsService } from "../../src/documents/documents.service";
 import { InternalItemsService } from "../../src/projects/internal-items.service";
 import { WeeklyUpdatesService } from "../../src/updates/weekly-updates.service";
 import { DocumentReminderTask } from "../../src/documents/document-reminder.task";
+import { PursuitStagesService } from "../../src/projects/pursuit-stages.service";
 import { ProjectsService } from "../../src/projects/projects.service";
 
 let prisma: PrismaService;
@@ -242,7 +243,7 @@ describe("items from before the win stay internal", () => {
   it("portal project card does not count internal documents as waiting for review", async () => {
     const d = await seed();
     await prisma.document.update({ where: { id: d.internalDocId }, data: { requiresApproval: true } });
-    const projects = new ProjectsService(prisma, { linkProjectClients: async () => {} } as never);
+    const projects = new ProjectsService(prisma, { linkProjectClients: async () => {} } as never, new PursuitStagesService(prisma));
     const res = await projects.findByClient(d.clientId, d.orgId, {});
     const card = res.data.find((p: { id: string }) => p.id === d.projectId) as { pendingApprovals: number };
     expect(card.pendingApprovals).toBe(0);
@@ -253,7 +254,7 @@ describe("items from before the win stay internal", () => {
     const visibleTaskId = (
       await prisma.task.create({ data: { projectId: d.projectId, organizationId: d.orgId, title: "Kickoff call" } })
     ).id;
-    const projects = new ProjectsService(prisma, { linkProjectClients: async () => {} } as never);
+    const projects = new ProjectsService(prisma, { linkProjectClients: async () => {} } as never, new PursuitStagesService(prisma));
     const copy = await projects.duplicate(d.projectId, { name: "Copy", includeTasks: true }, d.orgId);
     const titles: string[] = (await prisma.task.findMany({ where: { projectId: copy!.id } })).map((t) => t.title);
     expect(titles).toEqual(["Kickoff call"]);

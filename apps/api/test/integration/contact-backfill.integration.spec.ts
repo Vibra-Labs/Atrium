@@ -298,7 +298,7 @@ describe("ContactBackfillService.run", () => {
     expect(contact.notes).toHaveLength(0);
 
     expect(contact.profileImportedAt).not.toBeNull();
-    expect((await prisma.organization.findUniqueOrThrow({ where: { id: orgId } })).contactsBackfillVersion).toBe(1);
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: orgId } })).contactsBackfillVersion).toBe(CONTACTS_BACKFILL_VERSION);
 
     // A user clears the website and About: later boots must not refill them.
     await prisma.contact.update({ where: { id: contact.id }, data: { website: null, description: "" } });

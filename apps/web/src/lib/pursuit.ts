@@ -1,12 +1,40 @@
 // Potential contracts: projects that aren't signed yet.
 
-import { PURSUIT_STAGES, PURSUIT_STAGE_LABELS, costSummary } from "@atrium/shared";
+import { costSummary, pipelineFor, stageLabel } from "@atrium/shared";
 import type { CostSummary, PursuitOutcome, PursuitStage } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
+import { useCachedApi } from "@/lib/cached";
 
-export { PURSUIT_STAGES, PURSUIT_STAGE_LABELS, costSummary };
+export { costSummary, pipelineFor, stageLabel };
 export type { CostSummary };
 export type { PursuitOutcome, PursuitStage };
+
+export interface PipelineStage {
+  id: string;
+  name: string;
+  slug: string;
+  order: number;
+}
+
+/** One of the workspace's pipelines with its stages (from GET /pursuit-pipelines). */
+export interface Pipeline {
+  id: string;
+  name: string;
+  order: number;
+  stages: PipelineStage[];
+}
+
+export const PIPELINES_PATH = "/pursuit-pipelines";
+
+/** The workspace's pipelines in order, cached; null while loading. Call invalidate(PIPELINES_PATH) after a change. */
+export function usePipelines(): Pipeline[] | null {
+  return useCachedApi<Pipeline[]>(PIPELINES_PATH);
+}
+
+/** The stages a contract can be in: its pipeline's (the first for an unassigned one), in order. */
+export function stagesFor(pipelines: Pipeline[] | null, pipelineId: string | null): PipelineStage[] {
+  return [...(pipelineFor(pipelines, pipelineId)?.stages ?? [])].sort((a, b) => a.order - b.order);
+}
 
 export interface PursuitEvent {
   id: string;
@@ -16,6 +44,7 @@ export interface PursuitEvent {
 
 export interface Pursuit {
   projectId: string;
+  pipelineId: string | null;
   stage: PursuitStage;
   outcome: PursuitOutcome;
   lostReason: string | null;
@@ -55,6 +84,7 @@ export interface ContactRef {
 export interface PipelineRow {
   projectId: string;
   name: string;
+  pipelineId: string | null;
   stage: PursuitStage;
   valueCents: number | null;
   closeDate: string | null;
@@ -67,6 +97,7 @@ export interface PipelineRow {
 export type PursuitPatch = Partial<
   Pick<
     Pursuit,
+    | "pipelineId"
     | "stage"
     | "valueCents"
     | "closeDate"

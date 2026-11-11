@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { Search, FolderOpen, CheckSquare, FileText, Contact, Building2, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { statusLabel, useProjectStatuses } from "@/lib/project-status";
 import { useDebounce } from "@/hooks/use-debounce";
 
 const MIN_QUERY_LENGTH = 2;
@@ -78,6 +79,7 @@ function buildFlatItems(results: SearchResults): FlatItem[] {
 }
 
 export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) {
+  const statuses = useProjectStatuses();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
@@ -236,7 +238,7 @@ export function GlobalSearch({ iconOnly = false }: { iconOnly?: boolean } = {}) 
                             key={p.id}
                             href={`/dashboard/projects/${p.id}`}
                             label={p.name}
-                            sublabel={p.status}
+                            sublabel={statusLabel(statuses, p.status)}
                             active={activeIndex === idx}
                             ref={(el) => { itemRefs.current[idx] = el; }}
                             onMouseEnter={() => setActiveIndex(idx)}

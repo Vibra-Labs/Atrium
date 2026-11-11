@@ -1,12 +1,19 @@
 import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min, ValidateIf } from "class-validator";
-import { MAX_CENTS, PURSUIT_STAGES } from "@atrium/shared";
-import type { PursuitStage } from "@atrium/shared";
+import { MAX_CENTS } from "@atrium/shared";
 
 /** Deal fields on a potential contract. Null clears a field. */
 export class UpdatePursuitDto {
-  @IsOptional()
-  @IsIn(PURSUIT_STAGES)
-  stage?: PursuitStage;
+  /** One of the workspace's pipelines (checked by the service). */
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsString()
+  @MaxLength(64)
+  pipelineId?: string;
+
+  /** A stage slug in the contract's pipeline (checked by the service). */
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsString()
+  @MaxLength(64)
+  stage?: string;
 
   @ValidateIf((_o, v) => v !== null && v !== undefined)
   @IsInt()
@@ -27,7 +34,7 @@ export class UpdatePursuitDto {
   @IsDateString()
   nextStepAt?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsBoolean()
   isBid?: boolean;
 

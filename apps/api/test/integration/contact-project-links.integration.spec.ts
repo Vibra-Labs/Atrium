@@ -5,6 +5,7 @@ import { PrismaService } from "../../src/prisma/prisma.service";
 import { ContactSyncService } from "../../src/contact-sync/contact-sync.service";
 import { ContactRevenueService } from "../../src/contacts/contact-revenue.service";
 import { ContactsService } from "../../src/contacts/contacts.service";
+import { PursuitStagesService } from "../../src/projects/pursuit-stages.service";
 import { ProjectsService } from "../../src/projects/projects.service";
 
 let prisma: PrismaService;
@@ -19,7 +20,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 beforeAll(async () => {
   assertDisposableDatabase();
   const mod = await Test.createTestingModule({
-    providers: [ContactSyncService, ContactRevenueService, ContactsService, ProjectsService, PrismaService],
+    providers: [ContactSyncService, ContactRevenueService, ContactsService, ProjectsService, PursuitStagesService, PrismaService],
   }).compile();
   prisma = mod.get(PrismaService);
   sync = mod.get(ContactSyncService);

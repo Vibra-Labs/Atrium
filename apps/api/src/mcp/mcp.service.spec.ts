@@ -81,13 +81,14 @@ function buildRes() {
 }
 
 describe("McpService", () => {
-  it("registers exactly the 27 documented tools, with unique names", () => {
+  it("registers exactly the 28 documented tools, with unique names", () => {
     const names = buildService().tools().map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.sort()).toEqual([
       "add_contact_note", "add_note", "archive_project", "create_project", "create_task", "delete_note",
       "delete_project", "delete_task", "get_client", "get_contact", "get_project", "get_workspace",
-      "list_clients", "list_contacts", "list_notes", "list_pending_approvals", "list_project_statuses", "list_projects", "list_tasks",
+      "list_clients", "list_contacts", "list_notes", "list_pending_approvals", "list_pipeline_stages", "list_project_statuses",
+      "list_projects", "list_tasks",
       "list_updates", "mark_potential_contract_lost", "mark_potential_contract_won", "post_update",
       "reopen_potential_contract", "update_potential_contract", "update_project", "update_task",
     ]);

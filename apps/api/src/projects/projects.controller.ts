@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { ProjectsService } from "./projects.service";
+import { PursuitStagesService } from "./pursuit-stages.service";
 import { PursuitService } from "./pursuit.service";
 import { InternalItemsService, INTERNAL_KINDS } from "./internal-items.service";
 import type { InternalItems, InternalKind } from "./internal-items.service";
@@ -22,8 +23,7 @@ import { LosePursuitDto, UpdatePursuitDto, WinPursuitDto } from "./pursuit.dto";
 import { CostsService } from "./costs.service";
 import type { ContractCosts } from "./costs.service";
 import { CostLineDto, UpdateCostLineDto, UpdateCostsDto } from "./costs.dto";
-import { PURSUIT_STAGE_LABELS } from "@atrium/shared";
-import type { PursuitStage } from "@atrium/shared";
+import { pipelineFor, stageLabel } from "@atrium/shared";
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -53,6 +53,7 @@ export class ProjectsController {
     private pursuitService: PursuitService,
     private internalItems: InternalItemsService,
     private costs: CostsService,
+    private stages: PursuitStagesService,
   ) {}
 
   @Get()
@@ -106,7 +107,7 @@ export class ProjectsController {
   @Get("export")
   @Roles("owner", "admin")
   async exportCsv(@CurrentOrg("id") orgId: string, @Res() res: Response) {
-    const data = await this.projectsService.exportAll(orgId);
+    const [data, pipelines] = await Promise.all([this.projectsService.exportAll(orgId), this.stages.findAll(orgId)]);
     const columns: CsvColumn<(typeof data)[0]>[] = [
       { header: "Name", value: (r) => r.name },
       { header: "Status", value: (r) => r.status },
@@ -115,7 +116,11 @@ export class ProjectsController {
       { header: "End Date", value: (r) => r.endDate?.toISOString().split("T")[0] },
       { header: "Clients", value: (r) => r.clients.length },
       { header: "Archived", value: (r) => r.archivedAt ? "Yes" : "No" },
-      { header: "Stage", value: (r) => (r.pursuit ? PURSUIT_STAGE_LABELS[r.pursuit.stage as PursuitStage] : "") },
+      {
+        header: "Pipeline",
+        value: (r) => (r.pursuit ? (pipelineFor(pipelines, r.pursuit.pipelineId)?.name ?? "") : ""),
+      },
+      { header: "Stage", value: (r) => (r.pursuit ? stageLabel(pipelines, r.pursuit.pipelineId, r.pursuit.stage) : "") },
       { header: "Outcome", value: (r) => r.pursuit?.outcome ?? "" },
       { header: "Value", value: (r) => (r.pursuit?.valueCents != null ? (r.pursuit.valueCents / 100).toFixed(2) : "") },
       { header: "Close Date", value: (r) => r.pursuit?.closeDate?.toISOString().split("T")[0] ?? "" },

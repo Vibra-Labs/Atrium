@@ -1,6 +1,7 @@
 "use client";
 
-function textColorForBackground(hex: string): string {
+/** Black or white, whichever reads better on `hex`. */
+export function textColorForBackground(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);

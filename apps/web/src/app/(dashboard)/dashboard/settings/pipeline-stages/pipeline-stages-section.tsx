@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, MoreHorizontal, Pencil, Plus, Trash2, Trophy } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, Pencil, Plus, Trash2, Trophy } from "lucide-react";
 import { MAX_PURSUIT_STAGES, PURSUIT_PIPELINE_LABELS, PURSUIT_PIPELINES } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
 import { invalidate } from "@/lib/cached";
@@ -18,7 +18,7 @@ const menuItem =
 
 /**
  * Settings → Workspace: the stages of the Bids and Commercial pipelines, shown as a tracker.
- * Like Linear's workflow settings, each stage is edited in place from its ⋯ menu.
+ * Like Linear's workflow settings, stages are edited in place: click one for its menu.
  */
 export function PipelineStagesSection(): React.ReactElement {
   const { success, error: showError } = useToast();
@@ -35,6 +35,25 @@ export function PipelineStagesSection(): React.ReactElement {
   // True once the current edit is committed or cancelled, so the blur that
   // follows Enter/Escape (input unmount) does not save again.
   const editDone = useRef<boolean>(false);
+
+  const trackerRef = useRef<HTMLDivElement>(null);
+
+  // Clicking outside the tracker, or Esc, closes an open stage menu.
+  useEffect(() => {
+    if (!menuFor) return;
+    const onDown = (e: MouseEvent): void => {
+      if (!trackerRef.current?.contains(e.target as Node)) setMenuFor(null);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setMenuFor(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuFor]);
 
   const stages: PipelineStage[] = stagesFor(all, pipeline === "bid");
   const byId = (id: string): PipelineStage => stages.find((s) => s.id === id)!;
@@ -133,75 +152,57 @@ export function PipelineStagesSection(): React.ReactElement {
     );
   }
 
+  /** The menu under a clicked stage. */
   function actionsFor(step: TrackerStep): React.ReactNode {
-    if (renamingId === step.key) return null;
+    if (menuFor !== step.key) return null;
     const stage: PipelineStage = byId(step.key);
     const i: number = stages.indexOf(stage);
-    const open: boolean = menuFor === stage.id;
     const pick = (action: () => void) => () => {
       setMenuFor(null);
       action();
     };
     return (
-      <span
-        className="relative"
-        onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) setMenuFor(null);
-        }}
+      <div
+        role="menu"
+        aria-label={`${stage.name} actions`}
+        className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-1 w-40 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-20 overflow-hidden py-1 flex flex-col"
       >
         <button
-          onClick={() => setMenuFor(open ? null : stage.id)}
-          aria-label={`Actions for ${stage.name}`}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          className={`p-0.5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] focus:opacity-100 ${
-            open ? "opacity-100" : "sm:opacity-0 sm:group-hover:opacity-100"
-          }`}
+          role="menuitem"
+          autoFocus
+          onClick={pick(() => {
+            editDone.current = false;
+            setEditName(stage.name);
+            setRenamingId(stage.id);
+          })}
+          className={menuItem}
         >
-          <MoreHorizontal size={14} />
+          <Pencil size={13} /> Rename
         </button>
-        {open && (
-          <span
-            role="menu"
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-1 w-40 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-20 overflow-hidden py-1 flex flex-col"
-          >
-            <button
-              role="menuitem"
-              onClick={pick(() => {
-                editDone.current = false;
-                setEditName(stage.name);
-                setRenamingId(stage.id);
-              })}
-              className={menuItem}
-            >
-              <Pencil size={13} /> Rename
-            </button>
-            <button role="menuitem" disabled={busy || i === 0} onClick={pick(() => move(stage, -1))} className={menuItem}>
-              <ArrowLeft size={13} /> Move earlier
-            </button>
-            <button
-              role="menuitem"
-              disabled={busy || i === stages.length - 1}
-              onClick={pick(() => move(stage, 1))}
-              className={menuItem}
-            >
-              <ArrowRight size={13} /> Move later
-            </button>
-            <button
-              role="menuitem"
-              disabled={stages.length <= 1}
-              title={stages.length <= 1 ? "A pipeline needs at least one stage" : undefined}
-              onClick={pick(() => {
-                setDeleting(stage);
-                setMoveTo(stages.find((s) => s.id !== stage.id)?.id ?? "");
-              })}
-              className={`${menuItem} text-red-600`}
-            >
-              <Trash2 size={13} /> Delete
-            </button>
-          </span>
-        )}
-      </span>
+        <button role="menuitem" disabled={busy || i === 0} onClick={pick(() => move(stage, -1))} className={menuItem}>
+          <ArrowLeft size={13} /> Move earlier
+        </button>
+        <button
+          role="menuitem"
+          disabled={busy || i === stages.length - 1}
+          onClick={pick(() => move(stage, 1))}
+          className={menuItem}
+        >
+          <ArrowRight size={13} /> Move later
+        </button>
+        <button
+          role="menuitem"
+          disabled={stages.length <= 1}
+          title={stages.length <= 1 ? "A pipeline needs at least one stage" : undefined}
+          onClick={pick(() => {
+            setDeleting(stage);
+            setMoveTo(stages.find((s) => s.id !== stage.id)?.id ?? "");
+          })}
+          className={`${menuItem} text-red-600`}
+        >
+          <Trash2 size={13} /> Delete
+        </button>
+      </div>
     );
   }
 
@@ -211,7 +212,7 @@ export function PipelineStagesSection(): React.ReactElement {
         <h2 className="text-base font-semibold">Pipeline stages</h2>
         <p className="text-sm text-[var(--muted-foreground)] mt-0.5 max-w-xl">
           The steps a potential contract moves through before it&apos;s won or lost. Bids are contracts marked as a
-          bid (RFP/RFQ); everything else is Commercial.
+          bid (RFP/RFQ); everything else is Commercial. Click a stage to rename, move or delete it.
         </p>
       </div>
 
@@ -239,9 +240,12 @@ export function PipelineStagesSection(): React.ReactElement {
       {all && (
         <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
           {/* Extra room below so the ⋯ menus, which open under their stage, aren't clipped. */}
-          <div className="min-w-0 overflow-x-auto p-1.5 -m-1.5 pb-44 -mb-44">
+          <div ref={trackerRef} className="min-w-0 overflow-x-auto p-1.5 -m-1.5 pb-44 -mb-44">
             <StageTracker
               steps={stages.map((s) => ({ key: s.id, label: s.name }))}
+              selectedKey={menuFor}
+              editingKey={renamingId}
+              onSelect={(id) => setMenuFor(menuFor === id ? null : id)}
               stepTestId="pipeline-stage-step"
               labelFor={labelFor}
               actionsFor={actionsFor}

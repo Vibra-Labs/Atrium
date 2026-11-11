@@ -61,9 +61,11 @@ function steps(s: Locator): Locator {
   return s.getByTestId("pipeline-stage-step");
 }
 
-/** Opens a stage's ⋯ menu and picks an item. */
+/** Clicks a stage to open its menu and picks an item. */
 async function stageAction(s: Locator, stage: string, item: string): Promise<void> {
-  await s.getByRole("button", { name: `Actions for ${stage}` }).click();
+  const step = steps(s).filter({ hasText: stage });
+  await step.click();
+  await expect(step).toHaveAttribute("aria-pressed", "true");
   await s.getByRole("menuitem", { name: item }).click();
 }
 
@@ -116,6 +118,19 @@ test.describe("Pipeline stages", () => {
     await expect(stageButtons(page).filter({ hasText: "Verbal yes" })).toHaveCount(0);
     // "Lead" exists in both pipelines, so the contract stays in it.
     await expect(stageButtons(page).filter({ hasText: "Lead" })).toHaveAttribute("aria-pressed", "true");
+    await context.close();
+  });
+
+  test("clicking a stage opens its menu, and clicking away closes it", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "ps-menu");
+    const s = await openSettings(page);
+    await steps(s).filter({ hasText: "Lead" }).click();
+    await expect(s.getByRole("menu", { name: "Lead actions" })).toBeVisible();
+    // The first stage can't move earlier.
+    await expect(s.getByRole("menuitem", { name: "Move earlier" })).toBeDisabled();
+    await page.getByRole("heading", { name: "Pipeline stages" }).click();
+    await expect(s.getByRole("menu")).toHaveCount(0);
+    await expect(steps(s).first()).toHaveAttribute("aria-pressed", "false");
     await context.close();
   });
 

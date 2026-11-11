@@ -37,17 +37,27 @@ describe("StageTracker", () => {
     expect(html.indexOf("Waiting on decision")).toBeLessThan(html.indexOf("Won"));
   });
 
-  it("without onSelect, shows plain steps with their own label and actions", () => {
+  it("highlights the selected step when there's no progress to show", () => {
+    const html: string = renderToStaticMarkup(
+      <StageTracker steps={steps} selectedKey="waiting" onSelect={() => {}} stepTestId="step" />,
+    );
+    expect(states(html)).toEqual(["idle", "idle", "selected"]);
+  });
+
+  it("renders each step's actions beside its button, and the step being edited as plain", () => {
     const html: string = renderToStaticMarkup(
       <StageTracker
         steps={steps}
+        onSelect={() => {}}
+        editingKey="found"
         stepTestId="step"
-        labelFor={(s) => <em>{s.label}</em>}
+        labelFor={(s) => (s.key === "found" ? <input aria-label="Rename" /> : s.label)}
         actionsFor={(s) => <i data-actions={s.key} />}
       />,
     );
-    expect(html).not.toContain("<button");
-    expect(html).toContain("<em>Proposal sent</em>");
+    // Two buttons (the other steps), none wrapping the rename box.
+    expect(html.match(/<button/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*<input/);
     expect(html).toContain('data-actions="waiting"');
   });
 });

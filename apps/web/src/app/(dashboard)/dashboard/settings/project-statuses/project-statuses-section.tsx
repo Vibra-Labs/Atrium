@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Lock, Palette, Pencil, Plus, Trash2 } from "luci
 import { MAX_PROJECT_STATUSES } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
 import { invalidate } from "@/lib/cached";
+import { debounce } from "@/lib/debounce";
 import { useToast } from "@/components/toast";
 import { ColorPatchGrid } from "@/components/color-patch-grid";
 import { textColorForBackground } from "@/components/label-badge";
@@ -32,6 +33,7 @@ export function ProjectStatusesSection(): React.ReactElement {
   const [deleting, setDeleting] = useState<ProjectStatus | null>(null);
   const [moveTo, setMoveTo] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
+  const [preview, setPreview] = useState<{ id: string; color: string } | null>(null);
   const editDone = useRef<boolean>(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
@@ -91,8 +93,22 @@ export function ProjectStatusesSection(): React.ReactElement {
     setRenamingId(null);
   }
 
-  async function recolor(status: ProjectStatus, color: string): Promise<void> {
-    await run(() => patch(status.id, { color }), "Failed to change the color");
+  async function saveColor(id: string, color: string): Promise<void> {
+    if ((await run(() => patch(id, { color }), "Failed to change the color")) === null) setPreview(null);
+  }
+
+  // The custom picker fires on every drag tick: preview at once, save the final colour once.
+  const saveColorRef = useRef(saveColor);
+  saveColorRef.current = saveColor;
+  const saveColorSoon = useRef(
+    debounce<{ id: string; color: string }>((c) => void saveColorRef.current(c.id, c.color), 400),
+  ).current;
+  // Don't lose a colour picked just before leaving the page.
+  useEffect(() => saveColorSoon.flush, [saveColorSoon]);
+
+  function recolor(status: ProjectStatus, color: string): void {
+    setPreview({ id: status.id, color });
+    saveColorSoon({ id: status.id, color });
   }
 
   async function move(index: number, by: -1 | 1): Promise<void> {
@@ -156,7 +172,7 @@ export function ProjectStatusesSection(): React.ReactElement {
         </button>
         {coloring === status.id && (
           <div className="px-2 py-1.5">
-            <ColorPatchGrid value={status.color} onChange={(hex) => recolor(status, hex)} />
+            <ColorPatchGrid value={preview?.id === status.id ? preview.color : status.color} onChange={(hex) => recolor(status, hex)} />
           </div>
         )}
         <button role="menuitem" disabled={busy || index === 0} onClick={pick(() => move(index, -1))} className={menuItem}>

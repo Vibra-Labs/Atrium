@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PROJECT_STATUSES } from "@atrium/shared";
-import type { Prisma, ProjectPursuit } from "@atrium/database";
+import type { Prisma, ProjectPursuit, PursuitStage } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { ContactsService } from "../contacts/contacts.service";
-import { PursuitStagesService } from "./pursuit-stages.service";
+import { PursuitStagesService, lockStages } from "./pursuit-stages.service";
+import type { PipelineWithStages } from "./pursuit-stages.service";
 import { LosePursuitDto, UpdatePursuitDto, WinPursuitDto } from "./pursuit.dto";
 
 export interface PipelineRow {
@@ -60,13 +61,14 @@ export class PursuitService {
 
   /**
    * The pipeline and stage to save. A null pipeline means the workspace's first one. Moving to
-   * another pipeline keeps the stage when it has the same one, otherwise goes to its first stage.
+   * another pipeline keeps the stage when the target has one with the same name (ignoring case),
+   * otherwise goes to its first stage.
    */
   private async resolveStage(
     pursuit: ProjectPursuit,
     dto: UpdatePursuitDto,
     orgId: string,
-  ): Promise<{ pipelineId?: string; pipelineName: string | null; stage?: string; stageName: string | null }> {
+  ): Promise<{ targetId: string | null; pipelineId?: string; pipelineName: string | null; stage?: string; stageName: string | null }> {
     const target = await this.stages.pipelineFor(orgId, dto.pipelineId ?? pursuit.pipelineId);
     const moved: boolean = target.id !== pursuit.pipelineId;
     const pipelineId: string | undefined = moved ? target.id : undefined;
@@ -75,12 +77,22 @@ export class PursuitService {
     if (dto.stage !== undefined) {
       const found = target.stages.find((s) => s.slug === dto.stage);
       if (!found) throw new BadRequestException("Unknown stage");
-      return { pipelineId, pipelineName, stage: found.slug, stageName: found.name };
+      return { targetId: target.id, pipelineId, pipelineName, stage: found.slug, stageName: found.name };
     }
-    if (!moved || target.stages.some((s) => s.slug === pursuit.stage)) {
-      return { pipelineId, pipelineName, stage: undefined, stageName: null };
+    if (!moved) return { targetId: target.id, pipelineId, pipelineName, stage: undefined, stageName: null };
+    const source: PipelineWithStages = await this.stages.pipelineFor(orgId, pursuit.pipelineId);
+    const currentName: string | undefined = source.stages.find((s) => s.slug === pursuit.stage)?.name.toLowerCase();
+    const match: PursuitStage = target.stages.find((s) => s.name.toLowerCase() === currentName) ?? target.stages[0];
+    const stage: string | undefined = match.slug === pursuit.stage ? undefined : match.slug;
+    return { targetId: target.id, pipelineId, pipelineName, stage, stageName: stage ? match.name : null };
+  }
+
+  /** Under the pipeline's stage lock (so a stage delete can't slip in), confirms the stage still exists. */
+  private async lockStage(tx: Prisma.TransactionClient, pipelineId: string, slug: string): Promise<void> {
+    await lockStages(tx, pipelineId);
+    if (!(await tx.pursuitStage.findFirst({ where: { pipelineId, slug }, select: { id: true } }))) {
+      throw new BadRequestException("Unknown stage");
     }
-    return { pipelineId, pipelineName, stage: target.stages[0].slug, stageName: target.stages[0].name };
   }
 
   async update(projectId: string, dto: UpdatePursuitDto, orgId: string): Promise<ProjectPursuit> {
@@ -95,10 +107,10 @@ export class PursuitService {
     } else if (pursuit.outcome !== "open") {
       throw new BadRequestException("Reopen it to make changes");
     }
-    const { pipelineId, pipelineName, stage, stageName } =
+    const { targetId, pipelineId, pipelineName, stage, stageName } =
       pursuit.outcome === "open"
         ? await this.resolveStage(pursuit, dto, orgId)
-        : { pipelineId: undefined, pipelineName: null, stage: undefined, stageName: null };
+        : { targetId: null, pipelineId: undefined, pipelineName: null, stage: undefined, stageName: null };
     let companyName: string | null = null;
     if (dto.companyId) {
       const company = await this.prisma.company.findFirst({ where: { id: dto.companyId, organizationId: orgId } });
@@ -106,21 +118,26 @@ export class PursuitService {
       companyName = company.name;
     }
 
-    const updated: ProjectPursuit = await this.prisma.projectPursuit.update({
-      where: { projectId },
-      data: {
-        pipelineId,
-        stage,
-        valueCents: dto.valueCents,
-        closeDate: toDate(dto.closeDate),
-        nextStep: dto.nextStep,
-        nextStepAt: toDate(dto.nextStepAt),
-        isBid: dto.isBid,
-        solicitationNumber: dto.solicitationNumber,
-        questionsDueAt: toDate(dto.questionsDueAt),
-        sourceUrl: dto.sourceUrl === "" ? null : dto.sourceUrl,
-        companyId: dto.companyId,
-      },
+    const updated: ProjectPursuit = await this.prisma.$transaction(async (tx) => {
+      if (targetId && (stage !== undefined || pipelineId !== undefined)) {
+        await this.lockStage(tx, targetId, stage ?? pursuit.stage);
+      }
+      return tx.projectPursuit.update({
+        where: { projectId },
+        data: {
+          pipelineId,
+          stage,
+          valueCents: dto.valueCents,
+          closeDate: toDate(dto.closeDate),
+          nextStep: dto.nextStep,
+          nextStepAt: toDate(dto.nextStepAt),
+          isBid: dto.isBid,
+          solicitationNumber: dto.solicitationNumber,
+          questionsDueAt: toDate(dto.questionsDueAt),
+          sourceUrl: dto.sourceUrl === "" ? null : dto.sourceUrl,
+          companyId: dto.companyId,
+        },
+      });
     });
     if (pipelineName) await this.log(this.prisma, projectId, `Moved to the ${pipelineName} pipeline`);
     if (stage && stage !== pursuit.stage) {
@@ -257,8 +274,10 @@ export class PursuitService {
   async reopen(projectId: string, orgId: string): Promise<void> {
     const pursuit = await this.getOrThrow(projectId, orgId);
     if (pursuit.outcome !== "lost") throw new BadRequestException("Only a lost potential contract can be reopened");
-    const stage: string = (await this.stages.pipelineFor(orgId, pursuit.pipelineId)).stages[0].slug;
+    const pipeline: PipelineWithStages = await this.stages.pipelineFor(orgId, pursuit.pipelineId);
+    const stage: string = pipeline.stages[0].slug;
     await this.prisma.$transaction(async (tx) => {
+      await this.lockStage(tx, pipeline.id, stage);
       const claimed = await tx.projectPursuit.updateMany({
         where: { projectId, outcome: "lost" },
         data: { outcome: "open", stage, lostReason: null },

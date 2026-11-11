@@ -104,6 +104,11 @@ interface PaginatedResponse<T> {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
+/** Tint plus text mixed with the foreground, so pale workspace colours stay legible. */
+function statusBadgeStyle(color: string): React.CSSProperties {
+  return { backgroundColor: `${color}1a`, color: `color-mix(in srgb, ${color} 65%, var(--foreground))` };
+}
+
 function ProgressBar({ value, label, className }: { value: number; label: string; className: string }): React.ReactElement {
   return (
     <div
@@ -523,7 +528,7 @@ export default function DashboardPage() {
                         <div className="mt-3 flex items-center gap-3">
                           <span
                             className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium shrink-0"
-                            style={{ backgroundColor: `${badge.color}1a`, color: `color-mix(in srgb, ${badge.color} 65%, var(--foreground))` }}
+                            style={statusBadgeStyle(badge.color)}
                           >
                             <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: badge.color }} />
                             {badge.label}
@@ -564,7 +569,7 @@ export default function DashboardPage() {
                             <td className="py-3 px-3">
                               <span
                                 className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium"
-                            style={{ backgroundColor: `${badge.color}1a`, color: badge.color }}
+                                style={statusBadgeStyle(badge.color)}
                               >
                                 <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: badge.color }} />
                                 {badge.label}

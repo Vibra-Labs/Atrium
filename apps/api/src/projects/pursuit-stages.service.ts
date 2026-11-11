@@ -40,8 +40,21 @@ function createWithDefaultStages(db: Db, orgId: string, name: string, order: num
   });
 }
 
-/** Gives a new workspace the default pipelines, each with the default stages. */
-export async function seedDefaultPipelines(db: Db, orgId: string): Promise<void> {
+const lockPipelines = (db: Db, orgId: string): Promise<unknown> =>
+  db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pursuit-pipelines:${orgId}`}))`;
+export const lockStages = (db: Db, pipelineId: string): Promise<unknown> =>
+  db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pursuit-stages:${pipelineId}`}))`;
+
+/** A deleted row in a write: Prisma's P2025. */
+const isNotFound = (err: unknown): boolean => typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2025";
+
+/**
+ * Gives a workspace with no pipelines the default ones, each with the default stages. Call it in a
+ * transaction: it takes the workspace's pipeline lock, so a signup and a boot seed can't both create them.
+ */
+export async function seedDefaultPipelines(db: Prisma.TransactionClient, orgId: string): Promise<void> {
+  await lockPipelines(db, orgId);
+  if (await db.pursuitPipeline.findFirst({ where: { organizationId: orgId }, select: { id: true } })) return;
   for (const [order, name] of DEFAULT_PURSUIT_PIPELINES.entries()) {
     await createWithDefaultStages(db, orgId, name, order);
   }
@@ -71,11 +84,7 @@ export class PursuitStagesService implements OnApplicationBootstrap {
       select: { id: true },
     });
     for (const { id } of orgs) {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pursuit-pipelines:${id}`}))`;
-        if (await tx.pursuitPipeline.findFirst({ where: { organizationId: id } })) return;
-        await seedDefaultPipelines(tx, id);
-      });
+      await this.prisma.$transaction((tx) => seedDefaultPipelines(tx, id));
     }
 
     const unfiled: { organizationId: string }[] = await this.prisma.projectPursuit.findMany({
@@ -102,13 +111,22 @@ export class PursuitStagesService implements OnApplicationBootstrap {
     return this.prisma.pursuitPipeline.findMany({ where: { organizationId: orgId }, orderBy: BY_ORDER, include: WITH_STAGES });
   }
 
-  /** A contract's pipeline: the given one, or the first when null. 400 when the id isn't this workspace's. */
+  /**
+   * A contract's pipeline: the given one, or the first when null. 400 when the id isn't this
+   * workspace's. A workspace the boot job hasn't reached yet gets its default pipelines here.
+   */
   async pipelineFor(orgId: string, pipelineId: string | null): Promise<PipelineWithStages> {
-    const found: PipelineWithStages | null = await this.prisma.pursuitPipeline.findFirst({
-      where: pipelineId === null ? { organizationId: orgId } : { id: pipelineId, organizationId: orgId },
-      orderBy: BY_ORDER,
-      include: WITH_STAGES,
-    });
+    const find = (): Promise<PipelineWithStages | null> =>
+      this.prisma.pursuitPipeline.findFirst({
+        where: pipelineId === null ? { organizationId: orgId } : { id: pipelineId, organizationId: orgId },
+        orderBy: BY_ORDER,
+        include: WITH_STAGES,
+      });
+    let found: PipelineWithStages | null = await find();
+    if (!found) {
+      await this.prisma.$transaction((tx) => seedDefaultPipelines(tx, orgId));
+      found = await find();
+    }
     if (!found) throw new BadRequestException("Unknown pipeline");
     return found;
   }
@@ -121,46 +139,55 @@ export class PursuitStagesService implements OnApplicationBootstrap {
 
   async createPipeline(dto: PursuitNameDto, orgId: string): Promise<PipelineWithStages> {
     const name: string = requireName(dto.name);
-    const pipelines: PursuitPipeline[] = await this.prisma.pursuitPipeline.findMany({ where: { organizationId: orgId } });
-    if (pipelines.length >= MAX_PURSUIT_PIPELINES) {
-      throw new BadRequestException(`A workspace can have at most ${MAX_PURSUIT_PIPELINES} pipelines`);
-    }
-    assertFreeName(pipelines, name, PIPELINE_TAKEN);
-    const order: number = pipelines.length ? Math.max(...pipelines.map((p) => p.order)) + 1 : 0;
-    return unique(() => createWithDefaultStages(this.prisma, orgId, name, order), PIPELINE_TAKEN);
+    return this.prisma.$transaction(async (tx) => {
+      await lockPipelines(tx, orgId);
+      const pipelines: PursuitPipeline[] = await tx.pursuitPipeline.findMany({ where: { organizationId: orgId } });
+      if (pipelines.length >= MAX_PURSUIT_PIPELINES) {
+        throw new BadRequestException(`A workspace can have at most ${MAX_PURSUIT_PIPELINES} pipelines`);
+      }
+      assertFreeName(pipelines, name, PIPELINE_TAKEN);
+      const order: number = pipelines.length ? Math.max(...pipelines.map((p) => p.order)) + 1 : 0;
+      return unique(() => createWithDefaultStages(tx, orgId, name, order), PIPELINE_TAKEN);
+    });
   }
 
   async renamePipeline(id: string, dto: PursuitNameDto, orgId: string): Promise<PursuitPipeline> {
-    await this.pipelineOrThrow(id, orgId);
     const name: string = requireName(dto.name);
-    assertFreeName(await this.prisma.pursuitPipeline.findMany({ where: { organizationId: orgId } }), name, PIPELINE_TAKEN, id);
-    return unique(() => this.prisma.pursuitPipeline.update({ where: { id }, data: { name } }), PIPELINE_TAKEN);
+    return this.prisma.$transaction(async (tx) => {
+      await lockPipelines(tx, orgId);
+      const pipelines: PursuitPipeline[] = await tx.pursuitPipeline.findMany({ where: { organizationId: orgId } });
+      if (!pipelines.some((p) => p.id === id)) throw new NotFoundException("Pipeline not found");
+      assertFreeName(pipelines, name, PIPELINE_TAKEN, id);
+      return unique(() => tx.pursuitPipeline.update({ where: { id }, data: { name } }), PIPELINE_TAKEN);
+    });
   }
 
   async reorderPipelines(dto: ReorderPursuitPipelinesDto, orgId: string): Promise<PipelineWithStages[]> {
-    const pipelines: PursuitPipeline[] = await this.prisma.pursuitPipeline.findMany({ where: { organizationId: orgId } });
-    assertSameSet(dto.ids, pipelines, "Send every pipeline once");
-    await this.prisma.$transaction(
-      dto.ids.map((id, order) => this.prisma.pursuitPipeline.update({ where: { id }, data: { order } })),
-    );
+    await this.prisma.$transaction(async (tx) => {
+      await lockPipelines(tx, orgId);
+      const pipelines: PursuitPipeline[] = await tx.pursuitPipeline.findMany({ where: { organizationId: orgId } });
+      assertSameSet(dto.ids, pipelines, "Send every pipeline once");
+      for (const [order, id] of dto.ids.entries()) await tx.pursuitPipeline.update({ where: { id }, data: { order } });
+    });
     return this.findAll(orgId);
   }
 
   /**
    * Deletes a pipeline after moving its contracts (any outcome) to `moveTo`: each keeps its stage
-   * when the target has the same one, else goes to the target's first stage.
+   * when the target has one with the same name (ignoring case), else goes to the target's first stage.
    */
   async removePipeline(id: string, moveTo: string, orgId: string): Promise<void> {
     await this.pipelineOrThrow(id, orgId);
     await this.prisma.$transaction(async (tx) => {
       // One pipeline delete per workspace at a time, so two can't empty it between them.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pursuit-pipelines:${orgId}`}))`;
+      await lockPipelines(tx, orgId);
       const pipelines: PipelineWithStages[] = await tx.pursuitPipeline.findMany({
         where: { organizationId: orgId },
         orderBy: BY_ORDER,
         include: WITH_STAGES,
       });
-      if (!pipelines.some((p) => p.id === id)) throw new NotFoundException("Pipeline not found");
+      const source: PipelineWithStages | undefined = pipelines.find((p) => p.id === id);
+      if (!source) throw new NotFoundException("Pipeline not found");
       if (pipelines.length <= 1) throw new BadRequestException("A workspace needs at least one pipeline");
       const target: PipelineWithStages | undefined = pipelines.find((p) => p.id === moveTo && p.id !== id);
       if (!target) throw new BadRequestException("Pick another pipeline to move its contracts to");
@@ -168,10 +195,13 @@ export class PursuitStagesService implements OnApplicationBootstrap {
       // Unassigned contracts belong to the first pipeline.
       const owned = pipelines[0].id === id ? [{ pipelineId: id }, { pipelineId: null }] : [{ pipelineId: id }];
       for (const where of owned) {
-        await tx.projectPursuit.updateMany({
-          where: { organizationId: orgId, ...where, stage: { in: target.stages.map((s) => s.slug) } },
-          data: { pipelineId: target.id },
-        });
+        for (const from of source.stages) {
+          const same: PursuitStage | undefined = target.stages.find((s) => s.name.toLowerCase() === from.name.toLowerCase());
+          await tx.projectPursuit.updateMany({
+            where: { organizationId: orgId, ...where, stage: from.slug },
+            data: { pipelineId: target.id, stage: (same ?? target.stages[0]).slug },
+          });
+        }
         await tx.projectPursuit.updateMany({
           where: { organizationId: orgId, ...where },
           data: { pipelineId: target.id, stage: target.stages[0].slug },
@@ -195,41 +225,60 @@ export class PursuitStagesService implements OnApplicationBootstrap {
 
   async createStage(dto: CreatePursuitStageDto, orgId: string): Promise<PursuitStage> {
     const name: string = requireName(dto.name);
-    const pipeline: PipelineWithStages = await this.pipelineFor(orgId, dto.pipelineId);
-    const stages: PursuitStage[] = pipeline.stages;
-    if (stages.length >= MAX_PURSUIT_STAGES) {
-      throw new BadRequestException(`A pipeline can have at most ${MAX_PURSUIT_STAGES} stages`);
-    }
-    assertFreeName(stages, name, STAGE_TAKEN);
-    return unique(
-      () =>
-        this.prisma.pursuitStage.create({
-          data: {
-            organizationId: orgId,
-            pipelineId: pipeline.id,
-            name,
-            slug: uniqueSlug(name, stages.map((s) => s.slug), "stage"),
-            order: stages.length ? Math.max(...stages.map((s) => s.order)) + 1 : 0,
-          },
-        }),
-      STAGE_TAKEN,
-    );
+    const { id: pipelineId }: PipelineWithStages = await this.pipelineFor(orgId, dto.pipelineId);
+    return this.prisma.$transaction(async (tx) => {
+      // The pipeline lock keeps a pipeline delete from landing between the check and the write.
+      await lockPipelines(tx, orgId);
+      await lockStages(tx, pipelineId);
+      if (!(await tx.pursuitPipeline.findFirst({ where: { id: pipelineId, organizationId: orgId } }))) {
+        throw new NotFoundException("Pipeline not found");
+      }
+      const stages: PursuitStage[] = await this.stagesOf(tx, pipelineId);
+      if (stages.length >= MAX_PURSUIT_STAGES) {
+        throw new BadRequestException(`A pipeline can have at most ${MAX_PURSUIT_STAGES} stages`);
+      }
+      assertFreeName(stages, name, STAGE_TAKEN);
+      return unique(
+        () =>
+          tx.pursuitStage.create({
+            data: {
+              organizationId: orgId,
+              pipelineId,
+              name,
+              slug: uniqueSlug(name, stages.map((s) => s.slug), "stage"),
+              order: stages.length ? Math.max(...stages.map((s) => s.order)) + 1 : 0,
+            },
+          }),
+        STAGE_TAKEN,
+      );
+    });
   }
 
   async renameStage(id: string, dto: PursuitNameDto, orgId: string): Promise<PursuitStage> {
-    const stage: PursuitStage = await this.stageOrThrow(id, orgId);
+    const { pipelineId }: PursuitStage = await this.stageOrThrow(id, orgId);
     const name: string = requireName(dto.name);
-    assertFreeName(await this.stagesOf(this.prisma, stage.pipelineId), name, STAGE_TAKEN, id);
-    return unique(() => this.prisma.pursuitStage.update({ where: { id }, data: { name } }), STAGE_TAKEN);
+    return this.prisma.$transaction(async (tx) => {
+      await lockStages(tx, pipelineId);
+      const stages: PursuitStage[] = await this.stagesOf(tx, pipelineId);
+      if (!stages.some((s) => s.id === id)) throw new NotFoundException("Stage not found");
+      assertFreeName(stages, name, STAGE_TAKEN, id);
+      return unique(() => tx.pursuitStage.update({ where: { id }, data: { name } }), STAGE_TAKEN);
+    });
   }
 
   async reorderStages(dto: ReorderPursuitStagesDto, orgId: string): Promise<PursuitStage[]> {
-    const pipeline: PipelineWithStages = await this.pipelineFor(orgId, dto.pipelineId);
-    assertSameSet(dto.ids, pipeline.stages, "Send every stage once");
-    await this.prisma.$transaction(
-      dto.ids.map((id, order) => this.prisma.pursuitStage.update({ where: { id }, data: { order } })),
-    );
-    return this.stagesOf(this.prisma, pipeline.id);
+    const { id: pipelineId }: PipelineWithStages = await this.pipelineFor(orgId, dto.pipelineId);
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await lockStages(tx, pipelineId);
+        assertSameSet(dto.ids, await this.stagesOf(tx, pipelineId), "Send every stage once");
+        for (const [order, id] of dto.ids.entries()) await tx.pursuitStage.update({ where: { id }, data: { order } });
+      });
+    } catch (err: unknown) {
+      if (isNotFound(err)) throw new BadRequestException("Send every stage once");
+      throw err;
+    }
+    return this.stagesOf(this.prisma, pipelineId);
   }
 
   /** Deletes a stage after moving every contract in it (any outcome) to `moveTo`. */
@@ -239,7 +288,7 @@ export class PursuitStagesService implements OnApplicationBootstrap {
     await this.prisma.$transaction(async (tx) => {
       // One remove per pipeline at a time, so two admins can't each delete the other's target
       // or empty the pipeline between them. Checks below read the state after the lock.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pursuit-stages:${stage.pipelineId}`}))`;
+      await lockStages(tx, stage.pipelineId);
       const stages: PursuitStage[] = await this.stagesOf(tx, stage.pipelineId);
       if (!stages.some((s) => s.id === id)) throw new NotFoundException("Stage not found");
       if (stages.length <= 1) throw new BadRequestException("A pipeline needs at least one stage");

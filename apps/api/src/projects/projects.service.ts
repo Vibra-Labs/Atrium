@@ -98,9 +98,15 @@ export class ProjectsService implements OnApplicationBootstrap {
     const existing: { organizationId: string; slug: string; order: number }[] = await this.prisma.projectStatus.findMany({
       select: { organizationId: true, slug: true, order: true },
     });
+    const byOrg: Map<string, { slug: string; order: number }[]> = new Map();
+    for (const s of existing) {
+      const list: { slug: string; order: number }[] = byOrg.get(s.organizationId) ?? [];
+      list.push(s);
+      byOrg.set(s.organizationId, list);
+    }
     const data: { name: string; slug: string; order: number; color: string; organizationId: string }[] = [];
     for (const org of orgs) {
-      const own: { slug: string; order: number }[] = existing.filter((s) => s.organizationId === org.id);
+      const own: { slug: string; order: number }[] = byOrg.get(org.id) ?? [];
       const slugs: Set<string> = new Set(own.map((s) => s.slug));
       let order: number = Math.max(-1, ...own.map((s) => s.order));
       let count: number = own.length;
@@ -387,32 +393,36 @@ export class ProjectsService implements OnApplicationBootstrap {
       }
     }
 
-    const created = await this.prisma.project.create({
-      data: {
-        ...rest,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        organizationId,
-        ...(potential
-          ? {
-              pursuit: {
-                create: {
-                  organizationId,
-                  ...(await this.startOfPipeline(organizationId, pipelineId)),
-                  events: { create: { text: "Created as a potential contract" } },
+    const pursuitStart = potential ? await this.startOfPipeline(organizationId, pipelineId) : undefined;
+    const created = await this.prisma.$transaction(async (tx) => {
+      if (rest.status) await this.assertStatus(tx, rest.status, organizationId);
+      return tx.project.create({
+        data: {
+          ...rest,
+          startDate: startDate ? new Date(startDate) : undefined,
+          endDate: endDate ? new Date(endDate) : undefined,
+          organizationId,
+          ...(pursuitStart
+            ? {
+                pursuit: {
+                  create: {
+                    organizationId,
+                    ...pursuitStart,
+                    events: { create: { text: "Created as a potential contract" } },
+                  },
                 },
-              },
-            }
-          : {}),
-        ...(clientUserIds?.length
-          ? {
-              clients: {
-                create: clientUserIds.map((userId) => ({ userId })),
-              },
-            }
-          : {}),
-      },
-      include: { clients: { select: { userId: true } } },
+              }
+            : {}),
+          ...(clientUserIds?.length
+            ? {
+                clients: {
+                  create: clientUserIds.map((userId) => ({ userId })),
+                },
+              }
+            : {}),
+        },
+        include: { clients: { select: { userId: true } } },
+      });
     });
     await this.syncClients(created.id, organizationId, clientUserIds ?? []);
     return created;

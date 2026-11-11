@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { ArrayMaxSize, IsArray, IsString, Matches, MaxLength, ValidateIf } from "class-validator";
 import { MAX_PROJECT_STATUSES } from "@atrium/shared";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -9,19 +9,19 @@ export class CreateProjectStatusDto {
   @MaxLength(40)
   name!: string;
 
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsString()
   @Matches(HEX, { message: HEX_MESSAGE })
   color?: string;
 }
 
 export class UpdateProjectStatusDto {
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsString()
   @MaxLength(40)
   name?: string;
 
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsString()
   @Matches(HEX, { message: HEX_MESSAGE })
   color?: string;

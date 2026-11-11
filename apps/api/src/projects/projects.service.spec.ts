@@ -383,6 +383,22 @@ describe("ProjectsService", () => {
     });
   });
 
+  it("create rejects a status the workspace doesn't have, under the shared status lock", async () => {
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve(null));
+    mockPrisma.$executeRaw.mockClear();
+
+    await expect(service.create({ name: "X", status: "gone" }, "org-1")).rejects.toThrow("Invalid status: gone");
+    expect(mockPrisma.$executeRaw).toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+  });
+
+  it("create accepts one of the workspace's statuses", async () => {
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve({ id: "s1" }) as never);
+
+    await service.create({ name: "X", status: "in_review" }, "org-1");
+    expect(mockPrisma.project.create).toHaveBeenCalledTimes(1);
+  });
+
   it("remove deletes existing project", async () => {
     mockPrisma.project.deleteMany.mockReturnValue(Promise.resolve({ count: 1 }));
 

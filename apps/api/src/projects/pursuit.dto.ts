@@ -4,13 +4,13 @@ import { MAX_CENTS } from "@atrium/shared";
 /** Deal fields on a potential contract. Null clears a field. */
 export class UpdatePursuitDto {
   /** One of the workspace's pipelines (checked by the service). */
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsString()
   @MaxLength(64)
   pipelineId?: string;
 
   /** A stage slug in the contract's pipeline (checked by the service). */
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsString()
   @MaxLength(64)
   stage?: string;
@@ -34,7 +34,7 @@ export class UpdatePursuitDto {
   @IsDateString()
   nextStepAt?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsBoolean()
   isBid?: boolean;
 

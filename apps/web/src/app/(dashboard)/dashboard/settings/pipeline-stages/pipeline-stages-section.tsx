@@ -108,12 +108,9 @@ export function PipelineStagesSection(): React.ReactElement {
       () => apiFetch(`${path(target.kind)}/${target.id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
       "Failed to rename",
     );
-    if (ok !== null) {
-      success(target.kind === "pipeline" ? "Pipeline renamed" : "Stage renamed");
-      setRenaming(null);
-    } else {
-      editDone.current = false;
-    }
+    if (ok !== null) success(target.kind === "pipeline" ? "Pipeline renamed" : "Stage renamed");
+    // Close on failure too, so the blur that follows doesn't send the same request again.
+    setRenaming(null);
   }
 
   async function move(kind: Target["kind"], id: string, by: -1 | 1): Promise<void> {

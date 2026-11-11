@@ -63,7 +63,7 @@ describe("PursuitStagesService against Postgres", () => {
   // removeStage and removePipeline also take Postgres advisory locks here, so this checks that SQL runs.
   it("removing a stage, then a pipeline, moves its contracts (won ones too)", async () => {
     const orgId = await org();
-    await seedDefaultPipelines(prisma, orgId);
+    await prisma.$transaction((tx) => seedDefaultPipelines(tx, orgId));
     await service.createPipeline({ name: "Bids" }, orgId);
     const [commercial, bids] = await service.findAll(orgId);
     const gov = await service.createStage({ pipelineId: bids.id, name: "Questions submitted" }, orgId);
@@ -80,5 +80,15 @@ describe("PursuitStagesService against Postgres", () => {
     expect(await placeOf(bidWaiting)).toEqual([commercial.id, "found"]);
     expect((await service.findAll(orgId)).map((p) => p.name)).toEqual(["Sales"]);
     expect(await prisma.pursuitStage.count({ where: { pipelineId: bids.id } })).toBe(0);
+  });
+
+  it("concurrent seeds and lazy lookups leave exactly one Sales pipeline", async () => {
+    const orgId = await org();
+    await Promise.all([
+      prisma.$transaction((tx) => seedDefaultPipelines(tx, orgId)),
+      prisma.$transaction((tx) => seedDefaultPipelines(tx, orgId)),
+      service.pipelineFor(orgId, null),
+    ]);
+    expect((await service.findAll(orgId)).map((p) => p.name)).toEqual(["Sales"]);
   });
 });

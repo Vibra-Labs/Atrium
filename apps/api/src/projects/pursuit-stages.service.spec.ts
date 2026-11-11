@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import { PursuitStagesService } from "./pursuit-stages.service";
+import { PursuitStagesService, seedDefaultPipelines } from "./pursuit-stages.service";
 
 interface Pipeline {
   id: string;
@@ -220,6 +220,26 @@ describe("PursuitStagesService", () => {
       await expect(service.removePipeline("com", "com", ORG)).rejects.toThrow("A workspace needs at least one pipeline");
     });
 
+    it("removePipeline matches stages by name, ignoring case and slug", async () => {
+      // Same slug, different name: not the same stage. Different slug, same name (any case): is.
+      const bid = stages.filter((s) => s.pipelineId === "bid");
+      bid[1].name = "Sent";
+      bid[2].name = "WAITING on decision";
+      pursuits.push(pursuit("p1", "bid", "proposal_sent"), pursuit("p2", "bid", "waiting"));
+      stages.find((s) => s.id === "c3")!.slug = "pending";
+
+      await service.removePipeline("bid", "com", ORG);
+
+      expect(pursuits.map((p) => p.stage)).toEqual(["found", "pending"]);
+    });
+
+    it("pipeline writes take the workspace's pipeline lock", async () => {
+      await service.createPipeline({ name: "A" }, ORG);
+      await service.renamePipeline("bid", { name: "B" }, ORG);
+      await service.reorderPipelines({ ids: ["bid", "com", ...pipelines.filter((p) => p.name === "A").map((p) => p.id)] }, ORG);
+      expect(db.locks.filter((l) => l.endsWith(`|pursuit-pipelines:${ORG}`))).toHaveLength(3);
+    });
+
     it("pipelineFor gives the asked pipeline, the first for null, and rejects an unknown id", async () => {
       expect((await service.pipelineFor(ORG, "bid")).name).toBe("Bids");
       expect((await service.pipelineFor(ORG, null)).name).toBe("Commercial");
@@ -269,6 +289,22 @@ describe("PursuitStagesService", () => {
       }
     });
 
+    it("stage writes take the pipeline's stage lock", async () => {
+      await service.createStage({ pipelineId: "com", name: "Won it" }, ORG);
+      await service.renameStage("c1", { name: "Prospect" }, ORG);
+      await service.reorderStages({ pipelineId: "com", ids: ["c3", "c2", "c1", ...stages.filter((s) => s.name === "Won it").map((s) => s.id)] }, ORG);
+      expect(db.locks.filter((l) => l.endsWith("|pursuit-stages:com"))).toHaveLength(3);
+    });
+
+    it("reorderStages answers 400 when a stage is deleted mid-write", async () => {
+      db.pursuitStage.update = async () => {
+        throw Object.assign(new Error("gone"), { code: "P2025" });
+      };
+      await expect(service.reorderStages({ pipelineId: "com", ids: ["c1", "c2", "c3"] }, ORG)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
     it("removeStage moves that pipeline's contracts on the slug, any outcome; the first pipeline includes unassigned ones", async () => {
       pursuits.push(
         pursuit("p1", "com", "waiting"),
@@ -294,6 +330,30 @@ describe("PursuitStagesService", () => {
       await service.removeStage("b3", "b1", ORG);
       await service.removeStage("b2", "b1", ORG);
       await expect(service.removeStage("b1", "c1", ORG)).rejects.toThrow("A pipeline needs at least one stage");
+    });
+  });
+
+  describe("seedDefaultPipelines", () => {
+    it("takes the pipeline lock and does nothing when the workspace already has a pipeline", async () => {
+      await seedDefaultPipelines(db as never, ORG);
+      expect(pipelines.filter((p) => p.organizationId === ORG)).toHaveLength(2);
+      expect(db.locks[0]).toContain(`pursuit-pipelines:${ORG}`);
+
+      const p: Pipeline[] = [];
+      const empty = fakeDb(p, [], []);
+      await seedDefaultPipelines(empty as never, ORG);
+      await seedDefaultPipelines(empty as never, ORG);
+      expect(p.map((x) => x.name)).toEqual(["Sales"]);
+    });
+
+    it("pipelineFor seeds a workspace that has none, instead of rejecting", async () => {
+      const p: Pipeline[] = [];
+      const s: Stage[] = [];
+      const lazy = new PursuitStagesService(fakeDb(p, s, []) as never);
+      expect((await lazy.pipelineFor(ORG, null)).name).toBe("Sales");
+      expect(p).toHaveLength(1);
+      await expect(lazy.pipelineFor(ORG, "nope")).rejects.toThrow("Unknown pipeline");
+      expect(p).toHaveLength(1);
     });
   });
 

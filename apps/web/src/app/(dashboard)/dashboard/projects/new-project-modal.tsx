@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { track } from "@/lib/track";
+import { usePipelines } from "@/lib/pursuit";
+import type { Pipeline } from "@/lib/pursuit";
 import { KindPicker, Modal } from "./_pursuit/pursuit-ui";
 import type { NewKind } from "./_pursuit/pursuit-ui";
 
@@ -29,6 +31,9 @@ export function NewProjectModal({
   const [kind, setKind] = useState<NewKind>(initialKind);
   const [creating, setCreating] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+  const pipelines: Pipeline[] | null = usePipelines();
+  // Empty means the first pipeline, so the form works before pipelines load.
+  const [pipelineId, setPipelineId] = useState<string>("");
 
   async function handleCreate(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -38,7 +43,11 @@ export function NewProjectModal({
     try {
       const created = await apiFetch<CreatedProject>("/projects", {
         method: "POST",
-        body: JSON.stringify({ name, description, ...(kind === "pursuit" ? { potential: true } : {}) }),
+        body: JSON.stringify({
+          name,
+          description,
+          ...(kind === "pursuit" ? { potential: true, ...(pipelineId ? { pipelineId } : {}) } : {}),
+        }),
       });
       track("project_created", { source: "dashboard" });
       onCreated(created);
@@ -75,6 +84,20 @@ export function NewProjectModal({
           autoFocus
           className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]"
         />
+        {kind === "pursuit" && pipelines && pipelines.length > 1 && (
+          <select
+            aria-label="Pipeline"
+            value={pipelineId || pipelines[0].id}
+            onChange={(e) => setPipelineId(e.target.value)}
+            className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]"
+          >
+            {pipelines.map((pl) => (
+              <option key={pl.id} value={pl.id}>
+                {pl.name} pipeline
+              </option>
+            ))}
+          </select>
+        )}
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}

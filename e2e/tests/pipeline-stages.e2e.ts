@@ -138,6 +138,30 @@ test.describe("Pipelines and stages", () => {
     await context.close();
   });
 
+  test("pick the pipeline when creating a potential contract, and see it by the tracker", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "ps-create");
+    await addPipeline(page, "Government");
+    await addStage(page, "Government", "Questions submitted");
+
+    await page.goto(`${WEB}/dashboard`);
+    await page.getByRole("button", { name: "New Project" }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: /Potential contract/ }).click();
+    await dialog.getByPlaceholder("County RFP: records system").fill("Base housing");
+    await dialog.getByLabel("Pipeline").selectOption({ label: "Government pipeline" });
+    await dialog.getByRole("button", { name: "Create" }).click();
+
+    await expect(page).toHaveURL(/\/dashboard\/projects\/[^/?]+/, { timeout: 15000 });
+    // The pipeline is named next to the tracker, and that's where it's switched.
+    const pipeline = page.getByLabel("Pipeline");
+    await expect(pipeline.locator("option:checked")).toHaveText("Government");
+    await expect(stageButtons(page).filter({ hasText: "Questions submitted" })).toBeVisible();
+    await pipeline.selectOption({ label: "Sales" });
+    await expect(stageButtons(page).filter({ hasText: "Questions submitted" })).toHaveCount(0);
+    await expect(stageButtons(page).filter({ hasText: "Lead" })).toHaveAttribute("aria-pressed", "true");
+    await context.close();
+  });
+
   test("create, rename and delete a pipeline; its contracts move", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-pipes");
     const s = await openSettings(page);

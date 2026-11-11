@@ -33,6 +33,12 @@ export class CreateProjectDto {
   @IsBoolean()
   @IsOptional()
   potential?: boolean;
+
+  /** With `potential`: the pipeline to start in. Defaults to the workspace's first one. */
+  @IsString()
+  @MaxLength(64)
+  @IsOptional()
+  pipelineId?: string;
 }
 
 export class ClientProjectListQueryDto extends PaginationQueryDto {

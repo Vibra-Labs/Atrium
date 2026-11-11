@@ -156,17 +156,19 @@ export function PursuitPipeline({
 }) {
   const { error: showError } = useToast();
   const [reopening, setReopening] = useState<boolean>(false);
-  const stages = stagesFor(usePipelines(), p.pipelineId);
+  const pipelines = usePipelines();
+  const stages = stagesFor(pipelines, p.pipelineId);
 
-  async function setStage(stage: string): Promise<void> {
+  async function change(patch: PursuitPatch, failure: string): Promise<void> {
     try {
-      await updatePursuit(p.projectId, { stage });
+      await updatePursuit(p.projectId, patch);
       onChanged();
     } catch (err) {
       console.error(err);
-      showError(err instanceof Error ? err.message : "Failed to change the stage");
+      showError(err instanceof Error ? err.message : failure);
     }
   }
+  const setStage = (stage: string): Promise<void> => change({ stage }, "Failed to change the stage");
 
   if (p.outcome === "lost") {
     return (
@@ -193,7 +195,29 @@ export function PursuitPipeline({
   }
   return (
     <div className="space-y-2">
-      <p className="text-xs text-[var(--muted-foreground)]">Potential contract</p>
+      <div className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+        <span>Potential contract</span>
+        {/* With more than one pipeline, the name is the switcher. */}
+        {pipelines && pipelines.length > 1 && (
+          <>
+            <span aria-hidden>·</span>
+            <select
+              aria-label="Pipeline"
+              value={pipelineFor(pipelines, p.pipelineId)?.id ?? ""}
+              onChange={(e) => change({ pipelineId: e.target.value }, "Failed to change the pipeline")}
+              // A compact version of the app-wide dropdown arrow, so it reads as text.
+              style={{ backgroundPosition: "right center", backgroundSize: "0.75rem", paddingRight: "1rem" }}
+              className={`bg-transparent font-medium text-[var(--foreground)] cursor-pointer rounded hover:underline ${focusRing}`}
+            >
+              {pipelines.map((pl) => (
+                <option key={pl.id} value={pl.id}>
+                  {pl.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
       <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
         <div className="min-w-0 overflow-x-auto p-1.5 -m-1.5">
           <StageTracker
@@ -346,7 +370,6 @@ export function DealCard({
     }
   }
 
-  const pipelines = usePipelines();
   const postingLink: string | null = webLink(p.sourceUrl);
   const dateField = (key: "closeDate" | "nextStepAt" | "questionsDueAt", aria: string) => (
     <DateField ariaLabel={aria} value={p[key]} onSave={(v) => save({ [key]: v })} />
@@ -405,25 +428,6 @@ export function DealCard({
         )
       ) : (
         <>
-          {pipelines && pipelines.length > 1 && (
-            <div>
-              <label className={label} htmlFor={`pipeline-${p.projectId}`}>
-                Pipeline
-              </label>
-              <select
-                id={`pipeline-${p.projectId}`}
-                value={pipelineFor(pipelines, p.pipelineId)?.id ?? ""}
-                onChange={(e) => save({ pipelineId: e.target.value })}
-                className={input}
-              >
-                {pipelines.map((pl) => (
-                  <option key={pl.id} value={pl.id}>
-                    {pl.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <div>
             <label className={label}>{p.isBid ? "Bid due" : "Expected close"}</label>
             {dateField("closeDate", p.isBid ? "Bid due" : "Expected close")}

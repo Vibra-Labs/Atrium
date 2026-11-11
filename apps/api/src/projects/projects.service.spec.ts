@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { ProjectsService } from "./projects.service";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { PrismaService } from "../prisma/prisma.service";
 
 interface PrismaArgs {
@@ -681,6 +681,26 @@ describe("ProjectsService", () => {
         },
       });
       expect(data.potential).toBeUndefined();
+    });
+
+    it("create with a pipeline starts in that pipeline's first stage", async () => {
+      mockStages.pipelineFor.mockImplementationOnce(() =>
+        Promise.resolve({ id: "pl-2", name: "Government", stages: [{ slug: "identified", name: "Identified" }] }),
+      );
+      await service.create({ name: "County RFP", potential: true, pipelineId: "pl-2" }, "org-1");
+      const data = (mockPrisma.project.create.mock.calls.at(-1) as [PrismaArgs])[0].data!;
+      expect(mockStages.pipelineFor).toHaveBeenLastCalledWith("org-1", "pl-2");
+      expect((data.pursuit as { create: Record<string, unknown> }).create).toMatchObject({
+        pipelineId: "pl-2",
+        stage: "identified",
+      });
+    });
+
+    it("create with another workspace's pipeline is rejected", async () => {
+      mockStages.pipelineFor.mockImplementationOnce(() => Promise.reject(new BadRequestException("Unknown pipeline")));
+      await expect(service.create({ name: "x", potential: true, pipelineId: "theirs" }, "org-1")).rejects.toThrow(
+        "Unknown pipeline",
+      );
     });
 
     it("create without potential creates no pursuit", async () => {

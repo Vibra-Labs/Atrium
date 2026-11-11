@@ -56,9 +56,12 @@ export class ProjectsService implements OnApplicationBootstrap {
     private stages: PursuitStagesService,
   ) {}
 
-  /** Where a new potential contract starts: the first pipeline's first stage. */
-  private async startOfFirstPipeline(organizationId: string): Promise<{ pipelineId: string; stage: string }> {
-    const pipeline = await this.stages.pipelineFor(organizationId, null);
+  /** Where a new potential contract starts: the first stage of the given pipeline, or of the first one. */
+  private async startOfPipeline(
+    organizationId: string,
+    pipelineId: string | undefined,
+  ): Promise<{ pipelineId: string; stage: string }> {
+    const pipeline = await this.stages.pipelineFor(organizationId, pipelineId ?? null);
     return { pipelineId: pipeline.id, stage: pipeline.stages[0].slug };
   }
 
@@ -345,7 +348,7 @@ export class ProjectsService implements OnApplicationBootstrap {
   }
 
   async create(data: CreateProjectDto, organizationId: string) {
-    const { clientUserIds, startDate, endDate, potential, ...rest } = data;
+    const { clientUserIds, startDate, endDate, potential, pipelineId, ...rest } = data;
     if (potential && clientUserIds?.length) {
       throw new BadRequestException("Mark it won to give portal access");
     }
@@ -370,7 +373,7 @@ export class ProjectsService implements OnApplicationBootstrap {
               pursuit: {
                 create: {
                   organizationId,
-                  ...(await this.startOfFirstPipeline(organizationId)),
+                  ...(await this.startOfPipeline(organizationId, pipelineId)),
                   events: { create: { text: "Created as a potential contract" } },
                 },
               },

@@ -298,7 +298,7 @@ describe("PursuitStagesService", () => {
   });
 
   describe("seedMissing", () => {
-    it("gives a workspace with no pipelines the defaults, then files its contracts by the bid box", async () => {
+    it("gives a workspace with no pipelines the stock Sales pipeline and files its contracts there", async () => {
       const p: Pipeline[] = [];
       const s: Stage[] = [];
       const c: Pursuit[] = [pursuit("p1", null, "waiting", { isBid: true }), pursuit("p2", null, "found")];
@@ -307,14 +307,9 @@ describe("PursuitStagesService", () => {
       await seeded.seedMissing();
       await seeded.seedMissing();
 
-      expect(p.map((x) => [x.name, x.order])).toEqual([
-        ["Commercial", 0],
-        ["Bids", 1],
-      ]);
-      expect(s).toHaveLength(6);
-      const bids = p.find((x) => x.name === "Bids")!.id;
-      const commercial = p.find((x) => x.name === "Commercial")!.id;
-      expect(c.map((x) => x.pipelineId)).toEqual([bids, commercial]);
+      expect(p.map((x) => [x.name, x.order])).toEqual([["Sales", 0]]);
+      expect(s.map((x) => x.name)).toEqual(["Lead", "Proposal sent", "Waiting on decision"]);
+      expect(c.map((x) => x.pipelineId)).toEqual([p[0].id, p[0].id]);
     });
   });
 });

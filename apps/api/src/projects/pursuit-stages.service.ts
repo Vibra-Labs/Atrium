@@ -92,8 +92,8 @@ export class PursuitStagesService implements OnApplicationBootstrap {
   }
 
   /**
-   * Workspaces made before pipelines existed: gives them the defaults, then files their contracts
-   * (bid box ticked → Bids, else the first pipeline). Safe to run on every boot.
+   * Workspaces made before pipelines existed: gives them the stock pipeline, then files their
+   * contracts in the first pipeline. Safe to run on every boot.
    */
   async seedMissing(): Promise<void> {
     const orgs: { id: string }[] = await this.prisma.organization.findMany({
@@ -114,19 +114,14 @@ export class PursuitStagesService implements OnApplicationBootstrap {
       distinct: ["organizationId"],
     });
     for (const orgId of new Set(unfiled.map((p) => p.organizationId))) {
-      const pipelines: PursuitPipeline[] = await this.prisma.pursuitPipeline.findMany({
+      const first: PursuitPipeline | null = await this.prisma.pursuitPipeline.findFirst({
         where: { organizationId: orgId },
         orderBy: BY_ORDER,
       });
-      if (!pipelines.length) continue;
-      const bids: PursuitPipeline = pipelines.find((p) => p.name === "Bids") ?? pipelines[0];
-      await this.prisma.projectPursuit.updateMany({
-        where: { organizationId: orgId, pipelineId: null, isBid: true },
-        data: { pipelineId: bids.id },
-      });
+      if (!first) continue;
       await this.prisma.projectPursuit.updateMany({
         where: { organizationId: orgId, pipelineId: null },
-        data: { pipelineId: pipelines[0].id },
+        data: { pipelineId: first.id },
       });
     }
   }

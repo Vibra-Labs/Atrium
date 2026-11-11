@@ -82,8 +82,8 @@ export type ContactRating = (typeof CONTACT_RATINGS)[number];
 
 // Potential contracts: projects that aren't signed yet.
 // Each workspace has its own pipelines, each with its own editable stages.
-/** Every workspace starts with these pipelines, in this order; the first is where new contracts go. */
-export const DEFAULT_PURSUIT_PIPELINES: string[] = ["Commercial", "Bids"];
+/** Every workspace starts with this one pipeline; owners add more if they want them. */
+export const DEFAULT_PURSUIT_PIPELINES: string[] = ["Sales"];
 export const MAX_PURSUIT_PIPELINES = 10;
 /** A stage slug from the workspace's PursuitStage table. */
 export type PursuitStage = string;

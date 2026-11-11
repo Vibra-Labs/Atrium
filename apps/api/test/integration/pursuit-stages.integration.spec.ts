@@ -44,7 +44,7 @@ async function placeOf(projectId: string): Promise<[string | null, string]> {
 }
 
 describe("PursuitStagesService against Postgres", () => {
-  it("seedMissing gives an older workspace the default pipelines and files its contracts by the bid box", async () => {
+  it("seedMissing gives an older workspace the stock Sales pipeline and files its contracts there", async () => {
     const orgId = await org();
     const bid = await contract(orgId, null, "waiting", { isBid: true });
     const other = await contract(orgId, null, "found");
@@ -54,10 +54,9 @@ describe("PursuitStagesService against Postgres", () => {
 
     const pipelines = await service.findAll(orgId);
     expect(pipelines.map((p) => [p.name, p.stages.map((s) => s.name)])).toEqual([
-      ["Commercial", ["Lead", "Proposal sent", "Waiting on decision"]],
-      ["Bids", ["Lead", "Proposal sent", "Waiting on decision"]],
+      ["Sales", ["Lead", "Proposal sent", "Waiting on decision"]],
     ]);
-    expect(await placeOf(bid)).toEqual([pipelines[1].id, "waiting"]);
+    expect(await placeOf(bid)).toEqual([pipelines[0].id, "waiting"]);
     expect(await placeOf(other)).toEqual([pipelines[0].id, "found"]);
   });
 
@@ -65,6 +64,7 @@ describe("PursuitStagesService against Postgres", () => {
   it("removing a stage, then a pipeline, moves its contracts (won ones too)", async () => {
     const orgId = await org();
     await seedDefaultPipelines(prisma, orgId);
+    await service.createPipeline({ name: "Bids" }, orgId);
     const [commercial, bids] = await service.findAll(orgId);
     const gov = await service.createStage({ pipelineId: bids.id, name: "Questions submitted" }, orgId);
     const open = await contract(orgId, commercial.id, "waiting");
@@ -78,7 +78,7 @@ describe("PursuitStagesService against Postgres", () => {
     await service.removePipeline(bids.id, commercial.id, orgId);
     expect(await placeOf(won)).toEqual([commercial.id, "found"]);
     expect(await placeOf(bidWaiting)).toEqual([commercial.id, "found"]);
-    expect((await service.findAll(orgId)).map((p) => p.name)).toEqual(["Commercial"]);
+    expect((await service.findAll(orgId)).map((p) => p.name)).toEqual(["Sales"]);
     expect(await prisma.pursuitStage.count({ where: { pipelineId: bids.id } })).toBe(0);
   });
 });

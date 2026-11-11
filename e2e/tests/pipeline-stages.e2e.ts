@@ -30,6 +30,11 @@ async function pipelines(page: Page): Promise<Pipeline[]> {
   return (await res.json()) as Pipeline[];
 }
 
+async function addPipeline(page: Page, name: string): Promise<void> {
+  const res = await page.request.post(`${API}/pursuit-pipelines`, { data: { name }, headers: await headersFor(page) });
+  expect(res.ok()).toBe(true);
+}
+
 async function addStage(page: Page, pipelineName: string, name: string): Promise<void> {
   const pipelineId = (await pipelines(page)).find((p) => p.name === pipelineName)!.id;
   const res = await page.request.post(`${API}/pursuit-stages`, {
@@ -75,16 +80,17 @@ async function stageAction(s: Locator, stage: string, item: string): Promise<voi
 }
 
 test.describe("Pipelines and stages", () => {
-  test("a new workspace has Commercial and Bids, each with the three default stages", async ({ browser }) => {
+  test("a new workspace has one stock Sales pipeline with the three default stages", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-defaults");
-    const defaults = ["Lead", "Proposal sent", "Waiting on decision"];
-
     const s = await openSettings(page);
-    await expect(s.getByRole("tab")).toHaveText(["Commercial", "Bids"]);
-    await expect(s.getByRole("tab", { name: "Commercial" })).toHaveAttribute("aria-selected", "true");
-    await expect(steps(s)).toHaveText(defaults);
-    await s.getByRole("tab", { name: "Bids" }).click();
-    await expect(steps(s)).toHaveText(defaults);
+    await expect(s.getByRole("tab")).toHaveText(["Sales"]);
+    await expect(steps(s)).toHaveText(["Lead", "Proposal sent", "Waiting on decision"]);
+
+    // With one pipeline there's nothing to pick on a contract.
+    const id = await createPotential(page, "Kitchen remodel");
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    await expect(stageButtons(page).first()).toBeVisible();
+    await expect(page.getByLabel("Pipeline")).toHaveCount(0);
     await context.close();
   });
 
@@ -112,8 +118,9 @@ test.describe("Pipelines and stages", () => {
 
   test("a contract's Pipeline dropdown switches its stages; the bid box doesn't", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-bid");
+    await addPipeline(page, "Bids");
     await addStage(page, "Bids", "Questions submitted");
-    await addStage(page, "Commercial", "Verbal yes");
+    await addStage(page, "Sales", "Verbal yes");
     const id = await createPotential(page, "County RFP");
     await page.goto(`${WEB}/dashboard/projects/${id}`);
     await expect(stageButtons(page).filter({ hasText: "Verbal yes" })).toBeVisible();
@@ -137,7 +144,7 @@ test.describe("Pipelines and stages", () => {
     await s.getByRole("button", { name: "New pipeline" }).click();
     await s.getByLabel("New pipeline").fill("Government");
     await s.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(s.getByRole("tab")).toHaveText(["Commercial", "Bids", "Government"]);
+    await expect(s.getByRole("tab")).toHaveText(["Sales", "Government"]);
     await expect(s.getByRole("tab", { name: "Government" })).toHaveAttribute("aria-selected", "true");
     await expect(steps(s)).toHaveText(["Lead", "Proposal sent", "Waiting on decision"]);
 
@@ -160,13 +167,16 @@ test.describe("Pipelines and stages", () => {
     await s.getByRole("tab", { name: "Federal" }).click();
     await s.getByRole("menuitem", { name: "Delete" }).click();
     const dialog = page.getByRole("dialog", { name: /Delete .Federal/ });
-    await dialog.getByLabel("Move its contracts to").selectOption({ label: "Bids" });
+    await dialog.getByLabel("Move its contracts to").selectOption({ label: "Sales" });
     await dialog.getByRole("button", { name: "Delete pipeline" }).click();
-    await expect(s.getByRole("tab")).toHaveText(["Commercial", "Bids"]);
+    await expect(s.getByRole("tab")).toHaveText(["Sales"]);
 
+    // Back in Sales, on the same stage.
     await page.goto(`${WEB}/dashboard/projects/${id}`);
-    await expect(page.getByLabel("Pipeline")).toHaveValue((await pipelines(page)).find((p) => p.name === "Bids")!.id);
     await expect(stageButtons(page).filter({ hasText: "Waiting on decision" })).toHaveAttribute("aria-pressed", "true");
+    const res = await page.request.get(`${API}/projects/${id}`);
+    const sales = (await pipelines(page))[0].id;
+    expect(((await res.json()) as { pursuit: { pipelineId: string } }).pursuit.pipelineId).toBe(sales);
     await context.close();
   });
 
@@ -219,6 +229,7 @@ test.describe("Pipelines and stages", () => {
 
   test("removing a stage moves its contracts", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-remove");
+    await addPipeline(page, "Bids");
     const id = await createPotential(page, "Clinic signage");
     await setStage(page, id, "waiting");
 

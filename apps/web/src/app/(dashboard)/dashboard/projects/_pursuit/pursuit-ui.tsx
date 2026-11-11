@@ -27,6 +27,7 @@ import {
   withCommas,
 } from "@/lib/pursuit";
 import type { ContactRef, PipelineRow, ProjectContactRow, Pursuit, PursuitPatch } from "@/lib/pursuit";
+import { StageTracker, TrackerDot } from "@/components/stage-tracker";
 import { CostSection, CurrencyInput, input, label, readValue } from "./costs-ui";
 
 /** Keyboard focus shows a ring in the brand color instead of the browser's outline. */
@@ -190,37 +191,33 @@ export function PursuitPipeline({
     );
   }
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <span className="text-xs text-[var(--muted-foreground)] mr-1">Potential contract</span>
-      {stages.map(({ slug, name }) => (
+    <div className="space-y-2">
+      <p className="text-xs text-[var(--muted-foreground)]">Potential contract</p>
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+        <div className="min-w-0 overflow-x-auto p-1.5 -m-1.5">
+          <StageTracker
+            steps={stages.map((s) => ({ key: s.slug, label: s.name }))}
+            currentKey={p.stage}
+            onSelect={(slug) => p.stage !== slug && setStage(slug)}
+            stepTestId="pursuit-stage"
+            end={
+              <button onClick={onWon} className={`rounded-lg group ${focusRing}`}>
+                <TrackerDot
+                  dot={<Trophy size={13} aria-hidden />}
+                  label={<span className="text-green-700 dark:text-green-400 font-medium">Won</span>}
+                  dotClassName="border-green-600/60 text-green-600 group-hover:bg-green-600/10"
+                />
+              </button>
+            }
+          />
+        </div>
         <button
-          key={slug}
-          data-testid="pursuit-stage"
-          aria-pressed={p.stage === slug}
-          onClick={() => p.stage !== slug && setStage(slug)}
-          className={`px-2.5 py-1 rounded-full border border-transparent text-xs font-medium transition-all ${focusRing} ${
-            p.stage === slug
-              ? "bg-amber-500 text-white cursor-default"
-              : "bg-[var(--muted)] text-[var(--foreground)] cursor-pointer hover:ring-1 hover:ring-amber-500/60"
-          }`}
+          onClick={onLost}
+          className={`self-start px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] ${focusRing}`}
         >
-          {name}
+          Lost
         </button>
-      ))}
-      <span className="w-px h-5 bg-[var(--border)] mx-1" />
-      {/* Outcomes are actions, so they're outlined; only the current stage is filled. */}
-      <button
-        onClick={onWon}
-        className={`px-2.5 py-1 rounded-full text-xs font-medium border border-green-600/60 text-green-700 dark:text-green-400 hover:bg-green-600/10 flex items-center gap-1 ${focusRing}`}
-      >
-        <Trophy size={12} /> Won
-      </button>
-      <button
-        onClick={onLost}
-        className={`px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] ${focusRing}`}
-      >
-        Lost
-      </button>
+      </div>
     </div>
   );
 }

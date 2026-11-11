@@ -1,34 +1,39 @@
 // Potential contracts: projects that aren't signed yet.
 
-import { costSummary, pipelineOf, stageLabel } from "@atrium/shared";
-import type { CostSummary, PursuitOutcome, PursuitPipeline, PursuitStage } from "@atrium/shared";
+import { costSummary, pipelineFor, stageLabel } from "@atrium/shared";
+import type { CostSummary, PursuitOutcome, PursuitStage } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
 import { useCachedApi } from "@/lib/cached";
 
-export { costSummary, stageLabel };
+export { costSummary, pipelineFor, stageLabel };
 export type { CostSummary };
-export type { PursuitOutcome, PursuitPipeline, PursuitStage };
+export type { PursuitOutcome, PursuitStage };
 
-/** A stage in one of the workspace's two pipelines (from GET /pursuit-stages). */
 export interface PipelineStage {
   id: string;
-  pipeline: PursuitPipeline;
   name: string;
   slug: string;
   order: number;
 }
 
-export const PIPELINE_STAGES_PATH = "/pursuit-stages";
-
-/** Both pipelines' stages, cached; null while loading. Call invalidate(PIPELINE_STAGES_PATH) after a change. */
-export function usePipelineStages(): PipelineStage[] | null {
-  return useCachedApi<PipelineStage[]>(PIPELINE_STAGES_PATH);
+/** One of the workspace's pipelines with its stages (from GET /pursuit-pipelines). */
+export interface Pipeline {
+  id: string;
+  name: string;
+  order: number;
+  stages: PipelineStage[];
 }
 
-/** The stages a contract can be in: its pipeline's, in order. */
-export function stagesFor(stages: PipelineStage[] | null, isBid: boolean): PipelineStage[] {
-  const pipeline: PursuitPipeline = pipelineOf(isBid);
-  return (stages ?? []).filter((s) => s.pipeline === pipeline).sort((a, b) => a.order - b.order);
+export const PIPELINES_PATH = "/pursuit-pipelines";
+
+/** The workspace's pipelines in order, cached; null while loading. Call invalidate(PIPELINES_PATH) after a change. */
+export function usePipelines(): Pipeline[] | null {
+  return useCachedApi<Pipeline[]>(PIPELINES_PATH);
+}
+
+/** The stages a contract can be in: its pipeline's (the first for an unassigned one), in order. */
+export function stagesFor(pipelines: Pipeline[] | null, pipelineId: string | null): PipelineStage[] {
+  return [...(pipelineFor(pipelines, pipelineId)?.stages ?? [])].sort((a, b) => a.order - b.order);
 }
 
 export interface PursuitEvent {
@@ -39,6 +44,7 @@ export interface PursuitEvent {
 
 export interface Pursuit {
   projectId: string;
+  pipelineId: string | null;
   stage: PursuitStage;
   outcome: PursuitOutcome;
   lostReason: string | null;
@@ -78,6 +84,7 @@ export interface ContactRef {
 export interface PipelineRow {
   projectId: string;
   name: string;
+  pipelineId: string | null;
   stage: PursuitStage;
   valueCents: number | null;
   closeDate: string | null;
@@ -90,6 +97,7 @@ export interface PipelineRow {
 export type PursuitPatch = Partial<
   Pick<
     Pursuit,
+    | "pipelineId"
     | "stage"
     | "valueCents"
     | "closeDate"

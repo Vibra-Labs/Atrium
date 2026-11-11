@@ -134,7 +134,7 @@ export function projectTools(deps: {
     defineTool({
       name: "list_pipeline_stages",
       description:
-        "Lists the workspace's potential-contract stages for both pipelines: bid (contracts marked isBid) and commercial. Use a stage's slug with update_potential_contract.",
+        "Lists the workspace's potential-contract pipelines, first (the default for new contracts) first, each with its stages in order. Use a pipeline's id and a stage's slug with update_potential_contract.",
       inputSchema: z.object({}),
       handler: async (_input, actor) => stages.findAll(actor.organization.id),
     }),
@@ -144,16 +144,17 @@ export function projectTools(deps: {
         "Updates deal fields on an open potential contract. Only the fields you pass change; null clears one. Values are in cents.",
       inputSchema: z.object({
         projectId: z.string(),
-        stage: z
+        pipelineId: z
           .string()
           .max(64)
           .optional()
-          .describe("A stage slug from list_pipeline_stages, in the contract's pipeline (bid when isBid, else commercial)"),
+          .describe("Move it to another pipeline (id from list_pipeline_stages); keeps the stage if that pipeline has it"),
+        stage: z.string().max(64).optional().describe("A stage slug from list_pipeline_stages, in the contract's pipeline"),
         valueCents: z.number().int().min(0).max(MAX_CENTS).nullable().optional(),
         closeDate: nullableDate.describe("Expected close, or bid due when isBid"),
         nextStep: z.string().max(500).nullable().optional(),
         nextStepAt: nullableDate,
-        isBid: z.boolean().optional().describe("A formal bid (RFP/RFQ)"),
+        isBid: z.boolean().optional().describe("A formal bid (RFP/RFQ): shows the solicitation fields"),
         solicitationNumber: z.string().max(100).nullable().optional(),
         questionsDueAt: nullableDate,
         sourceUrl: z.url({ protocol: /^https?$/ }).max(2000).nullable().optional(),

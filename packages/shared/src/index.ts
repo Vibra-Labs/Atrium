@@ -81,31 +81,35 @@ export const CONTACT_RATINGS = ["hot", "warm", "cold"] as const;
 export type ContactRating = (typeof CONTACT_RATINGS)[number];
 
 // Potential contracts: projects that aren't signed yet.
-// Each workspace has two pipelines with their own editable stages; a contract's pipeline follows its bid checkbox.
-export const PURSUIT_PIPELINES = ["bid", "commercial"] as const;
-export type PursuitPipeline = (typeof PURSUIT_PIPELINES)[number];
-export const PURSUIT_PIPELINE_LABELS: Record<PursuitPipeline, string> = { bid: "Bids", commercial: "Commercial" };
-export function pipelineOf(isBid: boolean): PursuitPipeline {
-  return isBid ? "bid" : "commercial";
-}
+// Each workspace has its own pipelines, each with its own editable stages.
+/** Every workspace starts with these pipelines, in this order; the first is where new contracts go. */
+export const DEFAULT_PURSUIT_PIPELINES: string[] = ["Commercial", "Bids"];
+export const MAX_PURSUIT_PIPELINES = 10;
 /** A stage slug from the workspace's PursuitStage table. */
 export type PursuitStage = string;
-/** Seeded into both pipelines of every workspace. */
+/** Seeded into every new pipeline. */
 export const DEFAULT_PURSUIT_STAGES: { slug: string; name: string }[] = [
   { slug: "found", name: "Lead" },
   { slug: "proposal_sent", name: "Proposal sent" },
   { slug: "waiting", name: "Waiting on decision" },
 ];
 export const MAX_PURSUIT_STAGES = 10;
-/** A stage's name for a contract, by its pipeline and slug; the slug when the stage is unknown. */
-export function stageLabel(
-  stages: readonly { pipeline: string; slug: string; name: string }[] | null,
-  isBid: boolean,
-  slug: string,
-): string {
-  const pipeline: PursuitPipeline = pipelineOf(isBid);
-  return stages?.find((s) => s.pipeline === pipeline && s.slug === slug)?.name ?? slug;
+
+interface PipelineLike {
+  id: string;
+  stages: readonly { slug: string; name: string }[];
 }
+
+/** A contract's pipeline; null (not assigned yet) or unknown means the first one. */
+export function pipelineFor<T extends PipelineLike>(pipelines: readonly T[] | null, pipelineId: string | null): T | null {
+  return pipelines?.find((p) => p.id === pipelineId) ?? pipelines?.[0] ?? null;
+}
+
+/** A stage's name for a contract, by its pipeline and slug; the slug when the stage is unknown. */
+export function stageLabel(pipelines: readonly PipelineLike[] | null, pipelineId: string | null, slug: string): string {
+  return pipelineFor(pipelines, pipelineId)?.stages.find((s) => s.slug === slug)?.name ?? slug;
+}
+
 export const PURSUIT_OUTCOMES = ["open", "won", "lost"] as const;
 export type PursuitOutcome = (typeof PURSUIT_OUTCOMES)[number];
 

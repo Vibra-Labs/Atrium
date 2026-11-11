@@ -16,12 +16,13 @@ import {
   formatDay,
   isPast,
   losePursuit,
+  pipelineFor,
   stageLabel,
   stagesFor,
   toCents,
   toDay,
   updatePursuit,
-  usePipelineStages,
+  usePipelines,
   winPursuit,
   webLink,
   withCommas,
@@ -109,9 +110,9 @@ export function KindPicker({ value, onChange }: { value: NewKind; onChange: (k: 
 
 export function PursuitBadge({ p }: { p: Pursuit }) {
   const money = useMoney();
-  const stages = usePipelineStages();
+  const pipelines = usePipelines();
   if (p.outcome === "won") return null;
-  const text: string = p.outcome === "lost" ? "Lost" : stageLabel(stages, p.isBid, p.stage);
+  const text: string = p.outcome === "lost" ? "Lost" : stageLabel(pipelines, p.pipelineId, p.stage);
   return (
     <div className="flex flex-col items-end gap-1 shrink-0">
       <span
@@ -155,7 +156,7 @@ export function PursuitPipeline({
 }) {
   const { error: showError } = useToast();
   const [reopening, setReopening] = useState<boolean>(false);
-  const stages = stagesFor(usePipelineStages(), p.isBid);
+  const stages = stagesFor(usePipelines(), p.pipelineId);
 
   async function setStage(stage: string): Promise<void> {
     try {
@@ -345,6 +346,7 @@ export function DealCard({
     }
   }
 
+  const pipelines = usePipelines();
   const postingLink: string | null = webLink(p.sourceUrl);
   const dateField = (key: "closeDate" | "nextStepAt" | "questionsDueAt", aria: string) => (
     <DateField ariaLabel={aria} value={p[key]} onSave={(v) => save({ [key]: v })} />
@@ -403,6 +405,25 @@ export function DealCard({
         )
       ) : (
         <>
+          {pipelines && pipelines.length > 1 && (
+            <div>
+              <label className={label} htmlFor={`pipeline-${p.projectId}`}>
+                Pipeline
+              </label>
+              <select
+                id={`pipeline-${p.projectId}`}
+                value={pipelineFor(pipelines, p.pipelineId)?.id ?? ""}
+                onChange={(e) => save({ pipelineId: e.target.value })}
+                className={input}
+              >
+                {pipelines.map((pl) => (
+                  <option key={pl.id} value={pl.id}>
+                    {pl.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className={label}>{p.isBid ? "Bid due" : "Expected close"}</label>
             {dateField("closeDate", p.isBid ? "Bid due" : "Expected close")}

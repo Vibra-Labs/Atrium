@@ -1,51 +1,56 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Pencil, Plus, Trash2, Trophy } from "lucide-react";
-import { MAX_PURSUIT_STAGES, PURSUIT_PIPELINE_LABELS, PURSUIT_PIPELINES } from "@atrium/shared";
+import { ArrowLeft, ArrowRight, ChevronDown, Pencil, Plus, Trash2, Trophy } from "lucide-react";
+import { MAX_PURSUIT_PIPELINES, MAX_PURSUIT_STAGES } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
 import { invalidate } from "@/lib/cached";
 import { useToast } from "@/components/toast";
 import { StageTracker, TrackerDot } from "@/components/stage-tracker";
 import type { TrackerStep } from "@/components/stage-tracker";
-import { PIPELINE_STAGES_PATH, stagesFor, usePipelineStages } from "@/lib/pursuit";
-import type { PipelineStage, PursuitPipeline } from "@/lib/pursuit";
+import { PIPELINES_PATH, pipelineFor, stagesFor, usePipelines } from "@/lib/pursuit";
+import type { Pipeline, PipelineStage } from "@/lib/pursuit";
 
 const inputClass =
   "px-2 py-1 border border-[var(--border)] rounded-md bg-[var(--background)] text-xs outline-none focus:ring-1 focus:ring-[var(--primary)]";
+const menuClass =
+  "absolute top-full mt-1 w-40 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-20 overflow-hidden py-1 flex flex-col";
 const menuItem =
   "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-[var(--muted)] disabled:opacity-40 disabled:hover:bg-transparent";
 
+/** What the open menu, rename box or delete dialog is for. */
+type Target = { kind: "pipeline" | "stage"; id: string };
+type Deleting = Target & { name: string; options: { id: string; name: string }[] };
+
 /**
- * Settings → Workspace: the stages of the Bids and Commercial pipelines, shown as a tracker.
- * Like Linear's workflow settings, stages are edited in place: click one for its menu.
+ * Settings → Workspace: the workspace's pipelines, each shown as a tracker of its stages.
+ * Like Linear's workflow settings, everything is edited in place: click a pipeline or a stage for its menu.
  */
 export function PipelineStagesSection(): React.ReactElement {
   const { success, error: showError } = useToast();
-  const all: PipelineStage[] | null = usePipelineStages();
-  const [pipeline, setPipeline] = useState<PursuitPipeline>("commercial");
-  const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const pipelines: Pipeline[] | null = usePipelines();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<Target | null>(null);
+  const [renaming, setRenaming] = useState<Target | null>(null);
   const [editName, setEditName] = useState<string>("");
-  const [adding, setAdding] = useState<boolean>(false);
+  const [adding, setAdding] = useState<"pipeline" | "stage" | null>(null);
   const [newName, setNewName] = useState<string>("");
-  const [deleting, setDeleting] = useState<PipelineStage | null>(null);
+  const [deleting, setDeleting] = useState<Deleting | null>(null);
   const [moveTo, setMoveTo] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
   // True once the current edit is committed or cancelled, so the blur that
   // follows Enter/Escape (input unmount) does not save again.
   const editDone = useRef<boolean>(false);
+  const editorRef = useRef<HTMLDivElement>(null);
 
-  const trackerRef = useRef<HTMLDivElement>(null);
-
-  // Clicking outside the tracker, or Esc, closes an open stage menu.
+  // Clicking outside the editor, or Esc, closes an open menu.
   useEffect(() => {
-    if (!menuFor) return;
+    if (!menu) return;
     const onDown = (e: MouseEvent): void => {
-      if (!trackerRef.current?.contains(e.target as Node)) setMenuFor(null);
+      if (!editorRef.current?.contains(e.target as Node)) setMenu(null);
     };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setMenuFor(null);
+      if (e.key === "Escape") setMenu(null);
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -53,16 +58,26 @@ export function PipelineStagesSection(): React.ReactElement {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [menuFor]);
+  }, [menu]);
 
-  const stages: PipelineStage[] = stagesFor(all, pipeline === "bid");
-  const byId = (id: string): PipelineStage => stages.find((s) => s.id === id)!;
+  const list: Pipeline[] = pipelines ?? [];
+  const pipeline: Pipeline | null = pipelineFor(pipelines, selectedId);
+  const stages: PipelineStage[] = stagesFor(pipelines, pipeline?.id ?? null);
+  const isOpen = (kind: Target["kind"], id: string): boolean => menu?.kind === kind && menu.id === id;
+  const isRenaming = (kind: Target["kind"], id: string): boolean => renaming?.kind === kind && renaming.id === id;
+
+  function reset(): void {
+    setMenu(null);
+    setRenaming(null);
+    setAdding(null);
+    setNewName("");
+  }
 
   async function run<T>(action: () => Promise<T>, failure: string): Promise<T | null> {
     setBusy(true);
     try {
       const result: T = await action();
-      invalidate(PIPELINE_STAGES_PATH);
+      invalidate(PIPELINES_PATH);
       return result;
     } catch (err) {
       console.error(err);
@@ -73,44 +88,59 @@ export function PipelineStagesSection(): React.ReactElement {
     }
   }
 
-  async function rename(stage: PipelineStage): Promise<void> {
+  const path = (kind: Target["kind"]): string => (kind === "pipeline" ? "/pursuit-pipelines" : "/pursuit-stages");
+
+  function startRename(target: Target, name: string): void {
+    editDone.current = false;
+    setEditName(name);
+    setRenaming(target);
+  }
+
+  async function rename(target: Target, current: string): Promise<void> {
     if (editDone.current) return;
     editDone.current = true;
     const name: string = editName.trim();
-    if (!name || name === stage.name) {
-      setRenamingId(null);
+    if (!name || name === current) {
+      setRenaming(null);
       return;
     }
     const ok = await run(
-      () => apiFetch(`/pursuit-stages/${stage.id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
-      "Failed to rename stage",
+      () => apiFetch(`${path(target.kind)}/${target.id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+      "Failed to rename",
     );
     if (ok !== null) {
-      success("Stage renamed");
-      setRenamingId(null);
+      success(target.kind === "pipeline" ? "Pipeline renamed" : "Stage renamed");
+      setRenaming(null);
     } else {
       editDone.current = false;
     }
   }
 
-  async function move(stage: PipelineStage, by: -1 | 1): Promise<void> {
-    const ids: string[] = stages.map((s) => s.id);
-    const i: number = ids.indexOf(stage.id);
+  async function move(kind: Target["kind"], id: string, by: -1 | 1): Promise<void> {
+    const ids: string[] = (kind === "pipeline" ? list : stages).map((x) => x.id);
+    const i: number = ids.indexOf(id);
     [ids[i], ids[i + by]] = [ids[i + by], ids[i]];
-    await run(
-      () => apiFetch("/pursuit-stages/order", { method: "PUT", body: JSON.stringify({ pipeline, ids }) }),
-      "Failed to reorder stages",
-    );
+    const body = kind === "pipeline" ? { ids } : { pipelineId: pipeline?.id, ids };
+    await run(() => apiFetch(`${path(kind)}/order`, { method: "PUT", body: JSON.stringify(body) }), "Failed to reorder");
+  }
+
+  function startDelete(target: Target, name: string): void {
+    const options = (target.kind === "pipeline" ? list : stages)
+      .filter((x) => x.id !== target.id)
+      .map((x) => ({ id: x.id, name: x.name }));
+    setDeleting({ ...target, name, options });
+    setMoveTo(options[0]?.id ?? "");
   }
 
   async function remove(): Promise<void> {
     if (!deleting) return;
     const ok = await run(
-      () => apiFetch(`/pursuit-stages/${deleting.id}?moveTo=${encodeURIComponent(moveTo)}`, { method: "DELETE" }),
-      "Failed to delete stage",
+      () => apiFetch(`${path(deleting.kind)}/${deleting.id}?moveTo=${encodeURIComponent(moveTo)}`, { method: "DELETE" }),
+      "Failed to delete",
     );
     if (ok !== null) {
-      success("Stage deleted");
+      success(deleting.kind === "pipeline" ? "Pipeline deleted" : "Stage deleted");
+      if (deleting.kind === "pipeline") setSelectedId(moveTo);
       setDeleting(null);
     }
   }
@@ -118,86 +148,52 @@ export function PipelineStagesSection(): React.ReactElement {
   async function add(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     const name: string = newName.trim();
-    if (!name) return;
+    if (!name || !adding) return;
+    const body = adding === "pipeline" ? { name } : { pipelineId: pipeline?.id, name };
     const created = await run(
-      () => apiFetch<PipelineStage>("/pursuit-stages", { method: "POST", body: JSON.stringify({ pipeline, name }) }),
-      "Failed to add stage",
+      () => apiFetch<{ id: string }>(path(adding), { method: "POST", body: JSON.stringify(body) }),
+      "Failed to add",
     );
     if (created) {
+      if (adding === "pipeline") setSelectedId(created.id);
       setNewName("");
-      setAdding(false);
+      setAdding(null);
     }
   }
 
-  function labelFor(step: TrackerStep): React.ReactNode {
-    if (renamingId !== step.key) return step.label;
-    const stage: PipelineStage = byId(step.key);
-    return (
-      <input
-        aria-label={`Rename ${stage.name}`}
-        value={editName}
-        maxLength={40}
-        autoFocus
-        onChange={(e) => setEditName(e.target.value)}
-        onBlur={() => rename(stage)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") rename(stage);
-          if (e.key === "Escape") {
-            editDone.current = true;
-            setRenamingId(null);
-          }
-        }}
-        className={`${inputClass} w-28`}
-      />
-    );
-  }
-
-  /** The menu under a clicked stage. */
-  function actionsFor(step: TrackerStep): React.ReactNode {
-    if (menuFor !== step.key) return null;
-    const stage: PipelineStage = byId(step.key);
-    const i: number = stages.indexOf(stage);
+  /** Rename / Move earlier / Move later / Delete, under whatever was clicked. */
+  function actionMenu(target: Target, name: string, index: number, count: number, align: string): React.ReactNode {
     const pick = (action: () => void) => () => {
-      setMenuFor(null);
+      setMenu(null);
       action();
     };
+    const noun: string = target.kind === "pipeline" ? "pipeline" : "stage";
     return (
-      <div
-        role="menu"
-        aria-label={`${stage.name} actions`}
-        className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-1 w-40 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg z-20 overflow-hidden py-1 flex flex-col"
-      >
-        <button
-          role="menuitem"
-          autoFocus
-          onClick={pick(() => {
-            editDone.current = false;
-            setEditName(stage.name);
-            setRenamingId(stage.id);
-          })}
-          className={menuItem}
-        >
+      <div role="menu" aria-label={`${name} actions`} className={`${menuClass} ${align}`}>
+        <button role="menuitem" autoFocus onClick={pick(() => startRename(target, name))} className={menuItem}>
           <Pencil size={13} /> Rename
         </button>
-        <button role="menuitem" disabled={busy || i === 0} onClick={pick(() => move(stage, -1))} className={menuItem}>
+        <button
+          role="menuitem"
+          disabled={busy || index === 0}
+          onClick={pick(() => move(target.kind, target.id, -1))}
+          className={menuItem}
+        >
           <ArrowLeft size={13} /> Move earlier
         </button>
         <button
           role="menuitem"
-          disabled={busy || i === stages.length - 1}
-          onClick={pick(() => move(stage, 1))}
+          disabled={busy || index === count - 1}
+          onClick={pick(() => move(target.kind, target.id, 1))}
           className={menuItem}
         >
           <ArrowRight size={13} /> Move later
         </button>
         <button
           role="menuitem"
-          disabled={stages.length <= 1}
-          title={stages.length <= 1 ? "A pipeline needs at least one stage" : undefined}
-          onClick={pick(() => {
-            setDeleting(stage);
-            setMoveTo(stages.find((s) => s.id !== stage.id)?.id ?? "");
-          })}
+          disabled={count <= 1}
+          title={count <= 1 ? `You need at least one ${noun}` : undefined}
+          onClick={pick(() => startDelete(target, name))}
           className={`${menuItem} text-red-600`}
         >
           <Trash2 size={13} /> Delete
@@ -206,95 +202,177 @@ export function PipelineStagesSection(): React.ReactElement {
     );
   }
 
+  function renameBox(target: Target, current: string, width: string): React.ReactNode {
+    return (
+      <input
+        aria-label={`Rename ${current}`}
+        value={editName}
+        maxLength={40}
+        autoFocus
+        onChange={(e) => setEditName(e.target.value)}
+        onBlur={() => rename(target, current)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") rename(target, current);
+          if (e.key === "Escape") {
+            editDone.current = true;
+            setRenaming(null);
+          }
+        }}
+        className={`${inputClass} ${width}`}
+      />
+    );
+  }
+
+  function addForm(kind: "pipeline" | "stage"): React.ReactNode {
+    return (
+      <form onSubmit={add} className="flex items-center gap-1.5">
+        <input
+          aria-label={kind === "pipeline" ? "New pipeline" : "New stage"}
+          placeholder={kind === "pipeline" ? "Pipeline name" : "Stage name"}
+          value={newName}
+          maxLength={40}
+          autoFocus
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && reset()}
+          className={`${inputClass} w-36`}
+        />
+        <button
+          type="submit"
+          disabled={busy || !newName.trim()}
+          className="px-2.5 py-1 bg-[var(--primary)] text-white rounded-md text-xs disabled:opacity-40"
+        >
+          Add
+        </button>
+      </form>
+    );
+  }
+
+  const ghostBtn =
+    "inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]";
+
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold">Pipeline stages</h2>
+        <h2 className="text-base font-semibold">Pipelines</h2>
         <p className="text-sm text-[var(--muted-foreground)] mt-0.5 max-w-xl">
-          The steps a potential contract moves through before it&apos;s won or lost. Bids are contracts marked as a
-          bid (RFP/RFQ); everything else is Commercial. Click a stage to rename, move or delete it.
+          The steps a potential contract moves through before it&apos;s won or lost. Set up a pipeline for each kind of
+          work; new contracts start in the first one. Click a pipeline or a stage to rename, move or delete it.
         </p>
       </div>
 
-      <div role="tablist" aria-label="Pipeline" className="inline-flex rounded-lg border border-[var(--border)] p-0.5">
-        {PURSUIT_PIPELINES.map((p) => (
-          <button
-            key={p}
-            role="tab"
-            aria-selected={pipeline === p}
-            onClick={() => {
-              setPipeline(p);
-              setMenuFor(null);
-              setRenamingId(null);
-              setAdding(false);
-            }}
-            className={`px-3 py-1 rounded-md text-sm ${
-              pipeline === p ? "bg-[var(--muted)] font-medium" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            }`}
-          >
-            {PURSUIT_PIPELINE_LABELS[p]}
-          </button>
-        ))}
-      </div>
-
-      {all && (
-        <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
-          {/* Extra room below so the ⋯ menus, which open under their stage, aren't clipped. */}
-          <div ref={trackerRef} className="min-w-0 overflow-x-auto p-1.5 -m-1.5 pb-44 -mb-44">
-            <StageTracker
-              steps={stages.map((s) => ({ key: s.id, label: s.name }))}
-              selectedKey={menuFor}
-              editingKey={renamingId}
-              onSelect={(id) => setMenuFor(menuFor === id ? null : id)}
-              stepTestId="pipeline-stage-step"
-              labelFor={labelFor}
-              actionsFor={actionsFor}
-              end={
-                <span title="Won and Lost always come last">
-                  <TrackerDot
-                    dot={<Trophy size={13} aria-hidden />}
-                    label={<span className="text-[var(--muted-foreground)]">Won</span>}
-                    dotClassName="border-dashed border-green-600/60 text-green-600"
-                  />
-                </span>
-              }
-            />
-          </div>
-          {stages.length < MAX_PURSUIT_STAGES &&
-            (adding ? (
-              <form onSubmit={add} className="flex items-center gap-1.5 self-start">
-                <input
-                  aria-label="New stage"
-                  placeholder="Stage name"
-                  value={newName}
-                  maxLength={40}
-                  autoFocus
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setAdding(false);
-                      setNewName("");
-                    }
-                  }}
-                  className={`${inputClass} w-36`}
-                />
+      {pipelines && pipeline && (
+        <div ref={editorRef} className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div role="tablist" aria-label="Pipelines" className="inline-flex flex-wrap rounded-lg border border-[var(--border)] p-0.5">
+              {list.map((pl, i) => {
+                const selected: boolean = pl.id === pipeline.id;
+                if (isRenaming("pipeline", pl.id)) {
+                  return (
+                    <span key={pl.id} className="px-1 py-0.5">
+                      {renameBox({ kind: "pipeline", id: pl.id }, pl.name, "w-32")}
+                    </span>
+                  );
+                }
+                return (
+                  <span key={pl.id} className="relative">
+                    <button
+                      role="tab"
+                      aria-selected={selected}
+                      aria-haspopup={selected ? "menu" : undefined}
+                      aria-expanded={selected ? isOpen("pipeline", pl.id) : undefined}
+                      onClick={() => {
+                        if (selected) {
+                          setMenu(isOpen("pipeline", pl.id) ? null : { kind: "pipeline", id: pl.id });
+                        } else {
+                          reset();
+                          setSelectedId(pl.id);
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-md text-sm ${
+                        selected
+                          ? "bg-[var(--muted)] font-medium"
+                          : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      }`}
+                    >
+                      {pl.name}
+                      {selected && <ChevronDown size={13} className="text-[var(--muted-foreground)]" aria-hidden />}
+                    </button>
+                    {isOpen("pipeline", pl.id) &&
+                      actionMenu({ kind: "pipeline", id: pl.id }, pl.name, i, list.length, "left-0")}
+                  </span>
+                );
+              })}
+            </div>
+            {list.length < MAX_PURSUIT_PIPELINES &&
+              (adding === "pipeline" ? (
+                addForm("pipeline")
+              ) : (
                 <button
-                  type="submit"
-                  disabled={busy || !newName.trim()}
-                  className="px-2.5 py-1 bg-[var(--primary)] text-white rounded-md text-xs disabled:opacity-40"
+                  onClick={() => {
+                    reset();
+                    setAdding("pipeline");
+                  }}
+                  aria-label="New pipeline"
+                  className={ghostBtn}
                 >
-                  Add
+                  <Plus size={14} /> New pipeline
                 </button>
-              </form>
-            ) : (
-              <button
-                onClick={() => setAdding(true)}
-                aria-label="Add a stage"
-                className="self-start inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
-              >
-                <Plus size={14} /> Add stage
-              </button>
-            ))}
+              ))}
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+            {/* Extra room below so the menus, which open under their stage, aren't clipped. */}
+            <div className="min-w-0 overflow-x-auto p-1.5 -m-1.5 pb-44 -mb-44">
+              <StageTracker
+                steps={stages.map((s) => ({ key: s.id, label: s.name }))}
+                selectedKey={menu?.kind === "stage" ? menu.id : null}
+                editingKey={renaming?.kind === "stage" ? renaming.id : null}
+                onSelect={(id) => setMenu(isOpen("stage", id) ? null : { kind: "stage", id })}
+                stepTestId="pipeline-stage-step"
+                labelFor={(step: TrackerStep) =>
+                  isRenaming("stage", step.key) ? renameBox({ kind: "stage", id: step.key }, step.label, "w-28") : step.label
+                }
+                actionsFor={(step: TrackerStep) => {
+                  if (!isOpen("stage", step.key)) return null;
+                  const i: number = stages.findIndex((s) => s.id === step.key);
+                  return actionMenu(
+                    { kind: "stage", id: step.key },
+                    step.label,
+                    i,
+                    stages.length,
+                    "left-0 sm:left-1/2 sm:-translate-x-1/2",
+                  );
+                }}
+                end={
+                  <span title="Won and Lost always come last">
+                    <TrackerDot
+                      dot={<Trophy size={13} aria-hidden />}
+                      label={<span className="text-[var(--muted-foreground)]">Won</span>}
+                      dotClassName="border-dashed border-green-600/60 text-green-600"
+                    />
+                  </span>
+                }
+              />
+            </div>
+            {stages.length < MAX_PURSUIT_STAGES && (
+              <div className="self-start">
+                {adding === "stage" ? (
+                  addForm("stage")
+                ) : (
+                  <button
+                    onClick={() => {
+                      reset();
+                      setAdding("stage");
+                    }}
+                    aria-label="Add a stage"
+                    className={ghostBtn}
+                  >
+                    <Plus size={14} /> Add stage
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -307,32 +385,34 @@ export function PipelineStagesSection(): React.ReactElement {
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="delete-stage-title"
+            aria-labelledby="delete-pipeline-item-title"
             className="w-full max-w-sm rounded-xl bg-[var(--background)] border border-[var(--border)] shadow-xl p-5 space-y-4"
           >
-            <h3 id="delete-stage-title" className="text-base font-semibold">
+            <h3 id="delete-pipeline-item-title" className="text-base font-semibold">
               Delete &ldquo;{deleting.name}&rdquo;?
             </h3>
             <div className="space-y-1.5">
-              <label htmlFor="pipeline-stage-move-to" className="text-sm text-[var(--muted-foreground)]">
+              <label htmlFor="pipeline-move-to" className="text-sm text-[var(--muted-foreground)]">
                 Move its contracts to
               </label>
               <select
-                id="pipeline-stage-move-to"
+                id="pipeline-move-to"
                 value={moveTo}
                 autoFocus
                 onChange={(e) => setMoveTo(e.target.value)}
                 className="w-full px-3 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
               >
-                {stages
-                  .filter((o) => o.id !== deleting.id)
-                  .map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
+                {deleting.options.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
               </select>
-              <p className="text-xs text-[var(--muted-foreground)]">Won and lost contracts in this stage move too.</p>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                {deleting.kind === "pipeline"
+                  ? "Won and lost contracts move too. Each keeps its stage if that pipeline has it, otherwise it starts at the first stage."
+                  : "Won and lost contracts in this stage move too."}
+              </p>
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleting(null)} className="px-3 py-1.5 rounded-lg text-sm hover:bg-[var(--muted)]">
@@ -343,7 +423,7 @@ export function PipelineStagesSection(): React.ReactElement {
                 disabled={busy || !moveTo}
                 className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm disabled:opacity-40"
               >
-                Delete stage
+                Delete {deleting.kind}
               </button>
             </div>
           </div>

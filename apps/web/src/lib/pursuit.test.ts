@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { daysLate, stagesFor, webLink } from "./pursuit";
-import type { PipelineStage } from "./pursuit";
+import type { Pipeline } from "./pursuit";
 
 describe("daysLate", () => {
   it("says how many days past due", () => {
@@ -26,21 +26,22 @@ describe("webLink", () => {
 });
 
 describe("stagesFor", () => {
-  const stage = (id: string, pipeline: "bid" | "commercial", order: number): PipelineStage => ({
-    id,
-    pipeline,
-    name: id,
-    slug: id,
-    order,
+  const stage = (id: string, order: number) => ({ id, name: id, slug: id, order });
+  const pipelines: Pipeline[] = [
+    { id: "com", name: "Commercial", order: 0, stages: [stage("c2", 1), stage("c1", 0)] },
+    { id: "gov", name: "Government", order: 1, stages: [stage("g1", 0)] },
+  ];
+
+  it("gives the contract's pipeline's stages in order", () => {
+    expect(stagesFor(pipelines, "com").map((s) => s.id)).toEqual(["c1", "c2"]);
+    expect(stagesFor(pipelines, "gov").map((s) => s.id)).toEqual(["g1"]);
   });
 
-  it("gives the contract's pipeline in order", () => {
-    const all: PipelineStage[] = [stage("c2", "commercial", 1), stage("b1", "bid", 0), stage("c1", "commercial", 0)];
-    expect(stagesFor(all, false).map((s) => s.id)).toEqual(["c1", "c2"]);
-    expect(stagesFor(all, true).map((s) => s.id)).toEqual(["b1"]);
+  it("uses the first pipeline for an unassigned contract", () => {
+    expect(stagesFor(pipelines, null).map((s) => s.id)).toEqual(["c1", "c2"]);
   });
 
-  it("is empty while stages load", () => {
-    expect(stagesFor(null, false)).toEqual([]);
+  it("is empty while pipelines load", () => {
+    expect(stagesFor(null, "com")).toEqual([]);
   });
 });

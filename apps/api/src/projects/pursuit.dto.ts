@@ -3,6 +3,12 @@ import { MAX_CENTS } from "@atrium/shared";
 
 /** Deal fields on a potential contract. Null clears a field. */
 export class UpdatePursuitDto {
+  /** One of the workspace's pipelines (checked by the service). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  pipelineId?: string;
+
   /** A stage slug in the contract's pipeline (checked by the service). */
   @IsOptional()
   @IsString()

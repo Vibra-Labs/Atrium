@@ -37,7 +37,9 @@ function build() {
     reopen: mock(() => Promise.resolve()),
   };
   const stages = {
-    findAll: mock(() => Promise.resolve([{ id: "st1", pipeline: "commercial", slug: "verbal_yes", name: "Verbal yes" }])),
+    findAll: mock(() =>
+      Promise.resolve([{ id: "pl1", name: "Commercial", stages: [{ id: "st1", slug: "verbal_yes", name: "Verbal yes" }] }]),
+    ),
   };
   const tools = projectTools({
     projects: projects as never,
@@ -248,7 +250,14 @@ describe("potential contracts", () => {
     expect(pursuits.update).toHaveBeenCalledWith("p1", { stage: "verbal_yes" }, "org1");
   });
 
-  it("list_pipeline_stages returns both pipelines of the actor's org", async () => {
+  it("update_potential_contract can move it to another pipeline", async () => {
+    const { pursuits, get } = build();
+    const input = get("update_potential_contract").inputSchema.parse({ projectId: "p1", pipelineId: "pl2" });
+    await runTool(get("update_potential_contract"), input, admin);
+    expect(pursuits.update).toHaveBeenCalledWith("p1", { pipelineId: "pl2" }, "org1");
+  });
+
+  it("list_pipeline_stages returns the pipelines of the actor's org with their stages", async () => {
     const { stages, get } = build();
     const result = await runTool(get("list_pipeline_stages"), {}, admin);
     expect(stages.findAll).toHaveBeenCalledWith("org1");

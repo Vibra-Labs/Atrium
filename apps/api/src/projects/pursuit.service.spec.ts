@@ -13,7 +13,9 @@ type PursuitRow = {
   outcome: string;
   stage: string;
   isBid: boolean;
-  project: { name: string; archivedAt: Date | null } };
+  pipelineId: string | null;
+  project: { name: string; archivedAt: Date | null };
+};
 type ContactRow = { id: string; firstName: string; lastName: string | null; email: string | null; userId: string | null };
 
 let pursuit: PursuitRow | null;
@@ -53,11 +55,15 @@ const prisma = {
   $transaction: mock((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
 };
 
-// Each workspace pipeline's stages, first stage first.
-const pipelines: Record<string, { slug: string; name: string }[]> = {};
+// The workspace's pipelines, first one first; each with its stages in order.
+type FakePipeline = { id: string; name: string; stages: { slug: string; name: string }[] };
+let pipelines: FakePipeline[] = [];
 const stages = {
-  find: mock(async (_org: string, pipeline: string, slug: string) => pipelines[pipeline].find((s) => s.slug === slug) ?? null),
-  firstSlug: mock(async (_org: string, pipeline: string) => pipelines[pipeline][0].slug),
+  pipelineFor: mock(async (_org: string, id: string | null) => {
+    const found = id === null ? pipelines[0] : pipelines.find((p) => p.id === id);
+    if (!found) throw new BadRequestException("Unknown pipeline");
+    return found;
+  }),
 };
 
 const contactSync = { linkProjectClients: mock(() => Promise.resolve()) };
@@ -68,8 +74,7 @@ function allMocks(): ReturnType<typeof mock>[] {
     ...Object.values(prisma).flatMap((m) => (typeof m === "function" ? [m] : Object.values(m))),
     contactSync.linkProjectClients,
     contacts.linkProject,
-    stages.find,
-    stages.firstSlug,
+    stages.pipelineFor,
   ] as ReturnType<typeof mock>[];
 }
 
@@ -82,16 +87,27 @@ describe("PursuitService", () => {
       outcome: "open",
       stage: "found",
       isBid: false,
+      pipelineId: "com",
       project: { name: "County RFP", archivedAt: null },
     };
-    pipelines.commercial = [
-      { slug: "found", name: "Lead" },
-      { slug: "proposal_sent", name: "Proposal sent" },
-      { slug: "verbal_yes", name: "Verbal yes" },
-    ];
-    pipelines.bid = [
-      { slug: "identified", name: "Identified" },
-      { slug: "proposal_sent", name: "Proposal submitted" },
+    pipelines = [
+      {
+        id: "com",
+        name: "Commercial",
+        stages: [
+          { slug: "found", name: "Lead" },
+          { slug: "proposal_sent", name: "Proposal sent" },
+          { slug: "verbal_yes", name: "Verbal yes" },
+        ],
+      },
+      {
+        id: "gov",
+        name: "Government",
+        stages: [
+          { slug: "identified", name: "Identified" },
+          { slug: "proposal_sent", name: "Proposal submitted" },
+        ],
+      },
     ];
     contact = { id: "c1", firstName: "Lee", lastName: "Park", email: "lee@example.com", userId: null };
     member = null;
@@ -243,7 +259,7 @@ describe("PursuitService", () => {
 
   it("reopen unarchives and puts it in its pipeline's first stage", async () => {
     pursuit!.outcome = "lost";
-    pursuit!.isBid = true;
+    pursuit!.pipelineId = "gov";
     await service.reopen("p1", "org-1");
     expect(prisma.project.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { archivedAt: null } });
     expect(prisma.projectPursuit.updateMany).toHaveBeenCalledWith({
@@ -286,26 +302,43 @@ describe("PursuitService", () => {
     expect(prisma.projectPursuit.update).not.toHaveBeenCalled();
   });
 
-  it("ticking bid keeps the stage when the bid pipeline has the same slug", async () => {
-    pursuit!.stage = "proposal_sent";
+  it("an unassigned contract uses the first pipeline", async () => {
+    pursuit!.pipelineId = null;
+    await service.update("p1", { stage: "verbal_yes" }, "org-1");
+    expect(stages.pipelineFor).toHaveBeenCalledWith("org-1", null);
+    expect(updateData()).toMatchObject({ stage: "verbal_yes", pipelineId: "com" });
+  });
+
+  it("the bid box no longer changes the pipeline", async () => {
     await service.update("p1", { isBid: true }, "org-1");
-    expect(updateData()).toMatchObject({ isBid: true, stage: undefined });
+    expect(updateData()).toMatchObject({ isBid: true, stage: undefined, pipelineId: undefined });
     expect(events()).toEqual([]);
   });
 
-  it("ticking bid moves to the bid pipeline's first stage when the slug is missing", async () => {
-    pursuit!.stage = "verbal_yes";
-    await service.update("p1", { isBid: true }, "org-1");
-    expect(updateData()).toMatchObject({ isBid: true, stage: "identified" });
-    expect(events()).toEqual(["Moved to Identified"]);
+  it("moving pipeline keeps the stage when the new pipeline has the same one", async () => {
+    pursuit!.stage = "proposal_sent";
+    await service.update("p1", { pipelineId: "gov" }, "org-1");
+    expect(updateData()).toMatchObject({ pipelineId: "gov", stage: undefined });
+    expect(events()).toEqual(["Moved to the Government pipeline"]);
   });
 
-  it("update validates a stage against the new pipeline when isBid and stage change together", async () => {
-    await expect(service.update("p1", { isBid: true, stage: "verbal_yes" }, "org-1")).rejects.toThrow("Unknown stage");
+  it("moving pipeline goes to its first stage when the stage is missing", async () => {
+    pursuit!.stage = "verbal_yes";
+    await service.update("p1", { pipelineId: "gov" }, "org-1");
+    expect(updateData()).toMatchObject({ pipelineId: "gov", stage: "identified" });
+    expect(events()).toEqual(["Moved to the Government pipeline", "Moved to Identified"]);
+  });
+
+  it("moving pipeline checks a stage sent with it against the new pipeline", async () => {
+    await expect(service.update("p1", { pipelineId: "gov", stage: "verbal_yes" }, "org-1")).rejects.toThrow("Unknown stage");
     prisma.projectPursuit.update.mockClear();
-    await service.update("p1", { isBid: true, stage: "proposal_sent" }, "org-1");
-    expect(updateData()).toMatchObject({ isBid: true, stage: "proposal_sent" });
-    expect(events()).toEqual(["Moved to Proposal submitted"]);
+    await service.update("p1", { pipelineId: "gov", stage: "proposal_sent" }, "org-1");
+    expect(updateData()).toMatchObject({ pipelineId: "gov", stage: "proposal_sent" });
+  });
+
+  it("an unknown pipeline is rejected", async () => {
+    await expect(service.update("p1", { pipelineId: "theirs" }, "org-1")).rejects.toThrow("Unknown pipeline");
+    expect(prisma.projectPursuit.update).not.toHaveBeenCalled();
   });
 
   it("update on a won pursuit can still change the value", async () => {

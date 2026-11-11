@@ -71,7 +71,11 @@ const mockContactSync = {
   endProjectClients: mock(() => Promise.resolve()),
 };
 
-const mockStages = { firstSlug: mock((_org: string, _pipeline: string) => Promise.resolve("intro")) };
+const mockStages = {
+  pipelineFor: mock((_org: string, _id: string | null) =>
+    Promise.resolve({ id: "pl-1", name: "Commercial", stages: [{ slug: "intro", name: "Intro" }] }),
+  ),
+};
 
 describe("ProjectsService", () => {
   let service: ProjectsService;
@@ -664,13 +668,14 @@ describe("ProjectsService", () => {
   });
 
   describe("potential contracts", () => {
-    it("create with potential creates a pursuit in the commercial pipeline's first stage", async () => {
+    it("create with potential creates a pursuit in the first pipeline's first stage", async () => {
       await service.create({ name: "County RFP", potential: true }, "org-1");
       const data = (mockPrisma.project.create.mock.calls.at(-1) as [PrismaArgs])[0].data!;
-      expect(mockStages.firstSlug).toHaveBeenCalledWith("org-1", "commercial");
+      expect(mockStages.pipelineFor).toHaveBeenCalledWith("org-1", null);
       expect(data.pursuit).toEqual({
         create: {
           organizationId: "org-1",
+          pipelineId: "pl-1",
           stage: "intro",
           events: { create: { text: "Created as a potential contract" } },
         },

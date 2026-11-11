@@ -5,11 +5,10 @@ import { createOwner, createPortalClientProject, getCsrfTokenFromContext } from 
 const API = "http://localhost:3001/api";
 const WEB = "http://localhost:3000";
 
-interface Stage {
+interface Pipeline {
   id: string;
-  pipeline: string;
   name: string;
-  slug: string;
+  stages: { id: string; name: string; slug: string }[];
 }
 
 async function headersFor(page: Page): Promise<Record<string, string>> {
@@ -25,9 +24,16 @@ async function createPotential(page: Page, name: string): Promise<string> {
   return ((await res.json()) as { id: string }).id;
 }
 
-async function addStage(page: Page, pipeline: string, name: string): Promise<void> {
+async function pipelines(page: Page): Promise<Pipeline[]> {
+  const res = await page.request.get(`${API}/pursuit-pipelines`);
+  expect(res.ok()).toBe(true);
+  return (await res.json()) as Pipeline[];
+}
+
+async function addStage(page: Page, pipelineName: string, name: string): Promise<void> {
+  const pipelineId = (await pipelines(page)).find((p) => p.name === pipelineName)!.id;
   const res = await page.request.post(`${API}/pursuit-stages`, {
-    data: { pipeline, name },
+    data: { pipelineId, name },
     headers: await headersFor(page),
   });
   expect(res.ok()).toBe(true);
@@ -42,17 +48,16 @@ async function setStage(page: Page, projectId: string, stage: string): Promise<v
 }
 
 function section(page: Page): Locator {
-  return page.locator("section", { has: page.getByRole("heading", { name: "Pipeline stages" }) });
+  return page.locator("section", { has: page.getByRole("heading", { name: "Pipelines", exact: true }) });
 }
 
 function stageButtons(page: Page): Locator {
   return page.getByTestId("pursuit-stage");
 }
 
-async function openSettings(page: Page, pipeline: "Bids" | "Commercial" = "Commercial"): Promise<Locator> {
+async function openSettings(page: Page): Promise<Locator> {
   await page.goto(`${WEB}/dashboard/settings/workspace`);
   const s = section(page);
-  await s.getByRole("tab", { name: pipeline }).click();
   await expect(steps(s).first()).toBeVisible({ timeout: 15000 });
   return s;
 }
@@ -69,12 +74,14 @@ async function stageAction(s: Locator, stage: string, item: string): Promise<voi
   await s.getByRole("menuitem", { name: item }).click();
 }
 
-test.describe("Pipeline stages", () => {
-  test("a new workspace has the three default stages in both pipelines", async ({ browser }) => {
+test.describe("Pipelines and stages", () => {
+  test("a new workspace has Commercial and Bids, each with the three default stages", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-defaults");
     const defaults = ["Lead", "Proposal sent", "Waiting on decision"];
 
     const s = await openSettings(page);
+    await expect(s.getByRole("tab")).toHaveText(["Commercial", "Bids"]);
+    await expect(s.getByRole("tab", { name: "Commercial" })).toHaveAttribute("aria-selected", "true");
     await expect(steps(s)).toHaveText(defaults);
     await s.getByRole("tab", { name: "Bids" }).click();
     await expect(steps(s)).toHaveText(defaults);
@@ -103,10 +110,10 @@ test.describe("Pipeline stages", () => {
     await context.close();
   });
 
-  test("a bid contract shows the bid stages", async ({ browser }) => {
+  test("a contract's Pipeline dropdown switches its stages; the bid box doesn't", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-bid");
-    await addStage(page, "bid", "Questions submitted");
-    await addStage(page, "commercial", "Verbal yes");
+    await addStage(page, "Bids", "Questions submitted");
+    await addStage(page, "Commercial", "Verbal yes");
     const id = await createPotential(page, "County RFP");
     await page.goto(`${WEB}/dashboard/projects/${id}`);
     await expect(stageButtons(page).filter({ hasText: "Verbal yes" })).toBeVisible();
@@ -114,10 +121,52 @@ test.describe("Pipeline stages", () => {
     // The box follows the saved contract, so it flips once the save comes back.
     await page.getByLabel("Formal bid").click();
     await expect(page.getByLabel("Formal bid")).toBeChecked();
+    await expect(stageButtons(page).filter({ hasText: "Verbal yes" })).toBeVisible();
+
+    await page.getByLabel("Pipeline").selectOption({ label: "Bids" });
     await expect(stageButtons(page).filter({ hasText: "Questions submitted" })).toBeVisible();
     await expect(stageButtons(page).filter({ hasText: "Verbal yes" })).toHaveCount(0);
     // "Lead" exists in both pipelines, so the contract stays in it.
     await expect(stageButtons(page).filter({ hasText: "Lead" })).toHaveAttribute("aria-pressed", "true");
+    await context.close();
+  });
+
+  test("create, rename and delete a pipeline; its contracts move", async ({ browser }) => {
+    const { context, page } = await createOwner(browser, "ps-pipes");
+    const s = await openSettings(page);
+    await s.getByRole("button", { name: "New pipeline" }).click();
+    await s.getByLabel("New pipeline").fill("Government");
+    await s.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(s.getByRole("tab")).toHaveText(["Commercial", "Bids", "Government"]);
+    await expect(s.getByRole("tab", { name: "Government" })).toHaveAttribute("aria-selected", "true");
+    await expect(steps(s)).toHaveText(["Lead", "Proposal sent", "Waiting on decision"]);
+
+    // Clicking the selected pipeline opens its menu.
+    await s.getByRole("tab", { name: "Government" }).click();
+    await s.getByRole("menuitem", { name: "Rename" }).click();
+    const input = s.getByRole("textbox", { name: "Rename Government" });
+    await input.fill("Federal");
+    await input.press("Enter");
+    await expect(s.getByRole("tab", { name: "Federal" })).toBeVisible();
+
+    const id = await createPotential(page, "Base housing");
+    const federal = (await pipelines(page)).find((p) => p.name === "Federal")!.id;
+    const moved = await page.request.patch(`${API}/projects/${id}/pursuit`, {
+      data: { pipelineId: federal, stage: "waiting" },
+      headers: await headersFor(page),
+    });
+    expect(moved.ok()).toBe(true);
+
+    await s.getByRole("tab", { name: "Federal" }).click();
+    await s.getByRole("menuitem", { name: "Delete" }).click();
+    const dialog = page.getByRole("dialog", { name: /Delete .Federal/ });
+    await dialog.getByLabel("Move its contracts to").selectOption({ label: "Bids" });
+    await dialog.getByRole("button", { name: "Delete pipeline" }).click();
+    await expect(s.getByRole("tab")).toHaveText(["Commercial", "Bids"]);
+
+    await page.goto(`${WEB}/dashboard/projects/${id}`);
+    await expect(page.getByLabel("Pipeline")).toHaveValue((await pipelines(page)).find((p) => p.name === "Bids")!.id);
+    await expect(stageButtons(page).filter({ hasText: "Waiting on decision" })).toHaveAttribute("aria-pressed", "true");
     await context.close();
   });
 
@@ -128,7 +177,7 @@ test.describe("Pipeline stages", () => {
     await expect(s.getByRole("menu", { name: "Lead actions" })).toBeVisible();
     // The first stage can't move earlier.
     await expect(s.getByRole("menuitem", { name: "Move earlier" })).toBeDisabled();
-    await page.getByRole("heading", { name: "Pipeline stages" }).click();
+    await page.getByRole("heading", { name: "Pipelines", exact: true }).click();
     await expect(s.getByRole("menu")).toHaveCount(0);
     await expect(steps(s).first()).toHaveAttribute("aria-pressed", "false");
     await context.close();
@@ -185,9 +234,9 @@ test.describe("Pipeline stages", () => {
     await expect(stageButtons(page)).toHaveText(["Lead", "Proposal sent"]);
     await expect(stageButtons(page).filter({ hasText: "Proposal sent" })).toHaveAttribute("aria-pressed", "true");
 
-    const stages = (await (await page.request.get(`${API}/pursuit-stages`)).json()) as Stage[];
     // The Bids pipeline is untouched.
-    expect(stages.filter((st) => st.pipeline === "bid").map((st) => st.name)).toEqual([
+    const bids = (await pipelines(page)).find((p) => p.name === "Bids")!;
+    expect(bids.stages.map((st) => st.name)).toEqual([
       "Lead",
       "Proposal sent",
       "Waiting on decision",
@@ -195,9 +244,9 @@ test.describe("Pipeline stages", () => {
     await context.close();
   });
 
-  test("a portal client can't read stages", async ({ browser }) => {
+  test("a portal client can't read pipelines", async ({ browser }) => {
     const env = await createPortalClientProject(browser, "ps-client", "Signed site");
-    const res = await env.client.request.get(`${API}/pursuit-stages`);
+    const res = await env.client.request.get(`${API}/pursuit-pipelines`);
     expect(res.status()).toBe(403);
     await env.close();
   });

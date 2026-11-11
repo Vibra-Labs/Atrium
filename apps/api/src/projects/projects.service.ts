@@ -56,6 +56,12 @@ export class ProjectsService implements OnApplicationBootstrap {
     private stages: PursuitStagesService,
   ) {}
 
+  /** Where a new potential contract starts: the first pipeline's first stage. */
+  private async startOfFirstPipeline(organizationId: string): Promise<{ pipelineId: string; stage: string }> {
+    const pipeline = await this.stages.pipelineFor(organizationId, null);
+    return { pipelineId: pipeline.id, stage: pipeline.stages[0].slug };
+  }
+
   private async syncClients(
     projectId: string,
     organizationId: string,
@@ -364,7 +370,7 @@ export class ProjectsService implements OnApplicationBootstrap {
               pursuit: {
                 create: {
                   organizationId,
-                  stage: await this.stages.firstSlug(organizationId, "commercial"),
+                  ...(await this.startOfFirstPipeline(organizationId)),
                   events: { create: { text: "Created as a potential contract" } },
                 },
               },

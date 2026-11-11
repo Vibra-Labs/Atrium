@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { assertDisposableDatabase } from "./guard";
 import { PrismaService } from "../../src/prisma/prisma.service";
-import { PursuitStagesService } from "../../src/projects/pursuit-stages.service";
+import { PursuitStagesService, seedDefaultPipelines } from "../../src/projects/pursuit-stages.service";
 
 let prisma: PrismaService;
-let stages: PursuitStagesService;
+let service: PursuitStagesService;
 const orgIds: string[] = [];
 
 beforeAll(async () => {
   assertDisposableDatabase();
   prisma = new PrismaService();
   await prisma.$connect();
-  stages = new PursuitStagesService(prisma);
+  service = new PursuitStagesService(prisma);
 });
 
 afterAll(async () => {
@@ -26,54 +26,59 @@ async function org(): Promise<string> {
   return id;
 }
 
-async function names(orgId: string, pipeline: string): Promise<string[]> {
-  return (await prisma.pursuitStage.findMany({ where: { organizationId: orgId, pipeline }, orderBy: { order: "asc" } })).map(
-    (s) => s.name,
-  );
-}
-
-async function pursuit(orgId: string, isBid: boolean, stage: string, outcome: string): Promise<string> {
+async function contract(
+  orgId: string,
+  pipelineId: string | null,
+  stage: string,
+  extra: { isBid?: boolean; outcome?: string } = {},
+): Promise<string> {
   const project = await prisma.project.create({
-    data: { name: `p-${stage}`, organizationId: orgId, pursuit: { create: { organizationId: orgId, isBid, stage, outcome } } },
+    data: { name: `p-${stage}`, organizationId: orgId, pursuit: { create: { organizationId: orgId, pipelineId, stage, ...extra } } },
   });
   return project.id;
 }
 
+async function placeOf(projectId: string): Promise<[string | null, string]> {
+  const p = await prisma.projectPursuit.findUniqueOrThrow({ where: { projectId } });
+  return [p.pipelineId, p.stage];
+}
+
 describe("PursuitStagesService against Postgres", () => {
-  it("seedMissing fills only pipelines with no stages, once", async () => {
-    const fresh = await org();
-    const edited = await org();
-    await prisma.pursuitStage.create({
-      data: { organizationId: edited, pipeline: "commercial", name: "Intro call", slug: "intro_call", order: 0 },
-    });
+  it("seedMissing gives an older workspace the default pipelines and files its contracts by the bid box", async () => {
+    const orgId = await org();
+    const bid = await contract(orgId, null, "waiting", { isBid: true });
+    const other = await contract(orgId, null, "found");
 
-    await stages.seedMissing();
-    await stages.seedMissing();
+    await service.seedMissing();
+    await service.seedMissing();
 
-    const defaults = ["Lead", "Proposal sent", "Waiting on decision"];
-    expect(await names(fresh, "bid")).toEqual(defaults);
-    expect(await names(fresh, "commercial")).toEqual(defaults);
-    expect(await names(edited, "bid")).toEqual(defaults);
-    expect(await names(edited, "commercial")).toEqual(["Intro call"]);
+    const pipelines = await service.findAll(orgId);
+    expect(pipelines.map((p) => [p.name, p.stages.map((s) => s.name)])).toEqual([
+      ["Commercial", ["Lead", "Proposal sent", "Waiting on decision"]],
+      ["Bids", ["Lead", "Proposal sent", "Waiting on decision"]],
+    ]);
+    expect(await placeOf(bid)).toEqual([pipelines[1].id, "waiting"]);
+    expect(await placeOf(other)).toEqual([pipelines[0].id, "found"]);
   });
 
-  // remove() also takes a Postgres advisory lock here, so this checks that SQL runs.
-  it("remove moves won and open contracts in that pipeline only", async () => {
+  // removeStage and removePipeline also take Postgres advisory locks here, so this checks that SQL runs.
+  it("removing a stage, then a pipeline, moves its contracts (won ones too)", async () => {
     const orgId = await org();
-    await stages.seedMissing();
-    const all = await stages.findAll(orgId);
-    const id = (pipeline: string, slug: string): string => all.find((s) => s.pipeline === pipeline && s.slug === slug)!.id;
-    const open = await pursuit(orgId, false, "waiting", "open");
-    const won = await pursuit(orgId, false, "waiting", "won");
-    const bid = await pursuit(orgId, true, "waiting", "open");
+    await seedDefaultPipelines(prisma, orgId);
+    const [commercial, bids] = await service.findAll(orgId);
+    const gov = await service.createStage({ pipelineId: bids.id, name: "Questions submitted" }, orgId);
+    const open = await contract(orgId, commercial.id, "waiting");
+    const won = await contract(orgId, bids.id, gov.slug, { outcome: "won" });
+    const bidWaiting = await contract(orgId, bids.id, "waiting");
 
-    await stages.remove(id("commercial", "waiting"), id("commercial", "proposal_sent"), orgId);
+    await service.removeStage(commercial.stages[2].id, commercial.stages[1].id, orgId);
+    expect(await placeOf(open)).toEqual([commercial.id, "proposal_sent"]);
+    expect(await placeOf(bidWaiting)).toEqual([bids.id, "waiting"]);
 
-    const stageOf = async (projectId: string): Promise<string> =>
-      (await prisma.projectPursuit.findUniqueOrThrow({ where: { projectId } })).stage;
-    expect(await stageOf(open)).toBe("proposal_sent");
-    expect(await stageOf(won)).toBe("proposal_sent");
-    expect(await stageOf(bid)).toBe("waiting");
-    expect(await names(orgId, "commercial")).toEqual(["Lead", "Proposal sent"]);
+    await service.removePipeline(bids.id, commercial.id, orgId);
+    expect(await placeOf(won)).toEqual([commercial.id, "found"]);
+    expect(await placeOf(bidWaiting)).toEqual([commercial.id, "found"]);
+    expect((await service.findAll(orgId)).map((p) => p.name)).toEqual(["Commercial"]);
+    expect(await prisma.pursuitStage.count({ where: { pipelineId: bids.id } })).toBe(0);
   });
 });

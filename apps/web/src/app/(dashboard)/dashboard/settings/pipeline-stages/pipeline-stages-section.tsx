@@ -224,10 +224,10 @@ export function PipelineStagesSection(): React.ReactElement {
               className={`${inputClass} w-full`}
             />
           ) : (
-            <p className="text-sm font-medium">
-              <span className="text-[var(--muted-foreground)] font-normal">Step {index + 1} · </span>
-              {selected.name}
-            </p>
+            <div>
+              <p className="text-xs text-[var(--muted-foreground)]">Editing stage</p>
+              <p className="text-sm font-medium">{selected.name}</p>
+            </div>
           )}
           <div className="flex flex-wrap gap-2">
             <button

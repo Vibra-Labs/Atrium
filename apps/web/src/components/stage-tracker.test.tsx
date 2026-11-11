@@ -22,13 +22,6 @@ describe("StageTracker", () => {
     expect(html).toContain('aria-pressed="true"');
   });
 
-  it("highlights the selected step when editing, with no progress", () => {
-    const html: string = renderToStaticMarkup(
-      <StageTracker steps={steps} selectedKey="waiting" onSelect={() => {}} stepTestId="step" />,
-    );
-    expect(states(html)).toEqual(["idle", "idle", "selected"]);
-  });
-
   it("keeps the step number out of the label text", () => {
     const html: string = renderToStaticMarkup(
       <StageTracker steps={steps} currentKey="found" onSelect={() => {}} stepTestId="step" />,
@@ -39,8 +32,22 @@ describe("StageTracker", () => {
 
   it("puts the end step after the last stage", () => {
     const html: string = renderToStaticMarkup(
-      <StageTracker steps={steps} onSelect={() => {}} end={<span>Won</span>} />,
+      <StageTracker steps={steps} end={<span>Won</span>} />,
     );
     expect(html.indexOf("Waiting on decision")).toBeLessThan(html.indexOf("Won"));
+  });
+
+  it("without onSelect, shows plain steps with their own label and actions", () => {
+    const html: string = renderToStaticMarkup(
+      <StageTracker
+        steps={steps}
+        stepTestId="step"
+        labelFor={(s) => <em>{s.label}</em>}
+        actionsFor={(s) => <i data-actions={s.key} />}
+      />,
+    );
+    expect(html).not.toContain("<button");
+    expect(html).toContain("<em>Proposal sent</em>");
+    expect(html).toContain('data-actions="waiting"');
   });
 });

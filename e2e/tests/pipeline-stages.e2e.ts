@@ -61,6 +61,12 @@ function steps(s: Locator): Locator {
   return s.getByTestId("pipeline-stage-step");
 }
 
+/** Opens a stage's ⋯ menu and picks an item. */
+async function stageAction(s: Locator, stage: string, item: string): Promise<void> {
+  await s.getByRole("button", { name: `Actions for ${stage}` }).click();
+  await s.getByRole("menuitem", { name: item }).click();
+}
+
 test.describe("Pipeline stages", () => {
   test("a new workspace has the three default stages in both pipelines", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-defaults");
@@ -80,8 +86,6 @@ test.describe("Pipeline stages", () => {
     await s.getByLabel("New stage").fill("Verbal yes");
     await s.getByRole("button", { name: "Add", exact: true }).click();
     await expect(steps(s)).toHaveText(["Lead", "Proposal sent", "Waiting on decision", "Verbal yes"]);
-    // The new stage is selected, ready to edit.
-    await expect(steps(s).last()).toHaveAttribute("aria-pressed", "true");
 
     const id = await createPotential(page, "Retail fit-out");
     await page.goto(`${WEB}/dashboard/projects/${id}`);
@@ -121,8 +125,7 @@ test.describe("Pipeline stages", () => {
     await setStage(page, id, "proposal_sent");
 
     const s = await openSettings(page);
-    await steps(s).filter({ hasText: "Proposal sent" }).click();
-    await s.getByRole("button", { name: "Rename Proposal sent" }).click();
+    await stageAction(s, "Proposal sent", "Rename");
     const input = s.getByRole("textbox", { name: "Rename Proposal sent" });
     await input.fill("Quote sent");
     await input.press("Enter");
@@ -136,13 +139,10 @@ test.describe("Pipeline stages", () => {
   test("reordering changes the stage bar order", async ({ browser }) => {
     const { context, page } = await createOwner(browser, "ps-order");
     const s = await openSettings(page);
-    await steps(s).filter({ hasText: "Waiting on decision" }).click();
-    await s.getByRole("button", { name: "Move Waiting on decision earlier" }).click();
+    await stageAction(s, "Waiting on decision", "Move earlier");
     await expect(steps(s).nth(1)).toHaveText("Waiting on decision");
-    await s.getByRole("button", { name: "Move Waiting on decision earlier" }).click();
+    await stageAction(s, "Waiting on decision", "Move earlier");
     await expect(steps(s)).toHaveText(["Waiting on decision", "Lead", "Proposal sent"]);
-    // The moved stage stays selected.
-    await expect(steps(s).first()).toHaveAttribute("aria-pressed", "true");
 
     const id = await createPotential(page, "Warehouse lighting");
     await page.goto(`${WEB}/dashboard/projects/${id}`);
@@ -159,10 +159,11 @@ test.describe("Pipeline stages", () => {
     await setStage(page, id, "waiting");
 
     const s = await openSettings(page);
-    await steps(s).filter({ hasText: "Waiting on decision" }).click();
-    await s.getByRole("button", { name: "Remove Waiting on decision" }).click();
-    await s.getByLabel("Move its contracts to").selectOption({ label: "Proposal sent" });
-    await s.getByRole("button", { name: "Remove stage" }).click();
+    await stageAction(s, "Waiting on decision", "Delete");
+    const dialog = page.getByRole("dialog", { name: /Delete .Waiting on decision/ });
+    await dialog.getByLabel("Move its contracts to").selectOption({ label: "Proposal sent" });
+    await dialog.getByRole("button", { name: "Delete stage" }).click();
+    await expect(dialog).toHaveCount(0);
     await expect(steps(s)).toHaveText(["Lead", "Proposal sent"]);
 
     await page.goto(`${WEB}/dashboard/projects/${id}`);

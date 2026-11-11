@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { invalidate } from "@/lib/cached";
 import { useToast } from "@/components/toast";
 import { ColorPatchGrid } from "@/components/color-patch-grid";
+import { textColorForBackground } from "@/components/label-badge";
 import { PROJECT_STATUSES_PATH, isBuiltInStatus, useProjectStatuses } from "@/lib/project-status";
 import type { ProjectStatus } from "@/lib/project-status";
 
@@ -85,10 +86,9 @@ export function ProjectStatusesSection(): React.ReactElement {
     }
     if ((await run(() => patch(status.id, { name }), "Failed to rename status")) !== null) {
       success("Status renamed");
-      setRenamingId(null);
-    } else {
-      editDone.current = false;
     }
+    // Close on failure too, so the blur that follows doesn't send the same request again.
+    setRenamingId(null);
   }
 
   async function recolor(status: ProjectStatus, color: string): Promise<void> {
@@ -230,10 +230,10 @@ export function ProjectStatusesSection(): React.ReactElement {
                     setColoring(null);
                     setMenuFor(menuFor === s.id ? null : s.id);
                   }}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium text-white transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${
                     menuFor === s.id ? "ring-2 ring-offset-2 ring-offset-[var(--background)] ring-[var(--foreground)]/40" : ""
                   }`}
-                  style={{ backgroundColor: s.color }}
+                  style={{ backgroundColor: s.color, color: textColorForBackground(s.color) }}
                 >
                   {s.name}
                 </button>

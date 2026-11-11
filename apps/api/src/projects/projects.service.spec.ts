@@ -58,6 +58,7 @@ const mockPrisma = {
     findUnique: mock(() => Promise.resolve({ name: "Acme", members: [] })),
   },
   $queryRaw: mock(() => Promise.resolve([] as unknown[])),
+  $executeRaw: mock((strings: TemplateStringsArray) => Promise.resolve(strings.length)),
   $transaction: mock((arg: unknown) => {
     if (typeof arg === "function") {
       return (arg as (tx: typeof mockPrisma) => Promise<unknown>)(mockPrisma);
@@ -335,6 +336,32 @@ describe("ProjectsService", () => {
     const result = await service.update("p1", { clientUserIds: ["u1"] }, "org-1");
 
     expect(result).toBeDefined();
+  });
+
+  it("update checks a new status under a shared lock in the same transaction as the write", async () => {
+    mockPrisma.project.findFirst.mockReturnValue(
+      Promise.resolve({ id: "p1", organizationId: "org-1", archivedAt: null }),
+    );
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve({ id: "s1" }) as never);
+    mockPrisma.$executeRaw.mockClear();
+
+    await service.update("p1", { status: "design" }, "org-1");
+
+    // The shared lock blocks a concurrent delete of "design" until this write commits.
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    const sql: string = (mockPrisma.$executeRaw.mock.calls[0] as unknown as [TemplateStringsArray])[0].join("?");
+    expect(sql).toContain("pg_advisory_xact_lock_shared");
+    expect(mockPrisma.project.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("update rejects a status the workspace doesn't have, without writing", async () => {
+    mockPrisma.project.findFirst.mockReturnValue(
+      Promise.resolve({ id: "p1", organizationId: "org-1", archivedAt: null }),
+    );
+    mockPrisma.projectStatus.findFirst.mockReturnValueOnce(Promise.resolve(null));
+
+    await expect(service.update("p1", { status: "gone" }, "org-1")).rejects.toThrow("Invalid status: gone");
+    expect(mockPrisma.project.updateMany).not.toHaveBeenCalled();
   });
 
   it("create links contacts for clientUserIds", async () => {

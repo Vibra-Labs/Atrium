@@ -523,7 +523,7 @@ export default function DashboardPage() {
                         <div className="mt-3 flex items-center gap-3">
                           <span
                             className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium shrink-0"
-                            style={{ backgroundColor: `${badge.color}1a`, color: badge.color }}
+                            style={{ backgroundColor: `${badge.color}1a`, color: `color-mix(in srgb, ${badge.color} 65%, var(--foreground))` }}
                           >
                             <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: badge.color }} />
                             {badge.label}

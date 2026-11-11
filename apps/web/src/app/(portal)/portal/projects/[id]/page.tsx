@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
-import { useCachedApi } from "@/lib/cached";
+import { useProjectStatuses } from "@/lib/project-status";
+import type { ProjectStatus } from "@/lib/project-status";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { Pagination } from "@/components/pagination";
@@ -129,14 +130,6 @@ function formatDateDisplay(dateStr: string): string {
   });
 }
 
-interface ProjectStatus {
-  id: string;
-  name: string;
-  slug: string;
-  color: string;
-  order: number;
-}
-
 interface TaskRecord {
   id: string;
   title: string;
@@ -230,7 +223,7 @@ export default function PortalProjectDetailPage() {
   const searchParams = useSearchParams();
   const toast = useToast();
   const [project, setProject] = useState<Project | null>(null);
-  const statuses: ProjectStatus[] = useCachedApi<ProjectStatus[]>("/projects/statuses") ?? [];
+  const statuses: ProjectStatus[] = useProjectStatuses() ?? [];
   const [updates, setUpdates] = useState<TimelineEntry[]>([]);
   const [updatesPage, setUpdatesPage] = useState(1);
   const [updatesTotalPages, setUpdatesTotalPages] = useState(1);

@@ -137,6 +137,29 @@ describe("ProjectStatusesService", () => {
     expect(db.locks[0]).toContain("pg_advisory_xact_lock");
   });
 
+  it("create, update and reorder re-check against the list read under the workspace lock", async () => {
+    // Another admin fills the workspace just before this create gets the lock.
+    db.beforeTransaction = () => {
+      for (let i = 0; i < 10; i++) statuses.push(status(`o${i}`, `Other ${i}`, `other_${i}`, 10 + i));
+    };
+    await expect(service.create({ name: "Design" }, ORG)).rejects.toThrow("at most 15 statuses");
+    statuses.splice(5);
+
+    // Another admin adds "design" just before this one adds "Design".
+    db.beforeTransaction = () => statuses.push(status("d", "design", "design", 5));
+    await expect(service.create({ name: "Design" }, ORG)).rejects.toBeInstanceOf(ConflictException);
+
+    db.beforeTransaction = () => statuses.push(status("b", "Build", "build", 6));
+    await expect(service.update("ns", { name: "BUILD" }, ORG)).rejects.toBeInstanceOf(ConflictException);
+
+    db.beforeTransaction = () => statuses.push(status("q", "QA", "qa", 7));
+    await expect(service.reorder({ ids: ["ip", "ns", "ir", "co", "ca", "d", "b"] }, ORG)).rejects.toThrow(
+      "Send every status once",
+    );
+    expect(db.locks.every((l) => l.includes("pg_advisory_xact_lock(") && l.includes(`project-statuses:${ORG}`))).toBe(true);
+    expect(db.locks).toHaveLength(4);
+  });
+
   it("remove refuses a built-in status", async () => {
     await expect(service.remove("co", "ip", ORG)).rejects.toThrow("Built-in statuses can't be deleted");
     expect(names()).toContain("Completed");

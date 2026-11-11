@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { OnApplicationBootstrap } from "@nestjs/common";
 import {
   DEFAULT_PURSUIT_PIPELINES,
@@ -9,7 +9,7 @@ import {
 import type { Prisma, PursuitPipeline, PursuitStage } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { requireName } from "../contacts/require-name";
-import { isPrismaUniqueViolation } from "../common/helpers/prisma-errors";
+import { assertFreeName, assertSameSet, unique, uniqueSlug } from "./ordered-names";
 import type {
   CreatePursuitStageDto,
   PursuitNameDto,
@@ -25,36 +25,6 @@ const STAGE_TAKEN = "A stage with this name already exists";
 const PIPELINE_TAKEN = "A pipeline with this name already exists";
 const BY_ORDER = { order: "asc" } as const;
 const WITH_STAGES = { stages: { orderBy: BY_ORDER } } as const;
-
-/** "Verbal yes!" → "verbal_yes"; adds _2, _3… when taken. */
-function uniqueSlug(name: string, taken: string[]): string {
-  const base: string = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "stage";
-  let slug: string = base;
-  for (let n = 2; taken.includes(slug); n++) slug = `${base}_${n}`;
-  return slug;
-}
-
-function assertFreeName(rows: { id: string; name: string }[], name: string, message: string, exceptId?: string): void {
-  const lower: string = name.toLowerCase();
-  if (rows.some((r) => r.id !== exceptId && r.name.toLowerCase() === lower)) throw new ConflictException(message);
-}
-
-/** Exactly these ids, once each, or 400. */
-function assertSameSet(ids: string[], rows: { id: string }[], message: string): void {
-  const set: Set<string> = new Set(ids);
-  if (ids.length !== rows.length || set.size !== rows.length || rows.some((r) => !set.has(r.id))) {
-    throw new BadRequestException(message);
-  }
-}
-
-async function unique<T>(write: () => Promise<T>, message: string): Promise<T> {
-  try {
-    return await write();
-  } catch (err: unknown) {
-    if (isPrismaUniqueViolation(err)) throw new ConflictException(message);
-    throw err;
-  }
-}
 
 function createWithDefaultStages(db: Db, orgId: string, name: string, order: number): Promise<PipelineWithStages> {
   return db.pursuitPipeline.create({
@@ -238,7 +208,7 @@ export class PursuitStagesService implements OnApplicationBootstrap {
             organizationId: orgId,
             pipelineId: pipeline.id,
             name,
-            slug: uniqueSlug(name, stages.map((s) => s.slug)),
+            slug: uniqueSlug(name, stages.map((s) => s.slug), "stage"),
             order: stages.length ? Math.max(...stages.map((s) => s.order)) + 1 : 0,
           },
         }),

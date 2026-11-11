@@ -7,8 +7,10 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import * as Sentry from "@sentry/nestjs";
-import { DEFAULT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
+import { DEFAULT_STATUSES, MAX_PROJECT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";
 import { PursuitStagesService } from "./pursuit-stages.service";
+import { lockProjectStatuses } from "./project-statuses.service";
+import type { Prisma } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { INVITATION_EXPIRES_IN_SECONDS } from "../clients/invitations";
 import { CreateProjectDto, UpdateProjectDto, DuplicateProjectDto } from "./projects.dto";
@@ -87,14 +89,37 @@ export class ProjectsService implements OnApplicationBootstrap {
     }
   }
 
-  /** Gives existing workspaces any default statuses added since they were created. */
+  /**
+   * Gives existing workspaces any default statuses added since they were created, at the end of
+   * their own order and never past the cap. Built-ins can't be deleted, so a missing one is new.
+   */
   async backfillDefaultStatuses(): Promise<void> {
     const orgs: { id: string }[] = await this.prisma.organization.findMany({ select: { id: true } });
-    if (orgs.length === 0) return;
-    await this.prisma.projectStatus.createMany({
-      data: orgs.flatMap((org) => DEFAULT_STATUSES.map((s) => ({ ...s, organizationId: org.id }))),
-      skipDuplicates: true,
+    const existing: { organizationId: string; slug: string; order: number }[] = await this.prisma.projectStatus.findMany({
+      select: { organizationId: true, slug: true, order: true },
     });
+    const data: { name: string; slug: string; order: number; color: string; organizationId: string }[] = [];
+    for (const org of orgs) {
+      const own: { slug: string; order: number }[] = existing.filter((s) => s.organizationId === org.id);
+      const slugs: Set<string> = new Set(own.map((s) => s.slug));
+      let order: number = Math.max(-1, ...own.map((s) => s.order));
+      let count: number = own.length;
+      for (const d of DEFAULT_STATUSES) {
+        if (slugs.has(d.slug) || count >= MAX_PROJECT_STATUSES) continue;
+        data.push({ ...d, order: ++order, organizationId: org.id });
+        count++;
+      }
+    }
+    if (data.length === 0) return;
+    // Skips a default whose name a workspace already uses for a status of its own.
+    await this.prisma.projectStatus.createMany({ data, skipDuplicates: true });
+  }
+
+  /** 400 unless `slug` is one of the workspace's statuses; holds it until commit so it can't be deleted meanwhile. */
+  private async assertStatus(tx: Prisma.TransactionClient, slug: string, organizationId: string): Promise<void> {
+    await lockProjectStatuses(tx, organizationId, true);
+    const found: { id: string } | null = await tx.projectStatus.findFirst({ where: { slug, organizationId }, select: { id: true } });
+    if (!found) throw new BadRequestException(`Invalid status: ${slug}`);
   }
 
   async findAll(
@@ -411,15 +436,6 @@ export class ProjectsService implements OnApplicationBootstrap {
     if (startDate !== undefined) dateFields.startDate = startDate ? new Date(startDate) : null;
     if (endDate !== undefined) dateFields.endDate = endDate ? new Date(endDate) : null;
 
-    if (rest.status) {
-      const validStatus = await this.prisma.projectStatus.findFirst({
-        where: { slug: rest.status, organizationId },
-      });
-      if (!validStatus) {
-        throw new BadRequestException(`Invalid status: ${rest.status}`);
-      }
-    }
-
     if (clientUserIds !== undefined) {
       if (clientUserIds.length) {
         const validMembers = await this.prisma.member.count({
@@ -431,6 +447,7 @@ export class ProjectsService implements OnApplicationBootstrap {
       }
 
       const project = await this.prisma.$transaction(async (tx) => {
+        if (rest.status) await this.assertStatus(tx, rest.status, organizationId);
         // Locked so a concurrent edit can't change the clients between reading and replacing them.
         const previous: string[] = await lockProjectClients(tx, id);
         const removed: string[] = previous.filter((u) => !clientUserIds.includes(u));
@@ -454,9 +471,9 @@ export class ProjectsService implements OnApplicationBootstrap {
       return project;
     }
 
-    const result = await this.prisma.project.updateMany({
-      where: { id, organizationId },
-      data: { ...rest, ...dateFields },
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (rest.status) await this.assertStatus(tx, rest.status, organizationId);
+      return tx.project.updateMany({ where: { id, organizationId }, data: { ...rest, ...dateFields } });
     });
     if (result.count === 0) throw new NotFoundException("Project not found");
     return this.prisma.project.findUnique({

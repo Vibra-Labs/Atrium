@@ -158,11 +158,18 @@ describe("passkeys in the rules", () => {
     expect(hasSecondFactor({ twoFactorEnabled: false, hasPasskey: false })).toBe(false);
   });
 
-  it("treats a passkey session from the last 5 minutes as fresh proof", () => {
+  it("treats a passkey ceremony from the last 5 minutes as fresh proof", () => {
     const now: number = Date.parse("2026-11-11T12:00:00Z");
     const at = (msAgo: number): Date => new Date(now - msAgo);
-    expect(passkeyProofIsRecent({ secondFactor: "passkey", createdAt: at(4 * 60_000 + 59_000) }, now)).toBe(true);
-    expect(passkeyProofIsRecent({ secondFactor: "passkey", createdAt: at(5 * 60_000 + 1_000) }, now)).toBe(false);
-    expect(passkeyProofIsRecent({ secondFactor: "totp", createdAt: at(1_000) }, now)).toBe(false);
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: at(4 * 60_000 + 59_000) }, now)).toBe(true);
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: at(5 * 60_000 + 1_000) }, now)).toBe(false);
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: null }, now)).toBe(false);
+  });
+
+  it("does not count a session that merely carried a passkey stamp over", () => {
+    // /two-factor/disable or /change-password mint a brand-new session that keeps
+    // secondFactor "passkey"; only the ceremony time counts.
+    const now: number = Date.parse("2026-11-11T12:00:00Z");
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: new Date(now - 3 * 60 * 60_000) }, now)).toBe(false);
   });
 });

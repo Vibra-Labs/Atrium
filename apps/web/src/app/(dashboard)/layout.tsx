@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { loginRedirectPath } from "@/lib/login-redirect";
@@ -159,6 +160,7 @@ export default async function DashboardLayout({
       userName={session.user?.name ?? ""}
       role={role}
       orgId={activeOrg?.id ?? ""}
+      onCustomDomain={Boolean((await headers()).get("x-custom-host"))}
     >
     <NotificationProvider>
     <div

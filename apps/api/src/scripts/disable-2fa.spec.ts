@@ -28,10 +28,14 @@ describe("parseArgs", () => {
   });
 });
 
-function deps(user: { id: string } | null, passkeysLeft = 0) {
+function deps(user: { id: string } | null, passkeysLeft = 0, hadTwoFactor = true) {
   const reset = mock(
-    (): Promise<{ hadTwoFactor: boolean; passkeysRemoved: number; passkeysLeft: number }> =>
-      Promise.resolve({ hadTwoFactor: true, passkeysRemoved: 0, passkeysLeft }),
+    (_userId: string, passkeys: boolean): Promise<{ hadTwoFactor: boolean; passkeysRemoved: number; passkeysLeft: number }> =>
+      Promise.resolve(
+        passkeys
+          ? { hadTwoFactor, passkeysRemoved: passkeysLeft, passkeysLeft: 0 }
+          : { hadTwoFactor, passkeysRemoved: 0, passkeysLeft },
+      ),
   );
   const alert = mock((): Promise<void> => Promise.resolve());
   const log = mock(() => undefined);
@@ -70,5 +74,13 @@ describe("run", () => {
     await run(d, "ada@example.com", "t", true);
     expect(reset).toHaveBeenLastCalledWith("u1", true);
     expect(alert).toHaveBeenLastCalledWith("u1", true);
+  });
+  it("doesn't claim 2FA was turned off when nothing was removed", async () => {
+    const { d, alert, print } = deps({ id: "u1" }, 2, false);
+    expect(await run(d, "ada@example.com", "t", false)).toBe(0);
+    expect(alert).not.toHaveBeenCalled();
+    const out: string = print.mock.calls.map((c) => c[0]).join("\n");
+    expect(out).toContain("ada@example.com has no authenticator app. Signed them out everywhere.");
+    expect(out).toContain("They still have 2 passkeys");
   });
 });

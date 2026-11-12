@@ -6,18 +6,21 @@ import type { PasskeyAfterInput, PasskeyBeforeInput, PasskeyHookDeps } from "./p
 function fakes(opts: { staff?: boolean; requiring?: boolean } = {}) {
   const sessionUpdate = mock(() => Promise.resolve({}));
   const sessionDelete = mock(() => Promise.resolve({ count: 1 }));
+  const sessionFind = mock((): Promise<unknown> => Promise.resolve({ userId: "u1", activeOrganizationId: "orgB" }));
   const forgetSession = mock(() => undefined);
   const forgetUser = mock(() => undefined);
   const sendAlert = mock(() => Promise.resolve());
   const deps: PasskeyHookDeps = {
-    prisma: { session: { update: sessionUpdate, deleteMany: sessionDelete } } as unknown as PasskeyHookDeps["prisma"],
+    prisma: {
+      session: { update: sessionUpdate, deleteMany: sessionDelete, findUnique: sessionFind },
+    } as unknown as PasskeyHookDeps["prisma"],
     forgetSession,
     forgetUser,
     sendAlert,
     isStaffAnywhere: async (): Promise<boolean> => opts.staff ?? true,
     isStaffInRequiringWorkspace: async (): Promise<boolean> => opts.requiring ?? false,
   };
-  return { deps, sessionUpdate, sessionDelete, forgetSession, forgetUser, sendAlert };
+  return { deps, sessionUpdate, sessionDelete, sessionFind, forgetSession, forgetUser, sendAlert };
 }
 
 function before(overrides: Partial<PasskeyBeforeInput>): PasskeyBeforeInput {
@@ -85,6 +88,29 @@ describe("passkeyBeforeHook", () => {
 });
 
 describe("passkeyAfterHook", () => {
+  it("records when the passkey ceremony happened on the new session", async () => {
+    const f = fakes();
+    await passkeyAfterHook(after({ previousToken: null }), f.deps);
+    const call = (f.sessionUpdate.mock.calls[0] as unknown as [{ where: unknown; data: Record<string, unknown> }])[0];
+    expect(call.where).toEqual({ token: "new" });
+    expect(call.data.passkeyVerifiedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps the workspace the replaced session was working in, for the same user", async () => {
+    const f = fakes();
+    await passkeyAfterHook(after({ previousToken: "old" }), f.deps);
+    const data = (f.sessionUpdate.mock.calls[0] as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(data.activeOrganizationId).toBe("orgB");
+  });
+
+  it("does not carry another user's workspace", async () => {
+    const f = fakes();
+    f.sessionFind.mockImplementation(() => Promise.resolve({ userId: "someone-else", activeOrganizationId: "orgX" }));
+    await passkeyAfterHook(after({ previousToken: "old" }), f.deps);
+    const data = (f.sessionUpdate.mock.calls[0] as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(data.activeOrganizationId).toBeUndefined();
+  });
+
   it("deletes the old session a passkey sign-in replaced", async () => {
     const f = fakes();
     await passkeyAfterHook(after({ previousToken: "old" }), f.deps);

@@ -238,7 +238,7 @@ describe("TwoFactorService.resetForMember", () => {
       targetUserId: "admin1",
       headers: new Headers(),
       hosted: false,
-      session: { secondFactor: "totp", createdAt: new Date(Date.now() - 60 * 60_000) },
+      session: { passkeyVerifiedAt: null },
       ...overrides,
     });
   }
@@ -305,14 +305,14 @@ describe("TwoFactorService.resetForMember", () => {
   });
   it("lets a passkey-only owner confirm with a passkey they just used", async () => {
     actorPasskeys = 1;
-    await reset({ session: { secondFactor: "passkey", createdAt: new Date(Date.now() - 60_000) } });
+    await reset({ session: { passkeyVerifiedAt: new Date(Date.now() - 60_000) } });
     expect(verifyTOTP).not.toHaveBeenCalled();
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a passkey proof that is older than 5 minutes", async () => {
     actorPasskeys = 1;
-    await expect(reset({ session: { secondFactor: "passkey", createdAt: new Date(Date.now() - 10 * 60_000) } })).rejects.toThrow(
+    await expect(reset({ session: { passkeyVerifiedAt: new Date(Date.now() - 10 * 60_000) } })).rejects.toThrow(
       "Confirm with a code from your authenticator app, or with your passkey.",
     );
   });

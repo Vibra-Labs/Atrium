@@ -58,8 +58,8 @@ export interface ResetInput {
   headers: Headers;
   /** Hosted cloud (support exists) vs self-hosted (the server operator). */
   hosted: boolean;
-  /** The actor's session: a passkey sign-in in the last few minutes counts as confirmation. */
-  session: { secondFactor?: string | null; createdAt: Date };
+  /** The actor's session: a passkey ceremony in the last few minutes counts as confirmation. */
+  session: { passkeyVerifiedAt?: Date | string | null };
 }
 
 export interface StatusInput {
@@ -181,7 +181,7 @@ export class TwoFactorService {
     actorId: string,
     code: string | undefined,
     headers: Headers,
-    session: { secondFactor?: string | null; createdAt: Date },
+    session: { passkeyVerifiedAt?: Date | string | null },
   ): Promise<void> {
     const factors: SecondFactors = await secondFactorsOf(this.prisma, actorId);
     if (!hasSecondFactor({ twoFactorEnabled: factors.totp, hasPasskey: factors.passkeys > 0 })) return;

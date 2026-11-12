@@ -89,9 +89,25 @@ export async function passkeyAfterHook(input: PasskeyAfterInput, deps: PasskeyHo
   if (!input.ok) return;
 
   if (input.path === "/passkey/verify-authentication") {
-    // The plugin signs in with a new session and leaves the one the browser
-    // had (often a pending one) alive. Its cookie is being replaced, so end it.
-    if (input.previousToken && input.previousToken !== input.newSessionToken) {
+    if (!input.newSessionToken) return;
+    const replaced: boolean = input.previousToken !== null && input.previousToken !== input.newSessionToken;
+    // Record the ceremony itself: the proof "confirm with your passkey" checks.
+    const data: { passkeyVerifiedAt: Date; activeOrganizationId?: string } = { passkeyVerifiedAt: new Date() };
+    if (replaced && input.previousToken) {
+      // Same person stepping up: stay in the workspace they were working in,
+      // not whichever one a brand-new session would pick.
+      const previous = await deps.prisma.session.findUnique({
+        where: { token: input.previousToken },
+        select: { userId: true, activeOrganizationId: true },
+      });
+      if (previous && previous.userId === input.userId && previous.activeOrganizationId) {
+        data.activeOrganizationId = previous.activeOrganizationId;
+      }
+    }
+    await deps.prisma.session.update({ where: { token: input.newSessionToken }, data });
+    if (replaced && input.previousToken) {
+      // The plugin leaves the session the browser had (often a pending one)
+      // alive. Its cookie is being replaced, so end it.
       await deps.prisma.session.deleteMany({ where: { token: input.previousToken } });
       deps.forgetSession(input.previousToken);
     }

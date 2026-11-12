@@ -44,15 +44,21 @@ export function TwoFactorForm({ onCustomDomain, webUrl }: TwoFactorFormProps): R
         const data: unknown = res.ok ? await res.json() : null;
         if (data && typeof data === "object" && "user" in data) {
           // Step-up: offer exactly the factors this user has.
-          const status = (await fetch(`${API_URL}/api/two-factor/status`, { credentials: "include" }).then((r) =>
-            r.json(),
-          )) as { totpEnabled?: boolean; passkeyCount?: number };
-          setMethods({ code: status.totpEnabled === true, passkey: (status.passkeyCount ?? 0) > 0 });
+          const statusRes: Response = await fetch(`${API_URL}/api/two-factor/status`, { credentials: "include" });
+          if (statusRes.ok) {
+            const status = (await statusRes.json()) as { totpEnabled?: boolean; passkeyCount?: number };
+            setMethods({ code: status.totpEnabled === true, passkey: (status.passkeyCount ?? 0) > 0 });
+          } else {
+            // Can't tell which factors this user has: offer both rather than nothing.
+            console.error(`Two-factor status failed: ${statusRes.status}`);
+            setMethods({ code: true, passkey: true });
+          }
           setMode("step-up");
           return;
         }
         // After a password: the challenge is for the authenticator app; a passkey sign-in also works.
-        const options = (await fetch(`${API_URL}/api/sign-in-options`).then((r) => r.json())) as { passkey?: boolean };
+        const optionsRes: Response = await fetch(`${API_URL}/api/sign-in-options`);
+        const options = (optionsRes.ok ? await optionsRes.json() : {}) as { passkey?: boolean };
         setMethods({ code: true, passkey: options.passkey === true });
         setMode("challenge");
       } catch (err) {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AddPasskey } from "./add-passkey";
+import { useSession } from "@/lib/session-context";
 import type { TwoFactorStatus } from "./security-section";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -35,6 +36,7 @@ interface PasskeysSectionProps {
 
 /** Settings → Security: the signed-in user's passkeys. */
 export function PasskeysSection({ status, onChange }: PasskeysSectionProps): React.ReactElement {
+  const { onCustomDomain } = useSession();
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
@@ -161,7 +163,14 @@ export function PasskeysSection({ status, onChange }: PasskeysSectionProps): Rea
       )}
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
-      {status.passkeysOffered && <AddPasskey onAdded={changed} />}
+      {status.passkeysOffered &&
+        (onCustomDomain ? (
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Passkeys belong to the main Atrium address. Open Settings there to add one.
+          </p>
+        ) : (
+          <AddPasskey onAdded={changed} />
+        ))}
     </section>
   );
 }

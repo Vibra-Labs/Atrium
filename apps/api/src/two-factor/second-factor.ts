@@ -114,18 +114,22 @@ export function hasSecondFactor(user: { twoFactorEnabled?: boolean | null; hasPa
   return user.twoFactorEnabled === true || user.hasPasskey === true;
 }
 
-/** How recent a passkey sign-in must be to count as "confirm with your passkey". */
+/** How recent a passkey ceremony must be to count as "confirm with your passkey". */
 const PASSKEY_PROOF_MS: number = 5 * 60 * 1000;
 
 /**
- * A passkey ceremony always creates a new session, so a session stamped
- * "passkey" and created moments ago proves the passkey was just used.
+ * Whether the session's passkey ceremony happened in the last few minutes.
+ * Uses the ceremony time (`passkeyVerifiedAt`, set only by a passkey sign-in),
+ * not the session's age or its `secondFactor` stamp: endpoints that replace a
+ * session (change-password, two-factor/disable) mint a new one that carries
+ * the stamp over, and must not look like a fresh ceremony.
  */
 export function passkeyProofIsRecent(
-  session: { secondFactor?: string | null; createdAt: Date },
+  session: { passkeyVerifiedAt?: Date | string | null },
   now: number,
 ): boolean {
-  return session.secondFactor === "passkey" && now - new Date(session.createdAt).getTime() <= PASSKEY_PROOF_MS;
+  if (!session.passkeyVerifiedAt) return false;
+  return now - new Date(session.passkeyVerifiedAt).getTime() <= PASSKEY_PROOF_MS;
 }
 
 /**

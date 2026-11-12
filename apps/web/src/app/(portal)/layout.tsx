@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { Suspense } from "react";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { loginRedirectPath } from "@/lib/login-redirect";
@@ -69,6 +70,7 @@ export default async function PortalLayout({
         userName={session.user?.name ?? ""}
         role={org?.role ?? ""}
         orgId={org?.id ?? ""}
+        onCustomDomain={Boolean((await headers()).get("x-custom-host"))}
       >
       <NotificationProvider>
       <PreviewModeProvider>

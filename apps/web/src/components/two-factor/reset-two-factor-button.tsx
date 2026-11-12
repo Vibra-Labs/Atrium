@@ -82,7 +82,7 @@ export function ResetTwoFactorButton({ userId, name, onDone }: ResetTwoFactorBut
           <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-lg bg-[var(--background)] p-6 shadow-lg">
             <h2 id="reset-2fa-title" className="text-lg font-semibold">Turn off 2FA for {name}?</h2>
             <p className="text-sm text-[var(--muted-foreground)]">
-              This removes their authenticator and recovery codes and signs them out everywhere. They&apos;ll get an
+              This removes their authenticator app, recovery codes and passkeys, and signs them out everywhere. They&apos;ll get an
               email. If your workspace requires two-factor, they set it up again at their next sign-in.
             </p>
             {passkeyConfirm ? (

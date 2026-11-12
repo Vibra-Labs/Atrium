@@ -131,6 +131,12 @@ export interface BeforeHookInput {
 export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFactorHookDeps): Promise<void> {
   if (!TWO_FACTOR_BEFORE_PATHS.has(input.path) || !input.userId) return;
 
+  // Nothing to turn off. Refused because the endpoint would still mint a
+  // replacement session, which must not pass for anything fresh.
+  if (input.path === "/two-factor/disable" && !input.twoFactorEnabled) {
+    throw new APIError("BAD_REQUEST", { message: "The authenticator app isn't turned on." });
+  }
+
   // Setup gets the URI from /enable. Afterwards this would hand the secret,
   // a permanent second factor, to anyone holding a session of a passwordless user.
   if (input.path === "/two-factor/get-totp-uri") {

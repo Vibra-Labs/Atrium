@@ -43,12 +43,13 @@ export async function run(deps: RunDeps, email: string, reason: string, passkeys
     return 1;
   }
   const { hadTwoFactor, passkeysRemoved, passkeysLeft } = await deps.reset(user.id, passkeys);
-  await deps.alert(user.id, passkeys);
+  // Only tell the user something was turned off when something was.
+  if (hadTwoFactor || passkeysRemoved > 0) await deps.alert(user.id, passkeysRemoved > 0);
   deps.log({ event: "two_factor.reset_by_operator", userId: user.id, reason });
   deps.print(
     hadTwoFactor
       ? `Removed two-factor for ${email} and signed them out everywhere. They can sign in with their password and set it up again.`
-      : `${email} had no two-factor set up. Signed them out everywhere.`,
+      : `${email} has no authenticator app. Signed them out everywhere.`,
   );
   if (passkeysRemoved > 0) deps.print(`Removed ${passkeysRemoved} passkey${passkeysRemoved === 1 ? "" : "s"}.`);
   if (passkeysLeft > 0) {

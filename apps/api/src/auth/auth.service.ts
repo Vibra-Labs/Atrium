@@ -316,6 +316,7 @@ export class AuthService {
         // No default, so a replacement session can carry its predecessor's.
         additionalFields: {
           secondFactor: { type: "string", required: false, input: false },
+          passkeyVerifiedAt: { type: "date", required: false, input: false },
         },
       },
       rateLimit: {

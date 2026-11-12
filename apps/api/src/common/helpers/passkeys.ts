@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { isLoopbackHost } from "./mcp-oauth";
 
 type ConfigLike = { get: (key: string) => string | undefined };
@@ -18,7 +19,8 @@ export function passkeyUnavailableReason(config: ConfigLike): string | null {
   let url: URL;
   try {
     url = new URL(webUrl(config));
-  } catch {
+  } catch (err) {
+    Logger.warn(`WEB_URL is not a valid URL: ${err instanceof Error ? err.message : String(err)}`, "Passkeys");
     return "WEB_URL is not a valid URL";
   }
   if (url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname))) return null;

@@ -198,6 +198,13 @@ describe("twoFactorBeforeHook", () => {
     await twoFactorBeforeHook({ ...base, path: "/two-factor/get-totp-uri", twoFactorEnabled: false }, f.deps);
   });
 
+  it("refuses to 'turn off' two-factor that isn't on", async () => {
+    const f = fakes();
+    await expect(
+      twoFactorBeforeHook({ ...base, path: "/two-factor/disable", twoFactorEnabled: false, code: undefined }, f.deps),
+    ).rejects.toThrow("The authenticator app isn't turned on.");
+  });
+
   it("ignores other paths", async () => {
     const f = fakes();
     await twoFactorBeforeHook({ ...base, path: "/two-factor/enable", userId: "staff", code: undefined }, f.deps);

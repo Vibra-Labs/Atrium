@@ -47,6 +47,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = "Internal server error";
     let error = "Internal Server Error";
+    // A stable code the web app branches on, e.g. SECOND_FACTOR_REQUIRED.
+    let code: string | undefined;
 
     const clientStatus: number | undefined = clientErrorStatus(exception);
 
@@ -58,7 +60,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else if (typeof res === "object" && res !== null) {
         const obj = res as Record<string, unknown>;
         message = (obj.message as string) ?? message;
-        error = (obj.error as string) ?? error;
+        error = (obj.error as string) ?? reasonPhrase(statusCode) ?? error;
+        if (typeof obj.code === "string") code = obj.code;
       }
     } else if (clientStatus !== undefined) {
       statusCode = clientStatus;
@@ -72,6 +75,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     response.status(statusCode).json({
       statusCode,
+      ...(code ? { code } : {}),
       message,
       error,
     });

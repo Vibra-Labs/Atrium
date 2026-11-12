@@ -18,8 +18,8 @@ export function parseOriginalUrl(originalUrl: string): URL {
   return new URL(`http://internal${originalUrl}`);
 }
 
-/** The Better Auth route a URL names, in a canonical spelling. */
-function authRoute(pathname: string): string {
+/** A request path in a canonical spelling: decoded, lowercased, single slashes, no trailing slash. */
+export function canonicalPath(pathname: string): string {
   let decoded: string = pathname;
   try {
     decoded = decodeURIComponent(pathname);
@@ -30,8 +30,12 @@ function authRoute(pathname: string): string {
   return decoded
     .toLowerCase()
     .replace(/\/{2,}/g, "/")
-    .replace(/^\/api\/auth/, "")
     .replace(/\/+$/, "");
+}
+
+/** The Better Auth route a URL names, in a canonical spelling. */
+function authRoute(pathname: string): string {
+  return canonicalPath(pathname).replace(/^\/api\/auth/, "");
 }
 
 /** Whether a request URL names one of the staff-only Better Auth organization routes. */

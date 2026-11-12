@@ -8,6 +8,7 @@ interface Fakes {
   sessionUpdate: ReturnType<typeof mock>;
   sessionDelete: ReturnType<typeof mock>;
   forgetSession: ReturnType<typeof mock>;
+  forgetUser: ReturnType<typeof mock>;
   failures: Map<string, number>;
 }
 
@@ -16,18 +17,20 @@ function fakes(): Fakes {
   const sessionUpdate = mock(() => Promise.resolve({}));
   const sessionDelete = mock(() => Promise.resolve({}));
   const forgetSession = mock(() => undefined);
+  const forgetUser = mock(() => undefined);
   const deps: TwoFactorHookDeps = {
     prisma: {
       session: { update: sessionUpdate, deleteMany: sessionDelete },
     } as unknown as TwoFactorHookDeps["prisma"],
     forgetSession,
+    forgetUser,
     recordStepUpFailure: async (sessionId: string): Promise<number> => {
       const next: number = (failures.get(sessionId) ?? 0) + 1;
       failures.set(sessionId, next);
       return next;
     },
   };
-  return { deps, sessionUpdate, sessionDelete, forgetSession, failures };
+  return { deps, sessionUpdate, sessionDelete, forgetSession, forgetUser, failures };
 }
 
 function ctx(path: string, returned: unknown, secondFactor: string | null = null, newSession = false): AuthHookContext {
@@ -88,5 +91,10 @@ describe("twoFactorAfterHook", () => {
     const f = fakes();
     await twoFactorAfterHook(ctx("/sign-in/email", { token: "t1" }), f.deps);
     expect(f.sessionUpdate).not.toHaveBeenCalled();
+  });
+  it("drops every cached session of a user who just turned 2FA on", async () => {
+    const f = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/verify-totp", { token: "t2" }, null, true), f.deps);
+    expect(f.forgetUser).toHaveBeenCalledWith("u1");
   });
 });

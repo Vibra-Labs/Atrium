@@ -32,3 +32,74 @@ export function stampFor(input: StampInput): SecondFactor | null {
   // enable/disable) carry its status over. Carrying never upgrades a session.
   return input.currentSecondFactor === null ? null : (input.currentSecondFactor as SecondFactor);
 }
+
+/** Why the gate refused a request. Sent as `code` in the 403 body. */
+export type GateRefusal = "SECOND_FACTOR_REQUIRED" | "TWO_FACTOR_REQUIRED";
+
+export interface GateInput {
+  /**
+   * Better Auth routes as `auth:<route>` (e.g. "auth:/two-factor/verify-totp"),
+   * Atrium routes as the request path (e.g. "/api/two-factor/status").
+   */
+  route: string;
+  /** The user has at least one second factor. */
+  hasFactor: boolean;
+  /** The session's `secondFactor`. */
+  secondFactor: string | null;
+  /** Staff in a workspace that requires 2FA, with no factor yet. */
+  enrollmentOwed: boolean;
+}
+
+/** Open in any state: reading yourself, signing out, and starting a new sign-in. */
+const OPEN_ROUTES: readonly string[] = [
+  "auth:/get-session",
+  "auth:/sign-out",
+  "auth:/sign-in/*",
+  "auth:/sign-up/*",
+  "auth:/magic-link/verify",
+  "auth:/request-password-reset",
+  "auth:/reset-password",
+  "auth:/reset-password/*",
+  "auth:/verify-email",
+  "auth:/send-verification-email",
+  "/api/two-factor/status",
+];
+
+/** Open to a pending session: proving the second factor. */
+const STEP_UP_ROUTES: readonly string[] = ["auth:/two-factor/verify-totp", "auth:/two-factor/verify-backup-code"];
+
+/** Open to staff who owe enrollment: setting up a factor, or going to another workspace. */
+const ENROLL_ROUTES: readonly string[] = [
+  "auth:/two-factor/enable",
+  "auth:/two-factor/verify-totp",
+  "auth:/two-factor/get-totp-uri",
+  "auth:/organization/list",
+  "auth:/organization/set-active",
+];
+
+function matches(route: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern: string) =>
+    pattern.endsWith("/*") ? route.startsWith(pattern.slice(0, -1)) : route === pattern,
+  );
+}
+
+/** Whether a user has a second factor. Passkeys join this in PR 2. */
+export function hasSecondFactor(user: { twoFactorEnabled?: boolean | null }): boolean {
+  return user.twoFactorEnabled === true;
+}
+
+/**
+ * The core rule: a session whose user has a second factor, but which never
+ * passed one, may only step up, read itself or sign out. Staff who owe
+ * enrollment may only enroll or switch workspace.
+ */
+export function gateDecision(input: GateInput): GateRefusal | null {
+  const { route } = input;
+  if (input.hasFactor && input.secondFactor === null) {
+    return matches(route, OPEN_ROUTES) || matches(route, STEP_UP_ROUTES) ? null : "SECOND_FACTOR_REQUIRED";
+  }
+  if (input.enrollmentOwed) {
+    return matches(route, OPEN_ROUTES) || matches(route, ENROLL_ROUTES) ? null : "TWO_FACTOR_REQUIRED";
+  }
+  return null;
+}

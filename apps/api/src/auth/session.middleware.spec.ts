@@ -426,6 +426,9 @@ describe("SessionMiddleware cookie session", () => {
     const prisma = {
       organization: { findUnique: mock(() => Promise.resolve(resolved.organization)) },
       member: { findFirst: mock(() => Promise.resolve(memberRow)) },
+      systemSettings: {
+        findUnique: mock((): Promise<{ requireTwoFactor: boolean } | null> => Promise.resolve(null)),
+      },
     };
     const tracker = lastSeen();
     const mw = new SessionMiddleware(
@@ -464,22 +467,37 @@ describe("SessionMiddleware cookie session", () => {
     expect(r.member).toBeUndefined();
   });
 
-  it("does not resolve the session on an auth route, and evicts the cached entry", async () => {
+  it("resolves the session afresh on an auth route without caching it", async () => {
     const { mw, getSession } = cookieBuild();
     await mw.use(req({}, COOKIE), {} as Response, noop());
     expect(getSession).toHaveBeenCalledTimes(1);
 
-    const authReq = req({}, COOKIE, "10.0.0.1", "/api/auth/get-session") as Request & Record<string, any>;
+    // The gate needs to know who is calling the Better Auth proxy.
+    const authReq = req({}, COOKIE, "10.0.0.1", "/api/auth/organization/invite-member") as Request &
+      Record<string, any>;
     const next = noop();
     await mw.use(authReq, {} as Response, next);
     expect(next).toHaveBeenCalledTimes(1);
-    expect(authReq.user).toBeUndefined();
-    expect(authReq.member).toBeUndefined();
-    expect(getSession).toHaveBeenCalledTimes(1);
-
-    // The auth route dropped the cache entry, so the next API call re-resolves.
-    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(authReq.user.id).toBe("u1");
     expect(getSession).toHaveBeenCalledTimes(2);
+
+    // Auth routes can change the session, so the entry was dropped, not refreshed.
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(getSession).toHaveBeenCalledTimes(3);
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(getSession).toHaveBeenCalledTimes(3);
+  });
+
+  it("sets workspaceRequiresTwoFactor from the active workspace's settings, cached too", async () => {
+    const { mw, prisma } = cookieBuild();
+    prisma.systemSettings.findUnique.mockImplementation(() => Promise.resolve({ requireTwoFactor: true }));
+    const first = req({}, COOKIE) as Request & Record<string, any>;
+    await mw.use(first, {} as Response, noop());
+    expect(first.workspaceRequiresTwoFactor).toBe(true);
+    const second = req({}, COOKIE) as Request & Record<string, any>;
+    await mw.use(second, {} as Response, noop());
+    expect(second.workspaceRequiresTwoFactor).toBe(true);
+    expect(prisma.systemSettings.findUnique).toHaveBeenCalledTimes(1);
   });
 
   it("resolves the caller's role on the staff-only organization routes the auth proxy gates", async () => {

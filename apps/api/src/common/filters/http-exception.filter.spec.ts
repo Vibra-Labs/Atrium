@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { BadRequestException, HttpStatus } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, HttpStatus } from "@nestjs/common";
 import type { ArgumentsHost } from "@nestjs/common";
 import { AllExceptionsFilter } from "./http-exception.filter";
 
@@ -93,5 +93,11 @@ describe("AllExceptionsFilter", () => {
       buildFilter().catch(err, host);
       expect(res.statusCode).toBe(500);
     }
+  });
+  it("keeps a machine-readable code from the exception body", () => {
+    const { host, res } = buildHost();
+    buildFilter().catch(new ForbiddenException({ code: "SECOND_FACTOR_REQUIRED", message: "m" }), host);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ statusCode: 403, code: "SECOND_FACTOR_REQUIRED", message: "m", error: "Forbidden" });
   });
 });

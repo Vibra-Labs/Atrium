@@ -5,22 +5,13 @@ import { AuthService } from "./auth.service";
 import { ApiKeysService, API_KEY_PREFIX, hashApiKey } from "../api-keys/api-keys.service";
 import { McpAuthService } from "../mcp-auth/mcp-auth.service";
 import { LastSeenTracker } from "./last-seen.tracker";
-import { isStaffOnlyOrgRoute, parseOriginalUrl } from "./staff-only-org-routes";
+import { SessionCache } from "./session-cache";
+import type { CachedSession } from "./session-cache";
 import { PrismaService } from "../prisma/prisma.service";
 import { bearerToken, isMcpPath, mcpOAuthEnabled, ORG_MEMBER_FIELDS, RateLimiter } from "../common";
 import type {
   Actor, AuthenticatedRequest, AuthUser, AuthSession, BearerKind, FullOrganization, OrgMember,
 } from "../common";
-
-interface CachedSession {
-  user: AuthUser;
-  session: AuthSession;
-  organization?: FullOrganization;
-  member?: OrgMember;
-  apiKeyId?: string;
-  bearerKind?: BearerKind;
-  expiresAt: number;
-}
 
 const SESSION_CACHE_TTL = 30_000; // 30 seconds
 /** The columns `req.organization` carries (FullOrganization, minus members). */
@@ -43,15 +34,20 @@ function clientIp(req: Request): string {
 type AuthReq = Partial<
   Pick<
     AuthenticatedRequest,
-    "user" | "session" | "organization" | "member" | "apiKeyId" | "bearerKind" | "authRateLimited"
+    | "user"
+    | "session"
+    | "organization"
+    | "member"
+    | "apiKeyId"
+    | "bearerKind"
+    | "authRateLimited"
+    | "workspaceRequiresTwoFactor"
   >
 > &
   Request;
 
 @Injectable()
 export class SessionMiddleware implements NestMiddleware {
-  /** Cookie sessions, keyed by the raw session token. */
-  private cache = new Map<string, CachedSession>();
   /**
    * API-key sessions, keyed by the key hash. Deliberately a separate map: the
    * cookie branch trusts an attacker-controlled token, so a shared map would
@@ -77,6 +73,8 @@ export class SessionMiddleware implements NestMiddleware {
     private config: ConfigService,
     private lastSeen: LastSeenTracker,
     private prisma: PrismaService,
+    /** Cookie sessions, keyed by the raw session token. Shared so others can drop a user's entries. */
+    private cache: SessionCache = new SessionCache(),
   ) {}
 
   private extractSessionToken(req: Request): string | undefined {
@@ -198,22 +196,23 @@ export class SessionMiddleware implements NestMiddleware {
         }
       }
 
-      // Better Auth resolves the session itself on its own routes, so skip it
-      // here. Those routes mutate session state (login, set-active org, ...),
-      // so the cached entry is dropped either way. The staff-only organization
-      // routes are the exception: the auth proxy gates them on the caller's
-      // role, so they resolve afresh below.
+      // Better Auth routes mutate session state (login, set-active org, ...),
+      // so the cached entry is dropped. The caller is still resolved: the auth
+      // proxy gates staff-only organization routes on the caller's role, and
+      // SecondFactorGuard gates every route on the session's second factor.
       if (isAuthRoute) {
-        if (token) this.cache.delete(token);
-        if (!isStaffOnlyOrgRoute(parseOriginalUrl(req.originalUrl))) return next();
+        if (!token) return next();
+        // Resolved afresh (never from the cache, and never written back) for
+        // the auth proxy's staff-only checks and the second-factor gate.
+        this.cache.delete(token);
       }
 
-      // Check cache first (skip for auth routes)
       if (!isAuthRoute && token) {
-        const cached = this.cache.get(token);
-        if (cached && cached.expiresAt > Date.now()) {
+        const cached: CachedSession | undefined = this.cache.get(token);
+        if (cached) {
           authReq.user = cached.user;
           authReq.session = cached.session;
+          authReq.workspaceRequiresTwoFactor = cached.workspaceRequiresTwoFactor;
           if (cached.organization) authReq.organization = cached.organization;
           if (cached.member) {
             authReq.member = cached.member;
@@ -221,8 +220,6 @@ export class SessionMiddleware implements NestMiddleware {
           }
           return next();
         }
-        // Expired — remove stale entry
-        if (cached) this.cache.delete(token);
       }
 
       // Build headers from the incoming request, but override the host
@@ -249,11 +246,15 @@ export class SessionMiddleware implements NestMiddleware {
       if (session && activeOrgId) {
         // Two indexed reads instead of Better Auth's getFullOrganization, which
         // loads every member (capped at 100, so anyone past that lost their role).
-        const [organization, member] = await Promise.all([
+        const [organization, member, settings] = await Promise.all([
           this.prisma.organization.findUnique({ where: { id: activeOrgId }, select: ORGANIZATION_FIELDS }),
           this.prisma.member.findFirst({
             where: { organizationId: activeOrgId, userId: session.user.id },
             select: ORG_MEMBER_FIELDS,
+          }),
+          this.prisma.systemSettings.findUnique({
+            where: { organizationId: activeOrgId },
+            select: { requireTwoFactor: true },
           }),
         ]);
         // Organization only alongside a membership, as before: AuthGuard reads
@@ -261,23 +262,22 @@ export class SessionMiddleware implements NestMiddleware {
         if (organization && member) {
           authReq.organization = organization;
           authReq.member = member;
+          authReq.workspaceRequiresTwoFactor = settings?.requireTwoFactor === true;
           // Cookie sessions only: an API key or MCP client is not a person visiting.
           void this.lastSeen.touch(member.id);
         }
       }
 
-      // Cache the resolved session
-      if (token && session) {
+      // Cache the resolved session. Not on auth routes: they may change it.
+      if (token && session && !isAuthRoute) {
         this.cache.set(token, {
           user: authReq.user as AuthUser,
           session: authReq.session as AuthSession,
           organization: authReq.organization,
           member: authReq.member,
+          workspaceRequiresTwoFactor: authReq.workspaceRequiresTwoFactor,
           expiresAt: Date.now() + SESSION_CACHE_TTL,
         });
-
-        // Evict old entries periodically
-        if (this.cache.size > 1000) this.evict(this.cache);
       }
     } catch (err) {
       // Session resolution failed — continue without auth.

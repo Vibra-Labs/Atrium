@@ -25,6 +25,8 @@ export interface TwoFactorHookDeps {
   prisma: Pick<PrismaService, "session">;
   /** Drops a session token from SessionMiddleware's cache. */
   forgetSession: (token: string) => void;
+  /** Drops every cached session of a user, so a change to their factors applies at once. */
+  forgetUser: (userId: string) => void;
   /** Counts a wrong step-up code for a session and returns the running total. */
   recordStepUpFailure: (sessionId: string) => Promise<number>;
 }
@@ -48,7 +50,12 @@ function failed(returned: unknown): boolean {
 export async function twoFactorAfterHook(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
   const factor: SecondFactor | undefined = STEP_UP_FACTORS.get(ctx.path);
   const current = ctx.context.session;
-  if (!factor || !current || ctx.context.newSession) return;
+  if (!factor || !current) return;
+  if (ctx.context.newSession) {
+    // Turning 2FA on replaces this session; every other one is now pending.
+    if (!failed(ctx.context.returned)) deps.forgetUser(current.user.id);
+    return;
+  }
 
   if (failed(ctx.context.returned)) {
     // The plugin limits attempts on the password challenge only. A pending

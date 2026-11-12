@@ -258,6 +258,7 @@ export class AuthService {
     const twoFactorDeps: TwoFactorHookDeps = {
       prisma: this.prisma,
       forgetSession: (token: string): void => this.sessionCache.delete(token),
+      forgetUser: (userId: string): void => this.sessionCache.deleteUser(userId),
       recordStepUpFailure: (sessionId: string): Promise<number> => this.recordStepUpFailure(sessionId),
     };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { stampFor } from "./second-factor";
+import { gateDecision, hasSecondFactor, stampFor } from "./second-factor";
 
 describe("stampFor", () => {
   it("marks a session created by verify-totp as totp", () => {
@@ -34,5 +34,69 @@ describe("stampFor", () => {
 
   it("keeps a pending session pending through change-password", () => {
     expect(stampFor({ path: "/change-password", currentSecondFactor: null, userHasTotp: true })).toBeNull();
+  });
+});
+
+describe("gateDecision", () => {
+  const pending = { hasFactor: true, secondFactor: null, enrollmentOwed: false };
+  const owed = { hasFactor: false, secondFactor: null, enrollmentOwed: true };
+
+  it("refuses an Atrium route to a pending session", () => {
+    expect(gateDecision({ ...pending, route: "/api/projects" })).toBe("SECOND_FACTOR_REQUIRED");
+  });
+
+  it("refuses Better Auth organization routes to a pending session", () => {
+    expect(gateDecision({ ...pending, route: "auth:/organization/invite-member" })).toBe("SECOND_FACTOR_REQUIRED");
+  });
+
+  it("refuses API key creation to a pending session", () => {
+    expect(gateDecision({ ...pending, route: "auth:/api-key/create" })).toBe("SECOND_FACTOR_REQUIRED");
+  });
+
+  it("refuses turning 2FA off from a pending session", () => {
+    expect(gateDecision({ ...pending, route: "auth:/two-factor/disable" })).toBe("SECOND_FACTOR_REQUIRED");
+  });
+
+  it("lets a pending session step up", () => {
+    expect(gateDecision({ ...pending, route: "auth:/two-factor/verify-totp" })).toBeNull();
+    expect(gateDecision({ ...pending, route: "auth:/two-factor/verify-backup-code" })).toBeNull();
+  });
+
+  it("lets a pending session read itself, check status and sign out", () => {
+    expect(gateDecision({ ...pending, route: "auth:/get-session" })).toBeNull();
+    expect(gateDecision({ ...pending, route: "/api/two-factor/status" })).toBeNull();
+    expect(gateDecision({ ...pending, route: "auth:/sign-out" })).toBeNull();
+  });
+
+  it("lets a pending session start a new sign-in", () => {
+    expect(gateDecision({ ...pending, route: "auth:/sign-in/email" })).toBeNull();
+    expect(gateDecision({ ...pending, route: "auth:/magic-link/verify" })).toBeNull();
+  });
+
+  it("lets a verified session through", () => {
+    expect(gateDecision({ hasFactor: true, secondFactor: "totp", enrollmentOwed: false, route: "/api/projects" })).toBeNull();
+  });
+
+  it("refuses an Atrium route to staff who owe enrollment", () => {
+    expect(gateDecision({ ...owed, route: "/api/projects" })).toBe("TWO_FACTOR_REQUIRED");
+  });
+
+  it("lets staff who owe enrollment enroll and switch workspace", () => {
+    expect(gateDecision({ ...owed, route: "auth:/two-factor/enable" })).toBeNull();
+    expect(gateDecision({ ...owed, route: "auth:/two-factor/verify-totp" })).toBeNull();
+    expect(gateDecision({ ...owed, route: "auth:/organization/list" })).toBeNull();
+    expect(gateDecision({ ...owed, route: "auth:/organization/set-active" })).toBeNull();
+  });
+
+  it("lets a user with no factor and no requirement through", () => {
+    expect(gateDecision({ hasFactor: false, secondFactor: null, enrollmentOwed: false, route: "/api/projects" })).toBeNull();
+  });
+});
+
+describe("hasSecondFactor", () => {
+  it("is true only when TOTP is on", () => {
+    expect(hasSecondFactor({ twoFactorEnabled: true })).toBe(true);
+    expect(hasSecondFactor({ twoFactorEnabled: false })).toBe(false);
+    expect(hasSecondFactor({})).toBe(false);
   });
 });

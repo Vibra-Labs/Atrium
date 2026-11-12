@@ -6,6 +6,8 @@ export interface AuthUser {
   email: string;
   emailVerified: boolean;
   twoFactorEnabled?: boolean | null;
+  /** Set by SessionMiddleware: the user has at least one passkey. */
+  hasPasskey?: boolean;
   image: string | null;
   createdAt: Date;
   updatedAt: Date;

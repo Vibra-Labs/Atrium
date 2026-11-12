@@ -6,7 +6,7 @@ import { SecondFactorGuard } from "./second-factor.guard";
 
 interface FakeRequest {
   originalUrl: string;
-  user?: { id: string; twoFactorEnabled?: boolean };
+  user?: { id: string; twoFactorEnabled?: boolean; hasPasskey?: boolean };
   session?: { secondFactor?: string | null };
   member?: { role: string };
   bearerKind?: string;
@@ -160,6 +160,23 @@ describe("SecondFactorGuard", () => {
 
   it("still lets an unresolved session sign out", () => {
     const req: FakeRequest = { originalUrl: "/api/auth/sign-out", sessionLookupFailed: true };
+    expect(guard.canActivate(context(req, true))).toBe(true);
+  });
+  it("treats a passkey-only user's unverified session as pending", () => {
+    const req: FakeRequest = {
+      originalUrl: "/api/auth/passkey/generate-register-options",
+      user: { id: "u1", hasPasskey: true },
+      session: { secondFactor: null },
+    };
+    expect(refusalCode(() => guard.canActivate(context(req, true)))).toBe("SECOND_FACTOR_REQUIRED");
+  });
+
+  it("lets that session step up with its passkey", () => {
+    const req: FakeRequest = {
+      originalUrl: "/api/auth/passkey/verify-authentication",
+      user: { id: "u1", hasPasskey: true },
+      session: { secondFactor: null },
+    };
     expect(guard.canActivate(context(req, true))).toBe(true);
   });
 });

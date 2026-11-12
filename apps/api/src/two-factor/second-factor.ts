@@ -1,5 +1,5 @@
 /** The second factor a session passed. `null` on a session means none. */
-export type SecondFactor = "totp" | "backup_code" | "trusted_device";
+export type SecondFactor = "totp" | "backup_code" | "trusted_device" | "passkey";
 
 export interface StampInput {
   /** The Better Auth endpoint creating the session, e.g. "/sign-in/email". */
@@ -26,6 +26,9 @@ export function stampFor(input: StampInput): SecondFactor | null {
   const { path } = input;
   if (path === "/two-factor/verify-totp") return "totp";
   if (path === "/two-factor/verify-backup-code") return "backup_code";
+  // Every passkey requires user verification (PIN or biometric), so it is a
+  // full second factor. Registration is never a sign-in (createSession is refused).
+  if (path === "/passkey/verify-authentication") return "passkey";
   // The plugin's own after-hook deletes this session whenever a challenge is
   // still owed, so it survives only when the trusted-device cookie was valid.
   if (PASSWORD_SIGN_IN_PATHS.has(path)) return input.userHasTotp ? "trusted_device" : null;
@@ -66,6 +69,10 @@ const OPEN_ROUTES: readonly string[] = [
   "auth:/reset-password/*",
   "auth:/verify-email",
   "auth:/send-verification-email",
+  // A passkey sign-in is a new sign-in, like /sign-in/*, and is also how a
+  // pending session steps up.
+  "auth:/passkey/generate-authenticate-options",
+  "auth:/passkey/verify-authentication",
   "/api/two-factor/status",
 ];
 
@@ -77,6 +84,8 @@ const ENROLL_ROUTES: readonly string[] = [
   "auth:/two-factor/enable",
   "auth:/two-factor/verify-totp",
   "auth:/two-factor/get-totp-uri",
+  "auth:/passkey/generate-register-options",
+  "auth:/passkey/verify-registration",
   "auth:/organization/list",
   "auth:/organization/set-active",
 ];
@@ -100,9 +109,23 @@ export function isCrossWorkspaceRoute(route: string): boolean {
   return route.startsWith("auth:/organization/") || route.startsWith("auth:/oauth2/");
 }
 
-/** Whether a user has a second factor. Passkeys join this in PR 2. */
-export function hasSecondFactor(user: { twoFactorEnabled?: boolean | null }): boolean {
-  return user.twoFactorEnabled === true;
+/** Whether a user has a second factor: TOTP or at least one passkey. */
+export function hasSecondFactor(user: { twoFactorEnabled?: boolean | null; hasPasskey?: boolean }): boolean {
+  return user.twoFactorEnabled === true || user.hasPasskey === true;
+}
+
+/** How recent a passkey sign-in must be to count as "confirm with your passkey". */
+const PASSKEY_PROOF_MS: number = 5 * 60 * 1000;
+
+/**
+ * A passkey ceremony always creates a new session, so a session stamped
+ * "passkey" and created moments ago proves the passkey was just used.
+ */
+export function passkeyProofIsRecent(
+  session: { secondFactor?: string | null; createdAt: Date },
+  now: number,
+): boolean {
+  return session.secondFactor === "passkey" && now - new Date(session.createdAt).getTime() <= PASSKEY_PROOF_MS;
 }
 
 /**

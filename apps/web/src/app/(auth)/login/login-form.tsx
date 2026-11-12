@@ -282,7 +282,7 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
             disabled={passkeyBusy}
             className="w-full py-2 border border-[var(--border)] rounded-lg font-medium hover:bg-[var(--muted)] transition-colors disabled:opacity-50"
           >
-            {passkeyBusy ? "Waiting for your passkey..." : "Sign in with a passkey"}
+            {passkeyBusy ? "Waiting for your passkey..." : "Continue with a passkey"}
           </button>
         )}
 

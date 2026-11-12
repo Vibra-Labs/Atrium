@@ -865,3 +865,37 @@ describe("AuthService", () => {
     });
   });
 });
+
+describe("AuthService two-factor wiring", () => {
+  interface AuthPlugin {
+    id: string;
+    options?: {
+      allowPasswordless?: boolean;
+      issuer?: string;
+      backupCodeOptions?: { amount?: number; length?: number; storeBackupCodes?: unknown };
+    };
+  }
+  interface AuthOptions {
+    plugins: AuthPlugin[];
+    session?: { additionalFields?: Record<string, unknown> };
+  }
+  function authOptions(): AuthOptions {
+    return (makeService().auth as unknown as { options: AuthOptions }).options;
+  }
+
+  it("registers the two-factor plugin with passwordless enable and encrypted codes", () => {
+    const plugin: AuthPlugin | undefined = authOptions().plugins.find((p) => p.id === "two-factor");
+    expect(plugin).toBeDefined();
+    expect(plugin?.options?.issuer).toBe("Atrium");
+    expect(plugin?.options?.allowPasswordless).toBe(true);
+    expect(plugin?.options?.backupCodeOptions).toEqual({ amount: 10, length: 10, storeBackupCodes: "encrypted" });
+  });
+
+  it("declares session.secondFactor as a non-input field", () => {
+    expect(authOptions().session?.additionalFields?.secondFactor).toEqual({
+      type: "string",
+      required: false,
+      input: false,
+    });
+  });
+});

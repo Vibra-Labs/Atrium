@@ -15,6 +15,7 @@ model User {
   name          String
   email         String    @unique
   emailVerified Boolean   @default(false)
+  twoFactorEnabled Boolean @default(false)
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -35,6 +36,7 @@ model User {
   oauthConsents      OauthConsent[]
   mcpGrants          McpGrant[]
   mcpPendingGrants   McpPendingGrant[]
+  twoFactors         TwoFactor[]
 
   @@map("user")
 }
@@ -51,6 +53,8 @@ model Session {
 
   user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganizationId String?
+  /// "totp" | "backup_code" | "trusted_device" | "passkey", or null when no second factor was passed.
+  secondFactor         String?
 
   oauthRefreshTokens OauthRefreshToken[]
   oauthAccessTokens  OauthAccessToken[]
@@ -90,6 +94,20 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+model TwoFactor {
+  id                      String    @id @default(cuid())
+  secret                  String
+  backupCodes             String
+  userId                  String    @unique
+  verified                Boolean   @default(true)
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([secret])
+  @@map("two_factor")
 }
 
 model Organization {
@@ -728,6 +746,9 @@ model SystemSettings {
   id             String       @id @default(cuid())
   organizationId String       @unique
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Owners and admins of this workspace must have a second factor.
+  requireTwoFactor Boolean @default(false)
 
   // Email settings
   emailProvider String? // "resend" | "smtp" | null (disabled)

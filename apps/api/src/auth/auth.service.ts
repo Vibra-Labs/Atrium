@@ -11,7 +11,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { organization, magicLink } from "better-auth/plugins";
+import { organization, magicLink, twoFactor } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
@@ -245,6 +245,12 @@ export class AuthService {
       session: {
         expiresIn: 60 * 60 * 24 * 30,   // 30 days
         updateAge: 60 * 60 * 24,         // refresh if older than 1 day
+        // Which second factor this session passed, if any. Stamped by the
+        // session.create hook and the two-factor after-hook, never by input.
+        // No default, so a replacement session can carry its predecessor's.
+        additionalFields: {
+          secondFactor: { type: "string", required: false, input: false },
+        },
       },
       rateLimit: {
         // Dynamic client registration is unauthenticated by design, so cap it
@@ -469,6 +475,13 @@ export class AuthService {
               }
             },
           },
+        }),
+        twoFactor({
+          issuer: "Atrium",
+          twoFactorPage: "/login/2fa",
+          // Clients who only sign in by email link have no password to give.
+          allowPasswordless: true,
+          backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: "encrypted" },
         }),
         magicLink({
           expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,

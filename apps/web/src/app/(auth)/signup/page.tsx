@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Check, Zap, Crown } from "lucide-react";
 import { track } from "@/lib/track";
 import { useAppConfig } from "@/lib/app-config";
+import { lifetimeSeatLabel } from "@atrium/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -22,18 +23,6 @@ interface Plan {
   isRecurring: boolean;
   features: string[];
   description: string;
-}
-
-// A counter reading "100 of 100 seats remaining" says nobody has bought one.
-// Hold the plain cap until enough have sold that the count is persuasive.
-const LIFETIME_COUNTER_THRESHOLD = 50;
-
-function lifetimeSeatLabel(maxSeats: number, remaining: number): string {
-  if (remaining <= 0) return "Sold out";
-  if (maxSeats - remaining < LIFETIME_COUNTER_THRESHOLD) {
-    return `Limited to ${maxSeats} seats`;
-  }
-  return `${remaining} of ${maxSeats} seats remaining`;
 }
 
 function PlanSelectionStep({

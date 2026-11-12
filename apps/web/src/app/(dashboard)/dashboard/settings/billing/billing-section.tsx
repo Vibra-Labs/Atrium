@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { LIFETIME_COUNTER_THRESHOLD, lifetimeSeatLabel } from "@atrium/shared";
 import {
   CreditCard,
   Check,
@@ -204,16 +205,18 @@ function PlanCard({
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs">
             <span className="text-[var(--muted-foreground)]">Founding member spots</span>
-            <span className={`font-medium ${seatsLeft < 20 ? "text-amber-500" : "text-[var(--foreground)]"}`}>
-              {seatsLeft} of {plan.maxSeats} left
+            <span className="font-medium text-[var(--foreground)]">
+              {lifetimeSeatLabel(plan.maxSeats, seatsLeft)}
             </span>
           </div>
-          <div className="h-1 bg-[var(--muted)] rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full bg-amber-500 transition-all"
-              style={{ width: `${Math.min(100, ((plan.maxSeats - seatsLeft) / plan.maxSeats) * 100)}%` }}
-            />
-          </div>
+          {plan.maxSeats - seatsLeft >= LIFETIME_COUNTER_THRESHOLD && (
+            <div className="h-1 bg-[var(--muted)] rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-amber-500 transition-all"
+                style={{ width: `${Math.min(100, ((plan.maxSeats - seatsLeft) / plan.maxSeats) * 100)}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 

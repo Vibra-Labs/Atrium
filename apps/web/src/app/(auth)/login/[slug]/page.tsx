@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getBrandingBySlug, buildBrandingStyle } from "@/lib/branding";
@@ -23,6 +24,7 @@ export default async function BrandedLoginPage({
   const branding = await getBrandingBySlug(slug);
 
   if (!branding) notFound();
+  const onCustomDomain: boolean = Boolean((await headers()).get("x-custom-host"));
 
   return (
     <div style={buildBrandingStyle(branding)}>
@@ -30,6 +32,7 @@ export default async function BrandedLoginPage({
         orgName={branding.orgName}
         logoSrc={branding.logoSrc}
         hideLogo={branding.hideLogo}
+        onCustomDomain={onCustomDomain}
       />
     </div>
   );

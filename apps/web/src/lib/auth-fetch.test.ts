@@ -54,6 +54,14 @@ describe("postAuth", () => {
     expect(init?.body).toBe(JSON.stringify({ email: "a@b.co" }));
   });
 
+  it("reports a password sign-in that still needs a second factor", async () => {
+    stubFetch(async () => json({ twoFactorRedirect: true, twoFactorMethods: ["totp"] }));
+
+    const result = await postAuth("/sign-in/email", {});
+
+    expect(result).toEqual({ ok: true, status: 200, twoFactorRedirect: true });
+  });
+
   it("returns the server's message and status for a rejected sign-in", async () => {
     stubFetch(async () => json({ message: "Invalid email or password", code: "INVALID" }, 401));
 

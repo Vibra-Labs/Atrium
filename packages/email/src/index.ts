@@ -18,3 +18,4 @@ export { activitySentence } from "./templates/trial-offer";
 export type { TrialActivity } from "./templates/trial-offer";
 export { WeeklyUpdateReminderEmail } from "./templates/weekly-update-reminder";
 export { MondayDigestEmail } from "./templates/monday-digest";
+export { SecurityAlertEmail } from "./templates/security-alert";

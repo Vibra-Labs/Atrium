@@ -19,6 +19,7 @@ BEGIN;
 
 ALTER TABLE "user" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "session" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "two_factor" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "account" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "verification" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "organization" ENABLE ROW LEVEL SECURITY;
@@ -89,6 +90,7 @@ ALTER TABLE "pending_project_access" ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON "user" FROM anon, authenticated;
 REVOKE ALL ON "session" FROM anon, authenticated;
+REVOKE ALL ON "two_factor" FROM anon, authenticated;
 REVOKE ALL ON "account" FROM anon, authenticated;
 REVOKE ALL ON "verification" FROM anon, authenticated;
 REVOKE ALL ON "organization" FROM anon, authenticated;

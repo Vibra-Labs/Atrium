@@ -51,6 +51,12 @@ const mockPrisma = {
   systemSettings: {
     count: mock((): Promise<number> => Promise.resolve(0)),
   },
+  verification: {
+    create: mock((): Promise<unknown> => Promise.resolve({})),
+    count: mock((): Promise<number> => Promise.resolve(1)),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    update: mock((): Promise<unknown> => Promise.resolve({})),
+  },
 };
 
 const mockMail = { send: mock(() => Promise.resolve()) };
@@ -69,6 +75,27 @@ function makeService(): AuthService {
     {} as never,
   );
 }
+
+describe("AuthService step-up failures", () => {
+  type WithFailures = { recordStepUpFailure: (sessionId: string) => Promise<number> };
+
+  it("records every wrong code as its own row, so codes sent together can't overwrite each other", async () => {
+    mockPrisma.verification.create.mockClear();
+    mockPrisma.verification.update.mockClear();
+    mockPrisma.verification.count.mockImplementation(() => Promise.resolve(3));
+    const service = makeService() as unknown as WithFailures;
+
+    expect(await service.recordStepUpFailure("sess-1")).toBe(3);
+    const [args] = mockPrisma.verification.create.mock.calls[0] as unknown as [{ data: { identifier: string } }];
+    expect(args.data.identifier).toBe("two-factor-step-up:sess-1");
+    expect(mockPrisma.verification.update).not.toHaveBeenCalled();
+    const [countArgs] = mockPrisma.verification.count.mock.calls.at(-1) as unknown as [
+      { where: { identifier: string; expiresAt: { gt: Date } } },
+    ];
+    expect(countArgs.where.identifier).toBe("two-factor-step-up:sess-1");
+    expect(countArgs.where.expiresAt.gt).toBeInstanceOf(Date);
+  });
+});
 
 describe("AuthService", () => {
   let service: AuthService;
@@ -896,5 +923,72 @@ describe("AuthService", () => {
 
       await expect(service.setPassword({}, "correct horse")).rejects.toThrow(BadRequestException);
     });
+  });
+});
+
+describe("AuthService two-factor wiring", () => {
+  interface AuthPlugin {
+    id: string;
+    options?: {
+      allowPasswordless?: boolean;
+      issuer?: string;
+      backupCodeOptions?: { amount?: number; length?: number; storeBackupCodes?: unknown };
+    };
+  }
+  interface AuthOptions {
+    plugins: AuthPlugin[];
+    session?: { additionalFields?: Record<string, unknown> };
+  }
+  function authOptions(): AuthOptions {
+    return (makeService().auth as unknown as { options: AuthOptions }).options;
+  }
+
+  it("registers the two-factor plugin with passwordless enable and encrypted codes", () => {
+    const plugin: AuthPlugin | undefined = authOptions().plugins.find((p) => p.id === "two-factor");
+    expect(plugin).toBeDefined();
+    expect(plugin?.options?.issuer).toBe("Atrium");
+    expect(plugin?.options?.allowPasswordless).toBe(true);
+    expect(plugin?.options?.backupCodeOptions).toEqual({ amount: 10, length: 10, storeBackupCodes: "encrypted" });
+  });
+
+  it("declares session.secondFactor as a non-input field", () => {
+    expect(authOptions().session?.additionalFields?.secondFactor).toEqual({
+      type: "string",
+      required: false,
+      input: false,
+    });
+  });
+});
+
+describe("AuthService session second-factor stamp", () => {
+  type CreateBefore = (
+    session: Record<string, unknown>,
+    ctx: unknown,
+  ) => Promise<{ data: Record<string, unknown> }>;
+  function createBefore(): CreateBefore {
+    const options = (makeService().auth as unknown as {
+      options: { databaseHooks: { session: { create: { before: CreateBefore } } } };
+    }).options;
+    return options.databaseHooks.session.create.before;
+  }
+
+  it("stamps a surviving password sign-in by a 2FA user as a trusted device", async () => {
+    mockPrisma.user.findUnique.mockImplementationOnce((() =>
+      Promise.resolve({ twoFactorEnabled: true })) as unknown as () => Promise<null>);
+    const result = await createBefore()({ userId: "u1" }, { path: "/sign-in/email", context: { session: null } });
+    expect(result.data.secondFactor).toBe("trusted_device");
+  });
+
+  it("carries the caller's verified factor into the session change-password mints", async () => {
+    const result = await createBefore()(
+      { userId: "u1" },
+      { path: "/change-password", context: { session: { session: { secondFactor: "totp" }, user: { id: "u1" } } } },
+    );
+    expect(result.data.secondFactor).toBe("totp");
+  });
+
+  it("leaves a magic-link session unmarked", async () => {
+    const result = await createBefore()({ userId: "u1" }, { path: "/magic-link/verify", context: { session: null } });
+    expect(result.data.secondFactor).toBeNull();
   });
 });

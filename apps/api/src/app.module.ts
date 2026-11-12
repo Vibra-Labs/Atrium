@@ -1,6 +1,8 @@
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
+import { SecondFactorGuard } from "./two-factor/second-factor.guard";
+import { TwoFactorModule } from "./two-factor/two-factor.module";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { LoggerModule } from "nestjs-pino";
 import { IncomingMessage, ServerResponse } from "http";
@@ -109,6 +111,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     McpModule,
     McpAuthModule,
     OrganizationModule,
+    TwoFactorModule,
   ],
   controllers: [HealthController],
   providers: [
@@ -123,6 +126,10 @@ import { PlanGuard } from "./common/guards/plan.guard";
     {
       provide: APP_GUARD,
       useClass: CsrfGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: SecondFactorGuard,
     },
     {
       provide: APP_GUARD,

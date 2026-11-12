@@ -17,6 +17,7 @@ import { DynamicFavicon } from "@/components/dynamic-favicon";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { DEFAULT_BRANDING } from "@atrium/shared";
 import { serverFetch } from "@/lib/server-api";
+import { twoFactorGatePage } from "@/lib/two-factor-gate";
 import { logoSrc as buildLogoSrc } from "@/lib/logo-src";
 import { SessionProvider } from "@/lib/session-context";
 import { initials } from "@/lib/initials";
@@ -116,8 +117,9 @@ export default async function DashboardLayout({
 }) {
   // One round: setup status and settings are owner-only, so non-owners
   // just ignore those results.
-  const [session, branding, activeOrg, orgs, setupStatus, settings] = await Promise.all([
+  const [session, gatePage, branding, activeOrg, orgs, setupStatus, settings] = await Promise.all([
     getSession(),
+    twoFactorGatePage(),
     getBranding(),
     getActiveOrg(),
     getOrgs(),
@@ -130,6 +132,8 @@ export default async function DashboardLayout({
   if (!session) {
     redirect(await loginRedirectPath());
   }
+  // A session that has not passed its second factor, or staff who owe setup.
+  if (gatePage) redirect(gatePage);
 
   // Clients (members) should use the portal, not the dashboard
   if (role === "member") {

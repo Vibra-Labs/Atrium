@@ -5,6 +5,7 @@ export interface AuthUser {
   name: string;
   email: string;
   emailVerified: boolean;
+  twoFactorEnabled?: boolean | null;
   image: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +21,8 @@ export interface AuthSession {
   userAgent: string | null;
   userId: string;
   activeOrganizationId: string | null;
+  /** Which second factor this session passed: "totp", "backup_code", "trusted_device", or null. */
+  secondFactor?: string | null;
 }
 
 export interface OrgMember {
@@ -59,6 +62,12 @@ export interface AuthenticatedRequest extends Request {
   bearerKind?: BearerKind;
   /** Set when SessionMiddleware refused to look up a bearer key: too many failures from this IP. */
   authRateLimited?: boolean;
+  /** The active workspace's "Require 2FA for staff" setting, set by SessionMiddleware for cookie sessions. */
+  workspaceRequiresTwoFactor?: boolean;
+  /** Auth routes only: staff of any workspace that requires 2FA. Set only when the user has no factor. */
+  staffInRequiringWorkspace?: boolean;
+  /** Auth routes only: a session cookie was sent but could not be resolved. */
+  sessionLookupFailed?: boolean;
 }
 
 /** The identity a request or MCP tool call acts as. */

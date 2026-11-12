@@ -10,7 +10,8 @@
     "test": "bun test src",
     "test:integration": "bun test test/integration",
     "lint": "eslint src/ test/",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "script:disable-2fa": "node dist/scripts/disable-2fa.js"
   },
   "dependencies": {
     "@atrium/database": "workspace:*",

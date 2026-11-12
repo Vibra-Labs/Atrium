@@ -15,6 +15,7 @@ const SECTIONS: Section[] = [
   { href: "/dashboard/settings/billing", label: "Billing & Payments" },
   { href: "/dashboard/settings/integrations", label: "Integrations" },
   { href: "/dashboard/settings/account", label: "Account" },
+  { href: "/dashboard/settings/security", label: "Security" },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }): React.ReactElement {

@@ -751,14 +751,20 @@ describe("ContactsService", () => {
         Promise.resolve(row({ userId: "u-1", projects: [], labels: [] })),
       );
       prisma.member.findFirst.mockImplementation(() =>
-        Promise.resolve({ id: "m-1", createdAt: joinedAt, lastSeenAt: null }),
+        Promise.resolve({ id: "m-1", createdAt: joinedAt, lastSeenAt: null, user: { twoFactorEnabled: true } }),
       );
       const res = await service.findOne("c", "org-1");
       expect(prisma.member.findFirst).toHaveBeenCalledWith({
         where: { organizationId: "org-1", userId: "u-1", role: "member" },
-        select: { id: true, createdAt: true, lastSeenAt: true },
+        select: { id: true, createdAt: true, lastSeenAt: true, user: { select: { twoFactorEnabled: true } } },
       });
-      expect(res.portal).toEqual({ memberId: "m-1", joinedAt, lastSeenAt: null });
+      expect(res.portal).toEqual({
+        memberId: "m-1",
+        userId: "u-1",
+        joinedAt,
+        lastSeenAt: null,
+        twoFactorEnabled: true,
+      });
     });
 
     it("findOne has no portal info for a contact without a login", async () => {

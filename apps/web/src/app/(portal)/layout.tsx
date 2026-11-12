@@ -10,6 +10,7 @@ import { PreviewModeProvider } from "@/lib/preview-mode";
 import { PreviewBanner } from "@/components/preview-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { serverFetch } from "@/lib/server-api";
+import { twoFactorGatePage } from "@/lib/two-factor-gate";
 import { logoSrc as buildLogoSrc } from "@/lib/logo-src";
 import { SessionProvider } from "@/lib/session-context";
 
@@ -46,14 +47,17 @@ export default async function PortalLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [session, branding, org] = await Promise.all([
+  const [session, gatePage, branding, org] = await Promise.all([
     getSession(),
+    twoFactorGatePage(),
     getBranding(),
     getOrg(),
   ]);
   if (!session) {
     redirect(await loginRedirectPath());
   }
+  // A session that has not passed its second factor, or staff who owe setup.
+  if (gatePage) redirect(gatePage);
 
   const orgName: string | null = org?.name || null;
   const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");

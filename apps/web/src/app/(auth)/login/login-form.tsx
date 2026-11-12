@@ -109,6 +109,14 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
 
       const result = await postAuth("/sign-in/email", { email, password });
       if (!result.ok) throw new Error(result.message || "Invalid credentials");
+      if (result.twoFactorRedirect) {
+        // Password was right; the code screen finishes the sign-in and redirects on.
+        rememberEmail(email);
+        setRedirecting(true);
+        // Keeps ?next= and the MCP resume parameters; the code screen validates them the same way.
+        window.location.href = `/login/2fa${window.location.search}`;
+        return;
+      }
 
       // Without a success counterpart, login_failed is uninterpretable: there
       // is no denominator to compute a success rate from.

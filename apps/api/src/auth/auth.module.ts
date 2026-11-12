@@ -6,6 +6,7 @@ import { InvitationsController } from "./invitations.controller";
 import { SignInOptionsController } from "./sign-in-options.controller";
 import { AuthService } from "./auth.service";
 import { SessionMiddleware } from "./session.middleware";
+import { SessionCache } from "./session-cache";
 import { PreviewModeMiddleware } from "./preview-mode.middleware";
 import { LastSeenTracker } from "./last-seen.tracker";
 import { ContactSyncModule } from "../contact-sync/contact-sync.module";
@@ -19,7 +20,7 @@ import { ProjectsModule } from "../projects/projects.module";
 @Module({
   imports: [ContactSyncModule, MailModule, BillingModule, ApiKeysModule, McpAuthModule, ProjectsModule, PlanOffersModule],
   controllers: [AuthController, WellKnownController, InvitationsController, SignInOptionsController],
-  providers: [AuthService, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker, AuthCleanupTask],
-  exports: [AuthService, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker],
+  providers: [AuthService, SessionCache, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker, AuthCleanupTask],
+  exports: [AuthService, SessionCache, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker],
 })
 export class AuthModule {}

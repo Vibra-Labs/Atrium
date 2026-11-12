@@ -10,6 +10,7 @@ import { track } from "@/lib/track";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ResetLinkModal, usePasswordReset } from "@/components/password-reset-link";
+import { ResetTwoFactorButton } from "@/components/two-factor/reset-two-factor-button";
 import type { ContactDetail } from "./types";
 
 export interface PendingInvite {
@@ -104,6 +105,12 @@ export function PortalAccess({ contact, pendingInvite, onChanged }: Props): Reac
           >
             <KeyRound size={14} aria-hidden /> Send password reset link
           </button>
+          {portal.twoFactorEnabled && (
+            <span className="flex items-center gap-1 text-sm text-[var(--primary)]">
+              <ResetTwoFactorButton userId={userId} name={contact.name} onDone={onChanged} />
+              2FA on
+            </span>
+          )}
           <button
             onClick={() => removeAccess(portal.memberId)}
             disabled={removing}

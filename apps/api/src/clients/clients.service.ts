@@ -198,7 +198,7 @@ export class ClientsService {
           createdAt: true,
           hourlyRateCents: true,
           lastSeenAt: true,
-          user: { select: { id: true, name: true, email: true } },
+          user: { select: { id: true, name: true, email: true, twoFactorEnabled: true } },
           // Staff tags; a client's tags live on their contact (below).
           labels: { select: { label: { select: { id: true, name: true, color: true } } } },
         },

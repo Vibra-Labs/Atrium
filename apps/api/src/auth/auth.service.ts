@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import * as Sentry from "@sentry/nestjs";
 import {
   BadRequestException,
@@ -11,9 +12,9 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { organization, magicLink } from "better-auth/plugins";
+import { organization, magicLink, twoFactor } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
@@ -42,6 +43,27 @@ import { publicApiUrl } from "../common/helpers/public-api-url";
 import { hashOAuthToken, mcpOAuthUnavailableReason, mcpResourceUrl } from "../common/helpers/mcp-oauth";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import { SendLimiter } from "./send-limiter";
+import { SessionCache } from "./session-cache";
+import { stampFor } from "../two-factor/second-factor";
+import { TWO_FACTOR_BEFORE_PATHS, twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
+import { INTERNAL_CHECK_TOKEN, verifyOwnCode } from "../two-factor/verify-own-code";
+import type { CodeApi } from "../two-factor/verify-own-code";
+import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
+import { countRecoveryCodes } from "../two-factor/recovery-codes";
+import { sendSecurityAlert } from "../two-factor/security-alerts";
+import type { SecurityAlert } from "../two-factor/security-alerts";
+import { EmailRenderer } from "../mail/email-renderer";
+import type { AuthHookContext, PasswordCheck, TwoFactorHookDeps } from "../two-factor/two-factor-hooks";
+import type { SecondFactor } from "../two-factor/second-factor";
+
+/** The context Better Auth passes to a before/after hook. */
+type AuthHookCtx = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
+
+/** The parts of Better Auth's endpoint context the session.create hook reads. */
+interface SessionCreateContext {
+  path?: string;
+  context?: { session?: { session?: { secondFactor?: string | null }; user?: { id?: string } } | null };
+}
 
 interface AdminResetContext {
   capturedUrl: string | null;
@@ -69,6 +91,9 @@ type SignInMagicLink = (input: {
   body: { email: string; name?: string; callbackURL: string; errorCallbackURL: string };
   headers: Headers;
 }) => Promise<unknown>;
+
+/** How long wrong step-up codes are remembered for a session. */
+const STEP_UP_FAILURE_TTL_MS: number = 24 * 60 * 60 * 1000;
 
 export const MAGIC_LINK_EXPIRES_IN_SECONDS: number = 60 * 60;
 
@@ -100,6 +125,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly adminResetStorage = new AsyncLocalStorage<AdminResetContext>();
   private readonly magicLinkCapture = new AsyncLocalStorage<MagicLinkCapture>();
+  private readonly emailRenderer = new EmailRenderer();
   private readonly magicLinkEmails = new SendLimiter(MAGIC_LINK_EMAILS_PER_WINDOW, MAGIC_LINK_EMAIL_WINDOW_MS);
 
   constructor(
@@ -110,6 +136,8 @@ export class AuthService {
     private contactSync: ContactSyncService,
     private projects: ProjectsService,
     private planOffers: PlanOffersService,
+    // Defaulted so specs that build the service by hand need not pass one.
+    private sessionCache: SessionCache = new SessionCache(),
   ) {
     const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
     const apiUrl: string = publicApiUrl(this.config);
@@ -128,7 +156,7 @@ export class AuthService {
     if (cookieWarning) this.logger.warn(cookieWarning);
 
     // Hardening applied to the MCP plugin's endpoints before they run.
-    const mcpOAuthBeforeHook = createAuthMiddleware(async (ctx) => {
+    const mcpOAuthBeforeHook = async (ctx: AuthHookCtx) => {
       if (ctx.path === "/oauth2/register") {
         // Dynamic registration is anonymous, and the consent page navigates
         // the browser to the registered redirect URI — a `javascript:` or
@@ -215,13 +243,13 @@ export class AuthService {
       // prompt=login would send the user back to sign in forever.
       const forced: Record<string, unknown> = { ...params, prompt: "consent" };
       return { context: fromBody ? { body: forced } : { query: forced } };
-    });
+    };
 
     // The other half of the two-step consent: /oauth2/consent is where the
     // user's Allow takes effect, so the workspace choice is parked as an
     // McpPendingGrant beforehand and only becomes a grant here, after the
     // endpoint has actually succeeded. See applyConsentOutcome.
-    const mcpOAuthAfterHook = createAuthMiddleware(async (ctx) => {
+    const mcpOAuthAfterHook = async (ctx: AuthHookCtx): Promise<void> => {
       if (ctx.path !== "/oauth2/consent") return;
       // /oauth2/consent runs behind sessionMiddleware, so the signed-in user
       // is on the context by the time an after-hook sees it; `returned` holds
@@ -235,7 +263,31 @@ export class AuthService {
         body: ctx.body,
         sessionUserId: context.session?.user?.id,
       });
-    });
+    };
+
+    const twoFactorDeps: TwoFactorHookDeps = {
+      prisma: this.prisma,
+      forgetSession: (token: string): void => this.sessionCache.delete(token),
+      forgetUser: (userId: string): void => this.sessionCache.deleteUser(userId),
+      isStaffInRequiringWorkspace: (userId: string): Promise<boolean> =>
+        isStaffInRequiringWorkspace(this.prisma, userId),
+      sendAlert: (userId: string, alert: SecurityAlert): Promise<void> => this.sendAlert(userId, alert),
+      verifyOwnCode: (code: string, headers: Headers): Promise<boolean> =>
+        verifyOwnCode(this.auth.api as unknown as CodeApi, code, headers),
+      checkPassword: (userId: string, password: string | undefined): Promise<PasswordCheck> =>
+        this.checkPassword(userId, password),
+      internalCheckToken: INTERNAL_CHECK_TOKEN,
+      // Feeds an alert email only, so a failure must not fail the sign-in.
+      recoveryCodesLeft: async (userId: string): Promise<number> => {
+        try {
+          return (await countRecoveryCodes(this.prisma, betterAuthSecret, userId)) ?? 0;
+        } catch (err) {
+          this.logger.error(`Could not count recovery codes: ${err instanceof Error ? err.message : String(err)}`);
+          return 0;
+        }
+      },
+      recordStepUpFailure: (sessionId: string): Promise<number> => this.recordStepUpFailure(sessionId),
+    };
 
     // Cast: better-auth >=1.6 makes Auth<Options> invariant, so the concrete
     // instance no longer assigns to the default-typed field.
@@ -247,6 +299,12 @@ export class AuthService {
       session: {
         expiresIn: 60 * 60 * 24 * 30,   // 30 days
         updateAge: 60 * 60 * 24,         // refresh if older than 1 day
+        // Which second factor this session passed, if any. Stamped by the
+        // session.create hook and the two-factor after-hook, never by input.
+        // No default, so a replacement session can carry its predecessor's.
+        additionalFields: {
+          secondFactor: { type: "string", required: false, input: false },
+        },
       },
       rateLimit: {
         // Dynamic client registration is unauthenticated by design, so cap it
@@ -278,20 +336,50 @@ export class AuthService {
             // this the web app fell back to orgs[0] from an unordered list,
             // so a user who owns one org and is a client of another could
             // land on either, and on a different one each login.
-            before: async (session) => {
+            // Also records which second factor the session passed; see stampFor.
+            before: async (session, ctx) => {
               const activeOrganizationId =
                 await this.getPreferredActiveOrgForUserId(session.userId);
-              return activeOrganizationId
-                ? { data: { ...session, activeOrganizationId } }
-                : { data: session };
+              const secondFactor: SecondFactor | null = await this.secondFactorForNewSession(
+                session.userId,
+                ctx as SessionCreateContext | null | undefined,
+              );
+              return {
+                data: {
+                  ...session,
+                  ...(activeOrganizationId ? { activeOrganizationId } : {}),
+                  secondFactor,
+                },
+              };
             },
           },
         },
       },
       trustedOrigins: (request?: Request) => this.trustedOriginsFor(request),
       hooks: {
-        before: mcpOAuthEnabled ? mcpOAuthBeforeHook : undefined,
-        after: mcpOAuthEnabled ? mcpOAuthAfterHook : undefined,
+        before: createAuthMiddleware(async (ctx: AuthHookCtx) => {
+          if (TWO_FACTOR_BEFORE_PATHS.has(ctx.path)) {
+            const session = await getSessionFromCtx(ctx);
+            const user = session?.user as { id: string; twoFactorEnabled?: boolean | null } | undefined;
+            const body = (ctx.body ?? {}) as { code?: unknown; password?: unknown };
+            await twoFactorBeforeHook(
+              {
+                path: ctx.path,
+                userId: user?.id ?? null,
+                twoFactorEnabled: user?.twoFactorEnabled === true,
+                code: typeof body.code === "string" ? body.code : undefined,
+                password: typeof body.password === "string" ? body.password : undefined,
+                headers: ctx.headers ?? new Headers(),
+              },
+              twoFactorDeps,
+            );
+          }
+          return mcpOAuthEnabled ? mcpOAuthBeforeHook(ctx) : undefined;
+        }),
+        after: createAuthMiddleware(async (ctx: AuthHookCtx): Promise<void> => {
+          await twoFactorAfterHook(ctx as unknown as AuthHookContext, twoFactorDeps);
+          if (mcpOAuthEnabled) await mcpOAuthAfterHook(ctx);
+        }),
       },
       // Firebase Hosting strips all cookies except "__session".
       // When FIREBASE_HOSTING=true, override the cookie name.
@@ -326,6 +414,9 @@ export class AuthService {
         // forgotten session can't be used after the user (or an admin) recovers
         // the account.
         revokeSessionsOnPasswordReset: true,
+        onPasswordReset: async ({ user }: { user: { id: string } }): Promise<void> => {
+          await this.sendAlert(user.id, { kind: "password_changed", signedOut: true });
+        },
         sendResetPassword: async ({ user, url }) => {
           const ctx = this.adminResetStorage.getStore();
           if (ctx) {
@@ -477,6 +568,13 @@ export class AuthService {
             },
           },
         }),
+        twoFactor({
+          issuer: "Atrium",
+          twoFactorPage: "/login/2fa",
+          // Clients who only sign in by email link have no password to give.
+          allowPasswordless: true,
+          backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: "encrypted" },
+        }),
         magicLink({
           expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
           sendMagicLink: ({ email, url }) => this.deliverMagicLink(email, url),
@@ -539,6 +637,66 @@ export class AuthService {
       });
       await seedDefaultPipelines(tx, organizationId);
     });
+  }
+
+  /** Emails a user about a change to their account security. Never throws. */
+  sendAlert(userId: string, alert: SecurityAlert): Promise<void> {
+    return sendSecurityAlert(
+      { prisma: this.prisma, mail: this.mail, renderer: this.emailRenderer, logger: this.logger },
+      userId,
+      alert,
+    );
+  }
+
+  /**
+   * Counts a wrong step-up code for one session, in the verification table so
+   * every API instance shares the count. Expires with the session's challenge.
+   */
+  private async recordStepUpFailure(sessionId: string): Promise<number> {
+    const identifier: string = `two-factor-step-up:${sessionId}`;
+    // One row per wrong code, then count: codes sent in parallel can't overwrite each other's count.
+    await this.prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier,
+        value: "1",
+        expiresAt: new Date(Date.now() + STEP_UP_FAILURE_TTL_MS),
+      },
+    });
+    return this.prisma.verification.count({ where: { identifier, expiresAt: { gt: new Date() } } });
+  }
+
+  /** The user's password against their credential account; "none" when they have no password. */
+  private async checkPassword(userId: string, password: string | undefined): Promise<PasswordCheck> {
+    const account: { password: string | null } | null = await this.prisma.account.findFirst({
+      where: { userId, providerId: "credential" },
+      select: { password: true },
+    });
+    if (!account?.password) return "none";
+    if (!password) return "wrong";
+    const context = await this.auth.$context;
+    const matches: boolean = await context.password.verify({ hash: account.password, password });
+    return matches ? "ok" : "wrong";
+  }
+
+  /** See stampFor. Only a password sign-in needs to know whether the user has TOTP. */
+  private async secondFactorForNewSession(
+    userId: string,
+    ctx: SessionCreateContext | null | undefined,
+  ): Promise<SecondFactor | null> {
+    const path: string = ctx?.path ?? "";
+    const current = ctx?.context?.session;
+    const currentSecondFactor: string | null = current?.session?.secondFactor ?? null;
+    const sameUser: boolean = current?.user?.id === userId;
+    let userHasTotp: boolean = false;
+    if (path === "/sign-in/email" || path === "/sign-in/username") {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { twoFactorEnabled: true },
+      });
+      userHasTotp = user?.twoFactorEnabled === true;
+    }
+    return stampFor({ path, currentSecondFactor, userHasTotp, sameUser });
   }
 
   async handleRequest(request: Request) {

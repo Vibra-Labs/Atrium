@@ -233,7 +233,14 @@ type DetailedContact = Omit<Prisma.ContactGetPayload<{ include: typeof DETAIL_IN
 
 export type ContactDetail = ContactResponse<DetailedContact> & {
   hasLogin: boolean;
-  portal: { memberId: string; joinedAt: Date; lastSeenAt: Date | null } | null;
+  portal: {
+    memberId: string;
+    userId: string;
+    joinedAt: Date;
+    lastSeenAt: Date | null;
+    /** So an owner or admin can offer "Turn off 2FA" for a locked-out client. */
+    twoFactorEnabled: boolean;
+  } | null;
   labels: LabelChip[];
   /** `endedAt` is set once the contact is off the project; invoices paid until then still count. */
   projects: { id: string; name: string; status: string; endedAt: Date | null }[];
@@ -600,7 +607,7 @@ export class ContactsService {
     const member = contact.userId
       ? await this.prisma.member.findFirst({
           where: { organizationId: orgId, userId: contact.userId, role: "member" },
-          select: { id: true, createdAt: true, lastSeenAt: true },
+          select: { id: true, createdAt: true, lastSeenAt: true, user: { select: { twoFactorEnabled: true } } },
         })
       : null;
 
@@ -608,7 +615,16 @@ export class ContactsService {
     return {
       ...toResponse(rest),
       hasLogin: contact.userId != null,
-      portal: member ? { memberId: member.id, joinedAt: member.createdAt, lastSeenAt: member.lastSeenAt } : null,
+      portal:
+        member && contact.userId
+          ? {
+              memberId: member.id,
+              userId: contact.userId,
+              joinedAt: member.createdAt,
+              lastSeenAt: member.lastSeenAt,
+              twoFactorEnabled: member.user.twoFactorEnabled,
+            }
+          : null,
       labels: labels.map((l) => ({
         id: l.label.id,
         name: l.label.name,

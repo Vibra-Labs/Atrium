@@ -42,9 +42,14 @@ export async function signInWithPasskey(): Promise<AuthResult | { ok: false; can
     const response = await startAuthentication({ optionsJSON: options.body as unknown as PublicKeyCredentialRequestOptionsJSON });
     return await postAuth("/passkey/verify-authentication", { response });
   } catch (err) {
-    console.error("Passkey sign-in failed", err);
     const message: string | null = passkeyErrorMessage(err);
-    return message === null ? { ok: false, cancelled: true, status: 0 } : { ok: false, status: 0, message };
+    if (message === null) {
+      // Dismissed, timed out, or no passkey on this device: not an error.
+      console.info("Passkey prompt closed without signing in", err);
+      return { ok: false, cancelled: true, status: 0 };
+    }
+    console.error("Passkey sign-in failed", err);
+    return { ok: false, status: 0, message };
   }
 }
 
@@ -66,7 +71,8 @@ export async function startPasskeyAutofill(): Promise<AuthResult | null> {
     return await postAuth("/passkey/verify-authentication", { response });
   } catch (err) {
     // Aborted when another passkey prompt starts or the page moves on: expected.
-    if (passkeyErrorMessage(err) !== null) console.error("Passkey autofill failed", err);
+    if (passkeyErrorMessage(err) === null) console.info("Passkey autofill stopped", err);
+    else console.error("Passkey autofill failed", err);
     return null;
   }
 }
@@ -99,7 +105,9 @@ export async function registerPasskey(name: string): Promise<RegisterResult> {
     })) as JsonBody;
     return { ok: false, message: passkeyErrorMessage(null, body.code as string, body.message as string) };
   } catch (err) {
-    console.error("Adding a passkey failed", err);
-    return { ok: false, message: passkeyErrorMessage(err) };
+    const message: string | null = passkeyErrorMessage(err);
+    if (message === null) console.info("Passkey prompt closed without adding one", err);
+    else console.error("Adding a passkey failed", err);
+    return { ok: false, message };
   }
 }

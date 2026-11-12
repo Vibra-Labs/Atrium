@@ -190,6 +190,9 @@ test.describe("Passkeys", () => {
     await admin.page.getByLabel(/name this passkey/i).fill("Admin laptop");
     await admin.page.getByRole("button", { name: /^use a passkey$/i }).click();
     await expect(admin.page.getByText(/add a backup/i)).toBeVisible({ timeout: 15000 });
+    // The backup can be another passkey or an authenticator app.
+    await expect(admin.page.getByRole("button", { name: /add another passkey/i })).toBeVisible();
+    await expect(admin.page.getByRole("button", { name: /set up authenticator app/i })).toBeVisible();
     await admin.page.getByRole("button", { name: /^continue$/i }).click();
     await admin.page.waitForURL(/\/dashboard/, { timeout: 20000 });
     expect((await admin.page.request.get(`${API}/api/projects`)).status()).toBe(200);
@@ -288,5 +291,32 @@ test.describe("Passkeys", () => {
     await page.getByRole("button", { name: /remove new name/i }).click();
     await expect(list).toHaveCount(0, { timeout: 10000 });
     expect((await status(page)).passkeyCount).toBe(0);
+  });
+
+  test("the dashboard invites staff to create a passkey, and Not now sticks on this device", async ({ browser }) => {
+    const { page, context } = await createOwner(browser, "pk-invite");
+    await page.goto(`${WEB}/dashboard`);
+    const prompt = page.getByTestId("passkey-prompt");
+    await expect(prompt).toContainText("Sign in faster next time");
+    await prompt.getByRole("button", { name: /not now/i }).click();
+    await expect(prompt).toHaveCount(0);
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("passkey-prompt")).toHaveCount(0);
+
+    // A different device (fresh browser storage) is asked again, and can create one in a click.
+    const other: Page = await context.newPage();
+    await other.evaluate(() => localStorage.clear()).catch(() => undefined);
+    await other.goto(`${WEB}/dashboard`);
+    await other.evaluate(() => localStorage.clear());
+    await other.reload();
+    await virtualAuthenticator(other);
+    const again = other.getByTestId("passkey-prompt");
+    await again.getByRole("button", { name: /create a passkey/i }).click();
+    await expect(again).toContainText("Passkey created", { timeout: 15000 });
+    expect((await status(other)).passkeyCount).toBe(1);
+    await other.reload();
+    await other.waitForLoadState("networkidle");
+    await expect(other.getByTestId("passkey-prompt")).toHaveCount(0);
   });
 });

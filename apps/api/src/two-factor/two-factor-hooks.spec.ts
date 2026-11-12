@@ -1,7 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import { APIError } from "better-auth/api";
 import { STEP_UP_ATTEMPTS, twoFactorAfterHook, twoFactorBeforeHook } from "./two-factor-hooks";
-import type { AuthHookContext, TwoFactorHookDeps } from "./two-factor-hooks";
+import type { AuthHookContext, PasswordCheck, TwoFactorHookDeps } from "./two-factor-hooks";
+import { INTERNAL_CHECK_HEADER } from "./two-factor-hooks";
 
 interface Fakes {
   deps: TwoFactorHookDeps;
@@ -27,7 +28,10 @@ function fakes(): Fakes {
     forgetSession,
     forgetUser,
     sendAlert,
-    verifyOwnCode: async (code: string): Promise<boolean> => code === "123456",
+    verifyOwnCode: mock(async (code: string): Promise<boolean> => code === "123456"),
+    checkPassword: async (_userId: string, password: string | undefined): Promise<PasswordCheck> =>
+      password === undefined ? "none" : password === "right" ? "ok" : "wrong",
+    internalCheckToken: "secret-token",
     recoveryCodesLeft: async (): Promise<number> => 4,
     isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId.startsWith("staff"),
     factorsOf: async (userId: string): Promise<{ totp: boolean; passkeys: number }> => ({
@@ -146,6 +150,40 @@ describe("twoFactorAfterHook alerts", () => {
     expect(f.sendAlert).not.toHaveBeenCalled();
   });
 
+  it("stays quiet when Atrium checks a code itself to confirm an action", async () => {
+    const f = fakes();
+    const internal: AuthHookContext = {
+      ...ctx("/two-factor/verify-backup-code", { status: true }, "totp"),
+      headers: new Headers({ [INTERNAL_CHECK_HEADER]: "secret-token" }),
+    };
+    await twoFactorAfterHook(internal, f.deps);
+    expect(f.sendAlert).not.toHaveBeenCalled();
+    expect(f.sessionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("still alerts when the marker header doesn't carry the secret", async () => {
+    const f = fakes();
+    const forged: AuthHookContext = {
+      ...ctx("/two-factor/verify-backup-code", { status: true }, "totp"),
+      headers: new Headers({ [INTERNAL_CHECK_HEADER]: "guess" }),
+    };
+    await twoFactorAfterHook(forged, f.deps);
+    expect(f.sendAlert).toHaveBeenCalled();
+  });
+
+  it("emails the user when they change their password while signed in", async () => {
+    const f = fakes();
+    const change: AuthHookContext = { ...ctx("/change-password", { token: null }), body: { revokeOtherSessions: true } };
+    await twoFactorAfterHook(change, f.deps);
+    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "password_changed", signedOut: true });
+  });
+
+  it("doesn't email about a password change that failed", async () => {
+    const f = fakes();
+    await twoFactorAfterHook(ctx("/change-password", new APIError("BAD_REQUEST")), f.deps);
+    expect(f.sendAlert).not.toHaveBeenCalled();
+  });
+
   it("emails the user and drops their cached sessions when they turn 2FA off", async () => {
     const f = fakes();
     await twoFactorAfterHook(ctx("/two-factor/disable", { status: true }, "totp", true), f.deps);
@@ -155,7 +193,24 @@ describe("twoFactorAfterHook alerts", () => {
 });
 
 describe("twoFactorBeforeHook", () => {
-  const base = { userId: "client", twoFactorEnabled: true, code: "123456", headers: new Headers() };
+  const base = { userId: "client", twoFactorEnabled: true, code: "123456", password: undefined, headers: new Headers() };
+
+  it("checks the password before the code, so a wrong password never uses up a recovery code", async () => {
+    const f = fakes();
+    const err: unknown = await twoFactorBeforeHook(
+      { ...base, path: "/two-factor/disable", code: "abcde-12345", password: "wrong" },
+      f.deps,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(APIError);
+    expect((err as APIError).body?.code).toBe("INVALID_PASSWORD");
+    expect(f.deps.verifyOwnCode).not.toHaveBeenCalled();
+  });
+
+  it("goes on to the code once the password is right", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable", password: "right" }, f.deps);
+    expect(f.deps.verifyOwnCode).toHaveBeenCalled();
+  });
 
   it("refuses to turn off the only factor of staff in a requiring workspace", async () => {
     const f = fakes();

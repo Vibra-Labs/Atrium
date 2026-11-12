@@ -7,6 +7,7 @@ import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { TrialBanner } from "./trial-banner";
 import { PasskeyPromptBanner } from "./passkey-prompt-banner";
+import { PlanOfferHost } from "@/components/plan-offers/plan-offer-host";
 import { PlainHttpNotice } from "./plain-http-notice";
 import { TimezoneSync } from "./timezone-sync";
 import { TelemetryConsentBanner } from "@/components/telemetry-consent-banner";
@@ -238,6 +239,7 @@ export default async function DashboardLayout({
           )}
           {role === "owner" && <TrialBanner />}
           <PasskeyPromptBanner />
+          {role === "owner" && <PlanOfferHost />}
           {role === "owner" && settings?.insecureCookies && !settings.plainHttpNoticeDismissed && (
             <PlainHttpNotice />
           )}

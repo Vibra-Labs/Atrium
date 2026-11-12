@@ -4,15 +4,14 @@ import {
   Head,
   Heading,
   Html,
-  Link,
   Preview,
   Text,
 } from "@react-email/components";
 import * as React from "react";
+import { OfferButtons, type TrialOfferProps } from "./trial-offer";
 
-interface TrialEndedEmailProps {
+interface TrialEndedEmailProps extends TrialOfferProps {
   organizationName: string;
-  billingUrl: string;
 }
 
 const SWITCHED_OFF = [
@@ -22,7 +21,13 @@ const SWITCHED_OFF = [
   "The portal shows \"Powered by Atrium\"",
 ];
 
-export function TrialEndedEmail({ organizationName, billingUrl }: TrialEndedEmailProps) {
+export function TrialEndedEmail({
+  organizationName,
+  activityLine,
+  proUrl,
+  lifetimeUrl,
+  lifetimeLabel,
+}: TrialEndedEmailProps) {
   return (
     <Html>
       <Head />
@@ -32,6 +37,7 @@ export function TrialEndedEmail({ organizationName, billingUrl }: TrialEndedEmai
           <Heading style={{ fontSize: "24px", marginBottom: "24px" }}>
             Your Pro trial has ended
           </Heading>
+          {activityLine && <Text style={{ fontSize: "16px", lineHeight: "24px" }}>{activityLine}</Text>}
           <Text style={{ fontSize: "16px", lineHeight: "24px" }}>
             <strong>{organizationName}</strong> is now on the Free plan. Here is what changed:
           </Text>
@@ -43,21 +49,7 @@ export function TrialEndedEmail({ organizationName, billingUrl }: TrialEndedEmai
           <Text style={{ fontSize: "14px", color: "#374151", marginTop: "16px" }}>
             Nothing was deleted. Upgrade and everything, including your custom domain, comes back right away.
           </Text>
-          <Link
-            href={billingUrl}
-            style={{
-              display: "inline-block",
-              padding: "12px 24px",
-              backgroundColor: "#006b68",
-              color: "#ffffff",
-              borderRadius: "6px",
-              textDecoration: "none",
-              fontSize: "16px",
-              marginTop: "16px",
-            }}
-          >
-            Upgrade to Pro
-          </Link>
+          <OfferButtons proUrl={proUrl} proLabel="Upgrade to Pro" lifetimeUrl={lifetimeUrl} lifetimeLabel={lifetimeLabel} />
           <Text style={{ fontSize: "14px", color: "#6b7280", marginTop: "24px" }}>
             You are receiving this email because you own an Atrium workspace.
           </Text>

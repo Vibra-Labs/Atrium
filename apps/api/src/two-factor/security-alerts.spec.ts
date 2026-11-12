@@ -41,13 +41,23 @@ describe("sendSecurityAlert", () => {
 
   it("tells the user their password changed", async () => {
     const { d, send } = deps();
-    await sendSecurityAlert(d, "u1", { kind: "password_changed" });
-    expect((send.mock.calls[0] as unknown as [string, string])[1]).toBe("Your password was changed");
+    await sendSecurityAlert(d, "u1", { kind: "password_changed", signedOut: true });
+    const [, subject, html] = send.mock.calls[0] as unknown as [string, string, string];
+    expect(subject).toBe("Your password was changed");
+    expect(html).toContain("every device was signed out");
+  });
+
+  it("doesn't claim devices were signed out when they weren't", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "password_changed", signedOut: false });
+    const [, , html] = send.mock.calls[0] as unknown as [string, string, string];
+    expect(html).not.toContain("signed out");
+    expect(html).toContain("If this wasn't you");
   });
 
   it("logs a failed send instead of throwing", async () => {
     const { d, error } = deps(() => Promise.reject(new Error("smtp down")));
-    await sendSecurityAlert(d, "u1", { kind: "password_changed" });
+    await sendSecurityAlert(d, "u1", { kind: "password_changed", signedOut: true });
     expect(error).toHaveBeenCalledTimes(1);
   });
 });

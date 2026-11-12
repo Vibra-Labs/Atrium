@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { notifyInviteSent } from "@/lib/plan-offers";
 import { loadSubscription } from "@/lib/cached";
 import { useAppConfig } from "@/lib/app-config";
 import { useToast } from "@/components/toast";
@@ -97,6 +98,7 @@ export default function ContactPage() {
       });
       // The email may not go out (no provider, or the provider refused it); the copyable link always works.
       success(pendingInvite ? "Invitation renewed" : "Invitation created");
+      notifyInviteSent();
       refresh();
       await loadPendingInvite(contact.email);
     } catch (err) {

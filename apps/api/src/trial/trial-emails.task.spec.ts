@@ -31,6 +31,8 @@ function build(opts: {
   ended?: SubRow[];
   claimCount?: number;
   sent?: boolean;
+  seatsRemaining?: number | null;
+  lifetimeActive?: boolean;
 } = {}) {
   const prisma = {
     subscription: {
@@ -46,14 +48,25 @@ function build(opts: {
       findMany: mock(() =>
         Promise.resolve([{ user: { email: "owner@acme.test" } }, { user: { email: "cofounder@acme.test" } }]),
       ),
+      count: mock(() => Promise.resolve(3)),
+    },
+    project: { count: mock(() => Promise.resolve(2)) },
+    projectUpdate: { count: mock(() => Promise.resolve(4)) },
+    subscriptionPlan: {
+      findUnique: mock(() => Promise.resolve({ maxSeats: 100, isActive: opts.lifetimeActive ?? true })),
     },
   };
-  const billing = { getSubscription: mock(() => Promise.resolve(null)) };
+  const billing = {
+    getSubscription: mock(() => Promise.resolve(null)),
+    getLifetimeSeatsRemaining: mock(() => Promise.resolve(opts.seatsRemaining === undefined ? 100 : opts.seatsRemaining)),
+  };
   const mail = { send: mock(() => Promise.resolve({ sent: opts.sent ?? true, viaOrgConfig: false })) };
   const values: Record<string, string> = { BILLING_ENABLED: opts.billing ?? "true", WEB_URL: "https://app.atrium.test" };
   const config = { get: (k: string, fallback?: string) => values[k] ?? fallback };
   const task = new TrialEmailsTask(prisma as never, billing as never, mail as never, config as never, fakeEmailRenderer());
-  return { task, prisma, billing, mail };
+  const logger = { error: mock(() => {}), warn: mock(() => {}), log: mock(() => {}) };
+  (task as unknown as { logger: typeof logger }).logger = logger;
+  return { task, prisma, billing, mail, logger };
 }
 
 describe("TrialEmailsTask", () => {
@@ -126,6 +139,54 @@ describe("TrialEmailsTask", () => {
       await task.sendEndedNotices(NOW);
       expect(mail.send).not.toHaveBeenCalled();
       expect(prisma.subscription.updateMany).toHaveBeenCalled();
+    });
+  });
+  describe("what the emails say", () => {
+    it("the reminder names what the workspace did and links to Pro and Lifetime", async () => {
+      const { task, mail } = build({ reminders: [row()] });
+      await task.sendEndingReminders(NOW);
+      const [, , html] = mail.send.mock.calls[0] as unknown as [string, string, string];
+      expect(html).toContain("So far Acme Studio has 2 projects shared with clients, 3 clients in the portal and 4 updates posted.");
+      expect(html).toContain("https://app.atrium.test/dashboard/settings/billing?plan=pro&from=trial_email_ending");
+      expect(html).toContain("https://app.atrium.test/dashboard/settings/billing?plan=lifetime&from=trial_email_ending");
+      expect(html).toContain("Limited to 100 seats");
+    });
+
+    it("the ended notice links back with its own source", async () => {
+      const { task, mail } = build({ ended: [row({ currentPeriodEnd: null })] });
+      await task.sendEndedNotices(NOW);
+      const [, , html] = mail.send.mock.calls[0] as unknown as [string, string, string];
+      expect(html).toContain("billing?plan=pro&from=trial_email_ended");
+      expect(html).toContain("So far Acme Studio has");
+    });
+
+    it("leaves Lifetime out once it has sold out", async () => {
+      const { task, mail } = build({ reminders: [row()], seatsRemaining: 0 });
+      await task.sendEndingReminders(NOW);
+      const [, , html] = mail.send.mock.calls[0] as unknown as [string, string, string];
+      expect(html).not.toContain("plan=lifetime");
+    });
+
+    it("leaves Lifetime out when the plan is switched off", async () => {
+      const { task, mail } = build({ reminders: [row()], lifetimeActive: false });
+      await task.sendEndingReminders(NOW);
+      const [, , html] = mail.send.mock.calls[0] as unknown as [string, string, string];
+      expect(html).not.toContain("plan=lifetime");
+    });
+
+    it("looks up Lifetime once per run, not once per workspace", async () => {
+      const { task, prisma, billing } = build({ reminders: [row(), row({ id: "sub2", organizationId: "org2" })] });
+      await task.sendEndingReminders(NOW);
+      expect(billing.getLifetimeSeatsRemaining).toHaveBeenCalledTimes(1);
+      expect(prisma.subscriptionPlan.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it("logs an undelivered email as an error", async () => {
+      const { task, logger } = build({ reminders: [row()], sent: false });
+      await task.sendEndingReminders(NOW);
+      expect(logger.error).toHaveBeenCalled();
+      const [message] = logger.error.mock.calls[0] as unknown as [string];
+      expect(message).toContain("org1");
     });
   });
 });

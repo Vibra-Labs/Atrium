@@ -153,6 +153,7 @@ model Organization {
   invitations      Invitation[]
   systemSettings   SystemSettings?
   subscription     Subscription?
+  planOffer        PlanOffer?
   labels           Label[]
   timeEntries      TimeEntry[]
   apiKeys          ApiKey[]
@@ -1025,6 +1026,31 @@ model Subscription {
 
   @@index([planId])
   @@map("subscription")
+}
+
+/// When the hosted owner was offered a plan, and the signals that decide the next offer.
+model PlanOffer {
+  id              String    @id @default(cuid())
+  organizationId  String    @unique
+  /// First client invite sent from the dashboard (setup-wizard invites don't count).
+  clientInvitedAt DateTime?
+  /// UTC days the owner opened the dashboard, and the last one counted (YYYY-MM-DD).
+  activeDays      Int       @default(0)
+  lastActiveDay   String?
+  /// UTC day an offer was last shown, so at most one shows per day.
+  lastOfferDay    String?
+  earlyShownAt    DateTime?
+  /// "dismissed" or "checkout".
+  earlyOutcome    String?
+  usageShownAt    DateTime?
+  /// The trial-end or Free plan screen; nothing shows after it.
+  finalShownAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("plan_offer")
 }
 
 model Notification {

@@ -392,4 +392,18 @@ test.describe("Two-factor authentication", () => {
     await page.getByRole("button", { name: /turn off two-factor/i }).click();
     await expect(page.getByText(/add a code from an authenticator app/i)).toBeVisible({ timeout: 10000 });
   });
+
+  test("a wrong password when turning 2FA off doesn't use up the recovery code", async ({ browser }) => {
+    const { page, password } = await createOwner(browser, "tf-keep-code");
+    const { backupCodes } = await enableTotp(page, password);
+    const code: string = backupCodes[0];
+
+    const wrong = await authPost(page, "/two-factor/disable", { code, password: "not-my-password" });
+    expect(wrong.status()).toBe(400);
+    expect(((await wrong.json()) as { code?: string }).code).toBe("INVALID_PASSWORD");
+
+    // The same recovery code still works with the right password.
+    const right = await authPost(page, "/two-factor/disable", { code, password });
+    expect(right.ok(), await right.text()).toBe(true);
+  });
 });

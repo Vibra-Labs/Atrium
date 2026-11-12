@@ -56,6 +56,10 @@ export function SetupClient({ onCustomDomain }: { onCustomDomain: boolean }): Re
               Add a backup: a second passkey or an authenticator app, so losing this device doesn&apos;t lock you out.
             </p>
             <AddPasskey label="Add another passkey" onAdded={() => setStep("passkey-added")} />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Or add an authenticator app</p>
+              <TwoFactorSetup onDone={() => void goOn()} />
+            </div>
             <button
               type="button"
               onClick={() => void goOn()}

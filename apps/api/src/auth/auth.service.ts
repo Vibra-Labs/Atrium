@@ -14,6 +14,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { organization, magicLink, twoFactor } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
+import { passkey } from "@better-auth/passkey";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -41,6 +42,7 @@ import { cookieUrlWarning, secureCookies } from "../common/helpers/secure-cookie
 import { publicApiUrl } from "../common/helpers/public-api-url";
 import { hashOAuthToken, mcpOAuthUnavailableReason, mcpResourceUrl } from "../common/helpers/mcp-oauth";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
+import { passkeyRelyingParty, passkeyUnavailableReason } from "../common/helpers/passkeys";
 import { SendLimiter } from "./send-limiter";
 import { SessionCache } from "./session-cache";
 import { stampFor } from "../two-factor/second-factor";
@@ -147,6 +149,11 @@ export class AuthService {
     if (mcpOAuthOff && this.config.get("MCP_OAUTH_ENABLED") !== "false") {
       this.logger.warn(`MCP sign-in (OAuth) is off: ${mcpOAuthOff}. MCP clients can still connect with an API key.`);
     }
+
+    // Passkeys need a secure web address; off (with a warning) otherwise.
+    const passkeysOff: string | null = passkeyUnavailableReason(this.config);
+    if (passkeysOff) this.logger.warn(`Passkeys are off: ${passkeysOff}.`);
+    const relyingParty = passkeysOff ? null : passkeyRelyingParty(this.config);
 
     // Shared with the CSRF guard so both cookies agree. See secure-cookies.ts.
     const useSecure: boolean = secureCookies();
@@ -564,6 +571,19 @@ export class AuthService {
           allowPasswordless: true,
           backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: "encrypted" },
         }),
+        // Pinned to the web address: the plugin's defaults would use the API
+        // host and trust custom portal domains. User verification is required
+        // so a passkey counts as two factors (device plus PIN or biometric).
+        ...(relyingParty
+          ? [
+              passkey({
+                rpID: relyingParty.rpID,
+                rpName: "Atrium",
+                origin: relyingParty.origin,
+                authenticatorSelection: { residentKey: "required", userVerification: "required" },
+              }),
+            ]
+          : []),
         magicLink({
           expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
           sendMagicLink: ({ email, url }) => this.deliverMagicLink(email, url),

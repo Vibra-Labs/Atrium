@@ -47,7 +47,7 @@ export function OfferButtons({ proUrl, proLabel, lifetimeUrl, lifetimeLabel }: {
   proLabel: string;
   lifetimeUrl: string | null;
   lifetimeLabel: string | null;
-}) {
+}): React.ReactElement {
   return (
     <>
       <Link href={proUrl} style={{ ...BUTTON, backgroundColor: "#006b68", color: "#ffffff" }}>

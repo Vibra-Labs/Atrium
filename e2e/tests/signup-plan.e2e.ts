@@ -33,6 +33,32 @@ test.describe("signup without a plan step", () => {
     await expect(page.getByText("You'll go to checkout for Pro after creating your account")).toBeVisible();
   });
 
+  test("a Lifetime link says so when Lifetime is sold out, and doesn't send the plan", async ({ page }) => {
+    await page.route("**/api/billing/plans", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ plans: [{ slug: "lifetime", isActive: true }], lifetimeSeatsRemaining: 0 }),
+      }),
+    );
+    let sentPlan: string | undefined = "unset";
+    await page.route("**/api/onboarding/signup", async (route) => {
+      sentPlan = (route.request().postDataJSON() as { planSlug?: string }).planSlug;
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ success: true }) });
+    });
+    await page.route("**/setup", (route) => route.fulfill({ status: 200, body: "setup" }));
+    await openSignup(page, "/signup?plan=lifetime");
+    await expect(page.getByText("Lifetime is sold out. You'll start on the free Pro trial.")).toBeVisible();
+    await expect(page.getByText(/go to checkout/i)).toHaveCount(0);
+
+    await page.getByLabel("Your Name").fill("Sam Soldout");
+    await page.getByLabel("Email").fill(`soldout-${Date.now()}@test.local`);
+    await page.getByLabel("Password").fill("SoldOutPass123!");
+    await page.getByLabel("Agency / Company Name").fill("Sold Out Co");
+    await page.getByRole("button", { name: "Create Account" }).click();
+    await expect.poll(() => sentPlan).toBeUndefined();
+  });
+
   test("a link for the Free plan is a plain signup", async ({ page }) => {
     await openSignup(page, "/signup?plan=free");
     await expect(page.getByText(/go to checkout/i)).toHaveCount(0);

@@ -7,11 +7,21 @@ import { workspaceActivity, type WorkspaceActivity } from "./workspace-activity"
 
 export type PlanOfferOutcome = "shown" | "dismissed" | "checkout";
 
+export interface OfferPricing {
+  proMonthlyCents: number;
+  /** False when Lifetime is sold out or switched off. */
+  lifetimeAvailable: boolean;
+}
+
 export interface DueOffer {
   offer: PlanOfferKind | null;
   /** Only filled for the usage card, which is worded around it. */
   activity: WorkspaceActivity | null;
+  /** Only filled for the usage card, which names the price and may offer Lifetime. */
+  pricing: OfferPricing | null;
 }
+
+const NO_OFFER: DueOffer = { offer: null, activity: null, pricing: null };
 
 type ShownField = "earlyShownAt" | "usageShownAt" | "finalShownAt";
 
@@ -35,13 +45,25 @@ export class PlanOffersService {
     return this.config.get("BILLING_ENABLED", "false") === "true";
   }
 
-  private ensureRow(orgId: string) {
-    return this.prisma.planOffer.upsert({ where: { organizationId: orgId }, create: { organizationId: orgId }, update: {} });
+  private async ensureRow(orgId: string): Promise<void> {
+    await this.prisma.planOffer.upsert({ where: { organizationId: orgId }, create: { organizationId: orgId }, update: {} });
+  }
+
+  private async pricing(): Promise<OfferPricing> {
+    const [pro, lifetime, seatsRemaining] = await Promise.all([
+      this.prisma.subscriptionPlan.findUnique({ where: { slug: "pro" }, select: { priceMonthly: true } }),
+      this.prisma.subscriptionPlan.findUnique({ where: { slug: "lifetime" }, select: { isActive: true } }),
+      this.billing.getLifetimeSeatsRemaining(),
+    ]);
+    return {
+      proMonthlyCents: pro?.priceMonthly ?? 0,
+      lifetimeAvailable: lifetime?.isActive === true && (seatsRemaining === null || seatsRemaining > 0),
+    };
   }
 
   /** Counts today's visit, then says which offer (if any) is due. */
   async due(orgId: string, now: Date = new Date()): Promise<DueOffer> {
-    if (!this.billingEnabled()) return { offer: null, activity: null };
+    if (!this.billingEnabled()) return NO_OFFER;
 
     const today: string = utcDay(now);
     await this.ensureRow(orgId);
@@ -56,7 +78,7 @@ export class PlanOffersService {
       this.prisma.organization.findUnique({ where: { id: orgId }, select: { createdAt: true } }),
       this.billing.getSubscription(orgId),
     ]);
-    if (!org || !sub) return { offer: null, activity: null };
+    if (!org || !sub) return NO_OFFER;
 
     const trialing: boolean = sub.status === "trialing" && !sub.stripeSubscriptionId;
     const plan: PlanOfferInput["plan"] = trialing ? "trial" : sub.plan.slug === "free" ? "free" : "paid";
@@ -69,8 +91,9 @@ export class PlanOffersService {
       trialEndedAt: sub.trialEndedAt,
       state,
     });
-    const activity: WorkspaceActivity | null = offer === "usage" ? await workspaceActivity(this.prisma, orgId) : null;
-    return { offer, activity };
+    if (offer !== "usage") return { offer, activity: null, pricing: null };
+    const [activity, pricing] = await Promise.all([workspaceActivity(this.prisma, orgId), this.pricing()]);
+    return { offer, activity, pricing };
   }
 
   /**
@@ -102,7 +125,11 @@ export class PlanOffersService {
       data: { [field]: now, lastOfferDay: today },
     });
     if (kind === "early") {
-      await this.prisma.planOffer.updateMany({ where: { organizationId: orgId }, data: { earlyOutcome: outcome } });
+      // The first outcome stands: a checkout followed by a dismiss on return stays "checkout".
+      await this.prisma.planOffer.updateMany({
+        where: { organizationId: orgId, earlyOutcome: null },
+        data: { earlyOutcome: outcome },
+      });
     }
     return { claimed: false };
   }
@@ -123,7 +150,12 @@ export class PlanOffersService {
   /** A signup from the pricing page that went to checkout has already been offered a plan. */
   async recordSignupCheckout(orgId: string, now: Date = new Date()): Promise<void> {
     if (!this.billingEnabled()) return;
-    const data = { earlyShownAt: now, earlyOutcome: "checkout" };
+    // lastOfferDay too, so someone back from an abandoned checkout isn't asked again today.
+    const data: { earlyShownAt: Date; earlyOutcome: string; lastOfferDay: string } = {
+      earlyShownAt: now,
+      earlyOutcome: "checkout",
+      lastOfferDay: utcDay(now),
+    };
     await this.prisma.planOffer.upsert({
       where: { organizationId: orgId },
       create: { organizationId: orgId, ...data },

@@ -10,9 +10,16 @@ export interface WorkspaceActivity {
   updates: number;
 }
 
+export interface OfferPricing {
+  proMonthlyCents: number;
+  /** False when Lifetime is sold out or switched off. */
+  lifetimeAvailable: boolean;
+}
+
 export interface DueOffer {
   offer: PlanOfferKind | null;
   activity: WorkspaceActivity | null;
+  pricing: OfferPricing | null;
 }
 
 /** Fired after an invite goes out, so a due plan offer can show right away. */
@@ -27,12 +34,13 @@ function plural(n: number, word: string): string {
 }
 
 /** The usage card's line, worded around what the workspace has done. */
-export function usageOfferText(activity: WorkspaceActivity): string {
+export function usageOfferText(activity: WorkspaceActivity, pricing: OfferPricing): string {
   const lead: string =
     activity.sharedProjects > 0 && activity.clients > 0
       ? `You've shared ${plural(activity.sharedProjects, "project")} with ${plural(activity.clients, "client")}.`
       : "You've been putting Atrium to work this week.";
-  return `${lead} Keep Pro for $29/mo, or get Lifetime while seats last.`;
+  const pro: string = `Keep Pro for $${(pricing.proMonthlyCents / 100).toFixed(0)}/mo`;
+  return pricing.lifetimeAvailable ? `${lead} ${pro}, or get Lifetime while seats last.` : `${lead} ${pro}.`;
 }
 
 export function loadDueOffer(): Promise<DueOffer> {

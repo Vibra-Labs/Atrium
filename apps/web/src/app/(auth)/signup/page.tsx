@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { track } from "@/lib/track";
 import { useAppConfig } from "@/lib/app-config";
@@ -21,8 +21,22 @@ export default function SignupPage() {
   const planFromUrl = searchParams.get("plan");
 
   const selectedPlan: string = planFromUrl ?? "free";
+  const wantsLifetime: boolean = billingEnabled && selectedPlan === "lifetime";
+  // A Lifetime link checks seats first, so it never promises a checkout that can't happen.
+  const [lifetimeSoldOut, setLifetimeSoldOut] = useState<boolean>(false);
+  useEffect(() => {
+    if (!wantsLifetime) return;
+    fetch(`${API_URL}/api/billing/plans`)
+      .then((res: Response) => res.json())
+      .then((data: { plans?: { slug: string; isActive?: boolean }[]; lifetimeSeatsRemaining?: number | null }) => {
+        const offered: boolean = (data.plans ?? []).some((p) => p.slug === "lifetime" && p.isActive !== false);
+        setLifetimeSoldOut(!offered || data.lifetimeSeatsRemaining === 0);
+      })
+      .catch((err: unknown) => console.error("Could not check Lifetime seats", err));
+  }, [wantsLifetime]);
   // Only when billing is on: self-hosted installs have no plans to check out.
-  const checkoutPlanName: string | null = billingEnabled ? CHECKOUT_PLANS[selectedPlan] ?? null : null;
+  const checkoutPlanName: string | null =
+    billingEnabled && !(wantsLifetime && lifetimeSoldOut) ? CHECKOUT_PLANS[selectedPlan] ?? null : null;
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -157,6 +171,11 @@ export default function SignupPage() {
           {checkoutPlanName && (
             <p className="mt-3 text-sm text-[var(--primary)]">
               You&apos;ll go to checkout for {checkoutPlanName} after creating your account
+            </p>
+          )}
+          {wantsLifetime && lifetimeSoldOut && (
+            <p className="mt-3 text-sm text-[var(--muted-foreground)]">
+              Lifetime is sold out. You&apos;ll start on the free Pro trial.
             </p>
           )}
         </div>

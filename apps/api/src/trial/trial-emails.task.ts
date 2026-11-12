@@ -16,6 +16,12 @@ type ClaimField = "trialReminderSentAt" | "trialEndedEmailSentAt";
 
 type EmailSource = "trial_email_ending" | "trial_email_ended";
 
+/** Lifetime's seat state for one run; null when it can't be bought. */
+interface LifetimeState {
+  maxSeats: number;
+  remaining: number | null;
+}
+
 interface OfferProps {
   activityLine: string | null;
   proUrl: string;
@@ -59,6 +65,7 @@ export class TrialEmailsTask {
       include: { organization: { select: { name: true } } },
     });
 
+    const lifetime: LifetimeState | null = due.length > 0 ? await this.lifetimeState() : null;
     for (const sub of due) {
       if (!sub.currentPeriodEnd) continue;
       const daysLeft: number = Math.max(1, Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / DAY_MS));
@@ -70,7 +77,7 @@ export class TrialEmailsTask {
             organizationName: sub.organization.name,
             daysLeft,
             endsOn: sub.currentPeriodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" }),
-            ...(await this.offerProps(sub.organizationId, sub.organization.name, "trial_email_ending")),
+            ...(await this.offerProps(sub.organizationId, sub.organization.name, "trial_email_ending", lifetime)),
           }),
         );
         await this.sendOnce(sub, "trialReminderSentAt", now, `Your Atrium Pro trial ends in ${daysLeft} ${dayWord}`, html);
@@ -96,6 +103,7 @@ export class TrialEmailsTask {
       include: { organization: { select: { name: true } }, plan: { select: { slug: true } } },
     });
 
+    const lifetime: LifetimeState | null = ended.length > 0 ? await this.lifetimeState() : null;
     for (const sub of ended) {
       try {
         // They upgraded before we got to them; mark it handled without emailing.
@@ -106,7 +114,7 @@ export class TrialEmailsTask {
         const html: string = await this.renderer.render(
           TrialEndedEmail({
             organizationName: sub.organization.name,
-            ...(await this.offerProps(sub.organizationId, sub.organization.name, "trial_email_ended")),
+            ...(await this.offerProps(sub.organizationId, sub.organization.name, "trial_email_ended", lifetime)),
           }),
         );
         await this.sendOnce(sub, "trialEndedEmailSentAt", now, "Your Atrium Pro trial has ended", html);
@@ -159,20 +167,30 @@ export class TrialEmailsTask {
     return count === 1;
   }
 
-  /** What the workspace did, and links to Pro and (unless sold out) Lifetime. */
-  private async offerProps(orgId: string, organizationName: string, from: EmailSource): Promise<OfferProps> {
-    const [activity, seatsRemaining, lifetime]: [WorkspaceActivity, number | null, { maxSeats: number } | null] = await Promise.all([
-      workspaceActivity(this.prisma, orgId),
+  /** Loaded once per run: the same for every workspace. */
+  private async lifetimeState(): Promise<LifetimeState | null> {
+    const [plan, remaining] = await Promise.all([
+      this.prisma.subscriptionPlan.findUnique({ where: { slug: "lifetime" }, select: { maxSeats: true, isActive: true } }),
       this.billingService.getLifetimeSeatsRemaining(),
-      this.prisma.subscriptionPlan.findUnique({ where: { slug: "lifetime" }, select: { maxSeats: true } }),
     ]);
-    const lifetimeOpen: boolean = lifetime !== null && (seatsRemaining === null || seatsRemaining > 0);
+    if (!plan?.isActive || (remaining !== null && remaining <= 0)) return null;
+    return { maxSeats: plan.maxSeats, remaining };
+  }
+
+  /** What the workspace did, and links to Pro and (when it can be bought) Lifetime. */
+  private async offerProps(
+    orgId: string,
+    organizationName: string,
+    from: EmailSource,
+    lifetime: LifetimeState | null,
+  ): Promise<OfferProps> {
+    const activity: WorkspaceActivity = await workspaceActivity(this.prisma, orgId);
     return {
       activityLine: activitySentence(organizationName, activity),
       proUrl: this.billingUrl("pro", from),
-      lifetimeUrl: lifetimeOpen ? this.billingUrl("lifetime", from) : null,
+      lifetimeUrl: lifetime ? this.billingUrl("lifetime", from) : null,
       lifetimeLabel:
-        lifetimeOpen && lifetime && seatsRemaining !== null ? lifetimeSeatLabel(lifetime.maxSeats, seatsRemaining) : null,
+        lifetime && lifetime.remaining !== null ? lifetimeSeatLabel(lifetime.maxSeats, lifetime.remaining) : null,
     };
   }
 

@@ -216,7 +216,7 @@ test.describe("plan offers (self-hosted)", () => {
     });
     expect(invited.ok()).toBe(true);
 
-    expect(await (await owner.page.request.get(`${API}/plan-offers/due`)).json()).toEqual({ offer: null, activity: null });
+    expect(await (await owner.page.request.get(`${API}/plan-offers/due`)).json()).toEqual({ offer: null, activity: null, pricing: null });
     // The web app doesn't even ask on a self-hosted install.
     const asked: string[] = [];
     owner.page.on("request", (req) => {

@@ -38,6 +38,8 @@ interface BuildOptions {
   row?: Row;
   orgCreatedAt?: Date;
   setupCompleted?: boolean;
+  seatsRemaining?: number | null;
+  lifetimeActive?: boolean;
   subscription?: { status: string; stripeSubscriptionId: string | null; currentPeriodEnd: Date | null; trialEndedAt: Date | null; plan: { slug: string } };
 }
 
@@ -57,8 +59,20 @@ function build(options: BuildOptions = {}) {
     project: { count: mock(() => Promise.resolve(2)) },
     member: { count: mock(() => Promise.resolve(3)) },
     projectUpdate: { count: mock(() => Promise.resolve(4)) },
+    subscriptionPlan: {
+      findUnique: mock(({ where }: { where: { slug: string } }) =>
+        Promise.resolve(
+          where.slug === "pro"
+            ? { priceMonthly: 2900, isActive: true }
+            : options.lifetimeActive === false
+              ? { maxSeats: 100, isActive: false }
+              : { maxSeats: 100, isActive: true },
+        ),
+      ),
+    },
   };
   const billing = {
+    getLifetimeSeatsRemaining: mock(() => Promise.resolve(options.seatsRemaining === undefined ? 100 : options.seatsRemaining)),
     getSubscription: mock(() =>
       Promise.resolve(
         options.subscription ?? {
@@ -83,7 +97,7 @@ function build(options: BuildOptions = {}) {
 describe("PlanOffersService.due", () => {
   it("does nothing at all when billing is off", async () => {
     const { service, prisma, billing } = build({ billing: false, orgCreatedAt: new Date(NOW.getTime() - 5 * DAY_MS) });
-    expect(await service.due("org-1", NOW)).toEqual({ offer: null, activity: null });
+    expect(await service.due("org-1", NOW)).toEqual({ offer: null, activity: null, pricing: null });
     expect(prisma.planOffer.upsert).not.toHaveBeenCalled();
     expect(prisma.planOffer.updateMany).not.toHaveBeenCalled();
     expect(billing.getSubscription).not.toHaveBeenCalled();
@@ -102,7 +116,7 @@ describe("PlanOffersService.due", () => {
 
   it("offers early to a trial owner returning the day after signup", async () => {
     const { service } = build({ orgCreatedAt: new Date(NOW.getTime() - DAY_MS) });
-    expect(await service.due("org-1", NOW)).toEqual({ offer: "early", activity: null });
+    expect(await service.due("org-1", NOW)).toEqual({ offer: "early", activity: null, pricing: null });
   });
 
   it("includes the workspace's activity with the usage card", async () => {
@@ -113,7 +127,17 @@ describe("PlanOffersService.due", () => {
     expect(await service.due("org-1", NOW)).toEqual({
       offer: "usage",
       activity: { sharedProjects: 2, clients: 3, updates: 4 },
+      pricing: { proMonthlyCents: 2900, lifetimeAvailable: true },
     });
+  });
+
+  it("tells the usage card when Lifetime can't be bought", async () => {
+    const usageRow = emptyRow({ earlyShownAt: new Date(NOW.getTime() - 2 * DAY_MS), activeDays: 3 });
+    const old = new Date(NOW.getTime() - 4 * DAY_MS);
+    const soldOut = build({ orgCreatedAt: old, row: usageRow, seatsRemaining: 0 });
+    expect((await soldOut.service.due("org-1", NOW)).pricing?.lifetimeAvailable).toBe(false);
+    const switchedOff = build({ orgCreatedAt: old, row: usageRow, lifetimeActive: false });
+    expect((await switchedOff.service.due("org-1", NOW)).pricing?.lifetimeAvailable).toBe(false);
   });
 
   it("offers nothing to a paid workspace", async () => {
@@ -159,11 +183,12 @@ describe("PlanOffersService.record", () => {
     expect(args.where).toMatchObject({ organizationId: "org-1", finalShownAt: null });
   });
 
-  it("stores how the early offer ended", async () => {
+  it("stores how the early offer ended, keeping the first outcome", async () => {
     const { service, prisma } = build();
     await service.record("org-1", "early", "checkout", NOW);
-    const calls = prisma.planOffer.updateMany.mock.calls as unknown as [{ data: Record<string, unknown> }][];
-    expect(calls.some(([a]) => a.data.earlyOutcome === "checkout")).toBe(true);
+    const calls = prisma.planOffer.updateMany.mock.calls as unknown as [{ where: Record<string, unknown>; data: Record<string, unknown> }][];
+    const outcome = calls.find(([a]) => a.data.earlyOutcome === "checkout");
+    expect(outcome?.[0].where).toEqual({ organizationId: "org-1", earlyOutcome: null });
   });
 
   it("writes nothing when billing is off", async () => {
@@ -214,7 +239,9 @@ describe("PlanOffersService.recordSignupCheckout", () => {
     const { service, prisma } = build();
     await service.recordSignupCheckout("org-1", NOW);
     const [args] = prisma.planOffer.upsert.mock.calls[0] as unknown as [{ create: Record<string, unknown>; update: Record<string, unknown> }];
-    expect(args.create).toEqual({ organizationId: "org-1", earlyShownAt: NOW, earlyOutcome: "checkout" });
-    expect(args.update).toEqual({ earlyShownAt: NOW, earlyOutcome: "checkout" });
+    // lastOfferDay too: someone back from an abandoned checkout isn't asked again the same day.
+    const data = { earlyShownAt: NOW, earlyOutcome: "checkout", lastOfferDay: utcDay(NOW) };
+    expect(args.create).toEqual({ organizationId: "org-1", ...data });
+    expect(args.update).toEqual(data);
   });
 });

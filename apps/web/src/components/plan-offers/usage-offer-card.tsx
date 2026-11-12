@@ -1,17 +1,18 @@
 "use client";
 
 import { Sparkles, X } from "lucide-react";
-import { usageOfferText, type CheckoutPlan, type WorkspaceActivity } from "@/lib/plan-offers";
+import { usageOfferText, type CheckoutPlan, type OfferPricing, type WorkspaceActivity } from "@/lib/plan-offers";
 
 interface UsageOfferCardProps {
   activity: WorkspaceActivity;
+  pricing: OfferPricing;
   busySlug: CheckoutPlan | null;
   onChoose: (slug: CheckoutPlan) => void;
   onDismiss: () => void;
 }
 
 /** A lighter, second ask: the owner already said "not yet" once. */
-export function UsageOfferCard({ activity, busySlug, onChoose, onDismiss }: UsageOfferCardProps): React.ReactElement {
+export function UsageOfferCard({ activity, pricing, busySlug, onChoose, onDismiss }: UsageOfferCardProps): React.ReactElement {
   return (
     <div
       data-testid="usage-offer"
@@ -19,7 +20,7 @@ export function UsageOfferCard({ activity, busySlug, onChoose, onDismiss }: Usag
     >
       <div className="flex items-start gap-2 flex-1">
         <Sparkles size={15} className="shrink-0 mt-0.5 text-[var(--primary)]" />
-        <span>{usageOfferText(activity)}</span>
+        <span>{usageOfferText(activity, pricing)}</span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <button
@@ -30,14 +31,16 @@ export function UsageOfferCard({ activity, busySlug, onChoose, onDismiss }: Usag
         >
           Keep Pro
         </button>
-        <button
-          type="button"
-          disabled={busySlug !== null}
-          onClick={() => onChoose("lifetime")}
-          className="px-3 py-1.5 rounded-lg border border-[var(--border)] font-medium hover:bg-[var(--background)] disabled:opacity-50"
-        >
-          Get Lifetime
-        </button>
+        {pricing.lifetimeAvailable && (
+          <button
+            type="button"
+            disabled={busySlug !== null}
+            onClick={() => onChoose("lifetime")}
+            className="px-3 py-1.5 rounded-lg border border-[var(--border)] font-medium hover:bg-[var(--background)] disabled:opacity-50"
+          >
+            Get Lifetime
+          </button>
+        )}
         <button
           type="button"
           aria-label="Dismiss"

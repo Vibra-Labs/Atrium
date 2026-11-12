@@ -101,6 +101,7 @@ export function PlanOfferHost(): React.ReactElement | null {
     return (
       <UsageOfferCard
         activity={due.activity ?? { sharedProjects: 0, clients: 0, updates: 0 }}
+        pricing={due.pricing ?? { proMonthlyCents: 2900, lifetimeAvailable: false }}
         busySlug={busySlug}
         onChoose={(slug: CheckoutPlan) => void choose(slug)}
         onDismiss={dismiss}

@@ -32,6 +32,7 @@ function build(opts: {
   claimCount?: number;
   sent?: boolean;
   seatsRemaining?: number | null;
+  lifetimeActive?: boolean;
 } = {}) {
   const prisma = {
     subscription: {
@@ -51,7 +52,9 @@ function build(opts: {
     },
     project: { count: mock(() => Promise.resolve(2)) },
     projectUpdate: { count: mock(() => Promise.resolve(4)) },
-    subscriptionPlan: { findUnique: mock(() => Promise.resolve({ maxSeats: 100 })) },
+    subscriptionPlan: {
+      findUnique: mock(() => Promise.resolve({ maxSeats: 100, isActive: opts.lifetimeActive ?? true })),
+    },
   };
   const billing = {
     getSubscription: mock(() => Promise.resolve(null)),
@@ -162,6 +165,20 @@ describe("TrialEmailsTask", () => {
       await task.sendEndingReminders(NOW);
       const [, , html] = mail.send.mock.calls[0] as unknown as [string, string, string];
       expect(html).not.toContain("plan=lifetime");
+    });
+
+    it("leaves Lifetime out when the plan is switched off", async () => {
+      const { task, mail } = build({ reminders: [row()], lifetimeActive: false });
+      await task.sendEndingReminders(NOW);
+      const [, , html] = mail.send.mock.calls[0] as unknown as [string, string, string];
+      expect(html).not.toContain("plan=lifetime");
+    });
+
+    it("looks up Lifetime once per run, not once per workspace", async () => {
+      const { task, prisma, billing } = build({ reminders: [row(), row({ id: "sub2", organizationId: "org2" })] });
+      await task.sendEndingReminders(NOW);
+      expect(billing.getLifetimeSeatsRemaining).toHaveBeenCalledTimes(1);
+      expect(prisma.subscriptionPlan.findUnique).toHaveBeenCalledTimes(1);
     });
 
     it("logs an undelivered email as an error", async () => {

@@ -16,14 +16,15 @@ export class PlanOffersController {
     return this.planOffers.due(orgId);
   }
 
+  /** For "shown", `claimed` says whether this tab may display the offer. */
   @Post(":kind")
-  @HttpCode(204)
+  @HttpCode(200)
   async record(
     @CurrentOrg("id") orgId: string,
     @Param("kind") kind: string,
     @Body() dto: RecordPlanOfferDto,
-  ): Promise<void> {
+  ): Promise<{ claimed: boolean }> {
     if (!PLAN_OFFER_KINDS.includes(kind as PlanOfferKind)) throw new BadRequestException("Unknown plan offer");
-    await this.planOffers.record(orgId, kind as PlanOfferKind, dto.outcome);
+    return this.planOffers.record(orgId, kind as PlanOfferKind, dto.outcome);
   }
 }

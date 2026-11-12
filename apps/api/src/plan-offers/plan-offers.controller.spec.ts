@@ -6,7 +6,7 @@ import type { PlanOffersService } from "./plan-offers.service";
 function build() {
   const service = {
     due: mock(() => Promise.resolve({ offer: "early", activity: null })),
-    record: mock(() => Promise.resolve()),
+    record: mock(() => Promise.resolve({ claimed: true })),
   };
   return { controller: new PlanOffersController(service as unknown as PlanOffersService), service };
 }
@@ -20,8 +20,8 @@ describe("PlanOffersController", () => {
 
   it("records an outcome for a known offer", async () => {
     const { controller, service } = build();
-    await controller.record("org-1", "usage", { outcome: "dismissed" });
-    expect(service.record).toHaveBeenCalledWith("org-1", "usage", "dismissed");
+    expect(await controller.record("org-1", "usage", { outcome: "shown" })).toEqual({ claimed: true });
+    expect(service.record).toHaveBeenCalledWith("org-1", "usage", "shown");
   });
 
   it("rejects an unknown offer", async () => {

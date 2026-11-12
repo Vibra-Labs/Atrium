@@ -73,18 +73,38 @@ export class PlanOffersService {
     return { offer, activity };
   }
 
-  /** Marks an offer shown (first write wins) and, for the early offer, how it ended. */
-  async record(orgId: string, kind: PlanOfferKind, outcome: PlanOfferOutcome, now: Date = new Date()): Promise<void> {
-    if (!this.billingEnabled()) return;
+  /**
+   * "shown" claims the offer: only the first tab to ask, on a day nothing else was shown,
+   * gets `claimed: true`, and only that tab displays it. Other outcomes record how it ended.
+   */
+  async record(
+    orgId: string,
+    kind: PlanOfferKind,
+    outcome: PlanOfferOutcome,
+    now: Date = new Date(),
+  ): Promise<{ claimed: boolean }> {
+    if (!this.billingEnabled()) return { claimed: false };
     const field: ShownField = SHOWN_FIELD[kind];
+    const today: string = utcDay(now);
     await this.ensureRow(orgId);
+
+    if (outcome === "shown") {
+      const { count } = await this.prisma.planOffer.updateMany({
+        where: { organizationId: orgId, [field]: null, OR: [{ lastOfferDay: null }, { lastOfferDay: { not: today } }] },
+        data: { [field]: now, lastOfferDay: today },
+      });
+      return { claimed: count === 1 };
+    }
+
+    // Still mark it shown if the "shown" call never arrived, so it can't come back.
     await this.prisma.planOffer.updateMany({
       where: { organizationId: orgId, [field]: null },
-      data: { [field]: now, lastOfferDay: utcDay(now) },
+      data: { [field]: now, lastOfferDay: today },
     });
-    if (kind === "early" && outcome !== "shown") {
+    if (kind === "early") {
       await this.prisma.planOffer.updateMany({ where: { organizationId: orgId }, data: { earlyOutcome: outcome } });
     }
+    return { claimed: false };
   }
 
   /** A client invite sent from the dashboard. Setup-wizard and team invites don't count. */

@@ -110,6 +110,18 @@ test.describe("plan offers (hosted)", () => {
     await owner.context.close();
   });
 
+  test("two tabs opened together show the offer only once", async ({ browser }) => {
+    const owner = await signUpOwner(browser);
+    await backdateSignup(owner.email, 1);
+    const second: Page = await owner.context.newPage();
+    await Promise.all([owner.page.goto("/dashboard"), second.goto("/dashboard")]);
+    await expect(owner.page.getByTestId("trial-banner")).toBeVisible();
+    await expect(second.getByTestId("trial-banner")).toBeVisible();
+    // Give both tabs time to ask; exactly one wins the claim.
+    await expect.poll(async () => (await offer(owner.page).count()) + (await offer(second).count())).toBe(1);
+    await owner.context.close();
+  });
+
   test("after a few days of use the owner gets the usage card, once", async ({ browser }) => {
     const owner = await signUpOwner(browser);
     await backdateSignup(owner.email, 4);
@@ -205,9 +217,16 @@ test.describe("plan offers (self-hosted)", () => {
     expect(invited.ok()).toBe(true);
 
     expect(await (await owner.page.request.get(`${API}/plan-offers/due`)).json()).toEqual({ offer: null, activity: null });
+    // The web app doesn't even ask on a self-hosted install.
+    const asked: string[] = [];
+    owner.page.on("request", (req) => {
+      if (req.url().includes("/plan-offers/")) asked.push(req.url());
+    });
     await owner.page.goto("/dashboard");
     await expect(owner.page.getByRole("heading").first()).toBeVisible();
     await expect(offer(owner.page)).toHaveCount(0);
+    await owner.page.waitForLoadState("networkidle");
+    expect(asked).toEqual([]);
     const rows: number = await withDb(async (prisma) =>
       prisma.planOffer.count({ where: { organizationId: await ownerOrgId(prisma, owner.email) } }),
     );

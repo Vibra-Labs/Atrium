@@ -134,19 +134,29 @@ describe("PlanOffersService.due", () => {
 });
 
 describe("PlanOffersService.record", () => {
-  it("keeps the first time an offer was shown", async () => {
+  it("claims an offer only if it wasn't shown yet and nothing showed today", async () => {
     const { service, prisma } = build();
-    await service.record("org-1", "early", "shown", NOW);
+    expect(await service.record("org-1", "early", "shown", NOW)).toEqual({ claimed: true });
     const [args] = prisma.planOffer.updateMany.mock.calls[0] as unknown as [{ where: Record<string, unknown>; data: Record<string, unknown> }];
-    expect(args.where).toEqual({ organizationId: "org-1", earlyShownAt: null });
+    expect(args.where).toEqual({
+      organizationId: "org-1",
+      earlyShownAt: null,
+      OR: [{ lastOfferDay: null }, { lastOfferDay: { not: utcDay(NOW) } }],
+    });
     expect(args.data).toEqual({ earlyShownAt: NOW, lastOfferDay: utcDay(NOW) });
+  });
+
+  it("tells a second tab it lost the claim", async () => {
+    const { service, prisma } = build();
+    prisma.planOffer.updateMany.mockImplementationOnce(() => Promise.resolve({ count: 0 }));
+    expect(await service.record("org-1", "early", "shown", NOW)).toEqual({ claimed: false });
   });
 
   it("uses one field for both final screens", async () => {
     const { service, prisma } = build();
     await service.record("org-1", "free", "shown", NOW);
     const [args] = prisma.planOffer.updateMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }];
-    expect(args.where).toEqual({ organizationId: "org-1", finalShownAt: null });
+    expect(args.where).toMatchObject({ organizationId: "org-1", finalShownAt: null });
   });
 
   it("stores how the early offer ended", async () => {
@@ -158,7 +168,7 @@ describe("PlanOffersService.record", () => {
 
   it("writes nothing when billing is off", async () => {
     const { service, prisma } = build({ billing: false });
-    await service.record("org-1", "early", "shown", NOW);
+    expect(await service.record("org-1", "early", "shown", NOW)).toEqual({ claimed: false });
     expect(prisma.planOffer.updateMany).not.toHaveBeenCalled();
   });
 });

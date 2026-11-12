@@ -39,8 +39,9 @@ export function loadDueOffer(): Promise<DueOffer> {
   return apiFetch<DueOffer>("/plan-offers/due");
 }
 
-export function recordOffer(kind: PlanOfferKind, outcome: PlanOfferOutcome): Promise<void> {
-  return apiFetch<void>(`/plan-offers/${kind}`, { method: "POST", body: JSON.stringify({ outcome }) });
+/** For "shown", `claimed` is false when another tab already showed an offer. */
+export function recordOffer(kind: PlanOfferKind, outcome: PlanOfferOutcome): Promise<{ claimed: boolean }> {
+  return apiFetch<{ claimed: boolean }>(`/plan-offers/${kind}`, { method: "POST", body: JSON.stringify({ outcome }) });
 }
 
 /** Starts Stripe checkout for the plan and leaves the page. */
@@ -54,4 +55,12 @@ export async function offerCheckout(planSlug: CheckoutPlan): Promise<void> {
     }),
   });
   if (result.url) window.location.href = result.url;
+}
+
+/** "Free", "$29/mo" or "$499 once". Free is stored as one-time, so price decides first. */
+export function planPriceLabel(plan: { isRecurring: boolean; priceMonthly: number; priceLifetime: number }): string {
+  const cents: number = plan.isRecurring ? plan.priceMonthly : plan.priceLifetime;
+  if (cents <= 0) return "Free";
+  const dollars: string = `$${(cents / 100).toFixed(0)}`;
+  return plan.isRecurring ? `${dollars}/mo` : `${dollars} once`;
 }

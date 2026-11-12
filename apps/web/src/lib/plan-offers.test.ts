@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { usageOfferText } from "./plan-offers";
+import { planPriceLabel, usageOfferText } from "./plan-offers";
 
 const TAIL = " Keep Pro for $29/mo, or get Lifetime while seats last.";
 
@@ -20,5 +20,19 @@ describe("usageOfferText", () => {
     expect(usageOfferText({ sharedProjects: 0, clients: 2, updates: 5 })).toBe(
       `You've been putting Atrium to work this week.${TAIL}`,
     );
+  });
+});
+
+describe("planPriceLabel", () => {
+  it("calls a plan with no price Free, even when it's stored as one-time", () => {
+    expect(planPriceLabel({ isRecurring: false, priceMonthly: 0, priceLifetime: 0 })).toBe("Free");
+  });
+
+  it("shows a monthly price", () => {
+    expect(planPriceLabel({ isRecurring: true, priceMonthly: 2900, priceLifetime: 0 })).toBe("$29/mo");
+  });
+
+  it("shows a one-time price", () => {
+    expect(planPriceLabel({ isRecurring: false, priceMonthly: 0, priceLifetime: 49900 })).toBe("$499 once");
   });
 });

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Crown, Loader2, Zap } from "lucide-react";
 import { lifetimeSeatLabel } from "@atrium/shared";
 import { apiFetch } from "@/lib/api";
-import type { CheckoutPlan } from "@/lib/plan-offers";
+import { planPriceLabel, type CheckoutPlan } from "@/lib/plan-offers";
 
 interface PickerPlan {
   id: string;
@@ -21,11 +21,6 @@ interface PickerPlan {
 interface PlanPickerProps {
   onChoose: (slug: CheckoutPlan) => void;
   busySlug: CheckoutPlan | null;
-}
-
-function priceLabel(plan: PickerPlan): string {
-  if (plan.isRecurring) return plan.priceMonthly > 0 ? `$${(plan.priceMonthly / 100).toFixed(0)}/mo` : "Free";
-  return `$${(plan.priceLifetime / 100).toFixed(0)} once`;
 }
 
 /** Free, Pro and Lifetime side by side; Pro and Lifetime start checkout. */
@@ -67,7 +62,7 @@ export function PlanPicker({ onChoose, busySlug }: PlanPickerProps): React.React
               {isLifetime && <Crown size={15} className="text-amber-500" />}
               <h3 className="font-semibold">{plan.name}</h3>
             </div>
-            <p className="text-2xl font-bold">{priceLabel(plan)}</p>
+            <p className="text-2xl font-bold">{planPriceLabel(plan)}</p>
             {isLifetime && seatsRemaining !== null && (
               <p className="text-xs font-medium text-amber-600">{lifetimeSeatLabel(plan.maxSeats, seatsRemaining)}</p>
             )}

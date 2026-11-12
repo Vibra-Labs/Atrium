@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { track } from "@/lib/track";
 import { useToast } from "@/components/toast";
+import { useAppConfig } from "@/lib/app-config";
 import {
   INVITE_SENT_EVENT,
   loadDueOffer,
@@ -42,6 +43,7 @@ export function PlanOfferHost(): React.ReactElement | null {
   const [busySlug, setBusySlug] = useState<CheckoutPlan | null>(null);
   const shownRef = useRef<boolean>(false);
   const { error: showError } = useToast();
+  const billingEnabled: boolean = useAppConfig()?.billingEnabled === true;
 
   const check = useCallback(async (): Promise<void> => {
     if (shownRef.current) return;
@@ -50,8 +52,10 @@ export function PlanOfferHost(): React.ReactElement | null {
       if (!next.offer || shownRef.current) return;
       if (!(await waitForNoDialog()) || shownRef.current) return;
       shownRef.current = true;
+      // Only the tab that claims the offer shows it, so two open tabs never both do.
+      const { claimed } = await recordOffer(next.offer, "shown");
+      if (!claimed) return;
       setDue(next);
-      remember(next.offer, "shown");
       track("plan_offer_shown", { offer: next.offer });
     } catch (err) {
       console.error("Failed to check for a plan offer", err);
@@ -59,11 +63,13 @@ export function PlanOfferHost(): React.ReactElement | null {
   }, []);
 
   useEffect(() => {
+    // Self-hosted installs have no plans: don't even ask.
+    if (!billingEnabled) return;
     void check();
     const onInvite = (): void => void check();
     window.addEventListener(INVITE_SENT_EVENT, onInvite);
     return () => window.removeEventListener(INVITE_SENT_EVENT, onInvite);
-  }, [check]);
+  }, [check, billingEnabled]);
 
   if (!due?.offer) return null;
   const offer: PlanOfferKind = due.offer;

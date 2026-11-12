@@ -80,6 +80,11 @@ async function openBillingWithSeats(
 }
 
 test.describe("lifetime seat counter", () => {
+  // The Billing page only shows plans when billing is on; the label itself is unit-tested.
+  test.beforeEach(async ({ request }) => {
+    const config: { billingEnabled: boolean } = await (await request.get("http://localhost:3001/api/health/config")).json();
+    test.skip(!config.billingEnabled, "Plans only show when billing is enabled");
+  });
   // The plans moved out of signup and into Settings → Billing (and the in-app plan offers).
 
   test("shows the cap, not the count, before 50 seats have sold", async ({

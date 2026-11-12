@@ -52,6 +52,8 @@ import type { CodeApi } from "../two-factor/verify-own-code";
 import { isStaffAnywhere, isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
 import { PASSKEY_BEFORE_PATHS, passkeyAfterHook, passkeyBeforeHook } from "../two-factor/passkey-hooks";
 import type { PasskeyAfterInput, PasskeyHookDeps } from "../two-factor/passkey-hooks";
+import { deletePasskeyGuarded } from "../two-factor/passkey-delete";
+import type { PasskeyDeleteOutcome } from "../two-factor/passkey-delete";
 import { countRecoveryCodes } from "../two-factor/recovery-codes";
 import { secondFactorsOf } from "../two-factor/second-factors-of";
 import type { SecondFactors } from "../two-factor/second-factors-of";
@@ -299,6 +301,8 @@ export class AuthService {
     const passkeyDeps: PasskeyHookDeps = {
       ...twoFactorDeps,
       isStaffAnywhere: (userId: string): Promise<boolean> => isStaffAnywhere(this.prisma, userId),
+      deletePasskey: (userId: string, passkeyId: string): Promise<PasskeyDeleteOutcome> =>
+        deletePasskeyGuarded(this.prisma, userId, passkeyId, (id: string) => isStaffInRequiringWorkspace(this.prisma, id)),
     };
 
     // Cast: better-auth >=1.6 makes Auth<Options> invariant, so the concrete
@@ -388,20 +392,16 @@ export class AuthService {
           }
           if (PASSKEY_BEFORE_PATHS.has(ctx.path)) {
             const session = await getSessionFromCtx(ctx);
-            const userId: string | null = session?.user.id ?? null;
-            const factors: SecondFactors = userId
-              ? await secondFactorsOf(this.prisma, userId)
-              : { totp: false, passkeys: 0 };
-            await passkeyBeforeHook(
+            // Returns the response itself for delete-passkey (see passkeyBeforeHook).
+            const answered = await passkeyBeforeHook(
               {
                 path: ctx.path,
-                userId,
-                twoFactorEnabled: factors.totp,
-                passkeyCount: factors.passkeys,
+                userId: session?.user.id ?? null,
                 body: (ctx.body ?? {}) as Record<string, unknown>,
               },
               passkeyDeps,
             );
+            if (answered) return answered;
           }
           return mcpOAuthEnabled ? mcpOAuthBeforeHook(ctx) : undefined;
         }),

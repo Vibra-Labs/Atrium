@@ -3,7 +3,7 @@ import { APIError } from "better-auth/api";
 import { passkeyAfterHook, passkeyBeforeHook } from "./passkey-hooks";
 import type { PasskeyAfterInput, PasskeyBeforeInput, PasskeyHookDeps } from "./passkey-hooks";
 
-function fakes(opts: { staff?: boolean; requiring?: boolean } = {}) {
+function fakes(opts: { staff?: boolean; requiring?: boolean; deleteOutcome?: "deleted" | "not_found" | "last_factor" } = {}) {
   const sessionUpdate = mock(() => Promise.resolve({}));
   const sessionDelete = mock(() => Promise.resolve({ count: 1 }));
   const sessionFind = mock((): Promise<unknown> => Promise.resolve({ userId: "u1", activeOrganizationId: "orgB" }));
@@ -19,12 +19,13 @@ function fakes(opts: { staff?: boolean; requiring?: boolean } = {}) {
     sendAlert,
     isStaffAnywhere: async (): Promise<boolean> => opts.staff ?? true,
     isStaffInRequiringWorkspace: async (): Promise<boolean> => opts.requiring ?? false,
+    deletePasskey: async (): Promise<"deleted" | "not_found" | "last_factor"> => opts.deleteOutcome ?? "deleted",
   };
   return { deps, sessionUpdate, sessionDelete, sessionFind, forgetSession, forgetUser, sendAlert };
 }
 
 function before(overrides: Partial<PasskeyBeforeInput>): PasskeyBeforeInput {
-  return { path: "/passkey/generate-register-options", userId: "u1", twoFactorEnabled: false, passkeyCount: 0, body: {}, ...overrides };
+  return { path: "/passkey/generate-register-options", userId: "u1", body: {}, ...overrides };
 }
 
 function after(overrides: Partial<PasskeyAfterInput>): PasskeyAfterInput {
@@ -67,23 +68,27 @@ describe("passkeyBeforeHook", () => {
     await passkeyBeforeHook(before({ path: "/passkey/update-passkey", body: { name: "x".repeat(64) } }), fakes().deps);
   });
 
+  it("removes a passkey itself, inside one locked transaction, and answers the request", async () => {
+    const f = fakes();
+    const result = await passkeyBeforeHook(before({ path: "/passkey/delete-passkey", body: { id: "pk1" } }), f.deps);
+    expect(result).toEqual({ status: true });
+    expect(f.forgetUser).toHaveBeenCalledWith("u1");
+    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "passkey_removed" });
+  });
+
   it("refuses removing the last factor of staff in a requiring workspace", async () => {
+    const f = fakes({ deleteOutcome: "last_factor" });
     await expect(
-      passkeyBeforeHook(before({ path: "/passkey/delete-passkey", passkeyCount: 1 }), fakes({ requiring: true }).deps),
+      passkeyBeforeHook(before({ path: "/passkey/delete-passkey", body: { id: "pk1" } }), f.deps),
     ).rejects.toThrow("you can't remove your last way to provide it");
+    expect(f.sendAlert).not.toHaveBeenCalled();
   });
 
-  it("allows removing a passkey when another factor remains, or nothing requires one", async () => {
-    await passkeyBeforeHook(before({ path: "/passkey/delete-passkey", passkeyCount: 2 }), fakes({ requiring: true }).deps);
-    await passkeyBeforeHook(
-      before({ path: "/passkey/delete-passkey", passkeyCount: 1, twoFactorEnabled: true }),
-      fakes({ requiring: true }).deps,
-    );
-    await passkeyBeforeHook(before({ path: "/passkey/delete-passkey", passkeyCount: 1 }), fakes({ requiring: false }).deps);
-  });
-
-  it("asks for no proof to remove a passkey", async () => {
-    await passkeyBeforeHook(before({ path: "/passkey/delete-passkey", passkeyCount: 2, body: {} }), fakes().deps);
+  it("treats someone else's passkey as unauthorized", async () => {
+    const f = fakes({ deleteOutcome: "not_found" });
+    await expect(
+      passkeyBeforeHook(before({ path: "/passkey/delete-passkey", body: { id: "pk1" } }), f.deps),
+    ).rejects.toThrow(APIError);
   });
 });
 
@@ -146,10 +151,4 @@ describe("passkeyAfterHook", () => {
     expect(f.sessionUpdate).not.toHaveBeenCalled();
   });
 
-  it("emails the user when a passkey is removed", async () => {
-    const f = fakes();
-    await passkeyAfterHook(after({ path: "/passkey/delete-passkey", newSessionToken: null }), f.deps);
-    expect(f.forgetUser).toHaveBeenCalledWith("u1");
-    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "passkey_removed" });
-  });
 });

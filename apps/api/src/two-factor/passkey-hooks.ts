@@ -1,5 +1,6 @@
 import { APIError } from "better-auth/api";
 import type { TwoFactorHookDeps } from "./two-factor-hooks";
+import type { PasskeyDeleteOutcome } from "./passkey-delete";
 
 /** Better Auth passkey paths passkeyBeforeHook acts on; the wrapper resolves the caller only for these. */
 export const PASSKEY_BEFORE_PATHS: ReadonlySet<string> = new Set<string>([
@@ -25,13 +26,13 @@ export type PasskeyHookDeps = Pick<
 > & {
   /** Whether the user is an owner or admin of any workspace. */
   isStaffAnywhere: (userId: string) => Promise<boolean>;
+  /** Removes one of the user's passkeys under a row lock; see deletePasskeyGuarded. */
+  deletePasskey: (userId: string, passkeyId: string) => Promise<PasskeyDeleteOutcome>;
 };
 
 export interface PasskeyBeforeInput {
   path: string;
   userId: string | null;
-  twoFactorEnabled: boolean;
-  passkeyCount: number;
   body: Record<string, unknown>;
 }
 
@@ -41,7 +42,10 @@ export interface PasskeyBeforeInput {
  * 2FA keep at least one factor. Adding and removing need no extra proof (the
  * owner's call); both send an alert email.
  */
-export async function passkeyBeforeHook(input: PasskeyBeforeInput, deps: PasskeyHookDeps): Promise<void> {
+export async function passkeyBeforeHook(
+  input: PasskeyBeforeInput,
+  deps: PasskeyHookDeps,
+): Promise<{ status: true } | void> {
   if (!PASSKEY_BEFORE_PATHS.has(input.path) || !input.userId) return;
 
   // Checked on both steps, so someone demoted between them is still refused.
@@ -59,16 +63,22 @@ export async function passkeyBeforeHook(input: PasskeyBeforeInput, deps: Passkey
     throw new APIError("BAD_REQUEST", { message: `Passkey names can be up to ${MAX_PASSKEY_NAME} characters.` });
   }
 
-  if (
-    input.path === "/passkey/delete-passkey" &&
-    !input.twoFactorEnabled &&
-    input.passkeyCount <= 1 &&
-    (await deps.isStaffInRequiringWorkspace(input.userId))
-  ) {
-    throw new APIError("FORBIDDEN", {
-      message:
-        "Your workspace requires two-factor authentication, so you can't remove your last way to provide it. Add another passkey or an authenticator app first.",
-    });
+  // Atrium removes the passkey itself, in one locked transaction, and answers
+  // the request; the plugin's own delete never runs (nor do after-hooks).
+  if (input.path === "/passkey/delete-passkey") {
+    const id: unknown = input.body.id;
+    if (typeof id !== "string" || !id) throw new APIError("BAD_REQUEST", { message: "Which passkey?" });
+    const outcome: PasskeyDeleteOutcome = await deps.deletePasskey(input.userId, id);
+    if (outcome === "not_found") throw new APIError("UNAUTHORIZED", { message: "That passkey isn't yours." });
+    if (outcome === "last_factor") {
+      throw new APIError("FORBIDDEN", {
+        message:
+          "Your workspace requires two-factor authentication, so you can't remove your last way to provide it. Add another passkey or an authenticator app first.",
+      });
+    }
+    deps.forgetUser(input.userId);
+    await deps.sendAlert(input.userId, { kind: "passkey_removed" });
+    return { status: true };
   }
 }
 
@@ -128,8 +138,5 @@ export async function passkeyAfterHook(input: PasskeyAfterInput, deps: PasskeyHo
     }
     deps.forgetUser(input.userId);
     await deps.sendAlert(input.userId, { kind: "passkey_added" });
-  } else if (input.path === "/passkey/delete-passkey") {
-    deps.forgetUser(input.userId);
-    await deps.sendAlert(input.userId, { kind: "passkey_removed" });
   }
 }

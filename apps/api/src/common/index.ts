@@ -39,3 +39,4 @@ export type {
   BearerKind,
   Actor,
 } from "./types/authenticated-request";
+export { passkeyRelyingParty, passkeysEnabled, passkeyUnavailableReason } from "./helpers/passkeys";

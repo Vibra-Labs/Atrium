@@ -149,7 +149,7 @@ describe("twoFactorAfterHook alerts", () => {
   it("emails the user and drops their cached sessions when they turn 2FA off", async () => {
     const f = fakes();
     await twoFactorAfterHook(ctx("/two-factor/disable", { status: true }, "totp", true), f.deps);
-    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "two_factor_disabled", by: "you" });
+    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "two_factor_disabled", by: "you", passkeys: false });
     expect(f.forgetUser).toHaveBeenCalledWith("u1");
   });
 });

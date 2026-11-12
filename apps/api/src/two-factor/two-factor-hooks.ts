@@ -74,7 +74,7 @@ async function alertAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promis
     await deps.sendAlert(userId, { kind: "recovery_code_used", remaining: await deps.recoveryCodesLeft(userId) });
   } else if (ctx.path === "/two-factor/disable") {
     deps.forgetUser(userId);
-    await deps.sendAlert(userId, { kind: "two_factor_disabled", by: "you" });
+    await deps.sendAlert(userId, { kind: "two_factor_disabled", by: "you", passkeys: false });
   }
 }
 

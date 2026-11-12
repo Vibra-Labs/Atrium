@@ -13,6 +13,7 @@ const SECRET: string = "s".repeat(32);
 const prisma = {
   user: { findUnique: mock((): Promise<unknown> => Promise.resolve({ twoFactorEnabled: false })) },
   twoFactor: { findUnique: mock((): Promise<unknown> => Promise.resolve(null)) },
+  passkey: { count: mock((): Promise<number> => Promise.resolve(0)) },
   systemSettings: {
     findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
     upsert: mock((): Promise<unknown> => Promise.resolve({})),
@@ -27,6 +28,10 @@ const prisma = {
       user: { update: (): Promise<unknown> => Promise.resolve({}) },
       session: { deleteMany: (): Promise<unknown> => Promise.resolve({}) },
       verification: { deleteMany: (): Promise<unknown> => Promise.resolve({}) },
+      passkey: {
+        deleteMany: (): Promise<{ count: number }> => Promise.resolve({ count: 0 }),
+        count: (): Promise<number> => Promise.resolve(0),
+      },
     }),
   ),
 };
@@ -152,8 +157,11 @@ describe("TwoFactorService.resetForMember", () => {
   let roles: Record<string, string>;
   let elsewhere: Set<string>;
   let actorHasTwoFactor: boolean;
+  let actorPasskeys: number;
 
   beforeEach(() => {
+    actorPasskeys = 0;
+    prisma.passkey.count.mockImplementation(() => Promise.resolve(actorPasskeys));
     roles = { owner1: "owner", owner2: "owner", admin1: "admin", admin2: "admin", client1: "member" };
     elsewhere = new Set<string>();
     actorHasTwoFactor = false;
@@ -181,6 +189,7 @@ describe("TwoFactorService.resetForMember", () => {
       targetUserId: "admin1",
       headers: new Headers(),
       hosted: false,
+      session: { secondFactor: "totp", createdAt: new Date(Date.now() - 60 * 60_000) },
       ...overrides,
     });
   }
@@ -226,7 +235,7 @@ describe("TwoFactorService.resetForMember", () => {
   it("refuses a wrong code from an actor with 2FA", async () => {
     actorHasTwoFactor = true;
     verifyTOTP.mockImplementation(() => Promise.reject(new Error("INVALID_CODE")));
-    await expect(reset({ code: "000000" })).rejects.toThrow("Enter a code from your authenticator app to confirm.");
+    await expect(reset({ code: "000000" })).rejects.toThrow("Confirm with a code from your authenticator app, or with your passkey.");
   });
 
   it("accepts a recovery code from an actor with 2FA", async () => {
@@ -243,6 +252,19 @@ describe("TwoFactorService.resetForMember", () => {
     expect(verifyTOTP).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(deleteUser).toHaveBeenCalledWith("admin1");
-    expect(sendAlert).toHaveBeenCalledWith("admin1", { kind: "two_factor_disabled", by: "admin" });
+    expect(sendAlert).toHaveBeenCalledWith("admin1", { kind: "two_factor_disabled", by: "admin", passkeys: true });
+  });
+  it("lets a passkey-only owner confirm with a passkey they just used", async () => {
+    actorPasskeys = 1;
+    await reset({ session: { secondFactor: "passkey", createdAt: new Date(Date.now() - 60_000) } });
+    expect(verifyTOTP).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a passkey proof that is older than 5 minutes", async () => {
+    actorPasskeys = 1;
+    await expect(reset({ session: { secondFactor: "passkey", createdAt: new Date(Date.now() - 10 * 60_000) } })).rejects.toThrow(
+      "Confirm with a code from your authenticator app, or with your passkey.",
+    );
   });
 });

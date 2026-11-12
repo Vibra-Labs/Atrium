@@ -5,7 +5,7 @@ import type { MailService } from "../mail/mail.service";
 import type { EmailRenderer } from "../mail/email-renderer";
 
 export type SecurityAlert =
-  | { kind: "two_factor_disabled"; by: "you" | "admin" | "operator" }
+  | { kind: "two_factor_disabled"; by: "you" | "admin" | "operator"; passkeys: boolean }
   | { kind: "recovery_code_used"; remaining: number }
   | { kind: "password_changed" }
   | { kind: "passkey_added" }
@@ -23,8 +23,8 @@ const LOW_CODES: number = 3;
 
 const DISABLED_BY: Record<"you" | "admin" | "operator", string> = {
   you: "You turned off two-factor authentication for your account.",
-  admin: "A workspace owner or admin turned off two-factor authentication for your account and signed you out everywhere.",
-  operator: "Support turned off two-factor authentication for your account and signed you out everywhere.",
+  admin: "A workspace owner or admin turned off {what} for your account and signed you out everywhere.",
+  operator: "Support turned off {what} for your account and signed you out everywhere.",
 };
 
 function compose(alert: SecurityAlert, when: string): { subject: string; paragraphs: string[] } {
@@ -32,7 +32,13 @@ function compose(alert: SecurityAlert, when: string): { subject: string; paragra
     case "two_factor_disabled":
       return {
         subject: "Two-factor authentication was turned off",
-        paragraphs: [`${DISABLED_BY[alert.by]} (${when})`, "You can turn it back on in Settings → Security."],
+        paragraphs: [
+          `${DISABLED_BY[alert.by].replace(
+            "{what}",
+            alert.passkeys ? "two-factor authentication and passkeys" : "two-factor authentication",
+          )} (${when})`,
+          "You can turn it back on in Settings → Security.",
+        ],
       };
     case "recovery_code_used": {
       const left: string = `You have ${alert.remaining} recovery code${alert.remaining === 1 ? "" : "s"} left.`;

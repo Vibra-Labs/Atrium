@@ -10,7 +10,9 @@ import { ConfigService } from "@nestjs/config";
 import { ROLES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
-import { hasSecondFactor } from "./second-factor";
+import { hasSecondFactor, passkeyProofIsRecent } from "./second-factor";
+import { secondFactorsOf } from "./second-factors-of";
+import type { SecondFactors } from "./second-factors-of";
 import { isStaffInRequiringWorkspace } from "./staff-requirement";
 import { countRecoveryCodes } from "./recovery-codes";
 import { resetSecondFactors } from "./reset-second-factors";
@@ -47,6 +49,8 @@ export interface ResetInput {
   headers: Headers;
   /** Hosted cloud (support exists) vs self-hosted (the server operator). */
   hosted: boolean;
+  /** The actor's session: a passkey sign-in in the last few minutes counts as confirmation. */
+  session: { secondFactor?: string | null; createdAt: Date };
 }
 
 export interface StatusInput {
@@ -143,24 +147,34 @@ export class TwoFactorService {
           `They can use a recovery code, ${input.hosted ? "or contact support." : "or ask whoever runs this server."}`,
       );
     }
-    await this.confirmActor(actorId, input.code, input.headers);
+    await this.confirmActor(actorId, input.code, input.headers, input.session);
 
-    await resetSecondFactors(this.prisma, targetUserId);
+    await resetSecondFactors(this.prisma, targetUserId, { passkeys: true });
     this.sessionCache.deleteUser(targetUserId);
-    await this.authService.sendAlert(targetUserId, { kind: "two_factor_disabled", by: "admin" });
+    await this.authService.sendAlert(targetUserId, { kind: "two_factor_disabled", by: "admin", passkeys: true });
     this.logger.log(
       JSON.stringify({ event: "two_factor.reset_by_admin", actorId, targetUserId, organizationId }),
     );
     return { success: true };
   }
 
-  /** An actor who has 2FA proves it again before weakening someone else's account. */
-  private async confirmActor(actorId: string, code: string | undefined, headers: Headers): Promise<void> {
-    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { twoFactorEnabled: true } });
-    if (!hasSecondFactor({ twoFactorEnabled: actor?.twoFactorEnabled })) return;
+  /**
+   * An actor who has a second factor proves it again before weakening someone
+   * else's account: a current code (TOTP or recovery), or a passkey sign-in
+   * from the last few minutes (the web app runs the ceremony just before).
+   */
+  private async confirmActor(
+    actorId: string,
+    code: string | undefined,
+    headers: Headers,
+    session: { secondFactor?: string | null; createdAt: Date },
+  ): Promise<void> {
+    const factors: SecondFactors = await secondFactorsOf(this.prisma, actorId);
+    if (!hasSecondFactor({ twoFactorEnabled: factors.totp, hasPasskey: factors.passkeys > 0 })) return;
+    if (factors.passkeys > 0 && passkeyProofIsRecent(session, Date.now())) return;
     const api: CodeApi = this.authService.auth.api as unknown as CodeApi;
-    if (!code || !(await verifyOwnCode(api, code.trim(), headers))) {
-      throw new ForbiddenException("Enter a code from your authenticator app to confirm.");
+    if (!factors.totp || !code || !(await verifyOwnCode(api, code.trim(), headers))) {
+      throw new ForbiddenException("Confirm with a code from your authenticator app, or with your passkey.");
     }
   }
 

@@ -22,7 +22,7 @@ function deps(sendImpl?: () => Promise<unknown>) {
 describe("sendSecurityAlert", () => {
   it("tells the user 2FA was turned off, and by whom", async () => {
     const { d, send } = deps();
-    await sendSecurityAlert(d, "u1", { kind: "two_factor_disabled", by: "admin" });
+    await sendSecurityAlert(d, "u1", { kind: "two_factor_disabled", by: "admin", passkeys: false });
     const [to, subject, html, org] = send.mock.calls[0] as unknown as [string, string, string, string];
     expect(to).toBe("ada@example.com");
     expect(subject).toBe("Two-factor authentication was turned off");
@@ -63,5 +63,13 @@ describe("sendSecurityAlert for passkeys", () => {
     const { d, send } = deps();
     await sendSecurityAlert(d, "u1", { kind: "passkey_removed" });
     expect((send.mock.calls[0] as unknown as [string, string])[1]).toBe("A passkey was removed from your account");
+  });
+});
+
+describe("sendSecurityAlert reset wording", () => {
+  it("says passkeys were removed too", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "two_factor_disabled", by: "admin", passkeys: true });
+    expect((send.mock.calls[0] as unknown as [string, string, string])[2]).toContain("and passkeys");
   });
 });

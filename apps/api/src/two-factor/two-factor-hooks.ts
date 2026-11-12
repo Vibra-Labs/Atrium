@@ -1,6 +1,7 @@
 import { APIError } from "better-auth/api";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { SecondFactor } from "./second-factor";
+import type { SecurityAlert } from "./security-alerts";
 
 /** Wrong codes a pending session may enter before it is signed out. */
 export const STEP_UP_ATTEMPTS: number = 5;
@@ -18,7 +19,7 @@ export interface AuthHookContext {
       user: { id: string };
     } | null;
     /** Set when the endpoint created a session (sign-in, enable). */
-    newSession?: unknown;
+    newSession?: { user?: { id: string } } | null;
   };
 }
 
@@ -28,6 +29,10 @@ export interface TwoFactorHookDeps {
   forgetSession: (token: string) => void;
   /** Drops every cached session of a user, so a change to their factors applies at once. */
   forgetUser: (userId: string) => void;
+  /** Emails the user about a security change. Never throws. */
+  sendAlert: (userId: string, alert: SecurityAlert) => Promise<void>;
+  /** Recovery codes the user has left. */
+  recoveryCodesLeft: (userId: string) => Promise<number>;
   /** Whether the user is an owner or admin of a workspace that requires 2FA. */
   isStaffInRequiringWorkspace: (userId: string) => Promise<boolean>;
   /** Counts a wrong step-up code for a session and returns the running total. */
@@ -51,6 +56,24 @@ function failed(returned: unknown): boolean {
  * which the create hook stamps.
  */
 export async function twoFactorAfterHook(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
+  await alertAfter(ctx, deps);
+  await stepUpAfter(ctx, deps);
+}
+
+/** Alert emails for successful recovery-code use and for turning 2FA off. */
+async function alertAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
+  if (failed(ctx.context.returned)) return;
+  const userId: string | undefined = ctx.context.session?.user.id ?? ctx.context.newSession?.user?.id;
+  if (!userId) return;
+  if (ctx.path === "/two-factor/verify-backup-code") {
+    await deps.sendAlert(userId, { kind: "recovery_code_used", remaining: await deps.recoveryCodesLeft(userId) });
+  } else if (ctx.path === "/two-factor/disable") {
+    deps.forgetUser(userId);
+    await deps.sendAlert(userId, { kind: "two_factor_disabled", by: "you" });
+  }
+}
+
+async function stepUpAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
   const factor: SecondFactor | undefined = STEP_UP_FACTORS.get(ctx.path);
   const current = ctx.context.session;
   if (!factor || !current) return;

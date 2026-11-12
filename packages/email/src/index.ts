@@ -16,3 +16,4 @@ export { TrialEndingEmail } from "./templates/trial-ending";
 export { TrialEndedEmail } from "./templates/trial-ended";
 export { WeeklyUpdateReminderEmail } from "./templates/weekly-update-reminder";
 export { MondayDigestEmail } from "./templates/monday-digest";
+export { SecurityAlertEmail } from "./templates/security-alert";

@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { symmetricDecrypt } from "better-auth/crypto";
 import { ROLES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import { hasSecondFactor } from "./second-factor";
 import { isStaffInRequiringWorkspace } from "./staff-requirement";
+import { countRecoveryCodes } from "./recovery-codes";
 
 export interface TwoFactorStatus {
   enabled: boolean;
@@ -42,9 +42,9 @@ export class TwoFactorService {
 
   async getStatus(input: StatusInput): Promise<TwoFactorStatus> {
     const { userId, organizationId, role } = input;
-    const [user, twoFactor, settings, ownerCount, staffInRequiring] = await Promise.all([
+    const [user, codesLeft, settings, ownerCount, staffInRequiring] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: userId }, select: { twoFactorEnabled: true } }),
-      this.prisma.twoFactor.findUnique({ where: { userId }, select: { backupCodes: true } }),
+      this.countCodes(userId),
       organizationId
         ? this.prisma.systemSettings.findUnique({ where: { organizationId }, select: { requireTwoFactor: true } })
         : Promise.resolve(null),
@@ -64,7 +64,7 @@ export class TwoFactorService {
       workspaceRequires,
       isStaff,
       isOwner: role === ROLES.OWNER,
-      recoveryCodesLeft: enabled && twoFactor ? await this.countCodes(twoFactor.backupCodes) : null,
+      recoveryCodesLeft: enabled ? codesLeft : null,
       soloOwner: role === ROLES.OWNER && ownerCount === 1,
       canTurnOff: !(enabled && staffInRequiring),
     };
@@ -90,11 +90,9 @@ export class TwoFactorService {
     return isStaffInRequiringWorkspace(this.prisma, userId);
   }
 
-  private async countCodes(stored: string): Promise<number | null> {
+  private async countCodes(userId: string): Promise<number | null> {
     try {
-      const json: string = await symmetricDecrypt({ key: this.config.getOrThrow("BETTER_AUTH_SECRET"), data: stored });
-      const codes: unknown = JSON.parse(json);
-      return Array.isArray(codes) ? codes.length : null;
+      return await countRecoveryCodes(this.prisma, this.config.getOrThrow("BETTER_AUTH_SECRET"), userId);
     } catch (err) {
       this.logger.error(`Could not read recovery codes: ${err instanceof Error ? err.message : String(err)}`);
       return null;

@@ -9,6 +9,7 @@ interface Fakes {
   sessionDelete: ReturnType<typeof mock>;
   forgetSession: ReturnType<typeof mock>;
   forgetUser: ReturnType<typeof mock>;
+  sendAlert: ReturnType<typeof mock>;
   failures: Map<string, number>;
 }
 
@@ -18,12 +19,15 @@ function fakes(): Fakes {
   const sessionDelete = mock(() => Promise.resolve({}));
   const forgetSession = mock(() => undefined);
   const forgetUser = mock(() => undefined);
+  const sendAlert = mock(() => Promise.resolve());
   const deps: TwoFactorHookDeps = {
     prisma: {
       session: { update: sessionUpdate, deleteMany: sessionDelete },
     } as unknown as TwoFactorHookDeps["prisma"],
     forgetSession,
     forgetUser,
+    sendAlert,
+    recoveryCodesLeft: async (): Promise<number> => 4,
     isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId === "staff",
     recordStepUpFailure: async (sessionId: string): Promise<number> => {
       const next: number = (failures.get(sessionId) ?? 0) + 1;
@@ -31,16 +35,22 @@ function fakes(): Fakes {
       return next;
     },
   };
-  return { deps, sessionUpdate, sessionDelete, forgetSession, forgetUser, failures };
+  return { deps, sessionUpdate, sessionDelete, forgetSession, forgetUser, sendAlert, failures };
 }
 
-function ctx(path: string, returned: unknown, secondFactor: string | null = null, newSession = false): AuthHookContext {
+function ctx(
+  path: string,
+  returned: unknown,
+  secondFactor: string | null = null,
+  newSession = false,
+  withSession = true,
+): AuthHookContext {
   return {
     path,
     context: {
       returned,
-      session: { session: { id: "s1", token: "t1", secondFactor }, user: { id: "u1" } },
-      newSession: newSession ? { session: { token: "t2" } } : null,
+      session: withSession ? { session: { id: "s1", token: "t1", secondFactor }, user: { id: "u1" } } : null,
+      newSession: newSession ? { session: { token: "t2" }, user: { id: "u1" } } : null,
     },
   };
 }
@@ -96,6 +106,33 @@ describe("twoFactorAfterHook", () => {
   it("drops every cached session of a user who just turned 2FA on", async () => {
     const f = fakes();
     await twoFactorAfterHook(ctx("/two-factor/verify-totp", { token: "t2" }, null, true), f.deps);
+    expect(f.forgetUser).toHaveBeenCalledWith("u1");
+  });
+});
+
+describe("twoFactorAfterHook alerts", () => {
+  it("emails the user when a recovery code was used on the password challenge", async () => {
+    const f = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/verify-backup-code", { token: "t2" }, null, true, false), f.deps);
+    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "recovery_code_used", remaining: 4 });
+  });
+
+  it("emails the user when a recovery code was used to step up", async () => {
+    const f = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/verify-backup-code", { token: "t1" }), f.deps);
+    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "recovery_code_used", remaining: 4 });
+  });
+
+  it("does not email about a wrong recovery code", async () => {
+    const f = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/verify-backup-code", new APIError("UNAUTHORIZED")), f.deps);
+    expect(f.sendAlert).not.toHaveBeenCalled();
+  });
+
+  it("emails the user and drops their cached sessions when they turn 2FA off", async () => {
+    const f = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/disable", { status: true }, "totp", true), f.deps);
+    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "two_factor_disabled", by: "you" });
     expect(f.forgetUser).toHaveBeenCalledWith("u1");
   });
 });

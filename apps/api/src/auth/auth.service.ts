@@ -46,6 +46,10 @@ import { SessionCache } from "./session-cache";
 import { stampFor } from "../two-factor/second-factor";
 import { twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
 import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
+import { countRecoveryCodes } from "../two-factor/recovery-codes";
+import { sendSecurityAlert } from "../two-factor/security-alerts";
+import type { SecurityAlert } from "../two-factor/security-alerts";
+import { EmailRenderer } from "../mail/email-renderer";
 import type { AuthHookContext, TwoFactorHookDeps } from "../two-factor/two-factor-hooks";
 import type { SecondFactor } from "../two-factor/second-factor";
 
@@ -121,6 +125,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly adminResetStorage = new AsyncLocalStorage<AdminResetContext>();
   private readonly magicLinkCapture = new AsyncLocalStorage<MagicLinkCapture>();
+  private readonly emailRenderer = new EmailRenderer();
   private readonly magicLinkEmails = new SendLimiter(MAGIC_LINK_EMAILS_PER_WINDOW, MAGIC_LINK_EMAIL_WINDOW_MS);
 
   constructor(
@@ -265,6 +270,16 @@ export class AuthService {
       forgetUser: (userId: string): void => this.sessionCache.deleteUser(userId),
       isStaffInRequiringWorkspace: (userId: string): Promise<boolean> =>
         isStaffInRequiringWorkspace(this.prisma, userId),
+      sendAlert: (userId: string, alert: SecurityAlert): Promise<void> => this.sendAlert(userId, alert),
+      // Feeds an alert email only, so a failure must not fail the sign-in.
+      recoveryCodesLeft: async (userId: string): Promise<number> => {
+        try {
+          return (await countRecoveryCodes(this.prisma, betterAuthSecret, userId)) ?? 0;
+        } catch (err) {
+          this.logger.error(`Could not count recovery codes: ${err instanceof Error ? err.message : String(err)}`);
+          return 0;
+        }
+      },
       recordStepUpFailure: (sessionId: string): Promise<number> => this.recordStepUpFailure(sessionId),
     };
 
@@ -381,6 +396,9 @@ export class AuthService {
         // forgotten session can't be used after the user (or an admin) recovers
         // the account.
         revokeSessionsOnPasswordReset: true,
+        onPasswordReset: async ({ user }: { user: { id: string } }): Promise<void> => {
+          await this.sendAlert(user.id, { kind: "password_changed" });
+        },
         sendResetPassword: async ({ user, url }) => {
           const ctx = this.adminResetStorage.getStore();
           if (ctx) {
@@ -596,6 +614,15 @@ export class AuthService {
       });
       await seedDefaultPipelines(tx, organizationId);
     });
+  }
+
+  /** Emails a user about a change to their account security. Never throws. */
+  sendAlert(userId: string, alert: SecurityAlert): Promise<void> {
+    return sendSecurityAlert(
+      { prisma: this.prisma, mail: this.mail, renderer: this.emailRenderer, logger: this.logger },
+      userId,
+      alert,
+    );
   }
 
   /**

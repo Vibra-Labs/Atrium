@@ -13,7 +13,8 @@ import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import { hasSecondFactor, passkeyProofIsRecent } from "./second-factor";
 import { secondFactorsOf } from "./second-factors-of";
 import type { SecondFactors } from "./second-factors-of";
-import { isStaffInRequiringWorkspace } from "./staff-requirement";
+import { isStaffAnywhere, isStaffInRequiringWorkspace } from "./staff-requirement";
+import { passkeysEnabled } from "../common/helpers/passkeys";
 import { countRecoveryCodes } from "./recovery-codes";
 import { resetSecondFactors } from "./reset-second-factors";
 import { verifyOwnCode } from "./verify-own-code";
@@ -22,7 +23,15 @@ import { AuthService } from "../auth/auth.service";
 import { SessionCache } from "../auth/session-cache";
 
 export interface TwoFactorStatus {
+  /** Has any second factor (authenticator app or passkey). */
   enabled: boolean;
+  /** Authenticator app (TOTP) is on. */
+  totpEnabled: boolean;
+  passkeyCount: number;
+  /** Passkeys work on this install and the user may add them (staff), or already has some. */
+  passkeysOffered: boolean;
+  /** False when removing the last passkey would leave requiring-workspace staff with no factor. */
+  canRemoveLastPasskey: boolean;
   /** This session has not passed the user's second factor yet. */
   pending: boolean;
   /** Staff in a workspace that requires 2FA, with no factor yet. */
@@ -30,11 +39,11 @@ export interface TwoFactorStatus {
   workspaceRequires: boolean;
   isStaff: boolean;
   isOwner: boolean;
-  /** null when 2FA is off. */
+  /** null when the authenticator app is off. */
   recoveryCodesLeft: number | null;
   /** The only owner of the active workspace. */
   soloOwner: boolean;
-  /** False while removing 2FA would leave a requiring workspace's staff member with no factor. */
+  /** False when turning the authenticator app off would leave requiring-workspace staff with no factor. */
   canTurnOff: boolean;
 }
 
@@ -73,8 +82,8 @@ export class TwoFactorService {
 
   async getStatus(input: StatusInput): Promise<TwoFactorStatus> {
     const { userId, organizationId, role } = input;
-    const [user, codesLeft, settings, ownerCount, staffInRequiring] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: userId }, select: { twoFactorEnabled: true } }),
+    const [factors, codesLeft, settings, ownerCount, staffInRequiring, staffAnywhere] = await Promise.all([
+      secondFactorsOf(this.prisma, userId),
       this.countCodes(userId),
       organizationId
         ? this.prisma.systemSettings.findUnique({ where: { organizationId }, select: { requireTwoFactor: true } })
@@ -83,29 +92,34 @@ export class TwoFactorService {
         ? this.prisma.member.count({ where: { organizationId, role: ROLES.OWNER } })
         : Promise.resolve(0),
       this.isStaffInRequiringWorkspace(userId),
+      isStaffAnywhere(this.prisma, userId),
     ]);
 
-    const enabled: boolean = hasSecondFactor({ twoFactorEnabled: user?.twoFactorEnabled });
+    const enabled: boolean = hasSecondFactor({ twoFactorEnabled: factors.totp, hasPasskey: factors.passkeys > 0 });
     const isStaff: boolean = isPrivilegedRole(role);
     const workspaceRequires: boolean = settings?.requireTwoFactor === true;
     return {
       enabled,
+      totpEnabled: factors.totp,
+      passkeyCount: factors.passkeys,
+      passkeysOffered: passkeysEnabled(this.config) && (staffAnywhere || factors.passkeys > 0),
+      canRemoveLastPasskey: !(staffInRequiring && !factors.totp && factors.passkeys <= 1),
       pending: enabled && input.secondFactor === null,
       enrollmentRequired: workspaceRequires && isStaff && !enabled,
       workspaceRequires,
       isStaff,
       isOwner: role === ROLES.OWNER,
-      recoveryCodesLeft: enabled ? codesLeft : null,
+      recoveryCodesLeft: factors.totp ? codesLeft : null,
       soloOwner: role === ROLES.OWNER && ownerCount === 1,
-      canTurnOff: !(enabled && staffInRequiring),
+      canTurnOff: !(factors.totp && staffInRequiring && factors.passkeys === 0),
     };
   }
 
   /** Owner-only. Turning it on needs the owner's own 2FA first, so nobody is locked into setup by surprise. */
   async setRequirement(userId: string, organizationId: string, required: boolean): Promise<{ required: boolean }> {
     if (required) {
-      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { twoFactorEnabled: true } });
-      if (!hasSecondFactor({ twoFactorEnabled: user?.twoFactorEnabled })) {
+      const factors: SecondFactors = await secondFactorsOf(this.prisma, userId);
+      if (!hasSecondFactor({ twoFactorEnabled: factors.totp, hasPasskey: factors.passkeys > 0 })) {
         throw new BadRequestException("Set up two-factor for your own account first.");
       }
     }

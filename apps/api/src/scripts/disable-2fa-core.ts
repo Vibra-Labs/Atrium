@@ -29,6 +29,8 @@ export interface RunDeps {
   reset: (userId: string, passkeys: boolean) => Promise<ResetResult>;
   /** Emails the user that 2FA (and passkeys, when removed) was turned off by the operator. */
   alert: (userId: string, passkeys: boolean) => Promise<void>;
+  /** Emails the user that they were signed out everywhere, when nothing else changed. */
+  alertSignedOut: (userId: string) => Promise<void>;
   /** Structured log line. */
   log: (line: { event: string; userId: string; reason: string }) => void;
   /** Human output. */
@@ -45,6 +47,8 @@ export async function run(deps: RunDeps, email: string, reason: string, passkeys
   const { hadTwoFactor, passkeysRemoved, passkeysLeft } = await deps.reset(user.id, passkeys);
   // Only tell the user something was turned off when something was.
   if (hadTwoFactor || passkeysRemoved > 0) await deps.alert(user.id, passkeysRemoved > 0);
+  // Every session was still ended, so they shouldn't find themselves signed out without a word.
+  else await deps.alertSignedOut(user.id);
   deps.log({ event: "two_factor.reset_by_operator", userId: user.id, reason });
   deps.print(
     hadTwoFactor

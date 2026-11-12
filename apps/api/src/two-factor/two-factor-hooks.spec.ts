@@ -36,8 +36,12 @@ function fakes(): Fakes {
     isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId.startsWith("staff"),
     factorsOf: async (userId: string): Promise<{ totp: boolean; passkeys: number }> => ({
       totp: true,
-      passkeys: userId === "staff-with-passkey" ? 1 : 0,
+      passkeys: userId === "staff-with-passkey" || userId === "staff-lost-passkey" ? 1 : 0,
     }),
+    claimTotpDisable: mock(async (userId: string): Promise<"ok" | "last_factor"> =>
+      userId === "staff-lost-passkey" ? "last_factor" : "ok",
+    ),
+    releaseTotpDisable: mock(async (): Promise<void> => undefined),
     recordStepUpFailure: async (sessionId: string): Promise<number> => {
       const next: number = (failures.get(sessionId) ?? 0) + 1;
       failures.set(sessionId, next);
@@ -184,6 +188,15 @@ describe("twoFactorAfterHook alerts", () => {
     expect(f.sendAlert).not.toHaveBeenCalled();
   });
 
+  it("clears the turn-off mark whether turning off worked or not", async () => {
+    const ok = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/disable", { status: true }, "totp", true), ok.deps);
+    expect(ok.deps.releaseTotpDisable).toHaveBeenCalledWith("u1");
+    const failed = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/disable", new APIError("BAD_REQUEST")), failed.deps);
+    expect(failed.deps.releaseTotpDisable).toHaveBeenCalledWith("u1");
+  });
+
   it("emails the user and drops their cached sessions when they turn 2FA off", async () => {
     const f = fakes();
     await twoFactorAfterHook(ctx("/two-factor/disable", { status: true }, "totp", true), f.deps);
@@ -222,6 +235,25 @@ describe("twoFactorBeforeHook", () => {
   it("lets staff of a requiring workspace turn TOTP off when they have a passkey", async () => {
     const f = fakes();
     await twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff-with-passkey" }, f.deps);
+  });
+
+  it("claims the turn-off under the passkey lock after the code, for staff of a requiring workspace", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff-with-passkey" }, f.deps);
+    expect(f.deps.claimTotpDisable).toHaveBeenCalledWith("staff-with-passkey");
+  });
+
+  it("refuses when the last passkey went away while the code was checked", async () => {
+    const f = fakes();
+    await expect(
+      twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff-lost-passkey" }, f.deps),
+    ).rejects.toThrow("Your workspace requires two-factor authentication");
+  });
+
+  it("doesn't claim anything for users nothing requires 2FA of", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable" }, f.deps);
+    expect(f.deps.claimTotpDisable).not.toHaveBeenCalled();
   });
 
   it("lets anyone else turn 2FA off with a current code", async () => {

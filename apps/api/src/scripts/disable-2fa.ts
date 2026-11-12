@@ -38,6 +38,7 @@ async function main(): Promise<number> {
         reset: (userId: string, passkeys: boolean) => resetSecondFactors(prisma, userId, { passkeys }),
         alert: (userId: string, passkeys: boolean) =>
           sendSecurityAlert(alertDeps, userId, { kind: "two_factor_disabled", by: "operator", passkeys }),
+        alertSignedOut: (userId: string) => sendSecurityAlert(alertDeps, userId, { kind: "signed_out_everywhere" }),
         log: (line) => logger.log(JSON.stringify(line)),
         print: (text: string) => console.log(text),
       },

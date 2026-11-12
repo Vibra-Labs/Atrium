@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { setActiveOrgAndRedirect } from "@/lib/api";
+import { destinationAfterSignIn } from "@/lib/two-factor-redirect";
 import { track } from "@/lib/track";
 import { oauthResumeUrl } from "@/lib/oauth-resume";
 import { postAuth } from "@/lib/auth-fetch";
@@ -33,6 +34,8 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
   const [linksAvailable, setLinksAvailable] = useState(false);
   const [passkeysAvailable, setPasskeysAvailable] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
+  // Bumped to start passkey autofill again after the "Use a passkey" button replaced it.
+  const [autofillRun, setAutofillRun] = useState<number>(0);
 
   useEffect(() => {
     fetch(`${API_URL}/api/sign-in-options`)
@@ -49,24 +52,26 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
     setRedirecting(true);
     const resumeUrl: string | null = oauthResumeUrl(window.location.search, API_URL);
     const nextPath: string | null = safeNextPath(new URLSearchParams(window.location.search).get("next"));
-    window.location.href = resumeUrl ?? nextPath ?? (await setActiveOrgAndRedirect("/portal/projects"));
+    window.location.href = resumeUrl ?? nextPath ?? (await destinationAfterSignIn(() => setActiveOrgAndRedirect("/portal/projects")));
   };
 
   // Saved passkeys show up in the email field's autofill: no button needed.
   useEffect(() => {
     if (!passkeysAvailable) return;
     let active: boolean = true;
-    void startPasskeyAutofill().then(async (result) => {
-      if (!active || !result) return;
-      if (result.ok) await afterPasskey();
-      else setError(result.message || "Passkey sign-in didn't work. Try another way.");
-    });
+    startPasskeyAutofill()
+      .then(async (result) => {
+        if (!active || !result) return;
+        if (result.ok) await afterPasskey();
+        else setError(result.message || "Passkey sign-in didn't work. Try another way.");
+      })
+      .catch((err: unknown) => console.error("Passkey autofill failed", err));
     return () => {
       active = false;
     };
-    // afterPasskey reads the URL at call time; it only needs to start once.
+    // afterPasskey reads the URL at call time; it only restarts when the button took over.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [passkeysAvailable]);
+  }, [passkeysAvailable, autofillRun]);
 
   // For a passkey on a phone, or a browser without autofill.
   const handlePasskey = async (): Promise<void> => {
@@ -76,6 +81,8 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
     if (!result.ok) {
       setPasskeyBusy(false);
       if (!("cancelled" in result)) setError(result.message || "Passkey sign-in didn't work. Try another way.");
+      // The button's prompt cancelled the autofill one; bring passkeys back to the email field.
+      setAutofillRun((n: number) => n + 1);
       return;
     }
     await afterPasskey();
@@ -169,7 +176,7 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
       rememberEmail(email);
 
       setRedirecting(true);
-      window.location.href = resumeUrl ?? next ?? (await setActiveOrgAndRedirect("/portal/projects"));
+      window.location.href = resumeUrl ?? next ?? (await destinationAfterSignIn(() => setActiveOrgAndRedirect("/portal/projects")));
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Login failed";
       track("login_failed", { reason, branded: Boolean(orgName) });

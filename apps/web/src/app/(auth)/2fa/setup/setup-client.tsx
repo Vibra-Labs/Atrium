@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { setActiveOrgAndRedirect } from "@/lib/api";
+import { destinationAfterSignIn } from "@/lib/two-factor-redirect";
 import { TwoFactorSetup } from "@/components/two-factor/two-factor-setup";
 import { AddPasskey } from "@/components/two-factor/add-passkey";
 
@@ -10,7 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 type Step = "choose" | "passkey-added";
 
 async function goOn(): Promise<void> {
-  window.location.href = await setActiveOrgAndRedirect("/portal/projects");
+  window.location.href = await destinationAfterSignIn(() => setActiveOrgAndRedirect("/portal/projects"));
 }
 
 /** Where staff of a workspace that requires 2FA land until they set it up. No way to skip. */

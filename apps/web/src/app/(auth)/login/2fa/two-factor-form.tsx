@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { setActiveOrgAndRedirect } from "@/lib/api";
+import { destinationAfterSignIn } from "@/lib/two-factor-redirect";
 import { postAuth } from "@/lib/auth-fetch";
 import { oauthResumeUrl } from "@/lib/oauth-resume";
 import { safeNextPath } from "@/lib/magic-link";
@@ -72,7 +73,7 @@ export function TwoFactorForm({ onCustomDomain, webUrl }: TwoFactorFormProps): R
   const finish = async (): Promise<void> => {
     const resumeUrl: string | null = oauthResumeUrl(window.location.search, API_URL);
     const next: string | null = safeNextPath(new URLSearchParams(window.location.search).get("next"));
-    window.location.href = resumeUrl ?? next ?? (await setActiveOrgAndRedirect("/portal/projects"));
+    window.location.href = resumeUrl ?? next ?? (await destinationAfterSignIn(() => setActiveOrgAndRedirect("/portal/projects")));
   };
 
   const usePasskey = async (): Promise<void> => {

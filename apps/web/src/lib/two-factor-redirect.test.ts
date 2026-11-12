@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { pageForStatus, redirectForGateCode } from "./two-factor-redirect";
+import { destinationAfterSignIn, pageForStatus, redirectForGateCode } from "./two-factor-redirect";
 
 describe("redirectForGateCode", () => {
   it("sends a pending session to the code screen", () => {
@@ -28,5 +28,25 @@ describe("pageForStatus", () => {
   it("lets everyone else through", () => {
     expect(pageForStatus({ pending: false, enrollmentRequired: false })).toBeNull();
     expect(pageForStatus(null)).toBeNull();
+  });
+});
+
+describe("destinationAfterSignIn", () => {
+  it("uses the workspace the API picks", async () => {
+    expect(await destinationAfterSignIn(async () => "/dashboard/projects")).toBe("/dashboard/projects");
+  });
+
+  it("falls back to the dashboard when picking a workspace fails, instead of leaving a spinner", async () => {
+    const original = console.error;
+    console.error = () => undefined;
+    try {
+      expect(
+        await destinationAfterSignIn(async () => {
+          throw new Error("network down");
+        }),
+      ).toBe("/dashboard");
+    } finally {
+      console.error = original;
+    }
   });
 });

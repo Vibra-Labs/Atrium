@@ -10,7 +10,9 @@ export type SecurityAlert =
   /** signedOut: whether every other device was signed out with the change. */
   | { kind: "password_changed"; signedOut: boolean }
   | { kind: "passkey_added" }
-  | { kind: "passkey_removed" };
+  | { kind: "passkey_removed" }
+  /** An operator signed the user out without removing any factor. */
+  | { kind: "signed_out_everywhere" };
 
 export interface SecurityAlertDeps {
   prisma: Pick<PrismaService, "user" | "member">;
@@ -55,6 +57,11 @@ function compose(alert: SecurityAlert, when: string): { subject: string; paragra
       return {
         subject: "A passkey was added to your account",
         paragraphs: [`A new passkey was added to your account (${when}). It can be used to sign in.`],
+      };
+    case "signed_out_everywhere":
+      return {
+        subject: "You were signed out of every device",
+        paragraphs: [`An administrator signed your account out of every device (${when}). Sign in again to carry on.`],
       };
     case "passkey_removed":
       return {

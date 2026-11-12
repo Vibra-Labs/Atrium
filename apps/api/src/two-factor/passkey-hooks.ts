@@ -8,6 +8,7 @@ export const PASSKEY_BEFORE_PATHS: ReadonlySet<string> = new Set<string>([
   "/passkey/verify-registration",
   "/passkey/update-passkey",
   "/passkey/delete-passkey",
+  "/passkey/verify-authentication",
 ]);
 
 const REGISTER_PATHS: ReadonlySet<string> = new Set<string>([
@@ -28,6 +29,8 @@ export type PasskeyHookDeps = Pick<
   isStaffAnywhere: (userId: string) => Promise<boolean>;
   /** Removes one of the user's passkeys under a row lock; see deletePasskeyGuarded. */
   deletePasskey: (userId: string, passkeyId: string) => Promise<PasskeyDeleteOutcome>;
+  /** The user a passkey credential belongs to, or null if unknown. */
+  passkeyOwner: (credentialId: string) => Promise<string | null>;
 };
 
 export interface PasskeyBeforeInput {
@@ -47,6 +50,22 @@ export async function passkeyBeforeHook(
   deps: PasskeyHookDeps,
 ): Promise<{ status: true } | void> {
   if (!PASSKEY_BEFORE_PATHS.has(input.path) || !input.userId) return;
+
+  // A signed-in browser (including a pending one stepping up) may only confirm with its
+  // own user's passkey; another account's would silently switch who is signed in.
+  if (input.path === "/passkey/verify-authentication") {
+    const response: unknown = input.body.response;
+    const credentialId: unknown = typeof response === "object" && response !== null ? (response as { id?: unknown }).id : null;
+    if (typeof credentialId === "string") {
+      const owner: string | null = await deps.passkeyOwner(credentialId);
+      if (owner !== null && owner !== input.userId) {
+        throw new APIError("FORBIDDEN", {
+          message: "That passkey belongs to a different account. Sign out first to use it.",
+        });
+      }
+    }
+    return;
+  }
 
   // Checked on both steps, so someone demoted between them is still refused.
   if (REGISTER_PATHS.has(input.path) && !(await deps.isStaffAnywhere(input.userId))) {
@@ -139,4 +158,12 @@ export async function passkeyAfterHook(input: PasskeyAfterInput, deps: PasskeyHo
     deps.forgetUser(input.userId);
     await deps.sendAlert(input.userId, { kind: "passkey_added" });
   }
+}
+
+/**
+ * The user a passkey after-hook acts for. A passkey sign-in creates a session for whoever's
+ * passkey was used, which may not be the user of the session being replaced.
+ */
+export function hookUserId(currentUserId: string | null, newSessionUserId: string | null): string | null {
+  return newSessionUserId ?? currentUserId;
 }

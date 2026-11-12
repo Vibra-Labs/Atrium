@@ -55,6 +55,14 @@ describe("sendSecurityAlert", () => {
     expect(html).toContain("If this wasn't you");
   });
 
+  it("tells the user an administrator signed them out everywhere", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "signed_out_everywhere" });
+    const [, subject, html] = send.mock.calls[0] as unknown as [string, string, string];
+    expect(subject).toBe("You were signed out of every device");
+    expect(html).toContain("An administrator signed your account out");
+  });
+
   it("logs a failed send instead of throwing", async () => {
     const { d, error } = deps(() => Promise.reject(new Error("smtp down")));
     await sendSecurityAlert(d, "u1", { kind: "password_changed", signedOut: true });

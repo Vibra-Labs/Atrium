@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { APIError } from "better-auth/api";
-import { passkeyAfterHook, passkeyBeforeHook } from "./passkey-hooks";
+import { hookUserId, passkeyAfterHook, passkeyBeforeHook } from "./passkey-hooks";
 import type { PasskeyAfterInput, PasskeyBeforeInput, PasskeyHookDeps } from "./passkey-hooks";
 
 function fakes(opts: { staff?: boolean; requiring?: boolean; deleteOutcome?: "deleted" | "not_found" | "last_factor" } = {}) {
@@ -20,6 +20,8 @@ function fakes(opts: { staff?: boolean; requiring?: boolean; deleteOutcome?: "de
     isStaffAnywhere: async (): Promise<boolean> => opts.staff ?? true,
     isStaffInRequiringWorkspace: async (): Promise<boolean> => opts.requiring ?? false,
     deletePasskey: async (): Promise<"deleted" | "not_found" | "last_factor"> => opts.deleteOutcome ?? "deleted",
+    passkeyOwner: async (credentialId: string): Promise<string | null> =>
+      credentialId === "cred-other" ? "u2" : credentialId === "cred-mine" ? "u1" : null,
   };
   return { deps, sessionUpdate, sessionDelete, sessionFind, forgetSession, forgetUser, sendAlert };
 }
@@ -41,6 +43,28 @@ function after(overrides: Partial<PasskeyAfterInput>): PasskeyAfterInput {
 }
 
 describe("passkeyBeforeHook", () => {
+  it("refuses another account's passkey while this browser is signed in", async () => {
+    const { deps } = fakes();
+    await expect(
+      passkeyBeforeHook(
+        { path: "/passkey/verify-authentication", userId: "u1", body: { response: { id: "cred-other" } } },
+        deps,
+      ),
+    ).rejects.toThrow("That passkey belongs to a different account");
+  });
+
+  it("accepts the signed-in user's own passkey, and any passkey when nobody is signed in", async () => {
+    const { deps } = fakes();
+    await passkeyBeforeHook(
+      { path: "/passkey/verify-authentication", userId: "u1", body: { response: { id: "cred-mine" } } },
+      deps,
+    );
+    await passkeyBeforeHook(
+      { path: "/passkey/verify-authentication", userId: null, body: { response: { id: "cred-other" } } },
+      deps,
+    );
+  });
+
   it("refuses registration to someone who is not staff anywhere", async () => {
     const f = fakes({ staff: false });
     for (const path of ["/passkey/generate-register-options", "/passkey/verify-registration"]) {
@@ -151,4 +175,15 @@ describe("passkeyAfterHook", () => {
     expect(f.sessionUpdate).not.toHaveBeenCalled();
   });
 
+});
+
+describe("hookUserId", () => {
+  it("is the user who just signed in, not the user of the session being replaced", () => {
+    expect(hookUserId("user-a", "user-b")).toBe("user-b");
+  });
+
+  it("is the session's user when nothing new was created", () => {
+    expect(hookUserId("user-a", null)).toBe("user-a");
+    expect(hookUserId(null, null)).toBeNull();
+  });
 });

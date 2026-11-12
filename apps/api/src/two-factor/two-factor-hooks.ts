@@ -53,6 +53,10 @@ export interface TwoFactorHookDeps {
   recoveryCodesLeft: (userId: string) => Promise<number>;
   /** The user's second factors: TOTP on or off, and how many passkeys. */
   factorsOf: (userId: string) => Promise<SecondFactors>;
+  /** Under the passkey-delete lock: refuses if no passkey is left, else marks a TOTP turn-off in progress. */
+  claimTotpDisable: (userId: string) => Promise<"ok" | "last_factor">;
+  /** Clears the in-progress mark when the turn-off is over. */
+  releaseTotpDisable: (userId: string) => Promise<void>;
   /** Whether the user is an owner or admin of a workspace that requires 2FA. */
   isStaffInRequiringWorkspace: (userId: string) => Promise<boolean>;
   /** Counts a wrong step-up code for a session and returns the running total. */
@@ -76,6 +80,10 @@ function failed(returned: unknown): boolean {
  * which the create hook stamps.
  */
 export async function twoFactorAfterHook(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
+  if (ctx.path === "/two-factor/disable") {
+    const userId: string | undefined = ctx.context.session?.user.id;
+    if (userId) await deps.releaseTotpDisable(userId);
+  }
   // Atrium confirming an action with the user's code: no sign-in happened, so no alert or stamp.
   if (ctx.headers?.get(INTERNAL_CHECK_HEADER) === deps.internalCheckToken) return;
   await alertAfter(ctx, deps);
@@ -194,6 +202,16 @@ export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFacto
     const code: string = (input.code ?? "").trim();
     if (!code || !(await deps.verifyOwnCode(code, input.headers))) {
       throw new APIError("FORBIDDEN", { message: "Enter a code from your authenticator app, or a recovery code." });
+    }
+  }
+
+  // Last, so nothing after it can fail before the endpoint runs and the after-hook clears it.
+  // Re-checks under the same lock passkey removal takes: a removal racing this sees TOTP as off.
+  if (input.path === "/two-factor/disable" && (await deps.isStaffInRequiringWorkspace(input.userId))) {
+    if ((await deps.claimTotpDisable(input.userId)) === "last_factor") {
+      throw new APIError("FORBIDDEN", {
+        message: "Your workspace requires two-factor authentication, so it can't be turned off.",
+      });
     }
   }
 

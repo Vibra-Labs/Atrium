@@ -51,9 +51,9 @@ import { TWO_FACTOR_BEFORE_PATHS, twoFactorAfterHook, twoFactorBeforeHook } from
 import { INTERNAL_CHECK_TOKEN, verifyOwnCode } from "../two-factor/verify-own-code";
 import type { CodeApi } from "../two-factor/verify-own-code";
 import { isStaffAnywhere, isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
-import { PASSKEY_BEFORE_PATHS, passkeyAfterHook, passkeyBeforeHook } from "../two-factor/passkey-hooks";
+import { hookUserId, PASSKEY_BEFORE_PATHS, passkeyAfterHook, passkeyBeforeHook } from "../two-factor/passkey-hooks";
 import type { PasskeyAfterInput, PasskeyHookDeps } from "../two-factor/passkey-hooks";
-import { deletePasskeyGuarded } from "../two-factor/passkey-delete";
+import { claimTotpDisable, deletePasskeyGuarded, releaseTotpDisable } from "../two-factor/passkey-delete";
 import type { PasskeyDeleteOutcome } from "../two-factor/passkey-delete";
 import { countRecoveryCodes } from "../two-factor/recovery-codes";
 import { secondFactorsOf } from "../two-factor/second-factors-of";
@@ -285,6 +285,15 @@ export class AuthService {
       isStaffInRequiringWorkspace: (userId: string): Promise<boolean> =>
         isStaffInRequiringWorkspace(this.prisma, userId),
       factorsOf: (userId: string): Promise<SecondFactors> => secondFactorsOf(this.prisma, userId),
+      claimTotpDisable: (userId: string): Promise<"ok" | "last_factor"> => claimTotpDisable(this.prisma, userId),
+      releaseTotpDisable: async (userId: string): Promise<void> => {
+        try {
+          await releaseTotpDisable(this.prisma, userId);
+        } catch (err) {
+          // It expires on its own within a minute.
+          this.logger.error(`Could not clear the 2FA turn-off mark: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
       sendAlert: (userId: string, alert: SecurityAlert): Promise<void> => this.sendAlert(userId, alert),
       verifyOwnCode: (code: string, headers: Headers): Promise<boolean> =>
         verifyOwnCode(this.auth.api as unknown as CodeApi, code, headers),
@@ -308,6 +317,13 @@ export class AuthService {
       isStaffAnywhere: (userId: string): Promise<boolean> => isStaffAnywhere(this.prisma, userId),
       deletePasskey: (userId: string, passkeyId: string): Promise<PasskeyDeleteOutcome> =>
         deletePasskeyGuarded(this.prisma, userId, passkeyId, (id: string) => isStaffInRequiringWorkspace(this.prisma, id)),
+      passkeyOwner: async (credentialId: string): Promise<string | null> => {
+        const passkey: { userId: string } | null = await this.prisma.passkey.findFirst({
+          where: { credentialID: credentialId },
+          select: { userId: true },
+        });
+        return passkey?.userId ?? null;
+      },
     };
 
     // Cast: better-auth >=1.6 makes Auth<Options> invariant, so the concrete
@@ -709,7 +725,7 @@ export class AuthService {
     return {
       path: ctx.path,
       ok: !(context.returned instanceof Error),
-      userId: current?.user.id ?? context.newSession?.user.id ?? null,
+      userId: hookUserId(current?.user.id ?? null, context.newSession?.user.id ?? null),
       currentSession: current
         ? { token: current.session.token, secondFactor: current.session.secondFactor ?? null }
         : null,

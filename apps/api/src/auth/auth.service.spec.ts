@@ -899,3 +899,36 @@ describe("AuthService two-factor wiring", () => {
     });
   });
 });
+
+describe("AuthService session second-factor stamp", () => {
+  type CreateBefore = (
+    session: Record<string, unknown>,
+    ctx: unknown,
+  ) => Promise<{ data: Record<string, unknown> }>;
+  function createBefore(): CreateBefore {
+    const options = (makeService().auth as unknown as {
+      options: { databaseHooks: { session: { create: { before: CreateBefore } } } };
+    }).options;
+    return options.databaseHooks.session.create.before;
+  }
+
+  it("stamps a surviving password sign-in by a 2FA user as a trusted device", async () => {
+    mockPrisma.user.findUnique.mockImplementationOnce((() =>
+      Promise.resolve({ twoFactorEnabled: true })) as unknown as () => Promise<null>);
+    const result = await createBefore()({ userId: "u1" }, { path: "/sign-in/email", context: { session: null } });
+    expect(result.data.secondFactor).toBe("trusted_device");
+  });
+
+  it("carries the caller's verified factor into the session change-password mints", async () => {
+    const result = await createBefore()(
+      { userId: "u1" },
+      { path: "/change-password", context: { session: { session: { secondFactor: "totp" } } } },
+    );
+    expect(result.data.secondFactor).toBe("totp");
+  });
+
+  it("leaves a magic-link session unmarked", async () => {
+    const result = await createBefore()({ userId: "u1" }, { path: "/magic-link/verify", context: { session: null } });
+    expect(result.data.secondFactor).toBeNull();
+  });
+});

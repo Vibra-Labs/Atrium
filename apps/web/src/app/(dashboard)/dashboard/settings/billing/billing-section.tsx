@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { track } from "@/lib/track";
 import { useToast } from "@/components/toast";
 import { LIFETIME_COUNTER_THRESHOLD, lifetimeSeatLabel } from "@atrium/shared";
 import {
@@ -134,6 +135,7 @@ function PlanCard({
   lifetimeSeatsRemaining,
   onSelect,
   loadingSlug,
+  highlighted = false,
 }: {
   plan: Plan;
   isCurrentPlan: boolean;
@@ -141,6 +143,8 @@ function PlanCard({
   lifetimeSeatsRemaining: number | null;
   onSelect: (slug: string) => void;
   loadingSlug: string | null;
+  /** The plan a trial email or pricing link pointed at. */
+  highlighted?: boolean;
 }) {
   const isPro = plan.slug === "pro";
   const isLifetime = plan.slug === "lifetime";
@@ -156,7 +160,9 @@ function PlanCard({
 
   return (
     <div
-      className={`relative rounded-xl border p-6 flex flex-col gap-4 transition-all ${
+      id={`plan-${plan.slug}`}
+      data-highlighted={highlighted ? "true" : undefined}
+      className={`relative rounded-xl border p-6 flex flex-col gap-4 transition-all ${highlighted ? "ring-2 ring-amber-400 " : ""}${
         isPro && isFree
           ? "border-2 border-[var(--primary)] shadow-lg shadow-[var(--primary)]/10 bg-[var(--card,var(--background))]"
           : isCurrentPlan
@@ -280,6 +286,21 @@ export function BillingSection() {
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("reason") ?? null : null,
   );
   const reasonBanner = reason ? REASON_BANNER[reason] ?? null : null;
+  // Trial emails link here with ?plan= (which card to point at) and ?from= (which email).
+  const [linkedPlan] = useState<string | null>(() =>
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("plan") : null,
+  );
+  const [cameFrom] = useState<string | null>(() =>
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null,
+  );
+
+  useEffect(() => {
+    if (cameFrom) track("billing_opened", { from: cameFrom });
+  }, [cameFrom]);
+
+  useEffect(() => {
+    if (!loading && linkedPlan) document.getElementById(`plan-${linkedPlan}`)?.scrollIntoView({ block: "center" });
+  }, [loading, linkedPlan]);
 
   useEffect(() => {
     if (checkoutSuccess) {
@@ -374,6 +395,7 @@ export function BillingSection() {
               lifetimeSeatsRemaining={lifetimeSeatsRemaining}
               onSelect={handleUpgrade}
               loadingSlug={checkoutLoadingSlug}
+              highlighted={linkedPlan === plan.slug}
             />
           ))}
         </div>

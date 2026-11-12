@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Building2, ChevronRight, ExternalLink, Trophy, User, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { notifyInviteSent } from "@/lib/plan-offers";
 import { useAppConfig } from "@/lib/app-config";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
@@ -832,6 +833,7 @@ export function WonDialog({
             body: JSON.stringify({ email: result.inviteEmail, role: "member", resend: true }),
           });
           success(`Portal invite sent to ${result.inviteEmail}`);
+          notifyInviteSent();
         } catch (err) {
           console.error(err);
           showError(

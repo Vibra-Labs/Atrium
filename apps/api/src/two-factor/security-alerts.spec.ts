@@ -51,3 +51,17 @@ describe("sendSecurityAlert", () => {
     expect(error).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("sendSecurityAlert for passkeys", () => {
+  it("tells the user a passkey was added", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "passkey_added" });
+    expect((send.mock.calls[0] as unknown as [string, string])[1]).toBe("A passkey was added to your account");
+  });
+
+  it("tells the user a passkey was removed", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "passkey_removed" });
+    expect((send.mock.calls[0] as unknown as [string, string])[1]).toBe("A passkey was removed from your account");
+  });
+});

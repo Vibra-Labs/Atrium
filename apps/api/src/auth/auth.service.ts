@@ -49,7 +49,9 @@ import { stampFor } from "../two-factor/second-factor";
 import { TWO_FACTOR_BEFORE_PATHS, twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
 import { verifyOwnCode } from "../two-factor/verify-own-code";
 import type { CodeApi } from "../two-factor/verify-own-code";
-import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
+import { isStaffAnywhere, isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
+import { PASSKEY_BEFORE_PATHS, passkeyAfterHook, passkeyBeforeHook } from "../two-factor/passkey-hooks";
+import type { PasskeyAfterInput, PasskeyHookDeps } from "../two-factor/passkey-hooks";
 import { countRecoveryCodes } from "../two-factor/recovery-codes";
 import { secondFactorsOf } from "../two-factor/second-factors-of";
 import type { SecondFactors } from "../two-factor/second-factors-of";
@@ -294,6 +296,11 @@ export class AuthService {
       recordStepUpFailure: (sessionId: string): Promise<number> => this.recordStepUpFailure(sessionId),
     };
 
+    const passkeyDeps: PasskeyHookDeps = {
+      ...twoFactorDeps,
+      isStaffAnywhere: (userId: string): Promise<boolean> => isStaffAnywhere(this.prisma, userId),
+    };
+
     // Cast: better-auth >=1.6 makes Auth<Options> invariant, so the concrete
     // instance no longer assigns to the default-typed field.
     this.auth = betterAuth({
@@ -378,10 +385,28 @@ export class AuthService {
               twoFactorDeps,
             );
           }
+          if (PASSKEY_BEFORE_PATHS.has(ctx.path)) {
+            const session = await getSessionFromCtx(ctx);
+            const userId: string | null = session?.user.id ?? null;
+            const factors: SecondFactors = userId
+              ? await secondFactorsOf(this.prisma, userId)
+              : { totp: false, passkeys: 0 };
+            await passkeyBeforeHook(
+              {
+                path: ctx.path,
+                userId,
+                twoFactorEnabled: factors.totp,
+                passkeyCount: factors.passkeys,
+                body: (ctx.body ?? {}) as Record<string, unknown>,
+              },
+              passkeyDeps,
+            );
+          }
           return mcpOAuthEnabled ? mcpOAuthBeforeHook(ctx) : undefined;
         }),
         after: createAuthMiddleware(async (ctx: AuthHookCtx): Promise<void> => {
           await twoFactorAfterHook(ctx as unknown as AuthHookContext, twoFactorDeps);
+          if (ctx.path.startsWith("/passkey/")) await passkeyAfterHook(await this.passkeyAfterInput(ctx), passkeyDeps);
           if (mcpOAuthEnabled) await mcpOAuthAfterHook(ctx);
         }),
       },
@@ -649,6 +674,36 @@ export class AuthService {
       });
       await seedDefaultPipelines(tx, organizationId);
     });
+  }
+
+  /** What passkeyAfterHook needs from Better Auth's after-hook context. */
+  private async passkeyAfterInput(ctx: AuthHookCtx): Promise<PasskeyAfterInput> {
+    const context = ctx.context as unknown as {
+      returned?: unknown;
+      session?: { session: { token: string; secondFactor?: string | null }; user: { id: string } } | null;
+      newSession?: { session: { token: string }; user: { id: string } } | null;
+      authCookies: { sessionToken: { name: string } };
+      secret: string;
+    };
+    // The cookie the browser sent: for a passkey sign-in, the session it is replacing.
+    const signed = ctx as unknown as { getSignedCookie: (name: string, secret: string) => Promise<string | null | false> };
+    let previousToken: string | null = null;
+    try {
+      previousToken = (await signed.getSignedCookie(context.authCookies.sessionToken.name, context.secret)) || null;
+    } catch (err) {
+      this.logger.warn(`Could not read the session cookie: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const current = context.session ?? null;
+    return {
+      path: ctx.path,
+      ok: !(context.returned instanceof Error),
+      userId: current?.user.id ?? context.newSession?.user.id ?? null,
+      currentSession: current
+        ? { token: current.session.token, secondFactor: current.session.secondFactor ?? null }
+        : null,
+      previousToken,
+      newSessionToken: context.newSession?.session.token ?? null,
+    };
   }
 
   /** Emails a user about a change to their account security. Never throws. */

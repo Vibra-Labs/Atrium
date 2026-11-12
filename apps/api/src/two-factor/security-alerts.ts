@@ -7,7 +7,9 @@ import type { EmailRenderer } from "../mail/email-renderer";
 export type SecurityAlert =
   | { kind: "two_factor_disabled"; by: "you" | "admin" | "operator" }
   | { kind: "recovery_code_used"; remaining: number }
-  | { kind: "password_changed" };
+  | { kind: "password_changed" }
+  | { kind: "passkey_added" }
+  | { kind: "passkey_removed" };
 
 export interface SecurityAlertDeps {
   prisma: Pick<PrismaService, "user" | "member">;
@@ -42,6 +44,16 @@ function compose(alert: SecurityAlert, when: string): { subject: string; paragra
         ],
       };
     }
+    case "passkey_added":
+      return {
+        subject: "A passkey was added to your account",
+        paragraphs: [`A new passkey was added to your account (${when}). It can be used to sign in.`],
+      };
+    case "passkey_removed":
+      return {
+        subject: "A passkey was removed from your account",
+        paragraphs: [`A passkey was removed from your account (${when}).`],
+      };
     case "password_changed":
       return {
         subject: "Your password was changed",

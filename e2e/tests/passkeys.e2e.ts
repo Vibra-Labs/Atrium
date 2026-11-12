@@ -119,7 +119,7 @@ test.describe("Passkeys", () => {
 
     await signOut(page);
     await page.goto(`${WEB}/login`);
-    await page.getByRole("button", { name: /continue with a passkey/i }).click();
+    await page.getByRole("button", { name: /^use a passkey$/i }).click();
     await page.waitForURL(/\/dashboard/, { timeout: 20000 });
     const s = await status(page);
     expect(s.pending).toBe(false);

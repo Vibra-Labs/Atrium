@@ -7,7 +7,7 @@ import { setActiveOrgAndRedirect } from "@/lib/api";
 import { track } from "@/lib/track";
 import { oauthResumeUrl } from "@/lib/oauth-resume";
 import { postAuth } from "@/lib/auth-fetch";
-import { signInWithPasskey } from "@/lib/passkeys";
+import { signInWithPasskey, startPasskeyAutofill } from "@/lib/passkeys";
 import { LAST_EMAIL_KEY, magicLinkErrorMessage, safeNextPath } from "@/lib/magic-link";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -44,6 +44,31 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
       .catch((err: unknown) => console.error("Could not load sign-in options", err));
   }, [onCustomDomain]);
 
+  const afterPasskey = async (): Promise<void> => {
+    track("login_succeeded", { branded: Boolean(orgName), oauth: false });
+    setRedirecting(true);
+    const resumeUrl: string | null = oauthResumeUrl(window.location.search, API_URL);
+    const nextPath: string | null = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+    window.location.href = resumeUrl ?? nextPath ?? (await setActiveOrgAndRedirect("/portal/projects"));
+  };
+
+  // Saved passkeys show up in the email field's autofill: no button needed.
+  useEffect(() => {
+    if (!passkeysAvailable) return;
+    let active: boolean = true;
+    void startPasskeyAutofill().then(async (result) => {
+      if (!active || !result) return;
+      if (result.ok) await afterPasskey();
+      else setError(result.message || "Passkey sign-in didn't work. Try another way.");
+    });
+    return () => {
+      active = false;
+    };
+    // afterPasskey reads the URL at call time; it only needs to start once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passkeysAvailable]);
+
+  // For a passkey on a phone, or a browser without autofill.
   const handlePasskey = async (): Promise<void> => {
     setPasskeyBusy(true);
     setError("");
@@ -53,10 +78,7 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
       if (!("cancelled" in result)) setError(result.message || "Passkey sign-in didn't work. Try another way.");
       return;
     }
-    track("login_succeeded", { branded: Boolean(orgName), oauth: false });
-    setRedirecting(true);
-    const resumeUrl: string | null = oauthResumeUrl(window.location.search, API_URL);
-    window.location.href = resumeUrl ?? next ?? (await setActiveOrgAndRedirect("/portal/projects"));
+    await afterPasskey();
   };
 
   // A notification link sends a signed-out client here with ?next=; a failed
@@ -219,12 +241,25 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
           )}
 
           <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="email" className="text-sm font-medium">
+                Email
+              </label>
+              {passkeysAvailable && (
+                <button
+                  type="button"
+                  onClick={handlePasskey}
+                  disabled={passkeyBusy}
+                  className="text-xs text-[var(--primary)] hover:underline disabled:opacity-50"
+                >
+                  {passkeyBusy ? "Waiting for your passkey..." : "Use a passkey"}
+                </button>
+              )}
+            </div>
             <input
               id="email"
               type="email"
+              autoComplete="username webauthn"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -267,27 +302,13 @@ export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginF
           </button>
         </form>
 
-        {(linksAvailable || passkeysAvailable) && (
-          <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
-            <span className="h-px flex-1 bg-[var(--border)]" />
-            or
-            <span className="h-px flex-1 bg-[var(--border)]" />
-          </div>
-        )}
-
-        {passkeysAvailable && (
-          <button
-            type="button"
-            onClick={handlePasskey}
-            disabled={passkeyBusy}
-            className="w-full py-2 border border-[var(--border)] rounded-lg font-medium hover:bg-[var(--muted)] transition-colors disabled:opacity-50"
-          >
-            {passkeyBusy ? "Waiting for your passkey..." : "Continue with a passkey"}
-          </button>
-        )}
-
         {linksAvailable && (
           <>
+            <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
+              <span className="h-px flex-1 bg-[var(--border)]" />
+              or
+              <span className="h-px flex-1 bg-[var(--border)]" />
+            </div>
 
             <button
               type="button"

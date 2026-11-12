@@ -1,4 +1,4 @@
-import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { browserSupportsWebAuthnAutofill, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
@@ -45,6 +45,29 @@ export async function signInWithPasskey(): Promise<AuthResult | { ok: false; can
     console.error("Passkey sign-in failed", err);
     const message: string | null = passkeyErrorMessage(err);
     return message === null ? { ok: false, cancelled: true, status: 0 } : { ok: false, status: 0, message };
+  }
+}
+
+/**
+ * Passkey autofill on the login page: the browser offers saved passkeys in the
+ * email field's dropdown, with no button. Resolves when the person picks one
+ * (signed in, or failed), or null when the browser can't do this or the wait
+ * was cancelled (e.g. they used the password form instead).
+ */
+export async function startPasskeyAutofill(): Promise<AuthResult | null> {
+  try {
+    if (!(await browserSupportsWebAuthnAutofill())) return null;
+    const options = await getJson("/passkey/generate-authenticate-options");
+    if (!options.ok) return null;
+    const response = await startAuthentication({
+      optionsJSON: options.body as unknown as PublicKeyCredentialRequestOptionsJSON,
+      useBrowserAutofill: true,
+    });
+    return await postAuth("/passkey/verify-authentication", { response });
+  } catch (err) {
+    // Aborted when another passkey prompt starts or the page moves on: expected.
+    if (passkeyErrorMessage(err) !== null) console.error("Passkey autofill failed", err);
+    return null;
   }
 }
 

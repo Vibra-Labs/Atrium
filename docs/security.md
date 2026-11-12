@@ -12,6 +12,48 @@ Atrium ships with production-grade security defaults:
 - Non-root Docker containers
 - Required env var validation at startup
 
+## Two-factor authentication
+
+Any user can turn on an authenticator app (TOTP) in Settings → Security, with 10
+single-use recovery codes that must be saved before 2FA turns on. A workspace owner can
+require it for owners and admins ("Require two-factor for staff"); clients are never
+required to use it.
+
+**Every session records which second factor it passed** (`session.secondFactor`:
+`totp`, `backup_code`, `trusted_device`, or none). A session whose user has 2FA but
+which never passed it is *pending*: it can read itself, enter a code
+(`/api/auth/two-factor/verify-totp` or `/verify-backup-code`), start a new sign-in, or
+sign out, and every other request — Better Auth's own routes through the auth proxy
+included — gets `403 { code: "SECOND_FACTOR_REQUIRED" }`. So an emailed sign-in link,
+a password reset or any other first-factor sign-in never gets around 2FA. A pending
+session is signed out after 5 wrong codes. Staff of a workspace that requires 2FA and
+have none get `403 { code: "TWO_FACTOR_REQUIRED" }` until they set it up (they may still
+list and switch workspaces). The rule is applied by `SecondFactorGuard`, a global guard.
+
+"Trust this device for 30 days" is offered only after a password. Turning 2FA on makes
+the user's other sessions pending; the session cache is cleared for that user at once
+on the instance that handled it (other API instances catch up within 30 seconds).
+
+API keys and MCP OAuth tokens are not sessions and are not gated. They can only be
+created from a session, which for a user with 2FA must have passed it.
+
+**Recovery.** A password reset never removes 2FA. A user who has lost their
+authenticator uses a recovery code. Otherwise an owner can reset anyone's 2FA in the
+workspace, and an admin anyone's but an owner's (team page for staff, the contact page
+for clients); the actor confirms with their own code if they have 2FA. This is refused
+when the person also belongs to another workspace, so one workspace cannot weaken an
+account another relies on. A reset removes the authenticator, recovery codes and
+trusted devices, signs the person out everywhere, and emails them. The server operator
+can do the same with:
+
+```bash
+cd apps/api && bun run script:disable-2fa <email> --reason "<note>"
+```
+
+which runs the compiled build (`bun run build` first in a checkout; in the Docker image,
+run it from `/app/apps/api`). Users are emailed when their password is reset, when 2FA is
+turned off, and when a recovery code is used.
+
 ## API keys
 
 API keys (`atr_…`) are generated from 32 random bytes and stored only as SHA-256 hashes.

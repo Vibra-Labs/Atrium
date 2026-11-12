@@ -119,6 +119,12 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 2. Create projects, upload files, and manage statuses from the **dashboard**
 3. Invite clients by email -- they access the **client portal** at `/portal`
 
+### Locked out of two-factor?
+
+Use a recovery code, or ask a workspace owner to turn off your two-factor from the team
+page. If you run the server and nobody else can, see
+[Two-factor authentication](docs/security.md#two-factor-authentication) for the reset command.
+
 ## Documentation
 
 - [Docker Deployment](docs/docker.md)
@@ -132,7 +138,7 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 
 ## Roadmap
 
-Recurring invoices, SAML/SSO and 2FA, webhooks, workflow automations, and more. See the full [Roadmap](docs/roadmap.md).
+Recurring invoices, SAML/SSO, passkeys, webhooks, workflow automations, and more. See the full [Roadmap](docs/roadmap.md).
 
 ## Contributing
 

@@ -2,6 +2,19 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Two-factor authentication** — Turn on an authenticator app in Settings → Security, on every plan. Ten recovery codes are saved before it turns on, the page shows how many are left, and "Trust this device for 30 days" skips the code after a password. Clients can turn it on too.
+- **Require two-factor for staff** — An owner can require 2FA for every owner and admin in the workspace. Anyone without it is taken to setup at their next sign-in. Clients are never required to.
+- **Resetting someone's 2FA** — Owners and admins can turn off a locked-out member's 2FA from the team page or a client's contact page. Server operators have `bun run script:disable-2fa`.
+- **Security emails** — Users are emailed when their password is reset, when 2FA is turned off, and when a recovery code is used.
+
+### Security
+
+- **No way around 2FA** — A user with 2FA who signs in by email link (or any way other than their code) can only enter their code or sign out until they do; every other request, Better Auth's own included, is refused.
+
 ## [1.14.0] — 2026-11-09
 
 ### Added

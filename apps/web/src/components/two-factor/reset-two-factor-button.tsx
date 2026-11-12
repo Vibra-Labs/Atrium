@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ShieldOff } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { signInWithPasskey } from "@/lib/passkeys";
 
 interface ResetTwoFactorButtonProps {
   userId: string;
@@ -20,6 +21,18 @@ export function ResetTwoFactorButton({ userId, name, onDone }: ResetTwoFactorBut
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The actor confirms with a passkey: they have one and no authenticator app. */
+  const [passkeyConfirm, setPasskeyConfirm] = useState(false);
+
+  const openDialog = async (): Promise<void> => {
+    setOpen(true);
+    try {
+      const status = await apiFetch<{ totpEnabled: boolean; passkeyCount: number }>("/two-factor/status");
+      setPasskeyConfirm(!status.totpEnabled && status.passkeyCount > 0);
+    } catch (err) {
+      console.error("Could not load two-factor status", err);
+    }
+  };
 
   const close = (): void => {
     setOpen(false);
@@ -32,6 +45,14 @@ export function ResetTwoFactorButton({ userId, name, onDone }: ResetTwoFactorBut
     setBusy(true);
     setError("");
     try {
+      if (passkeyConfirm) {
+        // A passkey sign-in in the last few minutes is the server's proof.
+        const proof = await signInWithPasskey();
+        if (!proof.ok) {
+          if (!("cancelled" in proof)) setError(proof.message || "That passkey didn't work.");
+          return;
+        }
+      }
       await apiFetch(`/two-factor/admin/${userId}`, {
         method: "DELETE",
         body: JSON.stringify(code.trim() ? { code: code.trim() } : {}),
@@ -49,7 +70,7 @@ export function ResetTwoFactorButton({ userId, name, onDone }: ResetTwoFactorBut
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => void openDialog()}
         className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
         title="Turn off 2FA"
         aria-label={`Turn off 2FA for ${name}`}
@@ -64,6 +85,9 @@ export function ResetTwoFactorButton({ userId, name, onDone }: ResetTwoFactorBut
               This removes their authenticator and recovery codes and signs them out everywhere. They&apos;ll get an
               email. If your workspace requires two-factor, they set it up again at their next sign-in.
             </p>
+            {passkeyConfirm ? (
+              <p className="text-sm">You&apos;ll confirm with your passkey.</p>
+            ) : (
             <div className="space-y-1">
               <label htmlFor="reset-2fa-code" className="text-sm font-medium">
                 Your authenticator code (if you use two-factor)
@@ -76,6 +100,7 @@ export function ResetTwoFactorButton({ userId, name, onDone }: ResetTwoFactorBut
                 className="w-40 rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 font-mono text-sm"
               />
             </div>
+            )}
             {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={close} className="px-3 py-2 text-sm text-[var(--muted-foreground)] hover:underline">

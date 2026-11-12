@@ -4,12 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { TwoFactorSetup } from "./two-factor-setup";
 import { RecoveryCodes } from "./recovery-codes";
+import { PasskeysSection } from "./passkeys-section";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 /** GET /api/two-factor/status. */
 export interface TwoFactorStatus {
+  /** Has any second factor (authenticator app or passkey). */
   enabled: boolean;
+  totpEnabled: boolean;
+  passkeyCount: number;
+  passkeysOffered: boolean;
+  canRemoveLastPasskey: boolean;
   pending: boolean;
   enrollmentRequired: boolean;
   workspaceRequires: boolean;
@@ -105,11 +111,12 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
   if (!status) return <div className="h-24 animate-pulse rounded-lg bg-[var(--muted)]" />;
 
   return (
+    <>
     <section className="space-y-4 rounded-lg border border-[var(--border)] p-6">
       <div>
         <h2 className="text-lg font-semibold">Two-factor authentication</h2>
         <p className="text-sm text-[var(--muted-foreground)]">
-          {status.enabled
+          {status.totpEnabled
             ? "On. Signing in asks for a code from your authenticator app."
             : "Add a code from an authenticator app to every sign-in."}
         </p>
@@ -125,7 +132,7 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
         </div>
       )}
 
-      {!status.enabled && !settingUp && (
+      {!status.totpEnabled && !settingUp && (
         <button
           type="button"
           onClick={() => setSettingUp(true)}
@@ -134,7 +141,7 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
           Turn on two-factor
         </button>
       )}
-      {!status.enabled && settingUp && (
+      {!status.totpEnabled && settingUp && (
         <TwoFactorSetup
           onDone={() => {
             setSettingUp(false);
@@ -143,7 +150,7 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
         />
       )}
 
-      {status.enabled && (
+      {status.totpEnabled && (
         <>
           {status.recoveryCodesLeft !== null && (
             <p className={`text-sm ${status.recoveryCodesLeft <= LOW_CODES ? "text-amber-600" : "text-[var(--muted-foreground)]"}`}>
@@ -228,5 +235,7 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
         </>
       )}
     </section>
+    {(status.passkeysOffered || status.passkeyCount > 0) && <PasskeysSection status={status} onChange={() => void load()} />}
+    </>
   );
 }

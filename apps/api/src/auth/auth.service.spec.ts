@@ -635,6 +635,39 @@ describe("AuthService", () => {
     });
   });
 
+  describe("afterCreateInvitation tells plan offers about the invite", () => {
+    type InviteHook = (data: { invitation: { organizationId: string; email: string; role: string | null } }) => Promise<void>;
+    const planOffers = { recordClientInvited: mock((): Promise<void> => Promise.resolve()) };
+    const contactSync = { recordInvited: mock((): Promise<void> => Promise.resolve()) };
+
+    function inviteHook(): InviteHook {
+      const svc = new AuthService(
+        mockConfig as unknown as ConfigService,
+        mockPrisma as unknown as PrismaService,
+        mockMail as unknown as MailService,
+        mockBilling as unknown as BillingService,
+        contactSync as never,
+        {} as never,
+        planOffers as never,
+      );
+      const plugins = (svc.auth as unknown as { options: { plugins: { id: string; options?: { organizationHooks?: Record<string, InviteHook> } }[] } }).options.plugins;
+      const fn = plugins.find((p) => p.id === "organization")?.options?.organizationHooks?.afterCreateInvitation;
+      if (!fn) throw new Error("missing afterCreateInvitation");
+      return fn;
+    }
+
+    it("records the invite with its role", async () => {
+      await inviteHook()({ invitation: { organizationId: "org-1", email: "c@x.com", role: "member" } });
+      expect(planOffers.recordClientInvited).toHaveBeenCalledWith("org-1", "member");
+    });
+
+    it("keeps the invite working when recording fails", async () => {
+      planOffers.recordClientInvited.mockImplementationOnce(() => Promise.reject(new Error("db down")));
+      await inviteHook()({ invitation: { organizationId: "org-1", email: "c@x.com", role: null } });
+      expect(contactSync.recordInvited).toHaveBeenCalled();
+    });
+  });
+
   describe("passwordless invitations", () => {
     const future: Date = new Date(Date.now() + 86_400_000);
     const portalInvite = {

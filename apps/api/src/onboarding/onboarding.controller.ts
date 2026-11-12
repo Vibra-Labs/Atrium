@@ -17,6 +17,7 @@ import { AuthService } from "../auth/auth.service";
 import { BillingService } from "../billing/billing.service";
 import { MailService } from "../mail/mail.service";
 import { SignupDto } from "./signup.dto";
+import { PlanOffersService } from "../plan-offers/plan-offers.service";
 import { publicApiUrl } from "../common/helpers/public-api-url";
 
 @Controller("onboarding")
@@ -29,6 +30,7 @@ export class OnboardingController {
     private mail: MailService,
     @InjectPinoLogger(OnboardingController.name)
     private readonly logger: PinoLogger,
+    private planOffers: PlanOffersService,
   ) {}
 
   @Post("signup")
@@ -195,6 +197,11 @@ export class OnboardingController {
           successUrl,
           cancelUrl,
         );
+        try {
+          await this.planOffers.recordSignupCheckout(orgId);
+        } catch (err) {
+          this.logger.error({ err, orgId }, "Failed to record the signup checkout for plan offers");
+        }
         return { success: true, checkoutUrl: result.url };
       } catch (err) {
         this.logger.warn(

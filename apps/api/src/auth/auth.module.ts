@@ -1,3 +1,4 @@
+import { PlanOffersModule } from "../plan-offers/plan-offers.module";
 import { Module } from "@nestjs/common";
 import { AuthController } from "./auth.controller";
 import { WellKnownController } from "./well-known.controller";
@@ -17,7 +18,7 @@ import { McpAuthModule } from "../mcp-auth/mcp-auth.module";
 import { ProjectsModule } from "../projects/projects.module";
 
 @Module({
-  imports: [ContactSyncModule, MailModule, BillingModule, ApiKeysModule, McpAuthModule, ProjectsModule],
+  imports: [ContactSyncModule, MailModule, BillingModule, ApiKeysModule, McpAuthModule, ProjectsModule, PlanOffersModule],
   controllers: [AuthController, WellKnownController, InvitationsController, SignInOptionsController],
   providers: [AuthService, SessionCache, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker, AuthCleanupTask],
   exports: [AuthService, SessionCache, SessionMiddleware, PreviewModeMiddleware, LastSeenTracker],

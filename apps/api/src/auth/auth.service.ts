@@ -23,6 +23,7 @@ import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials
 import { ProjectsService } from "../projects/projects.service";
 import { ContactSyncService } from "../contact-sync/contact-sync.service";
 import { MailService } from "../mail/mail.service";
+import { PlanOffersService } from "../plan-offers/plan-offers.service";
 import { BillingService } from "../billing/billing.service";
 import {
   DEFAULT_STATUSES,
@@ -134,6 +135,7 @@ export class AuthService {
     private billingService: BillingService,
     private contactSync: ContactSyncService,
     private projects: ProjectsService,
+    private planOffers: PlanOffersService,
     // Defaulted so specs that build the service by hand need not pass one.
     private sessionCache: SessionCache = new SessionCache(),
   ) {
@@ -499,6 +501,11 @@ export class AuthService {
               } catch (err) {
                 Sentry.captureException(err);
                 this.logger.error("Failed to record invitation on contact", err);
+              }
+              try {
+                await this.planOffers.recordClientInvited(invitation.organizationId, invitation.role ?? null);
+              } catch (err) {
+                this.logger.error("Failed to record the invite for plan offers", err);
               }
             },
             afterAcceptInvitation: async ({ invitation, user }) => {

@@ -1,4 +1,6 @@
 import { mock } from "bun:test";
+// Plain text, not a template: the real one is safe to use and keeps the copy in one place.
+import { activitySentence } from "../../../../../packages/email/dist/templates/trial-offer";
 
 /**
  * Stand-ins for the React Email templates and renderer.
@@ -36,7 +38,10 @@ const TEMPLATES: string[] = [
 
 const identity = (props: Record<string, unknown>): Record<string, unknown> => props;
 
-mock.module("@atrium/email", () => Object.fromEntries(TEMPLATES.map((name) => [name, identity])));
+mock.module("@atrium/email", () => ({
+  ...Object.fromEntries(TEMPLATES.map((name) => [name, identity])),
+  activitySentence,
+}));
 
 mock.module("@react-email/render", () => ({
   render: mock(async (props: unknown): Promise<string> => JSON.stringify(props)),

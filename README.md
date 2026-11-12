@@ -121,8 +121,8 @@ The unified image (`vibralabs/atrium`) bundles the API, web app, and a Caddy rev
 
 ### Locked out of two-factor?
 
-Use a recovery code, or ask a workspace owner to turn off your two-factor from the team
-page. If you run the server and nobody else can, see
+Use a recovery code or another passkey, or ask a workspace owner to turn off your
+two-factor (which also removes passkeys) from the team page. If you run the server and nobody else can, see
 [Two-factor authentication](docs/security.md#two-factor-authentication) for the reset command.
 
 ## Documentation
@@ -138,7 +138,7 @@ page. If you run the server and nobody else can, see
 
 ## Roadmap
 
-Recurring invoices, SAML/SSO, passkeys, webhooks, workflow automations, and more. See the full [Roadmap](docs/roadmap.md).
+Recurring invoices, SAML/SSO, webhooks, workflow automations, and more. See the full [Roadmap](docs/roadmap.md).
 
 ## Contributing
 

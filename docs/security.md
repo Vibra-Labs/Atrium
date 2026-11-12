@@ -61,6 +61,29 @@ which runs the compiled build (`bun run build` first in a checkout; in the Docke
 run it from `/app/apps/api`). Users are emailed when their password is reset, when 2FA is
 turned off, and when a recovery code is used.
 
+### Passkeys
+
+Owners and admins (of any workspace) can add passkeys in Settings → Security, sign in with
+one ("Continue with a passkey"), and use one as their second factor. Every passkey
+requires user verification (device PIN or biometric), so a passkey sign-in counts as
+two factors and satisfies "Require two-factor for staff". Clients cannot register one;
+the server refuses it.
+
+Passkeys are tied to the main web address (`WEB_URL`), never the API host or an agency's
+custom portal domain, and are switched off unless `WEB_URL` is `https://` (or
+`http://localhost`). `FIREBASE_HOSTING=true` also turns them off, since it drops the
+challenge cookie.
+
+- A session waiting for its second factor can sign in with a passkey (which replaces and
+  deletes that session) but cannot add one.
+- Adding a passkey can never sign anyone in (`createSession` is refused).
+- Adding or removing a passkey needs no extra proof beyond a verified session; Better
+  Auth requires that session to be under a day old to add one. Both send an alert email.
+- Staff of a workspace that requires 2FA cannot remove their last factor, whether that is
+  the authenticator app or their last passkey.
+- Owner/admin resets and `script:disable-2fa --passkeys` remove passkeys too. A user with
+  only passkeys has no recovery codes; the app nudges them to add a backup.
+
 ## API keys
 
 API keys (`atr_…`) are generated from 32 random bytes and stored only as SHA-256 hashes.

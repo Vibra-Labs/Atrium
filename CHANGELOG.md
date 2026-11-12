@@ -7,6 +7,7 @@ All notable changes to Atrium will be documented in this file.
 ### Added
 
 - **Two-factor authentication** — Turn on an authenticator app in Settings → Security, on every plan. Ten recovery codes are saved before it turns on, the page shows how many are left, and "Trust this device for 30 days" skips the code after a password. Clients can turn it on too.
+- **Passkeys** — Owners and admins can add passkeys in Settings → Security and sign in with "Continue with a passkey". A passkey also counts as the second step for two-factor, including "Require two-factor for staff", and works on the code screen. Needs an `https://` web address.
 - **Require two-factor for staff** — An owner can require 2FA for every owner and admin in the workspace. Anyone without it is taken to setup at their next sign-in. Clients are never required to.
 - **Resetting someone's 2FA** — Owners and admins can turn off a locked-out member's 2FA from the team page or a client's contact page. Server operators have `bun run script:disable-2fa`.
 - **Security emails** — Users are emailed when their password is reset, when 2FA is turned off, and when a recovery code is used.

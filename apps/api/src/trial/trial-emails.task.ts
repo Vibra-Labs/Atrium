@@ -1,16 +1,27 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { TrialEndedEmail, TrialEndingEmail } from "@atrium/email";
+import { TrialEndedEmail, TrialEndingEmail, activitySentence } from "@atrium/email";
 import { PrismaService } from "../prisma/prisma.service";
 import { BillingService } from "../billing/billing.service";
 import { MailService } from "../mail/mail.service";
 import { EmailRenderer } from "../mail/email-renderer";
 import { DAY_MS } from "../common/helpers/local-time";
+import { lifetimeSeatLabel } from "@atrium/shared";
+import { workspaceActivity, type WorkspaceActivity } from "../plan-offers/workspace-activity";
 
 const REMINDER_DAYS = 3;
 
 type ClaimField = "trialReminderSentAt" | "trialEndedEmailSentAt";
+
+type EmailSource = "trial_email_ending" | "trial_email_ended";
+
+interface OfferProps {
+  activityLine: string | null;
+  proUrl: string;
+  lifetimeUrl: string | null;
+  lifetimeLabel: string | null;
+}
 
 /** Emails workspace owners before and after their app-managed Pro trial ends. */
 @Injectable()
@@ -59,7 +70,7 @@ export class TrialEmailsTask {
             organizationName: sub.organization.name,
             daysLeft,
             endsOn: sub.currentPeriodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" }),
-            billingUrl: this.billingUrl(),
+            ...(await this.offerProps(sub.organizationId, sub.organization.name, "trial_email_ending")),
           }),
         );
         await this.sendOnce(sub, "trialReminderSentAt", now, `Your Atrium Pro trial ends in ${daysLeft} ${dayWord}`, html);
@@ -93,7 +104,10 @@ export class TrialEmailsTask {
           continue;
         }
         const html: string = await this.renderer.render(
-          TrialEndedEmail({ organizationName: sub.organization.name, billingUrl: this.billingUrl() }),
+          TrialEndedEmail({
+            organizationName: sub.organization.name,
+            ...(await this.offerProps(sub.organizationId, sub.organization.name, "trial_email_ended")),
+          }),
         );
         await this.sendOnce(sub, "trialEndedEmailSentAt", now, "Your Atrium Pro trial has ended", html);
       } catch (err) {
@@ -131,7 +145,7 @@ export class TrialEmailsTask {
     // The claim is kept on failure: usually mail isn't configured, and retrying every
     // hour forever would only repeat the same work. Owners still see the banner in-app.
     if (delivered === 0) {
-      this.logger.warn(`"${subject}" not delivered to any owner of org ${sub.organizationId}`);
+      this.logger.error(`"${subject}" not delivered to any owner of org ${sub.organizationId}`);
       return;
     }
     this.logger.log(`Sent "${subject}" to ${delivered} owner(s) of org ${sub.organizationId}`);
@@ -145,7 +159,24 @@ export class TrialEmailsTask {
     return count === 1;
   }
 
-  private billingUrl(): string {
-    return `${this.config.get("WEB_URL", "http://localhost:3000")}/dashboard/settings/billing`;
+  /** What the workspace did, and links to Pro and (unless sold out) Lifetime. */
+  private async offerProps(orgId: string, organizationName: string, from: EmailSource): Promise<OfferProps> {
+    const [activity, seatsRemaining, lifetime]: [WorkspaceActivity, number | null, { maxSeats: number } | null] = await Promise.all([
+      workspaceActivity(this.prisma, orgId),
+      this.billingService.getLifetimeSeatsRemaining(),
+      this.prisma.subscriptionPlan.findUnique({ where: { slug: "lifetime" }, select: { maxSeats: true } }),
+    ]);
+    const lifetimeOpen: boolean = lifetime !== null && (seatsRemaining === null || seatsRemaining > 0);
+    return {
+      activityLine: activitySentence(organizationName, activity),
+      proUrl: this.billingUrl("pro", from),
+      lifetimeUrl: lifetimeOpen ? this.billingUrl("lifetime", from) : null,
+      lifetimeLabel:
+        lifetimeOpen && lifetime && seatsRemaining !== null ? lifetimeSeatLabel(lifetime.maxSeats, seatsRemaining) : null,
+    };
+  }
+
+  private billingUrl(plan: "pro" | "lifetime", from: EmailSource): string {
+    return `${this.config.get("WEB_URL", "http://localhost:3000")}/dashboard/settings/billing?plan=${plan}&from=${from}`;
   }
 }

@@ -14,6 +14,8 @@ import { hasSecondFactor } from "./second-factor";
 import { isStaffInRequiringWorkspace } from "./staff-requirement";
 import { countRecoveryCodes } from "./recovery-codes";
 import { resetSecondFactors } from "./reset-second-factors";
+import { verifyOwnCode } from "./verify-own-code";
+import type { CodeApi } from "./verify-own-code";
 import { AuthService } from "../auth/auth.service";
 import { SessionCache } from "../auth/session-cache";
 
@@ -46,12 +48,6 @@ export interface ResetInput {
   /** Hosted cloud (support exists) vs self-hosted (the server operator). */
   hosted: boolean;
 }
-
-/** The two Better Auth endpoints used to confirm the actor; `auth`'s plugin-less type leaves them out. */
-type VerifyCode = (input: { body: { code: string }; headers: Headers }) => Promise<unknown>;
-
-/** Recovery codes look like "abcde-12345"; authenticator codes are digits. */
-const RECOVERY_CODE_SHAPE: RegExp = /^[A-Za-z0-9]{5}-[A-Za-z0-9]{5}$/;
 
 export interface StatusInput {
   userId: string;
@@ -109,7 +105,11 @@ export class TwoFactorService {
         throw new BadRequestException("Set up two-factor for your own account first.");
       }
     }
-    await this.prisma.systemSettings.update({ where: { organizationId }, data: { requireTwoFactor: required } });
+    await this.prisma.systemSettings.upsert({
+      where: { organizationId },
+      update: { requireTwoFactor: required },
+      create: { organizationId, requireTwoFactor: required },
+    });
     this.logger.log(
       JSON.stringify({ event: "two_factor.requirement_changed", organizationId, userId, required }),
     );
@@ -158,15 +158,9 @@ export class TwoFactorService {
   private async confirmActor(actorId: string, code: string | undefined, headers: Headers): Promise<void> {
     const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { twoFactorEnabled: true } });
     if (!hasSecondFactor({ twoFactorEnabled: actor?.twoFactorEnabled })) return;
-    const refusal: string = "Enter a code from your authenticator app to confirm.";
-    if (!code) throw new ForbiddenException(refusal);
-    const api = this.authService.auth.api as unknown as { verifyTOTP: VerifyCode; verifyBackupCode: VerifyCode };
-    const verify: VerifyCode = RECOVERY_CODE_SHAPE.test(code) ? api.verifyBackupCode : api.verifyTOTP;
-    try {
-      await verify({ body: { code }, headers });
-    } catch (err) {
-      this.logger.warn(`2FA reset confirmation failed for ${actorId}: ${err instanceof Error ? err.message : String(err)}`);
-      throw new ForbiddenException(refusal);
+    const api: CodeApi = this.authService.auth.api as unknown as CodeApi;
+    if (!code || !(await verifyOwnCode(api, code.trim(), headers))) {
+      throw new ForbiddenException("Enter a code from your authenticator app to confirm.");
     }
   }
 

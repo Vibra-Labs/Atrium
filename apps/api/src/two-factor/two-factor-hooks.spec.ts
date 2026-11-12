@@ -27,6 +27,7 @@ function fakes(): Fakes {
     forgetSession,
     forgetUser,
     sendAlert,
+    verifyOwnCode: async (code: string): Promise<boolean> => code === "123456",
     recoveryCodesLeft: async (): Promise<number> => 4,
     isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId === "staff",
     recordStepUpFailure: async (sessionId: string): Promise<number> => {
@@ -44,12 +45,15 @@ function ctx(
   secondFactor: string | null = null,
   newSession = false,
   withSession = true,
+  hasTotp = true,
 ): AuthHookContext {
   return {
     path,
     context: {
       returned,
-      session: withSession ? { session: { id: "s1", token: "t1", secondFactor }, user: { id: "u1" } } : null,
+      session: withSession
+        ? { session: { id: "s1", token: "t1", secondFactor }, user: { id: "u1", twoFactorEnabled: hasTotp } }
+        : null,
       newSession: newSession ? { session: { token: "t2" }, user: { id: "u1" } } : null,
     },
   };
@@ -90,6 +94,15 @@ describe("twoFactorAfterHook", () => {
     await twoFactorAfterHook(ctx("/two-factor/verify-totp", new APIError("UNAUTHORIZED")), f.deps);
     expect(f.sessionDelete).toHaveBeenCalledWith({ where: { id: "s1" } });
     expect(f.forgetSession).toHaveBeenCalledWith("t1");
+  });
+
+  it("does not count wrong codes while setting 2FA up", async () => {
+    const f = fakes();
+    for (let i = 0; i < STEP_UP_ATTEMPTS; i++) {
+      await twoFactorAfterHook(ctx("/two-factor/verify-totp", new APIError("UNAUTHORIZED"), null, false, true, false), f.deps);
+    }
+    expect(f.failures.size).toBe(0);
+    expect(f.sessionDelete).not.toHaveBeenCalled();
   });
 
   it("does not count wrong codes from an already verified session", async () => {
@@ -138,20 +151,46 @@ describe("twoFactorAfterHook alerts", () => {
 });
 
 describe("twoFactorBeforeHook", () => {
+  const base = { userId: "client", twoFactorEnabled: true, code: "123456", headers: new Headers() };
+
   it("refuses to turn off the only factor of staff in a requiring workspace", async () => {
     const f = fakes();
-    await expect(twoFactorBeforeHook({ path: "/two-factor/disable", userId: "staff" }, f.deps)).rejects.toThrow(
+    await expect(
+      twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff" }, f.deps),
+    ).rejects.toThrow(APIError);
+  });
+
+  it("lets anyone else turn 2FA off with a current code", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable" }, f.deps);
+  });
+
+  it("needs a current code to turn 2FA off", async () => {
+    const f = fakes();
+    await expect(twoFactorBeforeHook({ ...base, path: "/two-factor/disable", code: undefined }, f.deps)).rejects.toThrow(
+      "Enter a code from your authenticator app, or a recovery code.",
+    );
+    await expect(twoFactorBeforeHook({ ...base, path: "/two-factor/disable", code: "000000" }, f.deps)).rejects.toThrow(
       APIError,
     );
   });
 
-  it("lets anyone else turn 2FA off", async () => {
+  it("needs a current code to make new recovery codes", async () => {
     const f = fakes();
-    await twoFactorBeforeHook({ path: "/two-factor/disable", userId: "client" }, f.deps);
+    await expect(
+      twoFactorBeforeHook({ ...base, path: "/two-factor/generate-backup-codes", code: "000000" }, f.deps),
+    ).rejects.toThrow(APIError);
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/generate-backup-codes" }, f.deps);
+  });
+
+  it("never hands out the authenticator secret once 2FA is on", async () => {
+    const f = fakes();
+    await expect(twoFactorBeforeHook({ ...base, path: "/two-factor/get-totp-uri" }, f.deps)).rejects.toThrow(APIError);
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/get-totp-uri", twoFactorEnabled: false }, f.deps);
   });
 
   it("ignores other paths", async () => {
     const f = fakes();
-    await twoFactorBeforeHook({ path: "/two-factor/enable", userId: "staff" }, f.deps);
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/enable", userId: "staff", code: undefined }, f.deps);
   });
 });

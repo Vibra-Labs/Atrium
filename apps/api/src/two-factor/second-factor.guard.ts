@@ -1,11 +1,11 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import type { AuthenticatedRequest } from "../common";
 import { canonicalPath, parseOriginalUrl } from "../auth/staff-only-org-routes";
-import { gateDecision, hasSecondFactor } from "./second-factor";
+import { gateDecision, hasSecondFactor, isCrossWorkspaceRoute, isOpenRoute } from "./second-factor";
 import type { GateRefusal } from "./second-factor";
 
 const AUTH_PREFIX: string = "/api/auth";
@@ -18,7 +18,14 @@ const MESSAGES: Record<GateRefusal, string> = {
 type GateRequest = Partial<
   Pick<
     AuthenticatedRequest,
-    "user" | "session" | "member" | "bearerKind" | "previewMode" | "workspaceRequiresTwoFactor"
+    | "user"
+    | "session"
+    | "member"
+    | "bearerKind"
+    | "previewMode"
+    | "workspaceRequiresTwoFactor"
+    | "staffInRequiringWorkspace"
+    | "sessionLookupFailed"
   >
 > &
   Pick<Request, "originalUrl">;
@@ -44,9 +51,14 @@ export class SecondFactorGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req: GateRequest = context.switchToHttp().getRequest<GateRequest>();
     // API keys and MCP tokens are not sessions; they can only be created from a verified one.
-    if (req.bearerKind || !req.user || !req.session) return true;
-
+    if (req.bearerKind) return true;
     const { route, isAuthProxy } = gateRoute(req.originalUrl);
+    // The proxy authenticates by itself, so a cookie we could not check must not reach it.
+    if (!req.user && req.sessionLookupFailed && isAuthProxy && !isOpenRoute(route)) {
+      throw new ServiceUnavailableException("Could not check your session. Try again in a moment.");
+    }
+    if (!req.user || !req.session) return true;
+
     const isPublic: boolean | undefined = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -61,7 +73,12 @@ export class SecondFactorGuard implements CanActivate {
       route,
       hasFactor,
       secondFactor: req.session.secondFactor ?? null,
-      enrollmentOwed: req.workspaceRequiresTwoFactor === true && isStaff && !hasFactor,
+      enrollmentOwed:
+        !hasFactor &&
+        ((req.workspaceRequiresTwoFactor === true && isStaff) ||
+          // Better Auth's organization routes accept any organizationId, so
+          // owing setup in any workspace counts there, whichever is active.
+          (isCrossWorkspaceRoute(route) && req.staffInRequiringWorkspace === true)),
     });
     if (refusal) throw new ForbiddenException({ code: refusal, message: MESSAGES[refusal] });
     return true;

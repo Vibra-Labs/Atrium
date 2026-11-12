@@ -64,6 +64,10 @@ export interface AuthenticatedRequest extends Request {
   authRateLimited?: boolean;
   /** The active workspace's "Require 2FA for staff" setting, set by SessionMiddleware for cookie sessions. */
   workspaceRequiresTwoFactor?: boolean;
+  /** Auth routes only: staff of any workspace that requires 2FA. Set only when the user has no factor. */
+  staffInRequiringWorkspace?: boolean;
+  /** Auth routes only: a session cookie was sent but could not be resolved. */
+  sessionLookupFailed?: boolean;
 }
 
 /** The identity a request or MCP tool call acts as. */

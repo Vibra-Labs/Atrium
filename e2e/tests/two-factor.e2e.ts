@@ -358,4 +358,38 @@ test.describe("Two-factor authentication", () => {
     expect((await clientSession.page.request.get(`${API}/api/projects`)).status()).toBe(401);
     await clientSession.context.close();
   });
+
+  test("staff who owe setup cannot act on the requiring workspace from another active one", async ({ browser }) => {
+    const { page, password } = await createOwner(browser, "tf-xws");
+    await enableTotp(page, password);
+    expect((await setRequirement(page, true)).ok()).toBe(true);
+    const workspaceId: string = ((await (await page.request.get(`${API}/api/organization/current`)).json()) as { id: string }).id;
+    const admin = await addAdmin(browser, page);
+
+    const cleared = await authPost(admin.page, "/organization/set-active", { organizationId: null });
+    expect(cleared.ok(), await cleared.text()).toBe(true);
+    const invite = await authPost(admin.page, "/organization/invite-member", {
+      organizationId: workspaceId,
+      email: `tf-xws-intruder-${Date.now()}@test.local`,
+      role: "admin",
+    });
+    expect(invite.status()).toBe(403);
+    expect(((await invite.json()) as { code: string }).code).toBe("TWO_FACTOR_REQUIRED");
+  });
+
+  test("turning 2FA off or making new codes needs a current code, and the secret is never handed out again", async ({ browser }) => {
+    const { page, password } = await createOwner(browser, "tf-weaken");
+    const { secret } = await enableTotp(page, password);
+
+    expect((await authPost(page, "/two-factor/disable", { password })).status()).toBe(403);
+    expect((await authPost(page, "/two-factor/generate-backup-codes", { password })).status()).toBe(403);
+    expect((await authPost(page, "/two-factor/get-totp-uri", { password })).status()).toBe(403);
+
+    await page.goto(`${WEB}/dashboard/settings/security`);
+    await page.getByRole("button", { name: /^turn off$/i }).click();
+    await page.getByLabel(/code from your authenticator app/i).fill(await totp(secret));
+    await page.getByLabel(/your password/i).fill(password);
+    await page.getByRole("button", { name: /turn off two-factor/i }).click();
+    await expect(page.getByText(/add a code from an authenticator app/i)).toBeVisible({ timeout: 10000 });
+  });
 });

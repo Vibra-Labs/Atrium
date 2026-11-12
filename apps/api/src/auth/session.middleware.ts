@@ -7,6 +7,9 @@ import { McpAuthService } from "../mcp-auth/mcp-auth.service";
 import { LastSeenTracker } from "./last-seen.tracker";
 import { SessionCache } from "./session-cache";
 import type { CachedSession } from "./session-cache";
+import { hasSecondFactor } from "../two-factor/second-factor";
+import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
+import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import { PrismaService } from "../prisma/prisma.service";
 import { bearerToken, isMcpPath, mcpOAuthEnabled, ORG_MEMBER_FIELDS, RateLimiter } from "../common";
 import type {
@@ -42,6 +45,8 @@ type AuthReq = Partial<
     | "bearerKind"
     | "authRateLimited"
     | "workspaceRequiresTwoFactor"
+    | "staffInRequiringWorkspace"
+    | "sessionLookupFailed"
   >
 > &
   Request;
@@ -168,6 +173,14 @@ export class SessionMiddleware implements NestMiddleware {
     authReq.bearerKind = entry.bearerKind;
   }
 
+  /** A session the second-factor gate restricts: not yet stepped up, or owing 2FA setup. */
+  private isGated(authReq: AuthReq): boolean {
+    const user: AuthUser | undefined = authReq.user;
+    if (!user) return false;
+    if (hasSecondFactor(user)) return !authReq.session?.secondFactor;
+    return authReq.workspaceRequiresTwoFactor === true && isPrivilegedRole(authReq.member?.role);
+  }
+
   /** Drops expired entries from a cache that has grown past its soft cap. */
   private evict(cache: Map<string, CachedSession>): void {
     const now: number = Date.now();
@@ -179,9 +192,9 @@ export class SessionMiddleware implements NestMiddleware {
   async use(req: Request, _res: Response, next: NextFunction) {
     const authReq = req as AuthReq;
 
+    const token = this.extractSessionToken(req);
+    const isAuthRoute = req.originalUrl.startsWith("/api/auth/");
     try {
-      const token = this.extractSessionToken(req);
-      const isAuthRoute = req.originalUrl.startsWith("/api/auth/");
 
       // API keys apply only when there is no browser session, so the
       // cookie + CSRF model is never mixed with bearer auth. This runs before
@@ -268,8 +281,16 @@ export class SessionMiddleware implements NestMiddleware {
         }
       }
 
+      // Better Auth's organization routes can name any workspace, so on auth
+      // routes the gate also needs to know whether 2FA setup is owed anywhere.
+      if (isAuthRoute && session && !hasSecondFactor(session.user as AuthUser)) {
+        authReq.staffInRequiringWorkspace = await isStaffInRequiringWorkspace(this.prisma, session.user.id);
+      }
+
       // Cache the resolved session. Not on auth routes: they may change it.
-      if (token && session && !isAuthRoute) {
+      // Not a gated one either: it changes on step-up or setup, possibly on
+      // another API instance, and must not be served stale.
+      if (token && session && !isAuthRoute && !this.isGated(authReq)) {
         this.cache.set(token, {
           user: authReq.user as AuthUser,
           session: authReq.session as AuthSession,
@@ -281,8 +302,10 @@ export class SessionMiddleware implements NestMiddleware {
       }
     } catch (err) {
       // Session resolution failed — continue without auth.
-      // The AuthGuard will reject unauthenticated requests.
+      // The AuthGuard will reject unauthenticated requests. The auth proxy is
+      // public and authenticates by itself, so SecondFactorGuard refuses it.
       this.logger.warn(`Session resolution failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (token && isAuthRoute && !authReq.user) authReq.sessionLookupFailed = true;
     }
 
     next();

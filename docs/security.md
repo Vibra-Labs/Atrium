@@ -28,14 +28,21 @@ included — gets `403 { code: "SECOND_FACTOR_REQUIRED" }`. So an emailed sign-i
 a password reset or any other first-factor sign-in never gets around 2FA. A pending
 session is signed out after 5 wrong codes. Staff of a workspace that requires 2FA and
 have none get `403 { code: "TWO_FACTOR_REQUIRED" }` until they set it up (they may still
-list and switch workspaces). The rule is applied by `SecondFactorGuard`, a global guard.
+list and switch workspaces). Better Auth's organization routes accept any workspace id,
+so there the rule applies whichever workspace is active. The rule is applied by `SecondFactorGuard`, a global guard.
 
 "Trust this device for 30 days" is offered only after a password. Turning 2FA on makes
 the user's other sessions pending; the session cache is cleared for that user at once
 on the instance that handled it (other API instances catch up within 30 seconds).
 
-API keys and MCP OAuth tokens are not sessions and are not gated. They can only be
-created from a session, which for a user with 2FA must have passed it.
+API keys and MCP OAuth tokens are not sessions and are not gated. New ones can only be
+created from a session, which for a user with 2FA must have passed it. Keys and MCP
+connections made before 2FA was turned on keep working, so revoke and recreate them
+(Settings → Integrations) after turning 2FA on if they may have leaked.
+
+Turning 2FA off and making new recovery codes need a current code (or a recovery code),
+checked by the server, plus the password for accounts that have one. Once 2FA is on, the
+authenticator secret is never handed out again.
 
 **Recovery.** A password reset never removes 2FA. A user who has lost their
 authenticator uses a recovery code. Otherwise an owner can reset anyone's 2FA in the

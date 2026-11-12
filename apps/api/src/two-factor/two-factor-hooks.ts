@@ -16,7 +16,7 @@ export interface AuthHookContext {
     /** The session the request came with, if any. */
     session?: {
       session: { id: string; token: string; secondFactor?: string | null };
-      user: { id: string };
+      user: { id: string; twoFactorEnabled?: boolean | null };
     } | null;
     /** Set when the endpoint created a session (sign-in, enable). */
     newSession?: { user?: { id: string } } | null;
@@ -31,6 +31,8 @@ export interface TwoFactorHookDeps {
   forgetUser: (userId: string) => void;
   /** Emails the user about a security change. Never throws. */
   sendAlert: (userId: string, alert: SecurityAlert) => Promise<void>;
+  /** Checks the caller's own TOTP or recovery code against their session (a recovery code is used up). */
+  verifyOwnCode: (code: string, headers: Headers) => Promise<boolean>;
   /** Recovery codes the user has left. */
   recoveryCodesLeft: (userId: string) => Promise<number>;
   /** Whether the user is an owner or admin of a workspace that requires 2FA. */
@@ -86,7 +88,8 @@ async function stepUpAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promi
   if (failed(ctx.context.returned)) {
     // The plugin limits attempts on the password challenge only. A pending
     // session gets a fixed number of tries, then has to sign in again.
-    if (current.session.secondFactor) return;
+    // Only a pending session counts: not a verified one, and not one setting 2FA up.
+    if (current.session.secondFactor || current.user.twoFactorEnabled !== true) return;
     const attempts: number = await deps.recordStepUpFailure(current.session.id);
     if (attempts >= STEP_UP_ATTEMPTS) {
       await deps.prisma.session.deleteMany({ where: { id: current.session.id } });
@@ -102,20 +105,52 @@ async function stepUpAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promi
   deps.forgetSession(current.session.token);
 }
 
-/**
- * Runs before a Better Auth endpoint. `userId` is the caller's, resolved by
- * the wrapper only for the paths that need it.
- */
-export async function twoFactorBeforeHook(
-  input: { path: string; userId: string | null },
-  deps: TwoFactorHookDeps,
-): Promise<void> {
-  if (input.path !== "/two-factor/disable" || !input.userId) return;
+/** Better Auth paths twoFactorBeforeHook acts on; the wrapper resolves the caller only for these. */
+export const TWO_FACTOR_BEFORE_PATHS: ReadonlySet<string> = new Set<string>([
+  "/two-factor/disable",
+  "/two-factor/generate-backup-codes",
+  "/two-factor/get-totp-uri",
+]);
+
+/** Weakening 2FA needs a fresh proof of it, not just a session that once passed it. */
+const NEEDS_CODE: ReadonlySet<string> = new Set<string>(["/two-factor/disable", "/two-factor/generate-backup-codes"]);
+
+export interface BeforeHookInput {
+  path: string;
+  userId: string | null;
+  twoFactorEnabled: boolean;
+  /** `code` from the request body: the user's TOTP or a recovery code. */
+  code: string | undefined;
+  headers: Headers;
+}
+
+/** Runs before a Better Auth endpoint, for the paths in TWO_FACTOR_BEFORE_PATHS. */
+export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFactorHookDeps): Promise<void> {
+  if (!TWO_FACTOR_BEFORE_PATHS.has(input.path) || !input.userId) return;
+
+  // Setup gets the URI from /enable. Afterwards this would hand the secret,
+  // a permanent second factor, to anyone holding a session of a passwordless user.
+  if (input.path === "/two-factor/get-totp-uri") {
+    if (input.twoFactorEnabled) {
+      throw new APIError("FORBIDDEN", { message: "Two-factor is already on. Turn it off to set up a new device." });
+    }
+    return;
+  }
+
+  // Checked before the code, so a refusal never uses up a recovery code.
   // TOTP is the only factor until passkeys arrive, so turning it off would
   // leave staff of a requiring workspace with none.
-  if (await deps.isStaffInRequiringWorkspace(input.userId)) {
+  if (input.path === "/two-factor/disable" && (await deps.isStaffInRequiringWorkspace(input.userId))) {
     throw new APIError("FORBIDDEN", {
       message: "Your workspace requires two-factor authentication, so it can't be turned off.",
     });
   }
+
+  if (NEEDS_CODE.has(input.path) && input.twoFactorEnabled) {
+    const code: string = (input.code ?? "").trim();
+    if (!code || !(await deps.verifyOwnCode(code, input.headers))) {
+      throw new APIError("FORBIDDEN", { message: "Enter a code from your authenticator app, or a recovery code." });
+    }
+  }
+
 }

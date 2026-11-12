@@ -922,7 +922,7 @@ describe("AuthService session second-factor stamp", () => {
   it("carries the caller's verified factor into the session change-password mints", async () => {
     const result = await createBefore()(
       { userId: "u1" },
-      { path: "/change-password", context: { session: { session: { secondFactor: "totp" } } } },
+      { path: "/change-password", context: { session: { session: { secondFactor: "totp" }, user: { id: "u1" } } } },
     );
     expect(result.data.secondFactor).toBe("totp");
   });

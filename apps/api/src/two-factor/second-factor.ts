@@ -8,15 +8,17 @@ export interface StampInput {
   currentSecondFactor: string | null;
   /** Whether the session's user has TOTP turned on. */
   userHasTotp: boolean;
+  /** The request's session belongs to the user the new session is for. Defaults to true. */
+  sameUser?: boolean;
 }
 
 const PASSWORD_SIGN_IN_PATHS: ReadonlySet<string> = new Set<string>(["/sign-in/email", "/sign-in/username"]);
 
-/** Sign-in routes that prove nothing beyond the first factor. */
-const FIRST_FACTOR_ONLY_PATHS: ReadonlySet<string> = new Set<string>([
-  "/magic-link/verify",
-  "/verify-email",
-  "/sign-up/email",
+/** Endpoints that replace the caller's own session, which keeps its status. */
+const CARRY_OVER_PATHS: ReadonlySet<string> = new Set<string>([
+  "/change-password",
+  "/two-factor/enable",
+  "/two-factor/disable",
 ]);
 
 /** Which second factor a new session has passed, given how it was created. */
@@ -27,10 +29,12 @@ export function stampFor(input: StampInput): SecondFactor | null {
   // The plugin's own after-hook deletes this session whenever a challenge is
   // still owed, so it survives only when the trusted-device cookie was valid.
   if (PASSWORD_SIGN_IN_PATHS.has(path)) return input.userHasTotp ? "trusted_device" : null;
-  if (FIRST_FACTOR_ONLY_PATHS.has(path) || path.startsWith("/callback/")) return null;
-  // Endpoints that replace the caller's own session (change-password, 2FA
-  // enable/disable) carry its status over. Carrying never upgrades a session.
-  return input.currentSecondFactor === null ? null : (input.currentSecondFactor as SecondFactor);
+  // Only a listed replacement of the caller's own session carries its status;
+  // every other path (email link, sign-up, social, anything new) starts unverified.
+  if (CARRY_OVER_PATHS.has(path) && input.sameUser !== false && input.currentSecondFactor !== null) {
+    return input.currentSecondFactor as SecondFactor;
+  }
+  return null;
 }
 
 /** Why the gate refused a request. Sent as `code` in the 403 body. */
@@ -81,6 +85,19 @@ function matches(route: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern: string) =>
     pattern.endsWith("/*") ? route.startsWith(pattern.slice(0, -1)) : route === pattern,
   );
+}
+
+/** Routes open in any state, including when the session could not be resolved. */
+export function isOpenRoute(route: string): boolean {
+  return matches(route, OPEN_ROUTES);
+}
+
+/**
+ * Better Auth routes that can act on a workspace other than the active one
+ * (an explicit organizationId, or the MCP consent's workspace choice).
+ */
+export function isCrossWorkspaceRoute(route: string): boolean {
+  return route.startsWith("auth:/organization/") || route.startsWith("auth:/oauth2/");
 }
 
 /** Whether a user has a second factor. Passkeys join this in PR 2. */

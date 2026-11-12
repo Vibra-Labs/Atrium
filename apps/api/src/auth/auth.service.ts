@@ -44,7 +44,9 @@ import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import { SendLimiter } from "./send-limiter";
 import { SessionCache } from "./session-cache";
 import { stampFor } from "../two-factor/second-factor";
-import { twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
+import { TWO_FACTOR_BEFORE_PATHS, twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
+import { verifyOwnCode } from "../two-factor/verify-own-code";
+import type { CodeApi } from "../two-factor/verify-own-code";
 import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
 import { countRecoveryCodes } from "../two-factor/recovery-codes";
 import { sendSecurityAlert } from "../two-factor/security-alerts";
@@ -59,7 +61,7 @@ type AuthHookCtx = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
 /** The parts of Better Auth's endpoint context the session.create hook reads. */
 interface SessionCreateContext {
   path?: string;
-  context?: { session?: { session?: { secondFactor?: string | null } } | null };
+  context?: { session?: { session?: { secondFactor?: string | null }; user?: { id?: string } } | null };
 }
 
 interface AdminResetContext {
@@ -88,9 +90,6 @@ type SignInMagicLink = (input: {
   body: { email: string; name?: string; callbackURL: string; errorCallbackURL: string };
   headers: Headers;
 }) => Promise<unknown>;
-
-/** Better Auth paths whose before-hook needs the caller. */
-const TWO_FACTOR_BEFORE_PATHS: ReadonlySet<string> = new Set<string>(["/two-factor/disable"]);
 
 /** How long wrong step-up codes are remembered for a session. */
 const STEP_UP_FAILURE_TTL_MS: number = 24 * 60 * 60 * 1000;
@@ -271,6 +270,8 @@ export class AuthService {
       isStaffInRequiringWorkspace: (userId: string): Promise<boolean> =>
         isStaffInRequiringWorkspace(this.prisma, userId),
       sendAlert: (userId: string, alert: SecurityAlert): Promise<void> => this.sendAlert(userId, alert),
+      verifyOwnCode: (code: string, headers: Headers): Promise<boolean> =>
+        verifyOwnCode(this.auth.api as unknown as CodeApi, code, headers),
       // Feeds an alert email only, so a failure must not fail the sign-in.
       recoveryCodesLeft: async (userId: string): Promise<number> => {
         try {
@@ -354,7 +355,18 @@ export class AuthService {
         before: createAuthMiddleware(async (ctx: AuthHookCtx) => {
           if (TWO_FACTOR_BEFORE_PATHS.has(ctx.path)) {
             const session = await getSessionFromCtx(ctx);
-            await twoFactorBeforeHook({ path: ctx.path, userId: session?.user.id ?? null }, twoFactorDeps);
+            const user = session?.user as { id: string; twoFactorEnabled?: boolean | null } | undefined;
+            const body = (ctx.body ?? {}) as { code?: unknown };
+            await twoFactorBeforeHook(
+              {
+                path: ctx.path,
+                userId: user?.id ?? null,
+                twoFactorEnabled: user?.twoFactorEnabled === true,
+                code: typeof body.code === "string" ? body.code : undefined,
+                headers: ctx.headers ?? new Headers(),
+              },
+              twoFactorDeps,
+            );
           }
           return mcpOAuthEnabled ? mcpOAuthBeforeHook(ctx) : undefined;
         }),
@@ -654,7 +666,9 @@ export class AuthService {
     ctx: SessionCreateContext | null | undefined,
   ): Promise<SecondFactor | null> {
     const path: string = ctx?.path ?? "";
-    const currentSecondFactor: string | null = ctx?.context?.session?.session?.secondFactor ?? null;
+    const current = ctx?.context?.session;
+    const currentSecondFactor: string | null = current?.session?.secondFactor ?? null;
+    const sameUser: boolean = current?.user?.id === userId;
     let userHasTotp: boolean = false;
     if (path === "/sign-in/email" || path === "/sign-in/username") {
       const user = await this.prisma.user.findUnique({
@@ -663,7 +677,7 @@ export class AuthService {
       });
       userHasTotp = user?.twoFactorEnabled === true;
     }
-    return stampFor({ path, currentSecondFactor, userHasTotp });
+    return stampFor({ path, currentSecondFactor, userHasTotp, sameUser });
   }
 
   async handleRequest(request: Request) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, ServiceUnavailableException } from "@nestjs/common";
 import type { ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { SecondFactorGuard } from "./second-factor.guard";
@@ -12,6 +12,8 @@ interface FakeRequest {
   bearerKind?: string;
   previewMode?: boolean;
   workspaceRequiresTwoFactor?: boolean;
+  staffInRequiringWorkspace?: boolean;
+  sessionLookupFailed?: boolean;
 }
 
 function context(request: FakeRequest, isPublic = false): ExecutionContext {
@@ -121,5 +123,43 @@ describe("SecondFactorGuard", () => {
       workspaceRequiresTwoFactor: true,
     };
     expect(guard.canActivate(context(req))).toBe(true);
+  });
+  it("holds staff who owe setup anywhere to it on organization routes naming another workspace", () => {
+    // No active workspace (set-active null), so the active-workspace rule sees nothing.
+    const req: FakeRequest = {
+      originalUrl: "/api/auth/organization/invite-member",
+      user: { id: "u1" },
+      session: { secondFactor: null },
+      staffInRequiringWorkspace: true,
+    };
+    expect(refusalCode(() => guard.canActivate(context(req, true)))).toBe("TWO_FACTOR_REQUIRED");
+  });
+
+  it("still lets them list and switch workspaces", () => {
+    for (const url of ["/api/auth/organization/list", "/api/auth/organization/set-active"]) {
+      const req: FakeRequest = { originalUrl: url, user: { id: "u1" }, session: { secondFactor: null }, staffInRequiringWorkspace: true };
+      expect(guard.canActivate(context(req, true))).toBe(true);
+    }
+  });
+
+  it("does not hold them on Atrium routes of a workspace that doesn't require it", () => {
+    const req: FakeRequest = {
+      originalUrl: "/api/projects",
+      user: { id: "u1" },
+      session: { secondFactor: null },
+      member: { role: "member" },
+      staffInRequiringWorkspace: true,
+    };
+    expect(guard.canActivate(context(req))).toBe(true);
+  });
+
+  it("refuses the auth proxy when the session could not be resolved", () => {
+    const req: FakeRequest = { originalUrl: "/api/auth/organization/invite-member", sessionLookupFailed: true };
+    expect(() => guard.canActivate(context(req, true))).toThrow(ServiceUnavailableException);
+  });
+
+  it("still lets an unresolved session sign out", () => {
+    const req: FakeRequest = { originalUrl: "/api/auth/sign-out", sessionLookupFailed: true };
+    expect(guard.canActivate(context(req, true))).toBe(true);
   });
 });

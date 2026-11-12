@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { postAuth } from "@/lib/auth-fetch";
 import { TwoFactorSetup } from "./two-factor-setup";
 import { RecoveryCodes } from "./recovery-codes";
 
@@ -26,24 +25,25 @@ const LOW_CODES: number = 3;
 
 type Action = "off" | "regenerate";
 
-/** Posts to a Better Auth 2FA endpoint that wants the password only from accounts that have one. */
-async function postWithPassword(
+/**
+ * Posts to a Better Auth 2FA endpoint that changes 2FA itself. The server checks
+ * the code first, then the password, which only accounts that have one need.
+ */
+async function postWithCode(
   path: string,
+  code: string,
   password: string,
-): Promise<{ ok: boolean; needsPassword: boolean; message?: string; data: Record<string, unknown> }> {
+): Promise<{ ok: boolean; message?: string; data: Record<string, unknown> }> {
   const res: Response = await fetch(`${API_URL}/api/auth${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify(password ? { password } : {}),
+    body: JSON.stringify(password ? { code, password } : { code }),
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  return {
-    ok: res.ok,
-    needsPassword: !res.ok && data.code === "INVALID_PASSWORD" && !password,
-    message: typeof data.message === "string" ? data.message : undefined,
-    data,
-  };
+  const message: string | undefined =
+    data.code === "INVALID_PASSWORD" ? "Enter your password too." : typeof data.message === "string" ? data.message : undefined;
+  return { ok: res.ok, message, data };
 }
 
 interface SecuritySectionProps {
@@ -58,7 +58,6 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
   const [action, setAction] = useState<Action | null>(null);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const [needsPassword, setNeedsPassword] = useState(false);
   const [newCodes, setNewCodes] = useState<string[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -81,7 +80,6 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
     setAction(null);
     setCode("");
     setPassword("");
-    setNeedsPassword(false);
     setError("");
   };
 
@@ -91,17 +89,8 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
     setBusy(true);
     setError("");
     try {
-      // Prove the authenticator first; Better Auth then asks for the password where there is one.
-      if (!needsPassword) {
-        const check = await postAuth("/two-factor/verify-totp", { code: code.trim() });
-        if (!check.ok) throw new Error(check.message || "That code didn't work.");
-      }
       const path: string = action === "off" ? "/two-factor/disable" : "/two-factor/generate-backup-codes";
-      const result = await postWithPassword(path, password);
-      if (result.needsPassword) {
-        setNeedsPassword(true);
-        return;
-      }
+      const result = await postWithCode(path, code.trim(), password);
       if (!result.ok) throw new Error(result.message || "Something went wrong");
       if (action === "regenerate") setNewCodes((result.data.backupCodes as string[]) ?? []);
       reset();
@@ -190,33 +179,32 @@ export function SecuritySection({ onChange }: SecuritySectionProps): React.React
             </div>
           ) : (
             <form onSubmit={confirm} className="space-y-3">
-              {!needsPassword ? (
-                <div className="space-y-1">
-                  <label htmlFor="sec-code" className="text-sm font-medium">Code from your authenticator app</label>
-                  <input
-                    id="sec-code"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="w-40 rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 font-mono text-sm"
-                    required
-                  />
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <label htmlFor="sec-password" className="text-sm font-medium">Confirm your password</label>
-                  <input
-                    id="sec-password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full max-w-xs rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm"
-                    required
-                  />
-                </div>
-              )}
+              <div className="space-y-1">
+                <label htmlFor="sec-code" className="text-sm font-medium">
+                  Code from your authenticator app, or a recovery code
+                </label>
+                <input
+                  id="sec-code"
+                  autoComplete="one-time-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  className="w-48 rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 font-mono text-sm"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="sec-password" className="text-sm font-medium">
+                  Your password (leave empty if you sign in by email link)
+                </label>
+                <input
+                  id="sec-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full max-w-xs rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm"
+                />
+              </div>
               {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
               <div className="flex gap-2">
                 <button

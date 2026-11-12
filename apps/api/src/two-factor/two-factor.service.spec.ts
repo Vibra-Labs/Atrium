@@ -15,7 +15,7 @@ const prisma = {
   twoFactor: { findUnique: mock((): Promise<unknown> => Promise.resolve(null)) },
   systemSettings: {
     findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
-    update: mock((): Promise<unknown> => Promise.resolve({})),
+    upsert: mock((): Promise<unknown> => Promise.resolve({})),
   },
   member: {
     count: mock((): Promise<number> => Promise.resolve(1)),
@@ -111,16 +111,18 @@ describe("TwoFactorService.setRequirement", () => {
   it("refuses to turn the requirement on for an owner without 2FA", async () => {
     prisma.user.findUnique.mockImplementation(() => Promise.resolve({ twoFactorEnabled: false }));
     await expect(service().setRequirement("u1", "org1", true)).rejects.toThrow(BadRequestException);
-    expect(prisma.systemSettings.update).not.toHaveBeenCalled();
+    expect(prisma.systemSettings.upsert).not.toHaveBeenCalled();
   });
 
   it("turns the requirement on for an owner with 2FA", async () => {
     prisma.user.findUnique.mockImplementation(() => Promise.resolve({ twoFactorEnabled: true }));
     const result = await service().setRequirement("u1", "org1", true);
     expect(result).toEqual({ required: true });
-    expect(prisma.systemSettings.update).toHaveBeenCalledWith({
+    // Upsert: a workspace from before settings rows were seeded has none.
+    expect(prisma.systemSettings.upsert).toHaveBeenCalledWith({
       where: { organizationId: "org1" },
-      data: { requireTwoFactor: true },
+      update: { requireTwoFactor: true },
+      create: { organizationId: "org1", requireTwoFactor: true },
     });
   });
 

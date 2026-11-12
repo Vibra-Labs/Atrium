@@ -418,9 +418,16 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
 describe("SessionMiddleware cookie session", () => {
   const COOKIE = { "better-auth.session_token": "s1" };
 
-  function cookieBuild(memberRow: unknown = { id: "m1", userId: "u1", organizationId: "org1", role: "member", createdAt: new Date() }) {
-    const getSession = mock(() =>
-      Promise.resolve({ user: resolved.user, session: { id: "s1", userId: "u1", activeOrganizationId: "org1" } }),
+  function cookieBuild(
+    memberRow: unknown = { id: "m1", userId: "u1", organizationId: "org1", role: "member", createdAt: new Date() },
+    sessionExtra: Record<string, unknown> = {},
+    userExtra: Record<string, unknown> = {},
+  ) {
+    const getSession = mock((): Promise<unknown> =>
+      Promise.resolve({
+        user: { ...resolved.user, ...userExtra },
+        session: { id: "s1", userId: "u1", activeOrganizationId: "org1", ...sessionExtra },
+      }),
     );
     const getFullOrganization = mock(() => Promise.resolve(null));
     const prisma = {
@@ -498,6 +505,48 @@ describe("SessionMiddleware cookie session", () => {
     await mw.use(second, {} as Response, noop());
     expect(second.workspaceRequiresTwoFactor).toBe(true);
     expect(prisma.systemSettings.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("never caches a session that has not passed its second factor", async () => {
+    const { mw, getSession } = cookieBuild(undefined, { secondFactor: null }, { twoFactorEnabled: true });
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(getSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("never caches a session of staff who owe 2FA setup", async () => {
+    const { mw, getSession, prisma } = cookieBuild({ id: "m1", userId: "u1", organizationId: "org1", role: "admin", createdAt: new Date() });
+    prisma.systemSettings.findUnique.mockImplementation(() => Promise.resolve({ requireTwoFactor: true }));
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(getSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks an auth-route request whose session could not be resolved", async () => {
+    const { mw, getSession } = cookieBuild();
+    getSession.mockImplementation(() => Promise.reject(new Error("db down")));
+    const r = req({}, COOKIE, "10.0.0.1", "/api/auth/organization/invite-member") as Request & Record<string, any>;
+    await mw.use(r, {} as Response, noop());
+    expect(r.user).toBeUndefined();
+    expect(r.sessionLookupFailed).toBe(true);
+  });
+
+  it("looks up whether staff owe 2FA in any workspace, on auth routes only", async () => {
+    const { mw, prisma } = cookieBuild();
+    (prisma as unknown as { member: { findFirst: ReturnType<typeof mock> } }).member.findFirst.mockImplementation(
+      ((args: { where: { role?: unknown } }) =>
+        Promise.resolve(
+          args.where.role
+            ? { id: "m-other" }
+            : { id: "m1", userId: "u1", organizationId: "org1", role: "member", createdAt: new Date() },
+        )) as unknown as () => Promise<unknown>,
+    );
+    const authReq = req({}, COOKIE, "10.0.0.1", "/api/auth/organization/invite-member") as Request & Record<string, any>;
+    await mw.use(authReq, {} as Response, noop());
+    expect(authReq.staffInRequiringWorkspace).toBe(true);
+    const apiReq = req({}, COOKIE) as Request & Record<string, any>;
+    await mw.use(apiReq, {} as Response, noop());
+    expect(apiReq.staffInRequiringWorkspace).toBeUndefined();
   });
 
   it("resolves the caller's role on the staff-only organization routes the auth proxy gates", async () => {

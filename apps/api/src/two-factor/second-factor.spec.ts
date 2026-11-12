@@ -2,6 +2,16 @@ import { describe, expect, it } from "bun:test";
 import { gateDecision, hasSecondFactor, stampFor } from "./second-factor";
 
 describe("stampFor", () => {
+  it("does not carry a factor into an unlisted path", () => {
+    expect(stampFor({ path: "/sign-in/social", currentSecondFactor: "totp", userHasTotp: true })).toBeNull();
+  });
+
+  it("does not carry another user's factor", () => {
+    expect(
+      stampFor({ path: "/change-password", currentSecondFactor: "totp", userHasTotp: true, sameUser: false }),
+    ).toBeNull();
+  });
+
   it("marks a session created by verify-totp as totp", () => {
     expect(stampFor({ path: "/two-factor/verify-totp", currentSecondFactor: null, userHasTotp: true })).toBe("totp");
   });

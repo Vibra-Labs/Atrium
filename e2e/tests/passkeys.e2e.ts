@@ -111,15 +111,16 @@ async function signOut(page: Page): Promise<void> {
 }
 
 test.describe("Passkeys", () => {
-  test("add a passkey in settings, then sign in with it", async ({ browser }) => {
+  test("add a passkey in settings, then sign in with it from the email field's autofill", async ({ browser }) => {
     const { page } = await createOwner(browser, "pk-signin");
     const device: Authenticator = await virtualAuthenticator(page);
     await addPasskeyInSettings(page, "Test laptop");
     expect(await credentials(device)).toHaveLength(1);
 
     await signOut(page);
+    // The login page offers saved passkeys through the email field's autofill.
+    // The virtual device approves at once, so no click is needed: the page signs in by itself.
     await page.goto(`${WEB}/login`);
-    await page.getByRole("button", { name: /^use a passkey$/i }).click();
     await page.waitForURL(/\/dashboard/, { timeout: 20000 });
     const s = await status(page);
     expect(s.pending).toBe(false);

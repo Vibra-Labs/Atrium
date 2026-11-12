@@ -141,7 +141,8 @@ test.describe("Passkeys", () => {
 
     const context: BrowserContext = await browser.newContext({ storageState: undefined });
     const visitor: Page = await context.newPage();
-    await copyPasskeys(device, visitor);
+    // No passkey yet: with one, the login page's autofill would sign straight in
+    // before the link is requested. It's added on the code screen below.
     await visitor.goto(`${WEB}/login`);
     await visitor.getByLabel(/email/i).fill(email);
     const [request] = await Promise.all([
@@ -156,6 +157,7 @@ test.describe("Passkeys", () => {
     expect((await visitor.request.get(`${API}/api/projects`)).status()).toBe(403);
 
     const pendingCookies = await context.cookies();
+    await copyPasskeys(device, visitor);
     await visitor.getByRole("button", { name: /use a passkey/i }).click();
     await visitor.waitForURL(/\/dashboard/, { timeout: 20000 });
     expect((await visitor.request.get(`${API}/api/projects`)).status()).toBe(200);

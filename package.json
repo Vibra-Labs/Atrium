@@ -21,7 +21,8 @@
     "db:seed": "bun run --filter @atrium/database db:seed",
     "db:rls": "bun run --filter @atrium/database db:rls",
     "clean": "turbo run clean",
-    "setup": "bun run scripts/setup.ts"
+    "setup": "bun run scripts/setup.ts",
+    "script:disable-2fa": "bun run --cwd apps/api script:disable-2fa"
   },
   "packageManager": "bun@1.3.9",
   "overrides": {

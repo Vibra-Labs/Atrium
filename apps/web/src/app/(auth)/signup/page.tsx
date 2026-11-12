@@ -24,6 +24,18 @@ interface Plan {
   description: string;
 }
 
+// A counter reading "100 of 100 seats remaining" says nobody has bought one.
+// Hold the plain cap until enough have sold that the count is persuasive.
+const LIFETIME_COUNTER_THRESHOLD = 50;
+
+function lifetimeSeatLabel(maxSeats: number, remaining: number): string {
+  if (remaining <= 0) return "Sold out";
+  if (maxSeats - remaining < LIFETIME_COUNTER_THRESHOLD) {
+    return `Limited to ${maxSeats} seats`;
+  }
+  return `${remaining} of ${maxSeats} seats remaining`;
+}
+
 function PlanSelectionStep({
   plans,
   lifetimeSeatsRemaining,
@@ -120,9 +132,7 @@ function PlanSelectionStep({
                 {plan.slug === "lifetime" &&
                   lifetimeSeatsRemaining !== null && (
                     <div className="text-sm bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-3 py-1.5 rounded-lg">
-                      {soldOut
-                        ? "Sold out"
-                        : `${lifetimeSeatsRemaining} of ${plan.maxSeats} seats remaining`}
+                      {lifetimeSeatLabel(plan.maxSeats, lifetimeSeatsRemaining)}
                     </div>
                   )}
 

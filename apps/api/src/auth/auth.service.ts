@@ -45,14 +45,14 @@ import { SendLimiter } from "./send-limiter";
 import { SessionCache } from "./session-cache";
 import { stampFor } from "../two-factor/second-factor";
 import { TWO_FACTOR_BEFORE_PATHS, twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
-import { verifyOwnCode } from "../two-factor/verify-own-code";
+import { INTERNAL_CHECK_TOKEN, verifyOwnCode } from "../two-factor/verify-own-code";
 import type { CodeApi } from "../two-factor/verify-own-code";
 import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
 import { countRecoveryCodes } from "../two-factor/recovery-codes";
 import { sendSecurityAlert } from "../two-factor/security-alerts";
 import type { SecurityAlert } from "../two-factor/security-alerts";
 import { EmailRenderer } from "../mail/email-renderer";
-import type { AuthHookContext, TwoFactorHookDeps } from "../two-factor/two-factor-hooks";
+import type { AuthHookContext, PasswordCheck, TwoFactorHookDeps } from "../two-factor/two-factor-hooks";
 import type { SecondFactor } from "../two-factor/second-factor";
 
 /** The context Better Auth passes to a before/after hook. */
@@ -272,6 +272,9 @@ export class AuthService {
       sendAlert: (userId: string, alert: SecurityAlert): Promise<void> => this.sendAlert(userId, alert),
       verifyOwnCode: (code: string, headers: Headers): Promise<boolean> =>
         verifyOwnCode(this.auth.api as unknown as CodeApi, code, headers),
+      checkPassword: (userId: string, password: string | undefined): Promise<PasswordCheck> =>
+        this.checkPassword(userId, password),
+      internalCheckToken: INTERNAL_CHECK_TOKEN,
       // Feeds an alert email only, so a failure must not fail the sign-in.
       recoveryCodesLeft: async (userId: string): Promise<number> => {
         try {
@@ -356,13 +359,14 @@ export class AuthService {
           if (TWO_FACTOR_BEFORE_PATHS.has(ctx.path)) {
             const session = await getSessionFromCtx(ctx);
             const user = session?.user as { id: string; twoFactorEnabled?: boolean | null } | undefined;
-            const body = (ctx.body ?? {}) as { code?: unknown };
+            const body = (ctx.body ?? {}) as { code?: unknown; password?: unknown };
             await twoFactorBeforeHook(
               {
                 path: ctx.path,
                 userId: user?.id ?? null,
                 twoFactorEnabled: user?.twoFactorEnabled === true,
                 code: typeof body.code === "string" ? body.code : undefined,
+                password: typeof body.password === "string" ? body.password : undefined,
                 headers: ctx.headers ?? new Headers(),
               },
               twoFactorDeps,
@@ -409,7 +413,7 @@ export class AuthService {
         // the account.
         revokeSessionsOnPasswordReset: true,
         onPasswordReset: async ({ user }: { user: { id: string } }): Promise<void> => {
-          await this.sendAlert(user.id, { kind: "password_changed" });
+          await this.sendAlert(user.id, { kind: "password_changed", signedOut: true });
         },
         sendResetPassword: async ({ user, url }) => {
           const ctx = this.adminResetStorage.getStore();
@@ -643,21 +647,29 @@ export class AuthService {
    */
   private async recordStepUpFailure(sessionId: string): Promise<number> {
     const identifier: string = `two-factor-step-up:${sessionId}`;
-    const row = await this.prisma.verification.findFirst({ where: { identifier }, select: { id: true, value: true } });
-    const attempts: number = (row ? Number(row.value) || 0 : 0) + 1;
-    if (row) {
-      await this.prisma.verification.update({ where: { id: row.id }, data: { value: String(attempts) } });
-    } else {
-      await this.prisma.verification.create({
-        data: {
-          id: randomUUID(),
-          identifier,
-          value: String(attempts),
-          expiresAt: new Date(Date.now() + STEP_UP_FAILURE_TTL_MS),
-        },
-      });
-    }
-    return attempts;
+    // One row per wrong code, then count: codes sent in parallel can't overwrite each other's count.
+    await this.prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier,
+        value: "1",
+        expiresAt: new Date(Date.now() + STEP_UP_FAILURE_TTL_MS),
+      },
+    });
+    return this.prisma.verification.count({ where: { identifier, expiresAt: { gt: new Date() } } });
+  }
+
+  /** The user's password against their credential account; "none" when they have no password. */
+  private async checkPassword(userId: string, password: string | undefined): Promise<PasswordCheck> {
+    const account: { password: string | null } | null = await this.prisma.account.findFirst({
+      where: { userId, providerId: "credential" },
+      select: { password: true },
+    });
+    if (!account?.password) return "none";
+    if (!password) return "wrong";
+    const context = await this.auth.$context;
+    const matches: boolean = await context.password.verify({ hash: account.password, password });
+    return matches ? "ok" : "wrong";
   }
 
   /** See stampFor. Only a password sign-in needs to know whether the user has TOTP. */

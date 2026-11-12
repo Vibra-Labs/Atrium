@@ -6,10 +6,21 @@ import type { SecurityAlert } from "./security-alerts";
 /** Wrong codes a pending session may enter before it is signed out. */
 export const STEP_UP_ATTEMPTS: number = 5;
 
+/**
+ * Set on Atrium's own code checks (confirming disable, new recovery codes, an admin reset), so
+ * the after-hook treats them as confirmations, not sign-ins. Its value is a per-process secret,
+ * so a client sending the header can't hide a real recovery-code sign-in.
+ */
+export const INTERNAL_CHECK_HEADER: string = "x-atrium-internal-check";
+
+/** Whether the user's password matched, or they have no password to check. */
+export type PasswordCheck = "ok" | "wrong" | "none";
+
 /** The parts of Better Auth's hook context these hooks read. */
 export interface AuthHookContext {
   path: string;
   body?: unknown;
+  headers?: Headers;
   context: {
     /** The endpoint's result, or the APIError it threw. */
     returned?: unknown;
@@ -33,6 +44,10 @@ export interface TwoFactorHookDeps {
   sendAlert: (userId: string, alert: SecurityAlert) => Promise<void>;
   /** Checks the caller's own TOTP or recovery code against their session (a recovery code is used up). */
   verifyOwnCode: (code: string, headers: Headers) => Promise<boolean>;
+  /** Checks the user's password; "none" when they sign in without one. */
+  checkPassword: (userId: string, password: string | undefined) => Promise<PasswordCheck>;
+  /** The secret verifyOwnCode sends in INTERNAL_CHECK_HEADER. */
+  internalCheckToken: string;
   /** Recovery codes the user has left. */
   recoveryCodesLeft: (userId: string) => Promise<number>;
   /** Whether the user is an owner or admin of a workspace that requires 2FA. */
@@ -58,11 +73,13 @@ function failed(returned: unknown): boolean {
  * which the create hook stamps.
  */
 export async function twoFactorAfterHook(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
+  // Atrium confirming an action with the user's code: no sign-in happened, so no alert or stamp.
+  if (ctx.headers?.get(INTERNAL_CHECK_HEADER) === deps.internalCheckToken) return;
   await alertAfter(ctx, deps);
   await stepUpAfter(ctx, deps);
 }
 
-/** Alert emails for successful recovery-code use and for turning 2FA off. */
+/** Alert emails for recovery-code use, turning 2FA off and a signed-in password change. */
 async function alertAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
   if (failed(ctx.context.returned)) return;
   const userId: string | undefined = ctx.context.session?.user.id ?? ctx.context.newSession?.user?.id;
@@ -72,6 +89,10 @@ async function alertAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promis
   } else if (ctx.path === "/two-factor/disable") {
     deps.forgetUser(userId);
     await deps.sendAlert(userId, { kind: "two_factor_disabled", by: "you" });
+  } else if (ctx.path === "/change-password") {
+    // A reset by email link alerts from onPasswordReset; this is the signed-in change.
+    const body = (ctx.body ?? {}) as { revokeOtherSessions?: unknown };
+    await deps.sendAlert(userId, { kind: "password_changed", signedOut: body.revokeOtherSessions === true });
   }
 }
 
@@ -121,6 +142,8 @@ export interface BeforeHookInput {
   twoFactorEnabled: boolean;
   /** `code` from the request body: the user's TOTP or a recovery code. */
   code: string | undefined;
+  /** `password` from the request body, for turning 2FA off. */
+  password: string | undefined;
   headers: Headers;
 }
 
@@ -144,6 +167,14 @@ export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFacto
     throw new APIError("FORBIDDEN", {
       message: "Your workspace requires two-factor authentication, so it can't be turned off.",
     });
+  }
+
+  // Better Auth checks the password only after this hook, by which point a
+  // recovery code would already be used up. Check it first.
+  if (input.path === "/two-factor/disable" && input.twoFactorEnabled) {
+    if ((await deps.checkPassword(input.userId, input.password)) === "wrong") {
+      throw new APIError("BAD_REQUEST", { message: "Invalid password", code: "INVALID_PASSWORD" });
+    }
   }
 
   if (NEEDS_CODE.has(input.path) && input.twoFactorEnabled) {

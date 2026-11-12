@@ -7,7 +7,8 @@ import type { EmailRenderer } from "../mail/email-renderer";
 export type SecurityAlert =
   | { kind: "two_factor_disabled"; by: "you" | "admin" | "operator" }
   | { kind: "recovery_code_used"; remaining: number }
-  | { kind: "password_changed" };
+  /** signedOut: whether every other device was signed out with the change. */
+  | { kind: "password_changed"; signedOut: boolean };
 
 export interface SecurityAlertDeps {
   prisma: Pick<PrismaService, "user" | "member">;
@@ -45,7 +46,11 @@ function compose(alert: SecurityAlert, when: string): { subject: string; paragra
     case "password_changed":
       return {
         subject: "Your password was changed",
-        paragraphs: [`The password for your account was changed (${when}), and every device was signed out.`],
+        paragraphs: [
+          alert.signedOut
+            ? `The password for your account was changed (${when}), and every device was signed out.`
+            : `The password for your account was changed (${when}). If this wasn't you, reset your password now.`,
+        ],
       };
   }
 }

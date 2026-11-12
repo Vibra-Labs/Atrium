@@ -51,6 +51,12 @@ const mockPrisma = {
   systemSettings: {
     count: mock((): Promise<number> => Promise.resolve(0)),
   },
+  verification: {
+    create: mock((): Promise<unknown> => Promise.resolve({})),
+    count: mock((): Promise<number> => Promise.resolve(1)),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    update: mock((): Promise<unknown> => Promise.resolve({})),
+  },
 };
 
 const mockMail = { send: mock(() => Promise.resolve()) };
@@ -69,6 +75,27 @@ function makeService(): AuthService {
     {} as never,
   );
 }
+
+describe("AuthService step-up failures", () => {
+  type WithFailures = { recordStepUpFailure: (sessionId: string) => Promise<number> };
+
+  it("records every wrong code as its own row, so codes sent together can't overwrite each other", async () => {
+    mockPrisma.verification.create.mockClear();
+    mockPrisma.verification.update.mockClear();
+    mockPrisma.verification.count.mockImplementation(() => Promise.resolve(3));
+    const service = makeService() as unknown as WithFailures;
+
+    expect(await service.recordStepUpFailure("sess-1")).toBe(3);
+    const [args] = mockPrisma.verification.create.mock.calls[0] as unknown as [{ data: { identifier: string } }];
+    expect(args.data.identifier).toBe("two-factor-step-up:sess-1");
+    expect(mockPrisma.verification.update).not.toHaveBeenCalled();
+    const [countArgs] = mockPrisma.verification.count.mock.calls.at(-1) as unknown as [
+      { where: { identifier: string; expiresAt: { gt: Date } } },
+    ];
+    expect(countArgs.where.identifier).toBe("two-factor-step-up:sess-1");
+    expect(countArgs.where.expiresAt.gt).toBeInstanceOf(Date);
+  });
+});
 
 describe("AuthService", () => {
   let service: AuthService;

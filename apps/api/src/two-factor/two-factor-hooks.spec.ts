@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { APIError } from "better-auth/api";
-import { STEP_UP_ATTEMPTS, twoFactorAfterHook } from "./two-factor-hooks";
+import { STEP_UP_ATTEMPTS, twoFactorAfterHook, twoFactorBeforeHook } from "./two-factor-hooks";
 import type { AuthHookContext, TwoFactorHookDeps } from "./two-factor-hooks";
 
 interface Fakes {
@@ -24,6 +24,7 @@ function fakes(): Fakes {
     } as unknown as TwoFactorHookDeps["prisma"],
     forgetSession,
     forgetUser,
+    isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId === "staff",
     recordStepUpFailure: async (sessionId: string): Promise<number> => {
       const next: number = (failures.get(sessionId) ?? 0) + 1;
       failures.set(sessionId, next);
@@ -96,5 +97,24 @@ describe("twoFactorAfterHook", () => {
     const f = fakes();
     await twoFactorAfterHook(ctx("/two-factor/verify-totp", { token: "t2" }, null, true), f.deps);
     expect(f.forgetUser).toHaveBeenCalledWith("u1");
+  });
+});
+
+describe("twoFactorBeforeHook", () => {
+  it("refuses to turn off the only factor of staff in a requiring workspace", async () => {
+    const f = fakes();
+    await expect(twoFactorBeforeHook({ path: "/two-factor/disable", userId: "staff" }, f.deps)).rejects.toThrow(
+      APIError,
+    );
+  });
+
+  it("lets anyone else turn 2FA off", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ path: "/two-factor/disable", userId: "client" }, f.deps);
+  });
+
+  it("ignores other paths", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ path: "/two-factor/enable", userId: "staff" }, f.deps);
   });
 });

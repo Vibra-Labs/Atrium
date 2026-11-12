@@ -14,7 +14,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { organization, magicLink, twoFactor } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
@@ -44,7 +44,8 @@ import { isPrivilegedRole } from "../common/helpers/privileged-role";
 import { SendLimiter } from "./send-limiter";
 import { SessionCache } from "./session-cache";
 import { stampFor } from "../two-factor/second-factor";
-import { twoFactorAfterHook } from "../two-factor/two-factor-hooks";
+import { twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
+import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
 import type { AuthHookContext, TwoFactorHookDeps } from "../two-factor/two-factor-hooks";
 import type { SecondFactor } from "../two-factor/second-factor";
 
@@ -83,6 +84,9 @@ type SignInMagicLink = (input: {
   body: { email: string; name?: string; callbackURL: string; errorCallbackURL: string };
   headers: Headers;
 }) => Promise<unknown>;
+
+/** Better Auth paths whose before-hook needs the caller. */
+const TWO_FACTOR_BEFORE_PATHS: ReadonlySet<string> = new Set<string>(["/two-factor/disable"]);
 
 /** How long wrong step-up codes are remembered for a session. */
 const STEP_UP_FAILURE_TTL_MS: number = 24 * 60 * 60 * 1000;
@@ -259,6 +263,8 @@ export class AuthService {
       prisma: this.prisma,
       forgetSession: (token: string): void => this.sessionCache.delete(token),
       forgetUser: (userId: string): void => this.sessionCache.deleteUser(userId),
+      isStaffInRequiringWorkspace: (userId: string): Promise<boolean> =>
+        isStaffInRequiringWorkspace(this.prisma, userId),
       recordStepUpFailure: (sessionId: string): Promise<number> => this.recordStepUpFailure(sessionId),
     };
 
@@ -330,7 +336,13 @@ export class AuthService {
       },
       trustedOrigins: (request?: Request) => this.trustedOriginsFor(request),
       hooks: {
-        before: mcpOAuthEnabled ? createAuthMiddleware(mcpOAuthBeforeHook) : undefined,
+        before: createAuthMiddleware(async (ctx: AuthHookCtx) => {
+          if (TWO_FACTOR_BEFORE_PATHS.has(ctx.path)) {
+            const session = await getSessionFromCtx(ctx);
+            await twoFactorBeforeHook({ path: ctx.path, userId: session?.user.id ?? null }, twoFactorDeps);
+          }
+          return mcpOAuthEnabled ? mcpOAuthBeforeHook(ctx) : undefined;
+        }),
         after: createAuthMiddleware(async (ctx: AuthHookCtx): Promise<void> => {
           await twoFactorAfterHook(ctx as unknown as AuthHookContext, twoFactorDeps);
           if (mcpOAuthEnabled) await mcpOAuthAfterHook(ctx);

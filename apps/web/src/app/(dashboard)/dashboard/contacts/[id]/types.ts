@@ -33,5 +33,11 @@ export interface ContactDetail {
   hasLogin: boolean;
   userId: string | null;
   /** The client membership behind the portal login, if any. */
-  portal: { memberId: string; joinedAt: string; lastSeenAt: string | null } | null;
+  portal: {
+    memberId: string;
+    userId: string;
+    joinedAt: string;
+    lastSeenAt: string | null;
+    twoFactorEnabled: boolean;
+  } | null;
 }

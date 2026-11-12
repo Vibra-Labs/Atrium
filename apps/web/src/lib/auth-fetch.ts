@@ -9,6 +9,8 @@ export interface AuthResult {
   status: number;
   /** Better Auth's error code, when the body carried one. */
   code?: string;
+  /** The password was right, but the user must enter a second factor at /login/2fa. No session yet. */
+  twoFactorRedirect?: boolean;
 }
 
 const UNREACHABLE = "Could not reach the server. Check your connection and try again.";
@@ -59,7 +61,15 @@ export async function postAuth(path: string, body: unknown): Promise<AuthResult>
       : { ok: false, status: 0, message: NOT_SIGNED_IN };
   }
 
-  if (res.ok) return { ok: true, status: res.status };
+  if (res.ok) {
+    const data = (await res.json().catch((err: unknown) => {
+      console.error(err);
+      return {};
+    })) as { twoFactorRedirect?: boolean };
+    return data.twoFactorRedirect
+      ? { ok: true, status: res.status, twoFactorRedirect: true }
+      : { ok: true, status: res.status };
+  }
 
   const data = (await res.json().catch((err: unknown) => {
     console.error(err);

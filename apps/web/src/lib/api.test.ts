@@ -132,3 +132,47 @@ describe("apiFetch preview mode", () => {
     await expect(apiFetch("/updates", { method: "POST", body: "{}" })).resolves.toEqual({});
   });
 });
+
+describe("apiFetch second-factor refusals", () => {
+  const originalWindow: unknown = (globalThis as { window?: unknown }).window;
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  function fakeWindow(pathname: string): { location: { pathname: string; href: string } } {
+    const win = { location: { pathname, href: `http://localhost${pathname}` } };
+    (globalThis as { window?: unknown }).window = win;
+    return win;
+  }
+
+  it("sends a pending session to the code screen and throws", async () => {
+    const win = fakeWindow("/dashboard");
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ statusCode: 403, code: "SECOND_FACTOR_REQUIRED", message: "Confirm it's you" }), {
+        status: 403,
+      }),
+    ) as unknown as typeof fetch;
+    await expect(apiFetch("/projects")).rejects.toBeInstanceOf(ApiError);
+    expect(win.location.href).toBe("/login/2fa");
+  });
+
+  it("sends staff who owe enrollment to setup, even on a write", async () => {
+    const win = fakeWindow("/dashboard/projects");
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ statusCode: 403, code: "TWO_FACTOR_REQUIRED", message: "Set it up" }), {
+        status: 403,
+      }),
+    ) as unknown as typeof fetch;
+    await expect(apiFetch("/projects", { method: "POST", body: "{}" })).rejects.toBeInstanceOf(ApiError);
+    expect(win.location.href).toBe("/2fa/setup");
+  });
+
+  it("does not navigate when already on that page", async () => {
+    const win = fakeWindow("/2fa/setup");
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ statusCode: 403, code: "TWO_FACTOR_REQUIRED" }), { status: 403 }),
+    ) as unknown as typeof fetch;
+    await expect(apiFetch("/projects")).rejects.toBeInstanceOf(ApiError);
+    expect(win.location.href).toBe("http://localhost/2fa/setup");
+  });
+});

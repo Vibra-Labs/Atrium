@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { UserPlus, Copy, Check, Trash2, UsersRound, Sparkles, ExternalLink, KeyRound } from "lucide-react";
+import { UserPlus, Copy, Check, Trash2, UsersRound, Sparkles, ExternalLink, KeyRound, ShieldCheck } from "lucide-react";
+import { ResetTwoFactorButton } from "@/components/two-factor/reset-two-factor-button";
 import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
 import { useConfirm } from "@/components/confirm-modal";
@@ -28,7 +29,7 @@ interface MemberRecord {
   userId: string;
   role: string;
   hourlyRateCents?: number | null;
-  user: { id: string; name: string; email: string };
+  user: { id: string; name: string; email: string; twoFactorEnabled?: boolean };
   labels?: { label: LabelRecord }[];
 }
 
@@ -406,6 +407,9 @@ export default function TeamPage(): React.ReactElement {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="text-sm font-medium">{member.user.name}</p>
                       {isSelf && <span className="text-xs text-[var(--muted-foreground)]">(you)</span>}
+                      {member.user.twoFactorEnabled && (
+                        <ShieldCheck size={14} className="text-green-600" aria-label="Two-factor on" />
+                      )}
                       {(member.labels ?? []).map((l) => (
                         <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
                       ))}
@@ -466,6 +470,9 @@ export default function TeamPage(): React.ReactElement {
                       >
                         <KeyRound size={14} aria-hidden />
                       </button>
+                    )}
+                    {canResetPassword && member.user.twoFactorEnabled && (
+                      <ResetTwoFactorButton userId={member.userId} name={member.user.name} onDone={() => void loadMembers()} />
                     )}
                     {canRemove && (
                       <button

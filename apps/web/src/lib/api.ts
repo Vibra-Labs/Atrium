@@ -1,4 +1,6 @@
 import { getStoredPreviewClientId } from "./preview-mode";
+import { redirectForGateCode } from "./two-factor-redirect";
+import type { GatePage } from "./two-factor-redirect";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -63,10 +65,18 @@ export async function apiFetch<T = unknown>(
   // If a mutating request is rejected with a CSRF error, the response will
   // have set the csrf-token cookie. Re-read it and retry once.
   const method = (options.method || "GET").toUpperCase();
-  if (res.status === 403 && MUTATING_METHODS.has(method)) {
+  if (res.status === 403) {
     const body = await res.json().catch(() => ({}));
     const message: string = (body as Record<string, unknown>).message as string || "";
-    if (message.toLowerCase().includes("csrf")) {
+    // The session has not passed its second factor, or staff owe 2FA setup.
+    const gatePage: GatePage | null = redirectForGateCode((body as { code?: string }).code);
+    if (gatePage) {
+      if (typeof window !== "undefined" && window.location.pathname !== gatePage) {
+        window.location.href = gatePage;
+      }
+      throw new ApiError(message || "Two-factor authentication required", res.status);
+    }
+    if (MUTATING_METHODS.has(method) && message.toLowerCase().includes("csrf")) {
       res = await doFetch(path, options);
     } else {
       throw new ApiError(message || `API error: ${res.status}`, res.status);

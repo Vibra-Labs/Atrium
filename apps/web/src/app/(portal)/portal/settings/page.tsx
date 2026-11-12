@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
 import { useToast } from "@/components/toast";
+import { SecuritySection } from "@/components/two-factor/security-section";
 
 /** Stored on the client's contact in the workspace; null when not set. */
 interface ClientProfile {
@@ -314,6 +315,9 @@ export default function PortalSettingsPage() {
           </form>
         )}
       </div>
+
+      {/* Optional for clients; staff can be required to use it by their workspace. */}
+      <SecuritySection />
 
       {/* Delete Account Section */}
       <div className="max-w-md border-t border-red-200 dark:border-red-900 pt-8">

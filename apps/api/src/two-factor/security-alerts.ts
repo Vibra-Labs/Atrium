@@ -5,10 +5,14 @@ import type { MailService } from "../mail/mail.service";
 import type { EmailRenderer } from "../mail/email-renderer";
 
 export type SecurityAlert =
-  | { kind: "two_factor_disabled"; by: "you" | "admin" | "operator" }
+  | { kind: "two_factor_disabled"; by: "you" | "admin" | "operator"; passkeys: boolean }
   | { kind: "recovery_code_used"; remaining: number }
   /** signedOut: whether every other device was signed out with the change. */
-  | { kind: "password_changed"; signedOut: boolean };
+  | { kind: "password_changed"; signedOut: boolean }
+  | { kind: "passkey_added" }
+  | { kind: "passkey_removed" }
+  /** An operator signed the user out without removing any factor. */
+  | { kind: "signed_out_everywhere" };
 
 export interface SecurityAlertDeps {
   prisma: Pick<PrismaService, "user" | "member">;
@@ -22,8 +26,8 @@ const LOW_CODES: number = 3;
 
 const DISABLED_BY: Record<"you" | "admin" | "operator", string> = {
   you: "You turned off two-factor authentication for your account.",
-  admin: "A workspace owner or admin turned off two-factor authentication for your account and signed you out everywhere.",
-  operator: "Support turned off two-factor authentication for your account and signed you out everywhere.",
+  admin: "A workspace owner or admin turned off {what} for your account and signed you out everywhere.",
+  operator: "Support turned off {what} for your account and signed you out everywhere.",
 };
 
 function compose(alert: SecurityAlert, when: string): { subject: string; paragraphs: string[] } {
@@ -31,7 +35,13 @@ function compose(alert: SecurityAlert, when: string): { subject: string; paragra
     case "two_factor_disabled":
       return {
         subject: "Two-factor authentication was turned off",
-        paragraphs: [`${DISABLED_BY[alert.by]} (${when})`, "You can turn it back on in Settings → Security."],
+        paragraphs: [
+          `${DISABLED_BY[alert.by].replace(
+            "{what}",
+            alert.passkeys ? "two-factor authentication and passkeys" : "two-factor authentication",
+          )} (${when})`,
+          "You can turn it back on in Settings → Security.",
+        ],
       };
     case "recovery_code_used": {
       const left: string = `You have ${alert.remaining} recovery code${alert.remaining === 1 ? "" : "s"} left.`;
@@ -43,6 +53,21 @@ function compose(alert: SecurityAlert, when: string): { subject: string; paragra
         ],
       };
     }
+    case "passkey_added":
+      return {
+        subject: "A passkey was added to your account",
+        paragraphs: [`A new passkey was added to your account (${when}). It can be used to sign in.`],
+      };
+    case "signed_out_everywhere":
+      return {
+        subject: "You were signed out of every device",
+        paragraphs: [`An administrator signed your account out of every device (${when}). Sign in again to carry on.`],
+      };
+    case "passkey_removed":
+      return {
+        subject: "A passkey was removed from your account",
+        paragraphs: [`A passkey was removed from your account (${when}).`],
+      };
     case "password_changed":
       return {
         subject: "Your password was changed",

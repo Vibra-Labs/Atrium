@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, beforeEach } from "bun:test";
+import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
 import "../common/testing/mock-email";
 import { BadRequestException, ForbiddenException, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { APIError } from "better-auth/api";
@@ -11,10 +11,11 @@ import type { BillingService } from "../billing/billing.service";
 // Mutable so individual tests can flip the deploy between open and locked down.
 let allowSignups: string | undefined;
 let resendApiKey: string | undefined;
+let webUrl: string = "http://localhost:3000";
 
 const mockConfig = {
   get: mock((key: string, fallback?: string) => {
-    if (key === "WEB_URL") return "http://localhost:3000";
+    if (key === "WEB_URL") return webUrl;
     if (key === "API_URL") return "http://localhost:3001";
     if (key === "ALLOW_SIGNUPS") return allowSignups;
     if (key === "RESEND_API_KEY") return resendApiKey;
@@ -990,5 +991,35 @@ describe("AuthService session second-factor stamp", () => {
   it("leaves a magic-link session unmarked", async () => {
     const result = await createBefore()({ userId: "u1" }, { path: "/magic-link/verify", context: { session: null } });
     expect(result.data.secondFactor).toBeNull();
+  });
+});
+
+describe("AuthService passkey wiring", () => {
+  interface PasskeyPlugin {
+    id: string;
+    options?: Record<string, unknown>;
+  }
+  function passkeyPlugin(): PasskeyPlugin | undefined {
+    const plugins = (makeService().auth as unknown as { options: { plugins: PasskeyPlugin[] } }).options.plugins;
+    return plugins.find((p) => p.id === "passkey");
+  }
+
+  afterEach(() => {
+    webUrl = "http://localhost:3000";
+  });
+
+  it("pins passkeys to the web address and requires user verification", () => {
+    webUrl = "https://app.example.com";
+    expect(passkeyPlugin()?.options).toEqual({
+      rpID: "app.example.com",
+      rpName: "Atrium",
+      origin: "https://app.example.com",
+      authenticatorSelection: { residentKey: "required", userVerification: "required" },
+    });
+  });
+
+  it("leaves passkeys out on a plain-http install", () => {
+    webUrl = "http://portal.lan";
+    expect(passkeyPlugin()).toBeUndefined();
   });
 });

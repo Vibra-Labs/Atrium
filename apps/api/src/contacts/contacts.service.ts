@@ -238,8 +238,9 @@ export type ContactDetail = ContactResponse<DetailedContact> & {
     userId: string;
     joinedAt: Date;
     lastSeenAt: Date | null;
-    /** So an owner or admin can offer "Turn off 2FA" for a locked-out client. */
+    /** Any second factor (authenticator app or passkey), so an owner or admin can offer "Turn off 2FA". */
     twoFactorEnabled: boolean;
+    passkeyCount: number;
   } | null;
   labels: LabelChip[];
   /** `endedAt` is set once the contact is off the project; invoices paid until then still count. */
@@ -607,7 +608,12 @@ export class ContactsService {
     const member = contact.userId
       ? await this.prisma.member.findFirst({
           where: { organizationId: orgId, userId: contact.userId, role: "member" },
-          select: { id: true, createdAt: true, lastSeenAt: true, user: { select: { twoFactorEnabled: true } } },
+          select: {
+            id: true,
+            createdAt: true,
+            lastSeenAt: true,
+            user: { select: { twoFactorEnabled: true, _count: { select: { passkeys: true } } } },
+          },
         })
       : null;
 
@@ -622,7 +628,8 @@ export class ContactsService {
               userId: contact.userId,
               joinedAt: member.createdAt,
               lastSeenAt: member.lastSeenAt,
-              twoFactorEnabled: member.user.twoFactorEnabled,
+              twoFactorEnabled: member.user.twoFactorEnabled || member.user._count.passkeys > 0,
+              passkeyCount: member.user._count.passkeys,
             }
           : null,
       labels: labels.map((l) => ({

@@ -8,6 +8,10 @@ function fakePrisma(hadTwoFactor: boolean) {
     user: { update: mock(() => Promise.resolve({})) },
     session: { deleteMany: mock(() => Promise.resolve({ count: 2 })) },
     verification: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
+    passkey: {
+      deleteMany: mock(() => Promise.resolve({ count: 2 })),
+      count: mock(() => Promise.resolve(3)),
+    },
   };
   const prisma = {
     $transaction: mock(async (fn: (t: typeof tx) => Promise<unknown>): Promise<unknown> => fn(tx)),
@@ -18,8 +22,9 @@ function fakePrisma(hadTwoFactor: boolean) {
 describe("resetSecondFactors", () => {
   it("removes TOTP, recovery codes, sessions and trusted devices in one transaction", async () => {
     const { prisma, tx, transaction } = fakePrisma(true);
-    const result = await resetSecondFactors(prisma, "u1");
-    expect(result).toEqual({ hadTwoFactor: true });
+    const result = await resetSecondFactors(prisma, "u1", { passkeys: false });
+    expect(result).toEqual({ hadTwoFactor: true, passkeysRemoved: 0, passkeysLeft: 3 });
+    expect(tx.passkey.deleteMany).not.toHaveBeenCalled();
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.twoFactor.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1" } });
     expect(tx.user.update).toHaveBeenCalledWith({ where: { id: "u1" }, data: { twoFactorEnabled: false } });
@@ -31,6 +36,19 @@ describe("resetSecondFactors", () => {
 
   it("reports when there was no 2FA to remove", async () => {
     const { prisma } = fakePrisma(false);
-    expect(await resetSecondFactors(prisma, "u1")).toEqual({ hadTwoFactor: false });
+    expect(await resetSecondFactors(prisma, "u1", { passkeys: false })).toEqual({
+      hadTwoFactor: false,
+      passkeysRemoved: 0,
+      passkeysLeft: 3,
+    });
+  });
+  it("removes passkeys too when asked", async () => {
+    const { prisma, tx } = fakePrisma(true);
+    expect(await resetSecondFactors(prisma, "u1", { passkeys: true })).toEqual({
+      hadTwoFactor: true,
+      passkeysRemoved: 2,
+      passkeysLeft: 0,
+    });
+    expect(tx.passkey.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1" } });
   });
 });

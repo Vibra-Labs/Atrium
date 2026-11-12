@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { gateDecision, hasSecondFactor, stampFor } from "./second-factor";
+import { gateDecision, hasSecondFactor, passkeyProofIsRecent, stampFor } from "./second-factor";
 
 describe("stampFor", () => {
   it("does not carry a factor into an unlisted path", () => {
@@ -108,5 +108,68 @@ describe("hasSecondFactor", () => {
     expect(hasSecondFactor({ twoFactorEnabled: true })).toBe(true);
     expect(hasSecondFactor({ twoFactorEnabled: false })).toBe(false);
     expect(hasSecondFactor({})).toBe(false);
+  });
+});
+
+describe("passkeys in the rules", () => {
+  it("stamps a passkey sign-in as passkey", () => {
+    expect(stampFor({ path: "/passkey/verify-authentication", currentSecondFactor: null, userHasTotp: true })).toBe(
+      "passkey",
+    );
+  });
+
+  it("never stamps passkey registration", () => {
+    expect(stampFor({ path: "/passkey/verify-registration", currentSecondFactor: "totp", userHasTotp: true })).toBeNull();
+  });
+
+  const pending = { hasFactor: true, secondFactor: null, enrollmentOwed: false };
+  const owed = { hasFactor: false, secondFactor: null, enrollmentOwed: true };
+  const verified = { hasFactor: true, secondFactor: "totp", enrollmentOwed: false };
+
+  it("lets a pending session sign in with a passkey", () => {
+    expect(gateDecision({ ...pending, route: "auth:/passkey/generate-authenticate-options" })).toBeNull();
+    expect(gateDecision({ ...pending, route: "auth:/passkey/verify-authentication" })).toBeNull();
+  });
+
+  it("never lets a pending session register, list, rename or remove passkeys", () => {
+    for (const route of [
+      "auth:/passkey/generate-register-options",
+      "auth:/passkey/verify-registration",
+      "auth:/passkey/list-user-passkeys",
+      "auth:/passkey/update-passkey",
+      "auth:/passkey/delete-passkey",
+    ]) {
+      expect(gateDecision({ ...pending, route })).toBe("SECOND_FACTOR_REQUIRED");
+    }
+  });
+
+  it("lets staff who owe setup enroll with a passkey", () => {
+    expect(gateDecision({ ...owed, route: "auth:/passkey/generate-register-options" })).toBeNull();
+    expect(gateDecision({ ...owed, route: "auth:/passkey/verify-registration" })).toBeNull();
+    expect(gateDecision({ ...owed, route: "auth:/passkey/delete-passkey" })).toBe("TWO_FACTOR_REQUIRED");
+  });
+
+  it("lets a verified session manage passkeys", () => {
+    expect(gateDecision({ ...verified, route: "auth:/passkey/delete-passkey" })).toBeNull();
+  });
+
+  it("counts a passkey as a second factor", () => {
+    expect(hasSecondFactor({ twoFactorEnabled: false, hasPasskey: true })).toBe(true);
+    expect(hasSecondFactor({ twoFactorEnabled: false, hasPasskey: false })).toBe(false);
+  });
+
+  it("treats a passkey ceremony from the last 5 minutes as fresh proof", () => {
+    const now: number = Date.parse("2026-11-11T12:00:00Z");
+    const at = (msAgo: number): Date => new Date(now - msAgo);
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: at(4 * 60_000 + 59_000) }, now)).toBe(true);
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: at(5 * 60_000 + 1_000) }, now)).toBe(false);
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: null }, now)).toBe(false);
+  });
+
+  it("does not count a session that merely carried a passkey stamp over", () => {
+    // /two-factor/disable or /change-password mint a brand-new session that keeps
+    // secondFactor "passkey"; only the ceremony time counts.
+    const now: number = Date.parse("2026-11-11T12:00:00Z");
+    expect(passkeyProofIsRecent({ passkeyVerifiedAt: new Date(now - 3 * 60 * 60_000) }, now)).toBe(false);
   });
 });

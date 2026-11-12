@@ -22,7 +22,7 @@ function deps(sendImpl?: () => Promise<unknown>) {
 describe("sendSecurityAlert", () => {
   it("tells the user 2FA was turned off, and by whom", async () => {
     const { d, send } = deps();
-    await sendSecurityAlert(d, "u1", { kind: "two_factor_disabled", by: "admin" });
+    await sendSecurityAlert(d, "u1", { kind: "two_factor_disabled", by: "admin", passkeys: false });
     const [to, subject, html, org] = send.mock.calls[0] as unknown as [string, string, string, string];
     expect(to).toBe("ada@example.com");
     expect(subject).toBe("Two-factor authentication was turned off");
@@ -55,9 +55,39 @@ describe("sendSecurityAlert", () => {
     expect(html).toContain("If this wasn't you");
   });
 
+  it("tells the user an administrator signed them out everywhere", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "signed_out_everywhere" });
+    const [, subject, html] = send.mock.calls[0] as unknown as [string, string, string];
+    expect(subject).toBe("You were signed out of every device");
+    expect(html).toContain("An administrator signed your account out");
+  });
+
   it("logs a failed send instead of throwing", async () => {
     const { d, error } = deps(() => Promise.reject(new Error("smtp down")));
     await sendSecurityAlert(d, "u1", { kind: "password_changed", signedOut: true });
     expect(error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sendSecurityAlert for passkeys", () => {
+  it("tells the user a passkey was added", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "passkey_added" });
+    expect((send.mock.calls[0] as unknown as [string, string])[1]).toBe("A passkey was added to your account");
+  });
+
+  it("tells the user a passkey was removed", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "passkey_removed" });
+    expect((send.mock.calls[0] as unknown as [string, string])[1]).toBe("A passkey was removed from your account");
+  });
+});
+
+describe("sendSecurityAlert reset wording", () => {
+  it("says passkeys were removed too", async () => {
+    const { d, send } = deps();
+    await sendSecurityAlert(d, "u1", { kind: "two_factor_disabled", by: "admin", passkeys: true });
+    expect((send.mock.calls[0] as unknown as [string, string, string])[2]).toContain("and passkeys");
   });
 });

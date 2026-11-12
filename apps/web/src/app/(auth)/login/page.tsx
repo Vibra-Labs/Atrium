@@ -27,6 +27,7 @@ export default async function LoginPage() {
         orgName={branding?.orgName}
         logoSrc={branding?.logoSrc}
         hideLogo={branding?.hideLogo}
+        onCustomDomain={Boolean(customHost)}
       />
     </div>
   );

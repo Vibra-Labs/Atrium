@@ -436,6 +436,7 @@ describe("SessionMiddleware cookie session", () => {
       systemSettings: {
         findUnique: mock((): Promise<{ requireTwoFactor: boolean } | null> => Promise.resolve(null)),
       },
+      passkey: { findFirst: mock((): Promise<{ id: string } | null> => Promise.resolve(null)) },
     };
     const tracker = lastSeen();
     const mw = new SessionMiddleware(
@@ -547,6 +548,28 @@ describe("SessionMiddleware cookie session", () => {
     const apiReq = req({}, COOKIE) as Request & Record<string, any>;
     await mw.use(apiReq, {} as Response, noop());
     expect(apiReq.staffInRequiringWorkspace).toBeUndefined();
+  });
+
+  it("marks a user who has a passkey, and looks it up only on a cache miss", async () => {
+    const { mw, prisma } = cookieBuild(undefined, { secondFactor: "passkey" });
+    prisma.passkey.findFirst.mockImplementation(() => Promise.resolve({ id: "pk1" }));
+    const first = req({}, COOKIE) as Request & Record<string, any>;
+    await mw.use(first, {} as Response, noop());
+    expect(first.user.hasPasskey).toBe(true);
+    expect(prisma.passkey.findFirst).toHaveBeenCalledWith({ where: { userId: "u1" }, select: { id: true } });
+    // A passkey user whose session passed a factor is cached; the second request is a hit.
+    const second = req({}, COOKIE) as Request & Record<string, any>;
+    await mw.use(second, {} as Response, noop());
+    expect(second.user.hasPasskey).toBe(true);
+    expect(prisma.passkey.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("never caches a passkey-only user's unverified session", async () => {
+    const { mw, getSession, prisma } = cookieBuild(undefined, { secondFactor: null });
+    prisma.passkey.findFirst.mockImplementation(() => Promise.resolve({ id: "pk1" }));
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    await mw.use(req({}, COOKIE), {} as Response, noop());
+    expect(getSession).toHaveBeenCalledTimes(2);
   });
 
   it("resolves the caller's role on the staff-only organization routes the auth proxy gates", async () => {

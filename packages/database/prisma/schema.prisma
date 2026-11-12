@@ -37,6 +37,7 @@ model User {
   mcpGrants          McpGrant[]
   mcpPendingGrants   McpPendingGrant[]
   twoFactors         TwoFactor[]
+  passkeys           Passkey[]
 
   @@map("user")
 }
@@ -55,6 +56,8 @@ model Session {
   activeOrganizationId String?
   /// "totp" | "backup_code" | "trusted_device" | "passkey", or null when no second factor was passed.
   secondFactor         String?
+  /// When this session's passkey ceremony happened (passkey sign-in only). Proof for "confirm with your passkey".
+  passkeyVerifiedAt    DateTime?
 
   oauthRefreshTokens OauthRefreshToken[]
   oauthAccessTokens  OauthAccessToken[]
@@ -108,6 +111,25 @@ model TwoFactor {
 
   @@index([secret])
   @@map("two_factor")
+}
+
+/// WebAuthn credentials (@better-auth/passkey). Written by the plugin through the raw adapter, so database hooks never fire for these rows.
+model Passkey {
+  id           String    @id
+  name         String?
+  publicKey    String
+  userId       String
+  credentialID String    @unique
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime?
+  aaguid       String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("passkey")
 }
 
 model Organization {

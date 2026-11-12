@@ -14,6 +14,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { organization, magicLink, twoFactor } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
+import { passkey } from "@better-auth/passkey";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -42,14 +43,21 @@ import { cookieUrlWarning, secureCookies } from "../common/helpers/secure-cookie
 import { publicApiUrl } from "../common/helpers/public-api-url";
 import { hashOAuthToken, mcpOAuthUnavailableReason, mcpResourceUrl } from "../common/helpers/mcp-oauth";
 import { isPrivilegedRole } from "../common/helpers/privileged-role";
+import { passkeyRelyingParty, passkeyUnavailableReason } from "../common/helpers/passkeys";
 import { SendLimiter } from "./send-limiter";
 import { SessionCache } from "./session-cache";
 import { stampFor } from "../two-factor/second-factor";
 import { TWO_FACTOR_BEFORE_PATHS, twoFactorAfterHook, twoFactorBeforeHook } from "../two-factor/two-factor-hooks";
 import { INTERNAL_CHECK_TOKEN, verifyOwnCode } from "../two-factor/verify-own-code";
 import type { CodeApi } from "../two-factor/verify-own-code";
-import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
+import { isStaffAnywhere, isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
+import { hookUserId, PASSKEY_BEFORE_PATHS, passkeyAfterHook, passkeyBeforeHook } from "../two-factor/passkey-hooks";
+import type { PasskeyAfterInput, PasskeyHookDeps } from "../two-factor/passkey-hooks";
+import { claimTotpDisable, deletePasskeyGuarded, releaseTotpDisable } from "../two-factor/passkey-delete";
+import type { PasskeyDeleteOutcome } from "../two-factor/passkey-delete";
 import { countRecoveryCodes } from "../two-factor/recovery-codes";
+import { secondFactorsOf } from "../two-factor/second-factors-of";
+import type { SecondFactors } from "../two-factor/second-factors-of";
 import { sendSecurityAlert } from "../two-factor/security-alerts";
 import type { SecurityAlert } from "../two-factor/security-alerts";
 import { EmailRenderer } from "../mail/email-renderer";
@@ -149,6 +157,11 @@ export class AuthService {
     if (mcpOAuthOff && this.config.get("MCP_OAUTH_ENABLED") !== "false") {
       this.logger.warn(`MCP sign-in (OAuth) is off: ${mcpOAuthOff}. MCP clients can still connect with an API key.`);
     }
+
+    // Passkeys need a secure web address; off (with a warning) otherwise.
+    const passkeysOff: string | null = passkeyUnavailableReason(this.config);
+    if (passkeysOff) this.logger.warn(`Passkeys are off: ${passkeysOff}.`);
+    const relyingParty = passkeysOff ? null : passkeyRelyingParty(this.config);
 
     // Shared with the CSRF guard so both cookies agree. See secure-cookies.ts.
     const useSecure: boolean = secureCookies();
@@ -271,6 +284,16 @@ export class AuthService {
       forgetUser: (userId: string): void => this.sessionCache.deleteUser(userId),
       isStaffInRequiringWorkspace: (userId: string): Promise<boolean> =>
         isStaffInRequiringWorkspace(this.prisma, userId),
+      factorsOf: (userId: string): Promise<SecondFactors> => secondFactorsOf(this.prisma, userId),
+      claimTotpDisable: (userId: string): Promise<"ok" | "last_factor"> => claimTotpDisable(this.prisma, userId),
+      releaseTotpDisable: async (userId: string): Promise<void> => {
+        try {
+          await releaseTotpDisable(this.prisma, userId);
+        } catch (err) {
+          // It expires on its own within a minute.
+          this.logger.error(`Could not clear the 2FA turn-off mark: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
       sendAlert: (userId: string, alert: SecurityAlert): Promise<void> => this.sendAlert(userId, alert),
       verifyOwnCode: (code: string, headers: Headers): Promise<boolean> =>
         verifyOwnCode(this.auth.api as unknown as CodeApi, code, headers),
@@ -289,6 +312,20 @@ export class AuthService {
       recordStepUpFailure: (sessionId: string): Promise<number> => this.recordStepUpFailure(sessionId),
     };
 
+    const passkeyDeps: PasskeyHookDeps = {
+      ...twoFactorDeps,
+      isStaffAnywhere: (userId: string): Promise<boolean> => isStaffAnywhere(this.prisma, userId),
+      deletePasskey: (userId: string, passkeyId: string): Promise<PasskeyDeleteOutcome> =>
+        deletePasskeyGuarded(this.prisma, userId, passkeyId, (id: string) => isStaffInRequiringWorkspace(this.prisma, id)),
+      passkeyOwner: async (credentialId: string): Promise<string | null> => {
+        const passkey: { userId: string } | null = await this.prisma.passkey.findFirst({
+          where: { credentialID: credentialId },
+          select: { userId: true },
+        });
+        return passkey?.userId ?? null;
+      },
+    };
+
     // Cast: better-auth >=1.6 makes Auth<Options> invariant, so the concrete
     // instance no longer assigns to the default-typed field.
     this.auth = betterAuth({
@@ -304,6 +341,7 @@ export class AuthService {
         // No default, so a replacement session can carry its predecessor's.
         additionalFields: {
           secondFactor: { type: "string", required: false, input: false },
+          passkeyVerifiedAt: { type: "date", required: false, input: false },
         },
       },
       rateLimit: {
@@ -374,10 +412,24 @@ export class AuthService {
               twoFactorDeps,
             );
           }
+          if (PASSKEY_BEFORE_PATHS.has(ctx.path)) {
+            const session = await getSessionFromCtx(ctx);
+            // Returns the response itself for delete-passkey (see passkeyBeforeHook).
+            const answered = await passkeyBeforeHook(
+              {
+                path: ctx.path,
+                userId: session?.user.id ?? null,
+                body: (ctx.body ?? {}) as Record<string, unknown>,
+              },
+              passkeyDeps,
+            );
+            if (answered) return answered;
+          }
           return mcpOAuthEnabled ? mcpOAuthBeforeHook(ctx) : undefined;
         }),
         after: createAuthMiddleware(async (ctx: AuthHookCtx): Promise<void> => {
           await twoFactorAfterHook(ctx as unknown as AuthHookContext, twoFactorDeps);
+          if (ctx.path.startsWith("/passkey/")) await passkeyAfterHook(await this.passkeyAfterInput(ctx), passkeyDeps);
           if (mcpOAuthEnabled) await mcpOAuthAfterHook(ctx);
         }),
       },
@@ -575,6 +627,19 @@ export class AuthService {
           allowPasswordless: true,
           backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: "encrypted" },
         }),
+        // Pinned to the web address: the plugin's defaults would use the API
+        // host and trust custom portal domains. User verification is required
+        // so a passkey counts as two factors (device plus PIN or biometric).
+        ...(relyingParty
+          ? [
+              passkey({
+                rpID: relyingParty.rpID,
+                rpName: "Atrium",
+                origin: relyingParty.origin,
+                authenticatorSelection: { residentKey: "required", userVerification: "required" },
+              }),
+            ]
+          : []),
         magicLink({
           expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
           sendMagicLink: ({ email, url }) => this.deliverMagicLink(email, url),
@@ -637,6 +702,36 @@ export class AuthService {
       });
       await seedDefaultPipelines(tx, organizationId);
     });
+  }
+
+  /** What passkeyAfterHook needs from Better Auth's after-hook context. */
+  private async passkeyAfterInput(ctx: AuthHookCtx): Promise<PasskeyAfterInput> {
+    const context = ctx.context as unknown as {
+      returned?: unknown;
+      session?: { session: { token: string; secondFactor?: string | null }; user: { id: string } } | null;
+      newSession?: { session: { token: string }; user: { id: string } } | null;
+      authCookies: { sessionToken: { name: string } };
+      secret: string;
+    };
+    // The cookie the browser sent: for a passkey sign-in, the session it is replacing.
+    const signed = ctx as unknown as { getSignedCookie: (name: string, secret: string) => Promise<string | null | false> };
+    let previousToken: string | null = null;
+    try {
+      previousToken = (await signed.getSignedCookie(context.authCookies.sessionToken.name, context.secret)) || null;
+    } catch (err) {
+      this.logger.warn(`Could not read the session cookie: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const current = context.session ?? null;
+    return {
+      path: ctx.path,
+      ok: !(context.returned instanceof Error),
+      userId: hookUserId(current?.user.id ?? null, context.newSession?.user.id ?? null),
+      currentSession: current
+        ? { token: current.session.token, secondFactor: current.session.secondFactor ?? null }
+        : null,
+      previousToken,
+      newSessionToken: context.newSession?.session.token ?? null,
+    };
   }
 
   /** Emails a user about a change to their account security. Never throws. */

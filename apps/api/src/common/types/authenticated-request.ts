@@ -6,6 +6,8 @@ export interface AuthUser {
   email: string;
   emailVerified: boolean;
   twoFactorEnabled?: boolean | null;
+  /** Set by SessionMiddleware: the user has at least one passkey. */
+  hasPasskey?: boolean;
   image: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -23,6 +25,8 @@ export interface AuthSession {
   activeOrganizationId: string | null;
   /** Which second factor this session passed: "totp", "backup_code", "trusted_device", or null. */
   secondFactor?: string | null;
+  /** When this session's passkey ceremony happened, if it came from a passkey sign-in. */
+  passkeyVerifiedAt?: Date | string | null;
 }
 
 export interface OrgMember {

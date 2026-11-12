@@ -8,7 +8,7 @@ export function mcpResourceUrl(config: ConfigLike): string {
   return `${publicApiUrl(config)}/api/mcp`;
 }
 
-function isLoopbackHost(hostname: string): boolean {
+export function isLoopbackHost(hostname: string): boolean {
   return hostname === "localhost" || hostname === "[::1]" || /^127(\.\d{1,3}){3}$/.test(hostname);
 }
 

@@ -751,12 +751,22 @@ describe("ContactsService", () => {
         Promise.resolve(row({ userId: "u-1", projects: [], labels: [] })),
       );
       prisma.member.findFirst.mockImplementation(() =>
-        Promise.resolve({ id: "m-1", createdAt: joinedAt, lastSeenAt: null, user: { twoFactorEnabled: true } }),
+        Promise.resolve({
+          id: "m-1",
+          createdAt: joinedAt,
+          lastSeenAt: null,
+          user: { twoFactorEnabled: false, _count: { passkeys: 2 } },
+        }),
       );
       const res = await service.findOne("c", "org-1");
       expect(prisma.member.findFirst).toHaveBeenCalledWith({
         where: { organizationId: "org-1", userId: "u-1", role: "member" },
-        select: { id: true, createdAt: true, lastSeenAt: true, user: { select: { twoFactorEnabled: true } } },
+        select: {
+          id: true,
+          createdAt: true,
+          lastSeenAt: true,
+          user: { select: { twoFactorEnabled: true, _count: { select: { passkeys: true } } } },
+        },
       });
       expect(res.portal).toEqual({
         memberId: "m-1",
@@ -764,6 +774,7 @@ describe("ContactsService", () => {
         joinedAt,
         lastSeenAt: null,
         twoFactorEnabled: true,
+        passkeyCount: 2,
       });
     });
 

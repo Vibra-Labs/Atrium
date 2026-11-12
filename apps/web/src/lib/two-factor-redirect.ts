@@ -21,3 +21,16 @@ export function pageForStatus(status: GateStatus | null): GatePage | null {
   if (status.enrollmentRequired) return "/2fa/setup";
   return null;
 }
+
+/**
+ * Where to send someone who just signed in or finished setup. Picking their workspace
+ * can fail on a network blip; the dashboard then sends them on, rather than leaving a spinner.
+ */
+export async function destinationAfterSignIn(pick: () => Promise<string>): Promise<string> {
+  try {
+    return await pick();
+  } catch (err) {
+    console.error("Could not pick a workspace after sign-in", err);
+    return "/dashboard";
+  }
+}

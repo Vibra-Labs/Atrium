@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { setActiveOrgAndRedirect } from "@/lib/api";
+import { destinationAfterSignIn } from "@/lib/two-factor-redirect";
 import { track } from "@/lib/track";
 import { oauthResumeUrl } from "@/lib/oauth-resume";
 import { postAuth } from "@/lib/auth-fetch";
+import { signInWithPasskey, startPasskeyAutofill } from "@/lib/passkeys";
 import { LAST_EMAIL_KEY, magicLinkErrorMessage, safeNextPath } from "@/lib/magic-link";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -15,9 +17,11 @@ interface LoginFormProps {
   orgName?: string;
   logoSrc?: string | null;
   hideLogo?: boolean;
+  /** An agency's custom portal domain: passkeys belong to the main address only, so they're hidden here. */
+  onCustomDomain?: boolean;
 }
 
-export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
+export function LoginForm({ orgName, logoSrc, hideLogo, onCustomDomain }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -28,13 +32,61 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
   const [next, setNext] = useState<string | null>(null);
   // Hidden until the server confirms it can send email, so it never offers a link that can't arrive.
   const [linksAvailable, setLinksAvailable] = useState(false);
+  const [passkeysAvailable, setPasskeysAvailable] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  // Bumped to start passkey autofill again after the "Use a passkey" button replaced it.
+  const [autofillRun, setAutofillRun] = useState<number>(0);
 
   useEffect(() => {
     fetch(`${API_URL}/api/sign-in-options`)
-      .then((res: Response) => (res.ok ? res.json() : { magicLink: false }))
-      .then((options: { magicLink: boolean }) => setLinksAvailable(options.magicLink))
+      .then((res: Response) => (res.ok ? res.json() : { magicLink: false, passkey: false }))
+      .then((options: { magicLink: boolean; passkey?: boolean }) => {
+        setLinksAvailable(options.magicLink);
+        setPasskeysAvailable(options.passkey === true && !onCustomDomain);
+      })
       .catch((err: unknown) => console.error("Could not load sign-in options", err));
-  }, []);
+  }, [onCustomDomain]);
+
+  const afterPasskey = async (): Promise<void> => {
+    track("login_succeeded", { branded: Boolean(orgName), oauth: false });
+    setRedirecting(true);
+    const resumeUrl: string | null = oauthResumeUrl(window.location.search, API_URL);
+    const nextPath: string | null = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+    window.location.href = resumeUrl ?? nextPath ?? (await destinationAfterSignIn(() => setActiveOrgAndRedirect("/portal/projects")));
+  };
+
+  // Saved passkeys show up in the email field's autofill: no button needed.
+  useEffect(() => {
+    if (!passkeysAvailable) return;
+    let active: boolean = true;
+    startPasskeyAutofill()
+      .then(async (result) => {
+        if (!active || !result) return;
+        if (result.ok) await afterPasskey();
+        else setError(result.message || "Passkey sign-in didn't work. Try another way.");
+      })
+      .catch((err: unknown) => console.error("Passkey autofill failed", err));
+    return () => {
+      active = false;
+    };
+    // afterPasskey reads the URL at call time; it only restarts when the button took over.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passkeysAvailable, autofillRun]);
+
+  // For a passkey on a phone, or a browser without autofill.
+  const handlePasskey = async (): Promise<void> => {
+    setPasskeyBusy(true);
+    setError("");
+    const result = await signInWithPasskey();
+    if (!result.ok) {
+      setPasskeyBusy(false);
+      if (!("cancelled" in result)) setError(result.message || "Passkey sign-in didn't work. Try another way.");
+      // The button's prompt cancelled the autofill one; bring passkeys back to the email field.
+      setAutofillRun((n: number) => n + 1);
+      return;
+    }
+    await afterPasskey();
+  };
 
   // A notification link sends a signed-out client here with ?next=; a failed
   // magic link comes back with ?error=. The remembered address saves a client
@@ -124,7 +176,7 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
       rememberEmail(email);
 
       setRedirecting(true);
-      window.location.href = resumeUrl ?? next ?? (await setActiveOrgAndRedirect("/portal/projects"));
+      window.location.href = resumeUrl ?? next ?? (await destinationAfterSignIn(() => setActiveOrgAndRedirect("/portal/projects")));
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Login failed";
       track("login_failed", { reason, branded: Boolean(orgName) });
@@ -196,12 +248,25 @@ export function LoginForm({ orgName, logoSrc, hideLogo }: LoginFormProps) {
           )}
 
           <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="email" className="text-sm font-medium">
+                Email
+              </label>
+              {passkeysAvailable && (
+                <button
+                  type="button"
+                  onClick={handlePasskey}
+                  disabled={passkeyBusy}
+                  className="text-xs text-[var(--primary)] hover:underline disabled:opacity-50"
+                >
+                  {passkeyBusy ? "Waiting for your passkey..." : "Use a passkey"}
+                </button>
+              )}
+            </div>
             <input
               id="email"
               type="email"
+              autoComplete="username webauthn"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

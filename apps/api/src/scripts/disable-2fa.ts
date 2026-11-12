@@ -3,7 +3,7 @@
  * compiled build, like the server itself. From apps/api (in the API container:
  * /app/apps/api), after `bun run build` when running from a checkout:
  *
- *   bun run script:disable-2fa <email> --reason "<ticket or note>"
+ *   bun run script:disable-2fa <email> --reason "<ticket or note>" [--passkeys]
  *
  * See docs/runbooks/2fa-lockout.md.
  */
@@ -35,13 +35,16 @@ async function main(): Promise<number> {
     return await run(
       {
         findUser: (email: string) => prisma.user.findUnique({ where: { email }, select: { id: true } }),
-        reset: (userId: string) => resetSecondFactors(prisma, userId),
-        alert: (userId: string) => sendSecurityAlert(alertDeps, userId, { kind: "two_factor_disabled", by: "operator" }),
+        reset: (userId: string, passkeys: boolean) => resetSecondFactors(prisma, userId, { passkeys }),
+        alert: (userId: string, passkeys: boolean) =>
+          sendSecurityAlert(alertDeps, userId, { kind: "two_factor_disabled", by: "operator", passkeys }),
+        alertSignedOut: (userId: string) => sendSecurityAlert(alertDeps, userId, { kind: "signed_out_everywhere" }),
         log: (line) => logger.log(JSON.stringify(line)),
         print: (text: string) => console.log(text),
       },
       parsed.email,
       parsed.reason,
+      parsed.passkeys,
     );
   } finally {
     await app.close();

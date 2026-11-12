@@ -22,3 +22,12 @@ export async function isStaffInRequiringWorkspace(
   });
   return member !== null;
 }
+
+/** Whether the user is an owner or admin of any workspace. Passkeys are for staff only. */
+export async function isStaffAnywhere(prisma: Pick<PrismaService, "member">, userId: string): Promise<boolean> {
+  const member = await prisma.member.findFirst({
+    where: { userId, role: { in: STAFF_ROLES } },
+    select: { id: true },
+  });
+  return member !== null;
+}

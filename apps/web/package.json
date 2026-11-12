@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@atrium/shared": "workspace:*",
+    "@simplewebauthn/browser": "^13.3.0",
     "autoprefixer": "^10.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

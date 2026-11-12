@@ -7,6 +7,8 @@ export interface SessionValue {
   userName: string;
   role: string;
   orgId: string;
+  /** Served on an agency's custom portal domain, where passkeys can't be used. */
+  onCustomDomain?: boolean;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -17,11 +19,12 @@ export function SessionProvider({
   userName,
   role,
   orgId,
+  onCustomDomain = false,
   children,
 }: SessionValue & { children: ReactNode }) {
   const value = useMemo<SessionValue>(
-    () => ({ userId, userName, role, orgId }),
-    [userId, userName, role, orgId],
+    () => ({ userId, userName, role, orgId, onCustomDomain }),
+    [userId, userName, role, orgId, onCustomDomain],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

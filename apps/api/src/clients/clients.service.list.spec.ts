@@ -2,10 +2,18 @@ import { describe, expect, it, mock } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
 import { ClientsService } from "./clients.service";
 
+/** Real rows always carry their user; fixtures that don't care get a plain one. */
+function withUser(member: unknown): unknown {
+  const m = member as Record<string, unknown>;
+  return m.user
+    ? m
+    : { ...m, user: { id: m.userId, name: "N", email: "n@x.co", twoFactorEnabled: false, _count: { passkeys: 0 } } };
+}
+
 function buildPrisma(members: unknown[], total: number) {
   return {
     member: {
-      findMany: mock(() => Promise.resolve(members)),
+      findMany: mock(() => Promise.resolve(members.map(withUser))),
       count: mock((_a: { where: unknown }) => Promise.resolve(total)),
       findFirst: mock(() => Promise.resolve(members[0] ?? null)),
     },
@@ -92,7 +100,27 @@ describe("ClientsService.list", () => {
     const prisma = buildPrisma([{ id: "m1", userId: "u1", role: "owner", labels: [] }], 1);
     await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
     const select = prisma.member.findMany.mock.calls[0][0].select;
-    expect(select.user).toEqual({ select: { id: true, name: true, email: true, twoFactorEnabled: true } });
+    expect(select.user).toEqual({
+      select: { id: true, name: true, email: true, twoFactorEnabled: true, _count: { select: { passkeys: true } } },
+    });
+  });
+
+  it("counts a member with only a passkey as protected", async () => {
+    const prisma = buildPrisma(
+      [
+        {
+          id: "m1",
+          userId: "u1",
+          role: "admin",
+          labels: [],
+          user: { id: "u1", name: "A", email: "a@x.co", twoFactorEnabled: false, _count: { passkeys: 1 } },
+        },
+      ],
+      1,
+    );
+    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
+    const user = (result as unknown as { data: { user: Record<string, unknown> }[] }).data[0].user;
+    expect(user).toEqual({ id: "u1", name: "A", email: "a@x.co", twoFactorEnabled: true, passkeyCount: 1 });
   });
 
   it("filters by name or email when search is given", async () => {

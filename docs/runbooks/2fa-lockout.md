@@ -21,10 +21,12 @@ Open a terminal in the hosted API container, then:
 
 ```bash
 cd /app/apps/api
-bun run script:disable-2fa <email> --reason "<ticket reference>"
+bun run script:disable-2fa <email> --reason "<ticket reference>" --passkeys
 ```
 
-This removes the user's authenticator and recovery codes, forgets their trusted devices, signs them out everywhere, emails them that 2FA was turned off, and writes a log line:
+Use `--passkeys` when they lost the device their passkeys are on (or have no other way in). Without it, passkeys are kept and the command says how many remain.
+
+This removes the user's authenticator and recovery codes (and passkeys, with `--passkeys`), forgets their trusted devices, signs them out everywhere, emails them that 2FA was turned off, and writes a log line:
 
 ```json
 { "event": "two_factor.reset_by_operator", "userId": "...", "reason": "<ticket reference>" }
@@ -42,6 +44,7 @@ DELETE FROM two_factor WHERE "userId" = '<id>';
 UPDATE "user" SET "twoFactorEnabled" = false WHERE id = '<id>';
 DELETE FROM session WHERE "userId" = '<id>';
 DELETE FROM verification WHERE identifier LIKE 'trust-device-%' AND value = '<id>';
+DELETE FROM passkey WHERE "userId" = '<id>';
 COMMIT;
 ```
 

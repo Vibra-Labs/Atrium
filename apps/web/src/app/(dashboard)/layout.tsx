@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { loginRedirectPath } from "@/lib/login-redirect";
@@ -5,6 +6,7 @@ import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { TrialBanner } from "./trial-banner";
+import { PasskeyPromptBanner } from "./passkey-prompt-banner";
 import { PlanOfferHost } from "@/components/plan-offers/plan-offer-host";
 import { PlainHttpNotice } from "./plain-http-notice";
 import { TimezoneSync } from "./timezone-sync";
@@ -160,6 +162,7 @@ export default async function DashboardLayout({
       userName={session.user?.name ?? ""}
       role={role}
       orgId={activeOrg?.id ?? ""}
+      onCustomDomain={Boolean((await headers()).get("x-custom-host"))}
     >
     <NotificationProvider>
     <div
@@ -235,6 +238,7 @@ export default async function DashboardLayout({
             <EmailVerificationBanner email={session.user?.email} />
           )}
           {role === "owner" && <TrialBanner />}
+          <PasskeyPromptBanner />
           {role === "owner" && <PlanOfferHost />}
           {role === "owner" && settings?.insecureCookies && !settings.plainHttpNoticeDismissed && (
             <PlainHttpNotice />

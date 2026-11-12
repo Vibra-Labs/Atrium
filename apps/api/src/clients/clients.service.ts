@@ -198,7 +198,9 @@ export class ClientsService {
           createdAt: true,
           hourlyRateCents: true,
           lastSeenAt: true,
-          user: { select: { id: true, name: true, email: true, twoFactorEnabled: true } },
+          user: {
+            select: { id: true, name: true, email: true, twoFactorEnabled: true, _count: { select: { passkeys: true } } },
+          },
           // Staff tags; a client's tags live on their contact (below).
           labels: { select: { label: { select: { id: true, name: true, color: true } } } },
         },
@@ -228,8 +230,11 @@ export class ClientsService {
 
     const enriched = data.map((m) => {
       const contact = m.role === "member" ? byUser.get(m.userId) : undefined;
+      // "Has 2FA" for the team page means any second factor: authenticator app or passkey.
+      const { _count, ...user } = m.user;
       return {
         ...m,
+        user: { ...user, twoFactorEnabled: user.twoFactorEnabled || _count.passkeys > 0, passkeyCount: _count.passkeys },
         labels: m.role === "member" ? (contact?.labels ?? []) : m.labels,
         contactId: contact?.id ?? null,
         profile: contact

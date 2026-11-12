@@ -33,7 +33,15 @@ function fakes(): Fakes {
       password === undefined ? "none" : password === "right" ? "ok" : "wrong",
     internalCheckToken: "secret-token",
     recoveryCodesLeft: async (): Promise<number> => 4,
-    isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId === "staff",
+    isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId.startsWith("staff"),
+    factorsOf: async (userId: string): Promise<{ totp: boolean; passkeys: number }> => ({
+      totp: true,
+      passkeys: userId === "staff-with-passkey" || userId === "staff-lost-passkey" ? 1 : 0,
+    }),
+    claimTotpDisable: mock(async (userId: string): Promise<"ok" | "last_factor"> =>
+      userId === "staff-lost-passkey" ? "last_factor" : "ok",
+    ),
+    releaseTotpDisable: mock(async (): Promise<void> => undefined),
     recordStepUpFailure: async (sessionId: string): Promise<number> => {
       const next: number = (failures.get(sessionId) ?? 0) + 1;
       failures.set(sessionId, next);
@@ -180,10 +188,19 @@ describe("twoFactorAfterHook alerts", () => {
     expect(f.sendAlert).not.toHaveBeenCalled();
   });
 
+  it("clears the turn-off mark whether turning off worked or not", async () => {
+    const ok = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/disable", { status: true }, "totp", true), ok.deps);
+    expect(ok.deps.releaseTotpDisable).toHaveBeenCalledWith("u1");
+    const failed = fakes();
+    await twoFactorAfterHook(ctx("/two-factor/disable", new APIError("BAD_REQUEST")), failed.deps);
+    expect(failed.deps.releaseTotpDisable).toHaveBeenCalledWith("u1");
+  });
+
   it("emails the user and drops their cached sessions when they turn 2FA off", async () => {
     const f = fakes();
     await twoFactorAfterHook(ctx("/two-factor/disable", { status: true }, "totp", true), f.deps);
-    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "two_factor_disabled", by: "you" });
+    expect(f.sendAlert).toHaveBeenCalledWith("u1", { kind: "two_factor_disabled", by: "you", passkeys: false });
     expect(f.forgetUser).toHaveBeenCalledWith("u1");
   });
 });
@@ -215,6 +232,30 @@ describe("twoFactorBeforeHook", () => {
     ).rejects.toThrow(APIError);
   });
 
+  it("lets staff of a requiring workspace turn TOTP off when they have a passkey", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff-with-passkey" }, f.deps);
+  });
+
+  it("claims the turn-off under the passkey lock after the code, for staff of a requiring workspace", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff-with-passkey" }, f.deps);
+    expect(f.deps.claimTotpDisable).toHaveBeenCalledWith("staff-with-passkey");
+  });
+
+  it("refuses when the last passkey went away while the code was checked", async () => {
+    const f = fakes();
+    await expect(
+      twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff-lost-passkey" }, f.deps),
+    ).rejects.toThrow("Your workspace requires two-factor authentication");
+  });
+
+  it("doesn't claim anything for users nothing requires 2FA of", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable" }, f.deps);
+    expect(f.deps.claimTotpDisable).not.toHaveBeenCalled();
+  });
+
   it("lets anyone else turn 2FA off with a current code", async () => {
     const f = fakes();
     await twoFactorBeforeHook({ ...base, path: "/two-factor/disable" }, f.deps);
@@ -242,6 +283,13 @@ describe("twoFactorBeforeHook", () => {
     const f = fakes();
     await expect(twoFactorBeforeHook({ ...base, path: "/two-factor/get-totp-uri" }, f.deps)).rejects.toThrow(APIError);
     await twoFactorBeforeHook({ ...base, path: "/two-factor/get-totp-uri", twoFactorEnabled: false }, f.deps);
+  });
+
+  it("refuses to 'turn off' two-factor that isn't on", async () => {
+    const f = fakes();
+    await expect(
+      twoFactorBeforeHook({ ...base, path: "/two-factor/disable", twoFactorEnabled: false, code: undefined }, f.deps),
+    ).rejects.toThrow("The authenticator app isn't turned on.");
   });
 
   it("ignores other paths", async () => {

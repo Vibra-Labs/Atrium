@@ -2,6 +2,7 @@ import { APIError } from "better-auth/api";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { SecondFactor } from "./second-factor";
 import type { SecurityAlert } from "./security-alerts";
+import type { SecondFactors } from "./second-factors-of";
 
 /** Wrong codes a pending session may enter before it is signed out. */
 export const STEP_UP_ATTEMPTS: number = 5;
@@ -50,6 +51,12 @@ export interface TwoFactorHookDeps {
   internalCheckToken: string;
   /** Recovery codes the user has left. */
   recoveryCodesLeft: (userId: string) => Promise<number>;
+  /** The user's second factors: TOTP on or off, and how many passkeys. */
+  factorsOf: (userId: string) => Promise<SecondFactors>;
+  /** Under the passkey-delete lock: refuses if no passkey is left, else marks a TOTP turn-off in progress. */
+  claimTotpDisable: (userId: string) => Promise<"ok" | "last_factor">;
+  /** Clears the in-progress mark when the turn-off is over. */
+  releaseTotpDisable: (userId: string) => Promise<void>;
   /** Whether the user is an owner or admin of a workspace that requires 2FA. */
   isStaffInRequiringWorkspace: (userId: string) => Promise<boolean>;
   /** Counts a wrong step-up code for a session and returns the running total. */
@@ -73,6 +80,10 @@ function failed(returned: unknown): boolean {
  * which the create hook stamps.
  */
 export async function twoFactorAfterHook(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promise<void> {
+  if (ctx.path === "/two-factor/disable") {
+    const userId: string | undefined = ctx.context.session?.user.id;
+    if (userId) await deps.releaseTotpDisable(userId);
+  }
   // Atrium confirming an action with the user's code: no sign-in happened, so no alert or stamp.
   if (ctx.headers?.get(INTERNAL_CHECK_HEADER) === deps.internalCheckToken) return;
   await alertAfter(ctx, deps);
@@ -88,7 +99,7 @@ async function alertAfter(ctx: AuthHookContext, deps: TwoFactorHookDeps): Promis
     await deps.sendAlert(userId, { kind: "recovery_code_used", remaining: await deps.recoveryCodesLeft(userId) });
   } else if (ctx.path === "/two-factor/disable") {
     deps.forgetUser(userId);
-    await deps.sendAlert(userId, { kind: "two_factor_disabled", by: "you" });
+    await deps.sendAlert(userId, { kind: "two_factor_disabled", by: "you", passkeys: false });
   } else if (ctx.path === "/change-password") {
     // A reset by email link alerts from onPasswordReset; this is the signed-in change.
     const body = (ctx.body ?? {}) as { revokeOtherSessions?: unknown };
@@ -151,6 +162,12 @@ export interface BeforeHookInput {
 export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFactorHookDeps): Promise<void> {
   if (!TWO_FACTOR_BEFORE_PATHS.has(input.path) || !input.userId) return;
 
+  // Nothing to turn off. Refused because the endpoint would still mint a
+  // replacement session, which must not pass for anything fresh.
+  if (input.path === "/two-factor/disable" && !input.twoFactorEnabled) {
+    throw new APIError("BAD_REQUEST", { message: "The authenticator app isn't turned on." });
+  }
+
   // Setup gets the URI from /enable. Afterwards this would hand the secret,
   // a permanent second factor, to anyone holding a session of a passwordless user.
   if (input.path === "/two-factor/get-totp-uri") {
@@ -161,9 +178,13 @@ export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFacto
   }
 
   // Checked before the code, so a refusal never uses up a recovery code.
-  // TOTP is the only factor until passkeys arrive, so turning it off would
-  // leave staff of a requiring workspace with none.
-  if (input.path === "/two-factor/disable" && (await deps.isStaffInRequiringWorkspace(input.userId))) {
+  // Without a passkey, turning TOTP off would leave staff of a requiring
+  // workspace with no factor.
+  if (
+    input.path === "/two-factor/disable" &&
+    (await deps.isStaffInRequiringWorkspace(input.userId)) &&
+    (await deps.factorsOf(input.userId)).passkeys === 0
+  ) {
     throw new APIError("FORBIDDEN", {
       message: "Your workspace requires two-factor authentication, so it can't be turned off.",
     });
@@ -181,6 +202,16 @@ export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFacto
     const code: string = (input.code ?? "").trim();
     if (!code || !(await deps.verifyOwnCode(code, input.headers))) {
       throw new APIError("FORBIDDEN", { message: "Enter a code from your authenticator app, or a recovery code." });
+    }
+  }
+
+  // Last, so nothing after it can fail before the endpoint runs and the after-hook clears it.
+  // Re-checks under the same lock passkey removal takes: a removal racing this sees TOTP as off.
+  if (input.path === "/two-factor/disable" && (await deps.isStaffInRequiringWorkspace(input.userId))) {
+    if ((await deps.claimTotpDisable(input.userId)) === "last_factor") {
+      throw new APIError("FORBIDDEN", {
+        message: "Your workspace requires two-factor authentication, so it can't be turned off.",
+      });
     }
   }
 

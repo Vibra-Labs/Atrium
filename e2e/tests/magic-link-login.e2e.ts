@@ -52,7 +52,8 @@ test.describe("Sign in with an emailed link", () => {
   test("the login page asks the server whether sign-in links can be emailed", async ({ request }) => {
     const res = await request.get("http://localhost:3001/api/sign-in-options");
     expect(res.ok()).toBe(true);
-    expect(await res.json()).toEqual({ magicLink: true });
+    // `passkey` reports whether passkeys work on this install (https or localhost).
+    expect(await res.json()).toEqual({ magicLink: true, passkey: true });
   });
   test("a signed-out client following a deep link signs in by email and lands on that page", async ({
     browser,

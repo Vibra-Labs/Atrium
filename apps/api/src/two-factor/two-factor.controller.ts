@@ -54,6 +54,7 @@ export class TwoFactorController {
       code: body.code,
       headers,
       hosted: this.config.get("BILLING_ENABLED") === "true",
+      session: req.session,
     });
   }
 }

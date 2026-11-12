@@ -51,6 +51,8 @@ import { verifyOwnCode } from "../two-factor/verify-own-code";
 import type { CodeApi } from "../two-factor/verify-own-code";
 import { isStaffInRequiringWorkspace } from "../two-factor/staff-requirement";
 import { countRecoveryCodes } from "../two-factor/recovery-codes";
+import { secondFactorsOf } from "../two-factor/second-factors-of";
+import type { SecondFactors } from "../two-factor/second-factors-of";
 import { sendSecurityAlert } from "../two-factor/security-alerts";
 import type { SecurityAlert } from "../two-factor/security-alerts";
 import { EmailRenderer } from "../mail/email-renderer";
@@ -276,6 +278,7 @@ export class AuthService {
       forgetUser: (userId: string): void => this.sessionCache.deleteUser(userId),
       isStaffInRequiringWorkspace: (userId: string): Promise<boolean> =>
         isStaffInRequiringWorkspace(this.prisma, userId),
+      factorsOf: (userId: string): Promise<SecondFactors> => secondFactorsOf(this.prisma, userId),
       sendAlert: (userId: string, alert: SecurityAlert): Promise<void> => this.sendAlert(userId, alert),
       verifyOwnCode: (code: string, headers: Headers): Promise<boolean> =>
         verifyOwnCode(this.auth.api as unknown as CodeApi, code, headers),

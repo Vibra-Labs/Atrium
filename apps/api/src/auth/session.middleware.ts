@@ -249,7 +249,13 @@ export class SessionMiddleware implements NestMiddleware {
       });
 
       if (session) {
-        authReq.user = session.user as AuthUser;
+        // Looked up rather than stored: the passkey plugin writes rows without
+        // database hooks, so a stored flag could drift and silently un-gate a user.
+        const passkey = await this.prisma.passkey.findFirst({
+          where: { userId: session.user.id },
+          select: { id: true },
+        });
+        authReq.user = { ...(session.user as AuthUser), hasPasskey: passkey !== null };
         authReq.session = session.session as AuthSession;
       }
 
@@ -283,7 +289,7 @@ export class SessionMiddleware implements NestMiddleware {
 
       // Better Auth's organization routes can name any workspace, so on auth
       // routes the gate also needs to know whether 2FA setup is owed anywhere.
-      if (isAuthRoute && session && !hasSecondFactor(session.user as AuthUser)) {
+      if (isAuthRoute && session && authReq.user && !hasSecondFactor(authReq.user)) {
         authReq.staffInRequiringWorkspace = await isStaffInRequiringWorkspace(this.prisma, session.user.id);
       }
 

@@ -29,7 +29,11 @@ function fakes(): Fakes {
     sendAlert,
     verifyOwnCode: async (code: string): Promise<boolean> => code === "123456",
     recoveryCodesLeft: async (): Promise<number> => 4,
-    isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId === "staff",
+    isStaffInRequiringWorkspace: async (userId: string): Promise<boolean> => userId.startsWith("staff"),
+    factorsOf: async (userId: string): Promise<{ totp: boolean; passkeys: number }> => ({
+      totp: true,
+      passkeys: userId === "staff-with-passkey" ? 1 : 0,
+    }),
     recordStepUpFailure: async (sessionId: string): Promise<number> => {
       const next: number = (failures.get(sessionId) ?? 0) + 1;
       failures.set(sessionId, next);
@@ -158,6 +162,11 @@ describe("twoFactorBeforeHook", () => {
     await expect(
       twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff" }, f.deps),
     ).rejects.toThrow(APIError);
+  });
+
+  it("lets staff of a requiring workspace turn TOTP off when they have a passkey", async () => {
+    const f = fakes();
+    await twoFactorBeforeHook({ ...base, path: "/two-factor/disable", userId: "staff-with-passkey" }, f.deps);
   });
 
   it("lets anyone else turn 2FA off with a current code", async () => {

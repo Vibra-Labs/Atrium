@@ -2,6 +2,7 @@ import { APIError } from "better-auth/api";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { SecondFactor } from "./second-factor";
 import type { SecurityAlert } from "./security-alerts";
+import type { SecondFactors } from "./second-factors-of";
 
 /** Wrong codes a pending session may enter before it is signed out. */
 export const STEP_UP_ATTEMPTS: number = 5;
@@ -35,6 +36,8 @@ export interface TwoFactorHookDeps {
   verifyOwnCode: (code: string, headers: Headers) => Promise<boolean>;
   /** Recovery codes the user has left. */
   recoveryCodesLeft: (userId: string) => Promise<number>;
+  /** The user's second factors: TOTP on or off, and how many passkeys. */
+  factorsOf: (userId: string) => Promise<SecondFactors>;
   /** Whether the user is an owner or admin of a workspace that requires 2FA. */
   isStaffInRequiringWorkspace: (userId: string) => Promise<boolean>;
   /** Counts a wrong step-up code for a session and returns the running total. */
@@ -138,9 +141,13 @@ export async function twoFactorBeforeHook(input: BeforeHookInput, deps: TwoFacto
   }
 
   // Checked before the code, so a refusal never uses up a recovery code.
-  // TOTP is the only factor until passkeys arrive, so turning it off would
-  // leave staff of a requiring workspace with none.
-  if (input.path === "/two-factor/disable" && (await deps.isStaffInRequiringWorkspace(input.userId))) {
+  // Without a passkey, turning TOTP off would leave staff of a requiring
+  // workspace with no factor.
+  if (
+    input.path === "/two-factor/disable" &&
+    (await deps.isStaffInRequiringWorkspace(input.userId)) &&
+    (await deps.factorsOf(input.userId)).passkeys === 0
+  ) {
     throw new APIError("FORBIDDEN", {
       message: "Your workspace requires two-factor authentication, so it can't be turned off.",
     });

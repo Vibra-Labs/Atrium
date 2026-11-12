@@ -88,6 +88,13 @@ describe("ClientsService.list", () => {
     expect(result.data[1].labels).toEqual([{ label: { id: "l1", name: "VIP", color: "#fff" } }]);
   });
 
+  it("says whether each member has 2FA, for the team page's reset action", async () => {
+    const prisma = buildPrisma([{ id: "m1", userId: "u1", role: "owner", labels: [] }], 1);
+    await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
+    const select = prisma.member.findMany.mock.calls[0][0].select;
+    expect(select.user).toEqual({ select: { id: true, name: true, email: true, twoFactorEnabled: true } });
+  });
+
   it("filters by name or email when search is given", async () => {
     const prisma = buildPrisma([], 0);
     await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, "glo");

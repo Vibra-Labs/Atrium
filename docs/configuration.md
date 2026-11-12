@@ -41,7 +41,7 @@ That's all you need. Everything below is optional.
 | Variable | Default | Description |
 |---|---|---|
 | `MCP_OAUTH_ENABLED` | `true` | Allow MCP clients to connect by signing in (OAuth). Requires a public HTTPS URL. API keys work regardless |
-| `BILLING_ENABLED` | -- | Set to `true` to enable billing/plan gates (hosted only) |
+| `BILLING_ENABLED` | -- | Set to `true` to enable billing/plan gates, the Pro trial, trial emails and in-app plan offers (hosted only). Leave unset on self-hosted installs |
 | `LOG_LEVEL` | `info` | Pino log level |
 
 > **Upgrading from v1.3 or earlier?** `BETTER_AUTH_URL` has been renamed to `API_URL`. The old name still works as a fallback but will be removed in a future release.

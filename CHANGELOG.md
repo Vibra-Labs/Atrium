@@ -2,6 +2,15 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **Signup creates the account first (hosted).** The plan step is gone from `/signup`. Pricing links like `/signup?plan=pro` or `?plan=lifetime` still go to checkout, right after the account is created.
+- **Plan offers inside the app (hosted).** Workspace owners are offered a plan at most three times: after their first client invite or first return visit, as a card after a few days of use, and once when the trial ends. Workspaces already on Free see one plan screen on their next visit. Admins, team members and clients never see them, and self-hosted installs never do.
+- **Trial emails say what the workspace did** and link to Pro and Lifetime. A trial email that reaches no owner is now logged as an error.
+- **The Lifetime seat count reads the same everywhere:** "Limited to N seats" until 50 have sold, then the live count.
+
 ## [1.14.0] — 2026-11-09
 
 ### Added

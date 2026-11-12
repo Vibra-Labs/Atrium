@@ -14,5 +14,7 @@ export { DocumentSigningTurnEmail } from "./templates/document-signing-turn";
 export { InvoicePaidEmail } from "./templates/invoice-paid";
 export { TrialEndingEmail } from "./templates/trial-ending";
 export { TrialEndedEmail } from "./templates/trial-ended";
+export { activitySentence } from "./templates/trial-offer";
+export type { TrialActivity } from "./templates/trial-offer";
 export { WeeklyUpdateReminderEmail } from "./templates/weekly-update-reminder";
 export { MondayDigestEmail } from "./templates/monday-digest";

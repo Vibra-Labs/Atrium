@@ -66,3 +66,34 @@ describe("OnboardingController signup gate", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("OnboardingController checkout from the pricing page", () => {
+  function okResponse(json: unknown): Response {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => json,
+      headers: { getSetCookie: () => ["session=abc; Path=/"] },
+    } as unknown as Response;
+  }
+
+  it("records the checkout as the early plan offer", async () => {
+    const handler = mock((req: Request) =>
+      Promise.resolve(okResponse(req.url.endsWith("/organization/create") ? { id: "org-1" } : {})),
+    );
+    const billing = { createCheckoutSession: mock(() => Promise.resolve({ url: "https://stripe.test/c" })) };
+    const planOffers = { recordSignupCheckout: mock((): Promise<void> => Promise.resolve()) };
+    const controller = new OnboardingController(
+      { auth: { handler } } as unknown as AuthService,
+      billing as unknown as BillingService,
+      makeConfig({ BILLING_ENABLED: "true" }),
+      { send: mock(() => Promise.resolve({ sent: true })) } as unknown as MailService,
+      makeLogger(),
+      planOffers as never,
+    );
+
+    const result = await controller.signup({ ...body, planSlug: "pro" } as SignupDto, makeRes());
+    expect(result).toEqual({ success: true, checkoutUrl: "https://stripe.test/c" });
+    expect(planOffers.recordSignupCheckout).toHaveBeenCalledWith("org-1");
+  });
+});

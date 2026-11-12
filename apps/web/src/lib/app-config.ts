@@ -33,7 +33,11 @@ export function useAppConfig(): AppConfig | null {
   const [config, setConfig] = useState<AppConfig | null>(cache);
 
   useEffect(() => {
-    if (cache) return;
+    // Another component may have filled the cache between this render and now.
+    if (cache) {
+      setConfig(cache);
+      return;
+    }
     fetchConfig().then(setConfig);
   }, []);
 

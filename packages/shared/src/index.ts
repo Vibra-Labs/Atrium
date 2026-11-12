@@ -354,3 +354,14 @@ export function costSummary(i: CostInput): CostSummary {
     profitCents === null ? null : Math.round((profitCents / (i.valueCents as number)) * 100);
   return { detailed, laborCents, costCents, profitCents, marginPct };
 }
+
+// A counter reading "100 of 100 seats remaining" says nobody has bought one.
+// Hold the plain cap until enough have sold that the count is persuasive.
+export const LIFETIME_COUNTER_THRESHOLD: number = 50;
+
+/** How the Lifetime plan's seats read wherever the plan is offered. */
+export function lifetimeSeatLabel(maxSeats: number, remaining: number): string {
+  if (remaining <= 0) return "Sold out";
+  if (maxSeats - remaining < LIFETIME_COUNTER_THRESHOLD) return `Limited to ${maxSeats} seats`;
+  return `${remaining} of ${maxSeats} seats remaining`;
+}

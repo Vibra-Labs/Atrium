@@ -1,165 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
-import { Check, Zap, Crown } from "lucide-react";
 import { track } from "@/lib/track";
 import { useAppConfig } from "@/lib/app-config";
-import { lifetimeSeatLabel } from "@atrium/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
-interface Plan {
-  id: string;
-  name: string;
-  slug: string;
-  priceMonthly: number;
-  priceLifetime: number;
-  maxProjects: number;
-  maxStorageMb: number;
-  maxMembers: number;
-  maxClients: number;
-  maxSeats: number;
-  isRecurring: boolean;
-  features: string[];
-  description: string;
-}
-
-function PlanSelectionStep({
-  plans,
-  lifetimeSeatsRemaining,
-  selectedSlug,
-  onSelect,
-  onContinue,
-  loading,
-}: {
-  plans: Plan[];
-  lifetimeSeatsRemaining: number | null;
-  selectedSlug: string;
-  onSelect: (slug: string) => void;
-  onContinue: () => void;
-  loading: boolean;
-}) {
-  return (
-    <div className="w-full max-w-3xl space-y-6">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold">Choose your plan</h1>
-        <p className="text-[var(--muted-foreground)] mt-2">
-          Select a plan to get started. You can change it later.
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="text-center text-[var(--muted-foreground)] py-12">
-          Loading plans...
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-3">
-          {plans.map((plan) => {
-            const isSelected = selectedSlug === plan.slug;
-            const price = plan.isRecurring
-              ? `$${(plan.priceMonthly / 100).toFixed(0)}/mo`
-              : plan.priceLifetime > 0
-                ? `$${(plan.priceLifetime / 100).toFixed(0)}`
-                : "Free";
-
-            const icon =
-              plan.slug === "free" ? null : plan.slug === "pro" ? (
-                <Zap size={20} />
-              ) : (
-                <Crown size={20} />
-              );
-
-            const soldOut =
-              plan.slug === "lifetime" &&
-              lifetimeSeatsRemaining !== null &&
-              lifetimeSeatsRemaining <= 0;
-
-            return (
-              <button
-                key={plan.id}
-                type="button"
-                onClick={() => !soldOut && onSelect(plan.slug)}
-                disabled={soldOut}
-                className={`text-left rounded-xl border p-6 space-y-4 transition-all cursor-pointer ${
-                  isSelected
-                    ? "border-[var(--primary)] ring-2 ring-[var(--primary)] ring-opacity-20"
-                    : "border-[var(--border)] hover:border-[var(--primary)]/50"
-                } ${soldOut ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    {icon}
-                    <h3 className="text-lg font-semibold">{plan.name}</h3>
-                    {isSelected && (
-                      <span className="text-xs bg-[var(--primary)] text-white px-2 py-0.5 rounded-full">
-                        Selected
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-[var(--muted-foreground)]">
-                    {plan.description}
-                  </p>
-                </div>
-
-                <div className="text-3xl font-bold">
-                  {price}
-                  {plan.isRecurring && (
-                    <span className="text-sm font-normal text-[var(--muted-foreground)]">
-                      {" "}
-                      /month
-                    </span>
-                  )}
-                  {!plan.isRecurring && plan.priceLifetime > 0 && (
-                    <span className="text-sm font-normal text-[var(--muted-foreground)]">
-                      {" "}
-                      one-time
-                    </span>
-                  )}
-                </div>
-
-                {plan.slug === "lifetime" &&
-                  lifetimeSeatsRemaining !== null && (
-                    <div className="text-sm bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-3 py-1.5 rounded-lg">
-                      {lifetimeSeatLabel(plan.maxSeats, lifetimeSeatsRemaining)}
-                    </div>
-                  )}
-
-                <ul className="space-y-2">
-                  {plan.features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <Check size={16} className="text-green-500 shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={onContinue}
-        disabled={loading}
-        className="w-full max-w-sm mx-auto block py-2 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-      >
-        Continue
-      </button>
-
-      <p className="text-center text-sm text-[var(--muted-foreground)]">
-        Already have an account?{" "}
-        <Link href="/login" className="text-[var(--primary)] hover:underline">
-          Sign in
-        </Link>
-      </p>
-    </div>
-  );
-}
+// Pricing-page links that go straight to checkout once the account exists.
+const CHECKOUT_PLANS: Record<string, string> = { pro: "Pro", lifetime: "Lifetime" };
 
 export default function SignupPage() {
   const config = useAppConfig();
@@ -171,21 +20,9 @@ export default function SignupPage() {
   );
   const planFromUrl = searchParams.get("plan");
 
-  const [step, setStep] = useState<"plan" | "account">("account");
-  const [selectedPlan, setSelectedPlan] = useState(planFromUrl || "free");
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [lifetimeSeatsRemaining, setLifetimeSeatsRemaining] = useState<
-    number | null
-  >(null);
-  const [plansLoading, setPlansLoading] = useState(false);
-
-  // Switch to plan step once we know billing is enabled
-  useEffect(() => {
-    if (billingEnabled) {
-      setStep("plan");
-      setPlansLoading(true);
-    }
-  }, [billingEnabled]);
+  const selectedPlan: string = planFromUrl ?? "free";
+  // Only when billing is on: self-hosted installs have no plans to check out.
+  const checkoutPlanName: string | null = billingEnabled ? CHECKOUT_PLANS[selectedPlan] ?? null : null;
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -193,21 +30,6 @@ export default function SignupPage() {
   const [orgName, setOrgName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!billingEnabled) return;
-    fetch(`${API_URL}/api/billing/plans`)
-      .then((res) => res.json())
-      .then((data) => {
-        setPlans(data.plans ?? []);
-        setLifetimeSeatsRemaining(data.lifetimeSeatsRemaining ?? null);
-      })
-      .catch(() => {
-        // If plans fail to load, skip plan selection
-        setStep("account");
-      })
-      .finally(() => setPlansLoading(false));
-  }, [billingEnabled]);
 
   const signupStartedRef = useRef<boolean>(false);
 
@@ -260,9 +82,7 @@ export default function SignupPage() {
           email,
           password,
           orgName,
-          ...(billingEnabled && selectedPlan !== "free"
-            ? { planSlug: selectedPlan }
-            : {}),
+          ...(checkoutPlanName ? { planSlug: selectedPlan } : {}),
         }),
         credentials: "include",
       });
@@ -326,21 +146,6 @@ export default function SignupPage() {
     );
   }
 
-  if (step === "plan") {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <PlanSelectionStep
-          plans={plans}
-          lifetimeSeatsRemaining={lifetimeSeatsRemaining}
-          selectedSlug={selectedPlan}
-          onSelect={setSelectedPlan}
-          onContinue={() => setStep("account")}
-          loading={plansLoading}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
@@ -349,6 +154,11 @@ export default function SignupPage() {
           <p className="text-[var(--muted-foreground)] mt-2">
             Set up your agency portal
           </p>
+          {checkoutPlanName && (
+            <p className="mt-3 text-sm text-[var(--primary)]">
+              You&apos;ll go to checkout for {checkoutPlanName} after creating your account
+            </p>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -506,15 +316,6 @@ export default function SignupPage() {
         </form>
 
         <div className="flex justify-center gap-4 text-sm text-[var(--muted-foreground)]">
-          {billingEnabled && (
-            <button
-              type="button"
-              onClick={() => setStep("plan")}
-              className="text-[var(--primary)] hover:underline"
-            >
-              Back to plans
-            </button>
-          )}
           <p>
             Already have an account?{" "}
             <Link

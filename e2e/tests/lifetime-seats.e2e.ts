@@ -4,8 +4,8 @@ import { test, expect } from "@playwright/test";
 // "100 of 100 seats remaining" advertises that nobody has bought one. Below the
 // threshold it shows the cap, above it the count, and at zero it sells out.
 //
-// The suite's API runs with its own plan table, so both the config and the
-// plans response are intercepted to drive the card directly.
+// The suite's API runs with its own plan table, so the plans and subscription
+// responses are intercepted to drive the card directly.
 
 const LIFETIME_MAX_SEATS = 100;
 
@@ -47,17 +47,10 @@ function plansResponse(lifetimeSeatsRemaining: number) {
   };
 }
 
-async function openSignupWithSeats(
+async function openBillingWithSeats(
   page: import("@playwright/test").Page,
   lifetimeSeatsRemaining: number,
 ) {
-  await page.route("**/api/health/config", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ billingEnabled: true, signupEnabled: true }),
-    }),
-  );
   await page.route("**/api/billing/plans", (route) =>
     route.fulfill({
       status: 200,
@@ -65,19 +58,34 @@ async function openSignupWithSeats(
       body: JSON.stringify(plansResponse(lifetimeSeatsRemaining)),
     }),
   );
+  await page.route("**/api/billing/subscription", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        subscription: {
+          status: "active",
+          stripeSubscriptionId: null,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          plan: plansResponse(lifetimeSeatsRemaining).plans[0],
+        },
+        usage: { projects: 0, storageMb: 0, members: 0, clients: 0 },
+      }),
+    }),
+  );
 
-  await page.goto("/signup");
-  await expect(page.getByRole("heading", { name: /choose your plan/i })).toBeVisible();
+  await page.goto("/dashboard/settings/billing");
+  await expect(page.getByText("Founding member spots")).toBeVisible();
 }
 
 test.describe("lifetime seat counter", () => {
-  // /signup is public; visit it logged out.
-  test.use({ storageState: { cookies: [], origins: [] } });
+  // The plans moved out of signup and into Settings → Billing (and the in-app plan offers).
 
   test("shows the cap, not the count, before 50 seats have sold", async ({
     page,
   }) => {
-    await openSignupWithSeats(page, 100);
+    await openBillingWithSeats(page, 100);
 
     await expect(page.getByText("Limited to 100 seats")).toBeVisible();
     await expect(page.getByText(/seats remaining/i)).toHaveCount(0);
@@ -85,7 +93,7 @@ test.describe("lifetime seat counter", () => {
 
   test("still shows the cap one seat below the threshold", async ({ page }) => {
     // 49 sold.
-    await openSignupWithSeats(page, 51);
+    await openBillingWithSeats(page, 51);
 
     await expect(page.getByText("Limited to 100 seats")).toBeVisible();
     await expect(page.getByText(/seats remaining/i)).toHaveCount(0);
@@ -95,7 +103,7 @@ test.describe("lifetime seat counter", () => {
     page,
   }) => {
     // 50 sold.
-    await openSignupWithSeats(page, 50);
+    await openBillingWithSeats(page, 50);
 
     await expect(page.getByText("50 of 100 seats remaining")).toBeVisible();
     await expect(page.getByText(/limited to/i)).toHaveCount(0);
@@ -104,11 +112,9 @@ test.describe("lifetime seat counter", () => {
   test("shows sold out and disables the card at zero seats", async ({
     page,
   }) => {
-    await openSignupWithSeats(page, 0);
+    await openBillingWithSeats(page, 0);
 
-    await expect(page.getByText("Sold out")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /lifetime/i }),
-    ).toBeDisabled();
+    await expect(page.getByText("Sold out").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /sold out/i })).toBeDisabled();
   });
 });

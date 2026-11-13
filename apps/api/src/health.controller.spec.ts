@@ -81,6 +81,20 @@ describe("HealthController", () => {
       expect(make({}).getConfig().currency).toBe("usd");
       expect(make({ STRIPE_CURRENCY: "EUR" }).getConfig().currency).toBe("eur");
     });
+
+    it("reports terms and privacy links only when they are http(s) URLs", () => {
+      const make = (vals: Record<string, string>) => new HealthController(
+        makePrisma({ dbOk: true }) as unknown as PrismaService,
+        makeConfig(vals), makeBilling(),
+      );
+      expect(make({}).getConfig().termsUrl).toBeNull();
+      expect(make({}).getConfig().privacyUrl).toBeNull();
+      const set = make({ TERMS_URL: "https://example.com/terms", PRIVACY_URL: "https://example.com/privacy" }).getConfig();
+      expect(set.termsUrl).toBe("https://example.com/terms");
+      expect(set.privacyUrl).toBe("https://example.com/privacy");
+      expect(make({ TERMS_URL: "javascript:alert(1)" }).getConfig().termsUrl).toBeNull();
+      expect(make({ PRIVACY_URL: "not a url" }).getConfig().privacyUrl).toBeNull();
+    });
   });
 
   describe("domainCheck", () => {

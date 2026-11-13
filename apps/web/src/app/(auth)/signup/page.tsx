@@ -14,6 +14,8 @@ export default function SignupPage() {
   const config = useAppConfig();
   const billingEnabled = config?.billingEnabled ?? false;
   const signupsDisabled = config?.signupEnabled === false;
+  const termsUrl: string | null = config?.termsUrl ?? null;
+  const privacyUrl: string | null = config?.privacyUrl ?? null;
 
   const searchParams = new URLSearchParams(
     typeof window !== "undefined" ? window.location.search : "",
@@ -332,6 +334,24 @@ export default function SignupPage() {
           >
             {loading ? "Creating account..." : "Create Account"}
           </button>
+
+          {(termsUrl || privacyUrl) && (
+            <p className="text-xs text-center text-[var(--muted-foreground)]">
+              By creating an account, you agree to the{" "}
+              {termsUrl && (
+                <a href={termsUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] hover:underline">
+                  Terms of Service
+                </a>
+              )}
+              {termsUrl && privacyUrl && " and "}
+              {privacyUrl && (
+                <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] hover:underline">
+                  Privacy Policy
+                </a>
+              )}
+              .
+            </p>
+          )}
         </form>
 
         <div className="flex justify-center gap-4 text-sm text-[var(--muted-foreground)]">

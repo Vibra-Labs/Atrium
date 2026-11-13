@@ -5,6 +5,9 @@ export interface AppConfig {
   billingEnabled: boolean;
   signupEnabled: boolean;
   currency: string;
+  /** Operator's terms of service and privacy policy, shown on signup when set. */
+  termsUrl?: string | null;
+  privacyUrl?: string | null;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";

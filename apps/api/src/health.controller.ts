@@ -9,6 +9,17 @@ import { BillingService } from "./billing/billing.service";
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
+/** An operator-set http(s) link, or null, so an env typo never becomes a script href. */
+export function legalUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 @SkipThrottle()
 @Controller("health")
 export class HealthController {
@@ -26,6 +37,8 @@ export class HealthController {
       signupEnabled: this.config.get("ALLOW_SIGNUPS") !== "false",
       currency: getCurrency(this.config),
       mcpOAuthEnabled: mcpOAuthEnabled(this.config),
+      termsUrl: legalUrl(this.config.get("TERMS_URL")),
+      privacyUrl: legalUrl(this.config.get("PRIVACY_URL")),
     };
   }
 

@@ -18,6 +18,9 @@ import { demoSeedPlan, type DemoSeedPlan, type DemoUser } from "./demo-seed-plan
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** The demo workspace's timezone. Fixed, so the seeded dates read the same for everyone. */
+const DEMO_TIMEZONE = "America/New_York";
+
 function at(offsetDays: number): Date {
   return new Date(Date.now() + offsetDays * DAY_MS);
 }
@@ -41,10 +44,14 @@ async function clearWorkspace(prisma: PrismaClient, organizationId: string): Pro
   // SystemSettings is not deleted (the workspace needs one) but is reset: the
   // 2FA requirement lives there, and left on it would gate every later
   // visitor behind an enrollment screen that no reset clears.
+  // A timezone is set here so nothing tries to sync one. The dashboard fills a
+  // missing workspace timezone from the browser, which the demo refuses — and
+  // should: SystemSettings survives a reset, so the first visitor's zone would
+  // stick for every visitor after them.
   await prisma.systemSettings.upsert({
     where: { organizationId },
-    update: { requireTwoFactor: false },
-    create: { organizationId, requireTwoFactor: false },
+    update: { requireTwoFactor: false, timezone: DEMO_TIMEZONE },
+    create: { organizationId, requireTwoFactor: false, timezone: DEMO_TIMEZONE },
   });
   await prisma.notification.deleteMany({ where: { organizationId } });
   await prisma.clientProfile.deleteMany({ where: { organizationId } });

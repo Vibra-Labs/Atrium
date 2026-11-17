@@ -270,7 +270,10 @@ export default async function DashboardLayout({
           {role === "owner" && settings?.insecureCookies && !settings.plainHttpNoticeDismissed && (
             <PlainHttpNotice />
           )}
-          {timezoneMissing && <TimezoneSync />}
+          {/* Belt and braces with the seeded timezone: this writes to /settings,
+              which the demo refuses, and a visitor's zone must not stick to a
+              workspace everyone shares. */}
+          {timezoneMissing && !isDemo && <TimezoneSync />}
           {role === "owner" && telemetryEnabled === null && (
             <TelemetryConsentBanner isDemo={isDemo} />
           )}

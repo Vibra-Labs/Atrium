@@ -12,6 +12,7 @@ import { seedDemo } from "./demo-seed";
 interface Call {
   model: string;
   op: string;
+  args?: Record<string, unknown>;
 }
 
 function recordingPrisma(): { client: unknown; calls: Call[] } {
@@ -22,8 +23,8 @@ function recordingPrisma(): { client: unknown; calls: Call[] } {
         {},
         {
           get(_t, op: string) {
-            return async (args: { select?: unknown } = {}) => {
-              calls.push({ model, op });
+            return async (args: Record<string, unknown> = {}) => {
+              calls.push({ model, op, args });
               if (op === "findUnique" && model === "subscriptionPlan") return { id: "plan-pro" };
               if (op === "findUnique" || op === "upsert" || op === "create") {
                 return { id: `${model}-1`, slug: "demo-writer-test" };
@@ -135,5 +136,21 @@ describe("seedDemo", () => {
     await seedDemo(client as never, "demo-writer-test");
 
     expect(calls.some((c) => c.model === "member" && c.op === "upsert")).toBe(true);
+  });
+
+  it("gives the demo workspace a timezone, so nothing tries to sync one", () => {
+    // The dashboard syncs the browser's timezone into the workspace whenever
+    // it has none. In the demo that write is refused — correctly, since
+    // SystemSettings survives a reset and the first visitor's zone would stick
+    // for everyone — so the fix is to leave nothing to sync.
+    const { client, calls } = recordingPrisma();
+
+    return seedDemo(client as never, "demo-writer-test").then(() => {
+      const settings = calls.find((c) => c.model === "systemSettings" && c.op === "upsert");
+      const update = settings?.args?.update as Record<string, unknown> | undefined;
+      const create = settings?.args?.create as Record<string, unknown> | undefined;
+      expect(update?.timezone).toBeTruthy();
+      expect(create?.timezone).toBeTruthy();
+    });
   });
 });

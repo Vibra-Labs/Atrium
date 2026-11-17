@@ -19,19 +19,24 @@ function setWindow(win: StubWindow | undefined): void {
   g.window = win;
 }
 
-/** A window with Umami loaded, recording what it was asked to send. */
+/**
+ * A window with a GTM container already executed. Nothing is pushed without
+ * one, so every dataLayer assertion needs it.
+ */
+function gtmWindow(): StubWindow {
+  return { location: { href: "" }, google_tag_manager: {} };
+}
+
+/** A window with both a container and Umami, recording what Umami was sent. */
 function umamiWindow(): { win: StubWindow; sent: Array<[string, TrackedData | undefined]> } {
   const sent: Array<[string, TrackedData | undefined]> = [];
   const win: StubWindow = {
+    ...gtmWindow(),
     umami: {
       track: (event: string, data?: TrackedData) => {
         sent.push([event, data]);
       },
     },
-    location: { href: "" },
-    // A GTM container has executed; without this trackThenNavigate takes the
-    // no-container shortcut and never waits for eventCallback.
-    google_tag_manager: {},
   };
   return { win, sent };
 }
@@ -45,7 +50,7 @@ describe("track", () => {
   });
 
   it("pushes to dataLayer even when Umami never loaded", () => {
-    const win: StubWindow = {};
+    const win: StubWindow = gtmWindow();
     setWindow(win);
 
     track("signup_completed", { plan: "free" });
@@ -64,7 +69,7 @@ describe("track", () => {
   });
 
   it("appends to an existing dataLayer rather than replacing it", () => {
-    const win: StubWindow = { dataLayer: [{ event: "gtm.js" }] };
+    const win: StubWindow = { ...gtmWindow(), dataLayer: [{ event: "gtm.js" }] };
     setWindow(win);
 
     track("project_created");
@@ -74,6 +79,7 @@ describe("track", () => {
 
   it("still reaches dataLayer when Umami throws", () => {
     const win: StubWindow = {
+      ...gtmWindow(),
       umami: {
         track: () => {
           throw new Error("umami exploded");
@@ -87,12 +93,74 @@ describe("track", () => {
   });
 
   it("omits data keys when no data is given", () => {
-    const win: StubWindow = {};
+    const win: StubWindow = gtmWindow();
     setWindow(win);
 
-    track("login_succeeded");
+    track("setup_completed");
 
-    expect(win.dataLayer).toEqual([{ event: "login_succeeded" }]);
+    expect(win.dataLayer).toEqual([{ event: "setup_completed" }]);
+  });
+});
+
+describe("what reaches Google", () => {
+  // Umami is self-hosted, so it gets everything. The dataLayer leaves the
+  // browser, so it gets the four conversion events and nothing else.
+  it("sends product telemetry to Umami but never to dataLayer", () => {
+    const { win, sent } = umamiWindow();
+    setWindow(win);
+
+    track("login_succeeded", { branded: true, oauth: false });
+    track("portal_file_downloaded", { type: "pdf" });
+    track("invoice_created", { amount: 4200 });
+
+    expect(sent).toHaveLength(3);
+    expect(win.dataLayer).toBeUndefined();
+  });
+
+  // Regression guard: `signup_failed` carries err.message straight off the
+  // API response. Umami may have it; Google may not.
+  it("never hands a server error message to Google", () => {
+    const { win, sent } = umamiWindow();
+    setWindow(win);
+
+    track("signup_failed", { reason: "duplicate email bob@acme.com", plan: "pro" });
+
+    expect(sent).toEqual([
+      ["signup_failed", { reason: "duplicate email bob@acme.com", plan: "pro" }],
+    ]);
+    expect(win.dataLayer).toBeUndefined();
+  });
+
+  // Allowlisted rather than filtered, so a field added to a call site later
+  // cannot start leaving the browser on its own.
+  it("drops event data Google has no business receiving", () => {
+    const win: StubWindow = gtmWindow();
+    setWindow(win);
+
+    track("project_created", { source: "setup", client_email: "bob@acme.com", plan: "pro" });
+
+    expect(win.dataLayer).toEqual([{ event: "project_created", plan: "pro" }]);
+  });
+
+  it("keeps the event name even when data tries to overwrite it", () => {
+    const win: StubWindow = gtmWindow();
+    setWindow(win);
+
+    track("signup_completed", { event: "spoofed", plan: "free" } as unknown as TrackedData);
+
+    expect(win.dataLayer).toEqual([{ event: "signup_completed", plan: "free" }]);
+  });
+
+  // Nothing drains the queue without a container, so entries would pile up in
+  // memory for the life of the tab. That is the default deployment.
+  it("queues nothing when no GTM container has loaded", () => {
+    const win: StubWindow = gtmWindow();
+    delete win.google_tag_manager;
+    setWindow(win);
+
+    track("signup_completed", { plan: "free" });
+
+    expect(win.dataLayer).toBeUndefined();
   });
 });
 
@@ -169,19 +237,22 @@ describe("trackThenNavigate", () => {
     trackThenNavigate("signup_completed", { plan: "free" }, "/setup", 10_000);
 
     expect(win.location?.href).toBe("/setup");
+    expect(win.dataLayer).toBeUndefined();
   });
 
-  it("still queues the event when no GTM container has loaded", () => {
+  // Nothing will ever call back for an event Google isn't told about, so
+  // waiting on one would stall the redirect for the full timeout.
+  it("navigates immediately for an event Google is not told about", () => {
     const { win } = umamiWindow();
-    delete win.google_tag_manager;
     setWindow(win);
 
-    trackThenNavigate("signup_completed", { plan: "free" }, "/setup", 10_000);
+    trackThenNavigate("portal_request_posted", undefined, "/portal", 10_000);
 
-    expect(win.dataLayer).toEqual([{ plan: "free", event: "signup_completed" }]);
+    expect(win.location?.href).toBe("/portal");
+    expect(win.dataLayer).toBeUndefined();
   });
 
-  it("carries the event name and data into the push", () => {
+  it("carries the event name and allowlisted data into the push", () => {
     const { win } = umamiWindow();
     setWindow(win);
 

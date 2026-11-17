@@ -2,8 +2,9 @@
  * Analytics event helpers.
  *
  * Events go to two places, independently and best-effort:
- *   - Umami, when its script has loaded (no-op otherwise).
- *   - Google Tag Manager's `dataLayer`, always.
+ *   - Umami, in full. Self-hosted, so this is the complete product telemetry.
+ *   - Google Tag Manager's `dataLayer`, but only the handful of events that
+ *     are Google Ads conversions, and only the fields listed below.
  *
  * The dataLayer push is deliberate: the GTM container used to reach these
  * events by wrapping `window.umami.track`, which meant an unreachable or
@@ -12,6 +13,31 @@
  */
 
 type TrackData = Record<string, string | number | boolean>;
+
+/** One entry on GTM's `dataLayer` queue. */
+type GtmEntry = Record<string, unknown>;
+
+/**
+ * The only events Google is told about -- the four that are set up as Ads
+ * conversions. Everything else is internal product telemetry and stays in
+ * Umami. Without this an event like `signup_failed` would hand Google a raw
+ * server error message, and `portal_file_downloaded` would describe a client's
+ * activity, neither of which has anything to do with ad attribution.
+ */
+const GTM_EVENTS: ReadonlySet<string> = new Set([
+  "signup_completed",
+  "setup_completed",
+  "project_created",
+  "client_invited",
+]);
+
+/**
+ * The only event data Google receives, allowlisted rather than filtered, so a
+ * new field added to a call site can't start leaving the browser by accident.
+ * `plan` is here because conversion value depends on it; nothing else about
+ * the event matters to Ads.
+ */
+const GTM_DATA_KEYS: readonly string[] = ["plan"];
 
 /** How long to let GTM fire an event's tags before navigating anyway. */
 const NAVIGATE_TIMEOUT_MS: number = 1500;
@@ -26,6 +52,11 @@ const FALLBACK_GRACE_MS: number = 250;
  * True once a GTM container has executed on this page. GTM defines this
  * synchronously as it runs, and trackers are injected with `defer`, so by the
  * time a user submits a form the answer is settled.
+ *
+ * Nothing is pushed when this is false. With no container there is no consumer
+ * to drain the queue, so entries would accumulate in memory for the life of
+ * the tab -- and that is the default case: self-hosted installs, dev and e2e
+ * never load GTM at all.
  */
 function gtmLoaded(): boolean {
   return typeof window.google_tag_manager !== "undefined";
@@ -40,10 +71,27 @@ function sendToUmami(event: string, data?: TrackData): void {
 }
 
 /**
- * Pushes onto GTM's queue, creating it when the container hasn't loaded yet.
- * Returns false if the push threw, so callers waiting on it can stop waiting.
+ * The entry to push for `event`, or null when the event isn't one Google is
+ * told about.
  */
-function pushToDataLayer(entry: Record<string, unknown>): boolean {
+function gtmEntry(event: string, data?: TrackData): GtmEntry | null {
+  if (!GTM_EVENTS.has(event)) return null;
+
+  const entry: GtmEntry = {};
+  for (const key of GTM_DATA_KEYS) {
+    if (data && key in data) entry[key] = data[key];
+  }
+  // Last, so an allowlisted key can never overwrite the event name.
+  entry.event = event;
+  return entry;
+}
+
+/**
+ * Pushes onto GTM's queue, creating it if the container made it to the page
+ * before its queue did. Returns false if the push threw, so callers waiting
+ * on it can stop waiting.
+ */
+function pushToDataLayer(entry: GtmEntry): boolean {
   try {
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push(entry);
@@ -58,8 +106,9 @@ export function track(event: string, data?: TrackData): void {
   if (typeof window === "undefined") return;
 
   sendToUmami(event, data);
-  // `event` last so a caller's data key can never overwrite the event name.
-  pushToDataLayer({ ...data, event });
+
+  const entry: GtmEntry | null = gtmEntry(event, data);
+  if (entry && gtmLoaded()) pushToDataLayer(entry);
 }
 
 /**
@@ -71,10 +120,9 @@ export function track(event: string, data?: TrackData): void {
  * `eventCallback` closes that race; `timeoutMs` guarantees the user still
  * moves on when GTM is blocked or slow.
  *
- * With no container on the page nothing will ever call `eventCallback`, so
- * waiting would stall the redirect for the whole timeout and buy nothing.
- * That is the default for self-hosted installs, dev and e2e, where
- * ATRIUM_TRACKERS is unset -- so navigate at once instead.
+ * With no container on the page -- or for an event Google isn't told about --
+ * nothing will ever call `eventCallback`, so waiting would stall the redirect
+ * for the whole timeout and buy nothing. Navigate at once instead.
  */
 export function trackThenNavigate(
   event: string,
@@ -93,8 +141,8 @@ export function trackThenNavigate(
     window.location.href = url;
   };
 
-  if (!gtmLoaded()) {
-    pushToDataLayer({ ...data, event });
+  const entry: GtmEntry | null = gtmEntry(event, data);
+  if (!entry || !gtmLoaded()) {
     go();
     return;
   }
@@ -105,8 +153,7 @@ export function trackThenNavigate(
   );
 
   const pushed: boolean = pushToDataLayer({
-    ...data,
-    event,
+    ...entry,
     eventCallback: () => {
       clearTimeout(timer);
       go();

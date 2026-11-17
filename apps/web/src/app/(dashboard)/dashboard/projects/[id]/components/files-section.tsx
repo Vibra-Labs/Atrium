@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { uploadDisabledReason } from "@/lib/demo";
 import { apiFetch } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -162,6 +163,7 @@ export function FilesSection({
   const [docsPage, setDocsPage] = useState(1);
   const [docsTotalPages, setDocsTotalPages] = useState(1);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
+  const uploadDisabled: string | null = uploadDisabledReason();
   const [showDocUpload, setShowDocUpload] = useState(false);
   const [versionDoc, setVersionDoc] = useState<DocumentRecord | null>(null);
   const [docUploading, setDocUploading] = useState(false);
@@ -609,6 +611,8 @@ export function FilesSection({
                   </div>
                 </button>
                 <button
+                  disabled={uploadDisabled !== null}
+                  title={uploadDisabled ?? undefined}
                   onClick={() => { setShowAddMenu(false); setShowDocUpload(true); }}
                   className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-[var(--muted)] text-left"
                 >

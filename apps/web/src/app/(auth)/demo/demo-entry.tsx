@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { track } from "@/lib/track";
+import { DEMO_ENTERED_EVENT, shouldCountDemoEntry } from "@/lib/demo-tracking";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -21,6 +23,8 @@ export function DemoEntry({ kind }: { kind: DemoKind }): React.ReactElement {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+
+    if (shouldCountDemoEntry()) track(DEMO_ENTERED_EVENT, { kind });
 
     async function enter(): Promise<void> {
       try {

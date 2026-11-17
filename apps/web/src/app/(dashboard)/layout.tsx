@@ -6,6 +6,7 @@ import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { TrialBanner } from "./trial-banner";
+import { DemoBanner } from "@/components/demo-banner";
 import { PasskeyPromptBanner } from "./passkey-prompt-banner";
 import { PlanOfferHost } from "@/components/plan-offers/plan-offer-host";
 import { PlainHttpNotice } from "./plain-http-notice";
@@ -237,6 +238,7 @@ export default async function DashboardLayout({
           {!session.user?.emailVerified && (
             <EmailVerificationBanner email={session.user?.email} />
           )}
+          <DemoBanner surface="dashboard" />
           {role === "owner" && <TrialBanner />}
           <PasskeyPromptBanner />
           {role === "owner" && <PlanOfferHost />}

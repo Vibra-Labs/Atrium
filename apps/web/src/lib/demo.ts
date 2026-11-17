@@ -12,3 +12,13 @@ export function isDemoMode(): boolean {
 
 /** The message the API's DemoGuard returns for a blocked upload. */
 export const DEMO_UPLOADS_OFF = "Uploads are turned off in the demo.";
+
+/**
+ * Why the upload control is disabled, or null when it isn't.
+ *
+ * Returns the API's own wording so the visitor reads one explanation whether
+ * the UI stopped them or DemoGuard did.
+ */
+export function uploadDisabledReason(): string | null {
+  return isDemoMode() ? DEMO_UPLOADS_OFF : null;
+}

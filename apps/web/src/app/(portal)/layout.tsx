@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { DemoBanner } from "@/components/demo-banner";
 import { Suspense } from "react";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { loginRedirectPath } from "@/lib/login-redirect";
@@ -105,7 +106,10 @@ export default async function PortalLayout({
             <ThemeToggle />
             <SignOutButton />
           </header>
-          <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">{children}</main>
+          <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+            <DemoBanner surface="portal" />
+            {children}
+          </main>
           {branding?.poweredBy && (
             <footer className="py-6 text-center">
               <a

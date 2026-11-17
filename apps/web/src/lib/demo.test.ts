@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from "bun:test";
-import { isDemoMode } from "./demo";
+import { isDemoMode, uploadDisabledReason } from "./demo";
 
 const original: string | undefined = process.env.NEXT_PUBLIC_DEMO_MODE;
 
@@ -21,5 +21,17 @@ describe("isDemoMode", () => {
   it("is true when the flag is set", () => {
     process.env.NEXT_PUBLIC_DEMO_MODE = "true";
     expect(isDemoMode()).toBe(true);
+  });
+});
+
+describe("uploadDisabledReason", () => {
+  it("is null outside the demo, so uploads work normally", () => {
+    delete process.env.NEXT_PUBLIC_DEMO_MODE;
+    expect(uploadDisabledReason()).toBeNull();
+  });
+
+  it("explains why uploads are off in the demo, in the API's own words", () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = "true";
+    expect(uploadDisabledReason()).toBe("Uploads are turned off in the demo.");
   });
 });

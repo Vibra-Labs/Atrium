@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { trackDemoActed } from "@/lib/demo-tracking";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
@@ -190,6 +191,7 @@ export function TasksSection({
           }),
         });
         track("task_created");
+        trackDemoActed("task_created");
         setNewTitle("");
         setNewDueDate("");
         setCreating(false);
@@ -210,6 +212,7 @@ export function TasksSection({
           }),
         });
         track("task_created", { type: "decision" });
+        trackDemoActed("task_created");
         setNewQuestion("");
         setNewOptions(["", ""]);
         setCreating(false);

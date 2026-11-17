@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { setDemoAnalytics } from "./track";
+import { setDemoTracking } from "./demo-tracking";
 
 export interface SessionValue {
   userId: string;
@@ -32,6 +33,7 @@ export function SessionProvider({
   // visitor would be counted as one, spending real ad budget against the
   // number the demo exists to improve.
   setDemoAnalytics(isDemo === true);
+  setDemoTracking(isDemo === true);
 
   const value = useMemo<SessionValue>(
     () => ({ userId, userName, role, orgId, onCustomDomain, isDemo }),

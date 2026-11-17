@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { trackDemoActed } from "@/lib/demo-tracking";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
@@ -214,6 +215,7 @@ export function UpdatesSection({
         body: formData,
       });
       track("update_posted", { has_attachment: !!newAttachment });
+      trackDemoActed("update_posted");
       setNewContent("");
       setDraftStats(null);
       setNewAttachment(null);

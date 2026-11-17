@@ -115,7 +115,20 @@ reason. The e2e suite was a live demonstration of that drift.
 
 ## Measurement
 
-Demo entries are tracked as `atrium_demo_entered`, never as a signup. The
+The demo has its own four-step funnel, all Umami only:
+
+| Event | Fired when | Counted |
+|---|---|---|
+| `atrium_demo_entered` | a visitor enters, with `kind: owner|client` | once per session |
+| `atrium_demo_explored` | they open a project — the first real look | once per session |
+| `atrium_demo_acted` | they create a project, task or update | once per session |
+| `atrium_demo_cta_clicked` | they click "Start free" or "See the client view" | every click |
+
+One number only says traffic arrived. Four say where it stopped: entered and
+never explored is a first-impression problem, explored but never acted is a
+product problem, acted but never clicked through is pricing or trust.
+
+None of these is a signup. The
 banner's "Start free" link carries `?ref=demo`, so conversions from the demo are
 attributable across the two hosts. A demo counted as a signup would inflate the
 exact number it was built to improve.

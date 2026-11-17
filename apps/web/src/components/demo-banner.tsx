@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { FlaskConical, RotateCcw, Users } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { trackDemoCta } from "@/lib/demo-tracking";
 
 /**
  * Tells a demo visitor where they are, and offers the two things they are most
@@ -51,7 +52,11 @@ export function DemoBanner({
       </div>
       <div className="flex items-center gap-3 shrink-0">
         {surface === "dashboard" && (
-          <a href="/demo/client" className="inline-flex items-center gap-1 hover:underline">
+          <a
+            href="/demo/client"
+            onClick={() => trackDemoCta("client_view")}
+            className="inline-flex items-center gap-1 hover:underline"
+          >
             <Users size={13} /> See the client view
           </a>
         )}
@@ -65,6 +70,8 @@ export function DemoBanner({
         </button>
         <a
           href={signupHref}
+          onClick={() => trackDemoCta("start_free")}
+          data-testid="demo-start-free"
           className="px-3 py-1.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-medium"
         >
           Start free

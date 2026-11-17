@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { trackDemoExplored } from "@/lib/demo-tracking";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
@@ -164,6 +165,12 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState("");
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabId>(() => tabFromParam(searchParams.get("tab")) ?? "updates");
+
+  // Opening a project is the first real look at the product in the demo, so it
+  // is where "entered but bounced" separates from "actually explored".
+  useEffect(() => {
+    trackDemoExplored("project");
+  }, []);
 
   // A ?tab=<id> deep link (e.g. from the timer widget) jumps to that tab. A ?task=<id> link
   // (e.g. from a notification) jumps to Updates, where tasks live, so the detail modal can open.

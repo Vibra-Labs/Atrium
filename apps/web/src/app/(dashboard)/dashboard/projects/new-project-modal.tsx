@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { trackDemoActed } from "@/lib/demo-tracking";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { track } from "@/lib/track";
@@ -50,6 +51,7 @@ export function NewProjectModal({
         }),
       });
       track("project_created", { source: "dashboard" });
+      trackDemoActed("project_created");
       onCreated(created);
     } catch (err) {
       console.error(err);

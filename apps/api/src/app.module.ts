@@ -38,6 +38,7 @@ import { CalendarModule } from "./calendar/calendar.module";
 import { ApiKeysModule } from "./api-keys/api-keys.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { DemoModule } from "./demo/demo.module";
+import { DemoGuard } from "./demo/demo.guard";
 import { McpModule } from "./mcp/mcp.module";
 import { McpAuthModule } from "./mcp-auth/mcp-auth.module";
 import { ContactSyncModule } from "./contact-sync/contact-sync.module";
@@ -136,6 +137,10 @@ import { PlanGuard } from "./common/guards/plan.guard";
     {
       provide: APP_GUARD,
       useClass: PlanGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: DemoGuard,
     },
     {
       provide: APP_GUARD,

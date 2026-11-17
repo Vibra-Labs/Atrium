@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { isDemoMode } from "./demo";
 
 export interface SessionValue {
   userId: string;
@@ -9,6 +10,8 @@ export interface SessionValue {
   orgId: string;
   /** Served on an agency's custom portal domain, where passkeys can't be used. */
   onCustomDomain?: boolean;
+  /** This is the public demo workspace: show the banner, disable what the demo refuses. */
+  isDemo?: boolean;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -20,11 +23,12 @@ export function SessionProvider({
   role,
   orgId,
   onCustomDomain = false,
+  isDemo = isDemoMode(),
   children,
 }: SessionValue & { children: ReactNode }) {
   const value = useMemo<SessionValue>(
-    () => ({ userId, userName, role, orgId, onCustomDomain }),
-    [userId, userName, role, orgId, onCustomDomain],
+    () => ({ userId, userName, role, orgId, onCustomDomain, isDemo }),
+    [userId, userName, role, orgId, onCustomDomain, isDemo],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

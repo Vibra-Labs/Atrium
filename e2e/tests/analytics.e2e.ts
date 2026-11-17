@@ -4,10 +4,14 @@ import type { Page } from "@playwright/test";
 /**
  * Analytics instrumentation.
  *
- * The real tracker is only loaded when ATRIUM_TRACKERS is set, and
- * `track()` no-ops when `window.umami` is missing. These tests install a stub
- * before any page script runs and assert on what the app tried to send, so
- * they verify the call sites without needing a live Umami instance.
+ * The real tracker is only loaded when ATRIUM_TRACKERS is set. These tests
+ * install a stub before any page script runs and assert on what the app tried
+ * to send, so they verify the call sites without needing a live Umami
+ * instance or a GTM container.
+ *
+ * `track()` feeds Umami and GTM's `dataLayer` independently, so both paths
+ * are asserted -- the dataLayer one especially, since Google Ads conversion
+ * tracking hangs off it and must survive Umami being absent or blocked.
  */
 
 type TrackedData = Record<string, string | number | boolean>;
@@ -21,6 +25,7 @@ declare global {
   interface Window {
     __trackedEvents?: TrackedEvent[];
     umami?: { track: (event: string, data?: TrackedData) => void };
+    dataLayer?: Record<string, unknown>[];
   }
 }
 
@@ -35,8 +40,24 @@ async function stubTracker(page: Page): Promise<void> {
   });
 }
 
+/** Installs no Umami at all, so only the dataLayer path can record anything. */
+async function stubDataLayerOnly(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    delete window.umami;
+    window.dataLayer = [];
+  });
+}
+
 async function trackedEvents(page: Page): Promise<TrackedEvent[]> {
   return page.evaluate(() => window.__trackedEvents ?? []);
+}
+
+async function dataLayerEvents(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    (window.dataLayer ?? [])
+      .map((entry) => (entry as { event?: unknown }).event)
+      .filter((name): name is string => typeof name === "string"),
+  );
 }
 
 test.describe("Analytics instrumentation", () => {
@@ -88,6 +109,27 @@ test.describe("Analytics instrumentation", () => {
     await expect
       .poll(async () => (await trackedEvents(page)).map((e) => e.name))
       .toContain("signup_started");
+  });
+
+  // Regression guard: the GTM container used to reach these events only by
+  // wrapping window.umami.track, so no Umami meant no Google Ads conversions.
+  // track() must push to dataLayer on its own.
+  test("events reach dataLayer with no Umami loaded", async ({ page }) => {
+    await stubDataLayerOnly(page);
+    await page.goto("/signup");
+
+    const planHeading = page.getByRole("heading", { name: /choose your plan/i });
+    if (await planHeading.isVisible().catch(() => false)) {
+      await page.getByRole("button", { name: /continue/i }).click();
+    }
+
+    await page.getByLabel(/your name/i).fill("DataLayer Test");
+    await page.getByLabel(/agency/i).fill("DataLayer Test Co");
+    await page.getByLabel(/email/i).fill(`datalayer-${Date.now()}@example.com`);
+    await page.getByLabel(/password/i).fill("weakpassword");
+    await page.getByRole("button", { name: /create account|sign up/i }).click();
+
+    await expect.poll(async () => await dataLayerEvents(page)).toContain("signup_started");
   });
 });
 

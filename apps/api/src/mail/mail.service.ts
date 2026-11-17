@@ -9,6 +9,22 @@ import type { SmtpConfig } from "./smtp-security";
 
 const MAX_CONCURRENT_SENDS = 2;
 
+/**
+ * Addresses the public demo workspace uses. Nothing is ever sent to them.
+ *
+ * The rule is on the address rather than the workspace on purpose: most mail
+ * originates in scheduled tasks, which no request guard sees, and some — like
+ * trial-emails.task.ts — pass no organizationId at all. The demo seed refuses
+ * any address outside this domain and the demo blocks invites, so every demo
+ * recipient is covered. Attempting them would bounce and spend the real
+ * domain's sending reputation.
+ */
+const DEMO_EMAIL_DOMAIN = "@demo.invalid";
+
+export function isDemoRecipient(to: string): boolean {
+  return to.trim().toLowerCase().endsWith(DEMO_EMAIL_DOMAIN);
+}
+
 /** Runs at most `max` tasks at once; a finished task hands its slot straight to the next waiter. */
 function createLimiter(max: number): <T>(task: () => Promise<T>) => Promise<T> {
   let active = 0;
@@ -67,6 +83,10 @@ export class MailService {
     html: string,
     organizationId?: string,
   ): Promise<{ sent: boolean; viaOrgConfig: boolean }> {
+    if (isDemoRecipient(to)) {
+      this.logger.info({ to, subject }, "Email not sent: demo recipient");
+      return Promise.resolve({ sent: false, viaOrgConfig: false });
+    }
     return this.limitSend(() => this.deliverWithTimeout(to, subject, html, organizationId));
   }
 

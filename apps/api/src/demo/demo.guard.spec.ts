@@ -79,6 +79,7 @@ describe("DemoGuard", () => {
       ["POST", "/api/billing/portal"],
       ["POST", "/api/payments/connect/authorize"],
       ["POST", "/api/payments/direct/save-key"],
+      ["POST", "/api/integrations"],
       ["PUT", "/api/settings/custom-domain"],
       ["DELETE", "/api/settings/custom-domain"],
     ];

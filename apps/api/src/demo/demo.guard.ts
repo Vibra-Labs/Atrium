@@ -26,6 +26,8 @@ const BLOCKED: readonly BlockedAction[] = [
   { methods: ["POST", "DELETE"], path: "/mcp-grants", message: "Connecting AI assistants is turned off in the demo." },
   { methods: ["POST"], path: "/billing", message: "Billing is turned off in the demo." },
   { methods: ["POST"], path: "/payments", message: "Payments are turned off in the demo." },
+  // No destination can be created, so nothing reaches IntegrationDispatcher.
+  { methods: ["POST", "PUT", "PATCH", "DELETE"], path: "/integrations", message: "Integrations are turned off in the demo." },
   { methods: ["PUT", "DELETE", "POST"], path: "/settings/custom-domain", message: "Custom domains are turned off in the demo." },
   { methods: ["POST"], path: "/auth/organization/invite-member", message: "Inviting people is turned off in the demo." },
   { methods: ["POST"], path: "/auth/organization/delete", message: "Deleting the workspace is turned off in the demo." },

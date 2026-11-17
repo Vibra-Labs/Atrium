@@ -7,6 +7,7 @@
  * Everything inside the workspace is replaced.
  */
 import { PrismaClient } from "@prisma/client";
+import { DEFAULT_STATUSES } from "@atrium/shared";
 import { demoSeedPlan, type DemoSeedPlan, type DemoUser } from "./demo-seed-plan";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,7 +26,14 @@ function orgId(slug: string): string {
 }
 
 async function clearWorkspace(prisma: PrismaClient, organizationId: string): Promise<void> {
-  // Ordered by dependency. Organization and User rows are left alone on purpose.
+  // Ordered by dependency. Organization and User rows are left alone on purpose,
+  // so a reset that lands mid-visit does not invalidate anyone's session.
+  //
+  // Notification and ClientProfile carry an organizationId but no FK relation,
+  // so nothing cascades them: left out, they accumulate visitor-typed text and
+  // links to deleted projects forever — the opposite of what the reset is for.
+  await prisma.notification.deleteMany({ where: { organizationId } });
+  await prisma.clientProfile.deleteMany({ where: { organizationId } });
   await prisma.timeEntry.deleteMany({ where: { organizationId } });
   await prisma.invoice.deleteMany({ where: { organizationId } });
   await prisma.document.deleteMany({ where: { organizationId } });
@@ -111,6 +119,15 @@ export async function seedDemo(
   await pinToPlan(prisma, organizationId, plan.planSlug);
 
   const ownerId: string = users.get("owner")!;
+
+  // Recreated, not just cleared: without statuses, assertStatus 400s on every
+  // status change and the status chips have nothing to render — and the only
+  // other thing that restores defaults is a boot-time backfill, so the demo
+  // would stay broken until the next API restart.
+  await prisma.projectStatus.createMany({
+    data: DEFAULT_STATUSES.map((status) => ({ ...status, organizationId })),
+    skipDuplicates: true,
+  });
 
   await prisma.branding.upsert({
     where: { organizationId },

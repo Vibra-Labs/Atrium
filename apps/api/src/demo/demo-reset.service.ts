@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { DemoService } from "./demo.service";
+import { DEMO_EMAIL_DOMAIN } from "./demo-config";
 import { seedDemo } from "@atrium/database";
 
 /** How long after someone used the demo a scheduled reset holds off. */
@@ -44,15 +45,38 @@ export class DemoResetService {
     }
 
     // Re-read rather than trust the memoised id: the row is what gets deleted.
+    //
+    // The assertion is about the workspace's OWNER, not its slug. Checking the
+    // slug would be vacuous — the row was looked up by slug — and the
+    // misconfiguration that actually matters is DEMO_ORG_SLUG pointing at a
+    // live workspace. An owner on @demo.invalid is something the seed
+    // guarantees and a real workspace cannot have, so this is the property
+    // worth asserting before anything is deleted. Same contract as
+    // test/integration/guard.ts refusing a database not named *_test.
     const organization = await this.prisma.organization.findUnique({
       where: { slug },
-      select: { id: true, slug: true },
+      select: {
+        id: true,
+        slug: true,
+        members: {
+          where: { role: "owner" },
+          select: { user: { select: { email: true } } },
+        },
+      },
     });
-    if (organization && organization.slug !== slug) {
-      throw new Error(
-        `Refusing to reset the demo: organization ${organization.id} has slug ` +
-          `"${organization.slug}", not the configured demo slug "${slug}".`,
-      );
+
+    if (organization) {
+      const owners: string[] = organization.members.map((member) => member.user.email);
+      const allDemoOwners: boolean =
+        owners.length > 0 &&
+        owners.every((email: string) => email.trim().toLowerCase().endsWith(DEMO_EMAIL_DOMAIN));
+      if (!allDemoOwners) {
+        throw new Error(
+          `Refusing to reset "${slug}" (${organization.id}): its owners are ` +
+            `${owners.join(", ") || "(none)"}, which is not a demo account. ` +
+            `DEMO_ORG_SLUG looks like it is pointing at a real workspace.`,
+        );
+      }
     }
 
     await this.seeder(this.prisma, slug, {

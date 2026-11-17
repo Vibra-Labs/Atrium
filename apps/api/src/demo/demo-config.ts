@@ -20,7 +20,10 @@ export interface DemoSettings {
 function address(config: ConfigService, key: string): string | null {
   const value: string | undefined = config.get<string>(key);
   if (!value || value.length === 0) return null;
-  return value.toLowerCase().endsWith(DEMO_EMAIL_DOMAIN) ? value : null;
+  // Lowercased, because the seed stores addresses lowercased: returning the raw
+  // value would sign in an address the seeded user does not have.
+  const normalized: string = value.trim().toLowerCase();
+  return normalized.endsWith(DEMO_EMAIL_DOMAIN) ? normalized : null;
 }
 
 /**

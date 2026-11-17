@@ -17,6 +17,7 @@ function build(options: {
   slug?: string | null;
   storedSlug?: string | null;
   lastActivityAt?: Date | null;
+  ownerEmail?: string | null;
 } = {}) {
   const enabled: boolean = options.enabled ?? true;
   const slug: string | null = options.slug === undefined ? SLUG : options.slug;
@@ -31,10 +32,20 @@ function build(options: {
     lastActivityAt: options.lastActivityAt ?? null,
     touch: mock(() => {}),
   };
+  const ownerEmail: string | null =
+    options.ownerEmail === undefined ? "owner@demo.invalid" : options.ownerEmail;
   const prisma = {
     organization: {
       findUnique: mock(() =>
-        Promise.resolve(storedSlug === null ? null : { id: "org-1", slug: storedSlug }),
+        Promise.resolve(
+          storedSlug === null
+            ? null
+            : {
+                id: "org-1",
+                slug: storedSlug,
+                members: ownerEmail === null ? [] : [{ user: { email: ownerEmail } }],
+              },
+        ),
       ),
     },
   };
@@ -67,9 +78,19 @@ describe("DemoResetService", () => {
     expect(seeder).not.toHaveBeenCalled();
   });
 
-  it("throws before seeding when the stored org's slug is not DEMO_ORG_SLUG", async () => {
-    // A misconfiguration must fail closed, never wipe someone else's workspace.
-    const { service, seeder } = build({ storedSlug: "a-real-agency" });
+  it("throws before seeding when the target's owner is not a demo account", async () => {
+    // The real misconfiguration is DEMO_ORG_SLUG pointing at a live workspace.
+    // Checking the slug cannot catch that — the row was looked up BY slug — so
+    // the assertion has to be a property the seed guarantees and a real
+    // workspace cannot have: an owner on @demo.invalid.
+    const { service, seeder } = build({ ownerEmail: "edgar@vibralabs.co" });
+
+    await expect(service.reset()).rejects.toThrow(/demo/i);
+    expect(seeder).not.toHaveBeenCalled();
+  });
+
+  it("throws when the target workspace has no owner to vouch for it", async () => {
+    const { service, seeder } = build({ ownerEmail: null });
 
     await expect(service.reset()).rejects.toThrow(/demo/i);
     expect(seeder).not.toHaveBeenCalled();

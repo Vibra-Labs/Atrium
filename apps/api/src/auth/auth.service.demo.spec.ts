@@ -130,4 +130,17 @@ describe("AuthService.startDemoSignIn", () => {
     await expect(service.startDemoSignIn("owner")).rejects.toThrow(NotFoundException);
     expect(signIn).not.toHaveBeenCalled();
   });
+
+  it("sends a failed verification somewhere other than the landing page", async () => {
+    // errorCallbackURL used to equal callbackURL, so a failed magic-link verify
+    // looked like a success to the entry page and dumped the visitor on /login
+    // with no explanation.
+    const signIn = stubSignInMagicLink();
+
+    await service.startDemoSignIn("owner");
+
+    const { body } = signIn.mock.calls[0][0] as SignInCall;
+    expect(body.errorCallbackURL).not.toBe(body.callbackURL);
+    expect(body.errorCallbackURL).toContain("/demo/unavailable");
+  });
 });

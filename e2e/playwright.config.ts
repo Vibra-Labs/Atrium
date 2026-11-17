@@ -33,6 +33,12 @@ process.env.ATRIUM_TRACKERS = TRACKERS;
 /** Shared with global-setup.ts, which seeds this workspace. */
 export const DEMO_SLUG = "demo-e2e";
 
+// Set on the runner process too, not only in the webServer child envs: global
+// setup reads it to decide whether to seed the demo workspace, and without the
+// seed every demo case signs in as a user that does not exist and times out.
+process.env.DEMO_MODE = "true";
+process.env.DEMO_ORG_SLUG = DEMO_SLUG;
+
 export default defineConfig({
   testDir: "./tests",
   testMatch: "*.e2e.ts",

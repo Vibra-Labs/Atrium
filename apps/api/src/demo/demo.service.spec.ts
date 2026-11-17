@@ -97,4 +97,15 @@ describe("DemoService", () => {
     service.touch();
     expect(service.lastActivityAt).toBeInstanceOf(Date);
   });
+
+  it("lowercases the configured addresses, since the seed stores them lowercased", () => {
+    // Otherwise DEMO_OWNER_EMAIL="Owner@demo.invalid" seeds owner@demo.invalid
+    // and signs in Owner@demo.invalid: a miss, a second orgless user, and a
+    // demo that looks broken for a plausible typo.
+    const service = new DemoService(
+      config({ DEMO_OWNER_EMAIL: "Owner@Demo.Invalid" }),
+      prisma().service,
+    );
+    expect(service.ownerEmail).toBe("owner@demo.invalid");
+  });
 });

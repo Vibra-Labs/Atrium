@@ -5,8 +5,18 @@ import type { DemoService } from "./demo.service";
 
 const DEMO_ORG = "org-demo";
 
-function context(method: string, url: string, organizationId?: string): ExecutionContext {
-  const request = { method, originalUrl: url, organization: organizationId ? { id: organizationId } : undefined };
+function context(
+  method: string,
+  url: string,
+  organizationId?: string,
+  contentType?: string,
+): ExecutionContext {
+  const request = {
+    method,
+    originalUrl: url,
+    organization: organizationId ? { id: organizationId } : undefined,
+    headers: contentType ? { "content-type": contentType } : {},
+  };
   return {
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({}), getNext: () => () => {} }),
   } as unknown as ExecutionContext;
@@ -49,12 +59,6 @@ describe("DemoGuard", () => {
     const { guard: g, touch } = guard();
     await g.canActivate(context("POST", "/api/projects", DEMO_ORG));
     expect(touch).toHaveBeenCalled();
-  });
-
-  it("does not record activity on a read", async () => {
-    const { guard: g, touch } = guard();
-    await g.canActivate(context("GET", "/api/projects", DEMO_ORG));
-    expect(touch).not.toHaveBeenCalled();
   });
 
   it("refuses a file upload with a message the UI can show", async () => {
@@ -117,5 +121,58 @@ describe("DemoGuard", () => {
     const { guard: g } = guard();
     expect(await g.canActivate(context("POST", "/api/demo/enter", DEMO_ORG))).toBe(true);
     expect(await g.canActivate(context("POST", "/api/demo/reset", DEMO_ORG))).toBe(true);
+  });
+
+  it("refuses any multipart body in the demo org, whatever the route", async () => {
+    // The path list is not the fence: the demo's own "Upload file" button posts
+    // to POST /documents, and /updates, /invoices/upload and the document
+    // signing routes all take files too. Blocking the capability covers the
+    // routes nobody thought of, including ones added later.
+    const { guard: g } = guard();
+    const uploads: [string, string][] = [
+      ["POST", "/api/documents"],
+      ["POST", "/api/documents/abc/upload-version"],
+      ["POST", "/api/documents/abc/sign"],
+      ["POST", "/api/updates"],
+      ["POST", "/api/invoices/upload"],
+      ["POST", "/api/some/route/added/next/year"],
+    ];
+    for (const [method, url] of uploads) {
+      await expect(
+        g.canActivate(context(method, url, DEMO_ORG, "multipart/form-data; boundary=x")),
+      ).rejects.toThrow(/Uploads are turned off in the demo/);
+    }
+  });
+
+  it("still allows a JSON write to those same routes", async () => {
+    const { guard: g } = guard();
+    expect(
+      await g.canActivate(context("POST", "/api/updates", DEMO_ORG, "application/json")),
+    ).toBe(true);
+  });
+
+  it("allows a multipart body in a workspace that is not the demo", async () => {
+    const { guard: g } = guard();
+    expect(
+      await g.canActivate(context("POST", "/api/documents", "org-real", "multipart/form-data")),
+    ).toBe(true);
+  });
+
+  it("refuses account deletion and workspace settings, which a reset cannot undo", async () => {
+    // User and SystemSettings rows deliberately survive a reset, so damage here
+    // is permanent in a way project data is not.
+    const { guard: g } = guard();
+    await expect(g.canActivate(context("DELETE", "/api/account", DEMO_ORG))).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(g.canActivate(context("PUT", "/api/settings", DEMO_ORG))).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it("counts a read as activity, so a visitor browsing is not reseeded under", async () => {
+    const { guard: g, touch } = guard();
+    await g.canActivate(context("GET", "/api/projects", DEMO_ORG));
+    expect(touch).toHaveBeenCalled();
   });
 });

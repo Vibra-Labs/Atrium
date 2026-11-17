@@ -1028,7 +1028,13 @@ export class AuthService {
     const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
     const landing: string = kind === "owner" ? "/dashboard" : "/portal";
     const target = `${webUrl}${landing}`;
-    const body = { email, callbackURL: target, errorCallbackURL: target };
+    // A distinct error target: with both the same, a failed verify looks like a
+    // success to the entry page and the visitor is bounced to /login unexplained.
+    const body = {
+      email,
+      callbackURL: target,
+      errorCallbackURL: `${webUrl}/demo/unavailable`,
+    };
 
     const signInMagicLink = (this.auth.api as unknown as { signInMagicLink: SignInMagicLink })
       .signInMagicLink;

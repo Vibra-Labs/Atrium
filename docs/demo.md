@@ -58,12 +58,16 @@ anything else rather than trusting the operator to get it right.
 ## What the demo refuses
 
 `DemoGuard` fences the demo workspace, and only that workspace: uploads,
-invites, API keys, MCP grants, integrations, billing, payments, custom domains
-and workspace deletion. Each refusal carries a message written to be shown to
-the visitor.
+invites, API keys, MCP grants, integrations, billing, payments, custom domains,
+workspace settings, account deletion and workspace deletion. Each refusal
+carries a message written to be shown to the visitor.
 
-Uploads are off because anything a stranger uploads would sit on your
-infrastructure, and the seeded files already show how files look.
+Uploads are refused by **capability, not by route**: any request to the demo
+workspace carrying a `multipart/form-data` body is turned away. A list of
+upload paths would silently fail to cover the next one somebody adds — and did:
+the demo's own "Upload file" button posts to `POST /documents`, not
+`/files/upload`. Uploads are off because anything a stranger uploads would sit
+on your infrastructure, and the seeded files already show how files look.
 
 Outbound email is dropped in `MailService` for any recipient on
 `@demo.invalid`. The rule is on the address rather than the workspace because
@@ -76,8 +80,12 @@ reputation.
 - A scheduled reset runs every 30 minutes. It holds off for five minutes after
   anyone used the demo, so nobody watches their work vanish mid-click.
 - The banner's "Reset demo" button resets on demand, forcing past that wait.
-- Both refuse unless the target's slug matches `DEMO_ORG_SLUG`, the same
-  fail-closed contract as the integration-test database guard.
+- Both refuse unless every owner of the target workspace is on
+  `@demo.invalid`. Checking the slug would prove nothing, since the workspace
+  is looked up *by* slug; the owner's address is something the seed guarantees
+  and a real workspace cannot have. So pointing `DEMO_ORG_SLUG` at a live
+  workspace fails closed instead of wiping it. Same contract as the
+  integration-test guard refusing a database not named `*_test`.
 - The `Organization` and `User` rows survive a reset, so sessions do too.
 
 ## Measurement

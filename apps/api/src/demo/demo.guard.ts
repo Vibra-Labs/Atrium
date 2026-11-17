@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@
 import type { AuthenticatedRequest } from "../common";
 import { DemoService } from "./demo.service";
 
-const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+const UPLOADS_OFF = "Uploads are turned off in the demo.";
 
 interface BlockedAction {
   methods: readonly string[];
@@ -20,8 +20,13 @@ interface BlockedAction {
  * seeded files already show how files look.
  */
 const BLOCKED: readonly BlockedAction[] = [
-  { methods: ["POST", "PUT", "PATCH"], path: "/files/upload", message: "Uploads are turned off in the demo." },
-  { methods: ["POST"], path: "/branding/logo", message: "Uploads are turned off in the demo." },
+  // Belt and braces alongside the multipart check: these are uploads whatever
+  // content type they arrive with.
+  { methods: ["POST", "PUT", "PATCH"], path: "/files/upload", message: UPLOADS_OFF },
+  { methods: ["POST"], path: "/branding/logo", message: UPLOADS_OFF },
+  { methods: ["POST"], path: "/account", message: "Deleting the account is turned off in the demo." },
+  { methods: ["DELETE"], path: "/account", message: "Deleting the account is turned off in the demo." },
+  { methods: ["PUT", "PATCH"], path: "/settings", message: "Workspace settings are turned off in the demo." },
   { methods: ["POST", "DELETE"], path: "/api-keys", message: "API keys are turned off in the demo." },
   { methods: ["POST", "DELETE"], path: "/mcp-grants", message: "Connecting AI assistants is turned off in the demo." },
   { methods: ["POST"], path: "/billing", message: "Billing is turned off in the demo." },
@@ -58,14 +63,29 @@ export class DemoGuard implements CanActivate {
     // Entry and reset are the demo's own controls, never fenced by it.
     if (path.startsWith("/demo/")) return true;
 
+    // Anyone in the demo counts as activity, reads included: a visitor reading
+    // the dashboard for six minutes must not be reseeded under.
+    this.demo.touch();
+
+    // Uploads are fenced by capability, not by route. The demo's own "Upload
+    // file" button posts to /documents, and /updates, /invoices/upload and the
+    // document signing routes all take files; a path list silently fails to
+    // cover the next one somebody adds.
+    if (this.isMultipart(request)) throw new ForbiddenException(UPLOADS_OFF);
+
     const blocked: BlockedAction | undefined = BLOCKED.find(
       (action: BlockedAction) =>
         action.methods.includes(method) && path.startsWith(action.path),
     );
     if (blocked) throw new ForbiddenException(blocked.message);
 
-    if (!SAFE_METHODS.has(method)) this.demo.touch();
     return true;
+  }
+
+  private isMultipart(request: AuthenticatedRequest): boolean {
+    const header: unknown = request.headers?.["content-type"];
+    const contentType: string = Array.isArray(header) ? (header[0] ?? "") : String(header ?? "");
+    return contentType.toLowerCase().includes("multipart/form-data");
   }
 
   /** The request path without the global /api prefix or a query string. */

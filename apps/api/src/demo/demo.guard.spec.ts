@@ -175,4 +175,103 @@ describe("DemoGuard", () => {
     await g.canActivate(context("GET", "/api/projects", DEMO_ORG));
     expect(touch).toHaveBeenCalled();
   });
+
+  describe("writes are allowlisted, not blocklisted", () => {
+    // Two reviews found the same defect: a path blocklist over an API surface
+    // this guard does not own. Better Auth's routes alone cannot be
+    // enumerated, and every miss was a hole (uploads via /documents, 2FA
+    // enforcement that no reset clears, an org rename that bricks the reset).
+    // Inverted, a route nobody thought of is a route that does not work in the
+    // demo -- visible and harmless -- instead of an open door.
+
+    it("allows the writes the demo exists to show", async () => {
+      const { guard: g } = guard();
+      const allowed: [string, string][] = [
+        ["POST", "/api/projects"],
+        ["PATCH", "/api/projects/p1"],
+        ["POST", "/api/tasks"],
+        ["PATCH", "/api/tasks/t1"],
+        ["POST", "/api/updates"],
+        ["POST", "/api/comments"],
+        ["POST", "/api/notes"],
+        ["POST", "/api/invoices"],
+        ["POST", "/api/contacts"],
+        ["POST", "/api/companies"],
+        ["POST", "/api/labels"],
+        ["POST", "/api/time-entries"],
+        ["POST", "/api/project-statuses"],
+        ["POST", "/api/pursuit-stages"],
+        ["POST", "/api/files/link"],
+        ["PUT", "/api/branding"],
+        ["PUT", "/api/clients/me/profile"],
+        ["PATCH", "/api/notifications/n1"],
+        ["POST", "/api/auth/sign-out"],
+      ];
+      for (const [method, url] of allowed) {
+        expect(await g.canActivate(context(method, url, DEMO_ORG, "application/json"))).toBe(true);
+      }
+    });
+
+    it("refuses 2FA enforcement, which no reset can undo", async () => {
+      // SystemSettings and User rows deliberately survive a reset, so one
+      // visitor turning this on would gate every later visitor forever.
+      const { guard: g } = guard();
+      await expect(
+        g.canActivate(context("PUT", "/api/two-factor/requirement", DEMO_ORG, "application/json")),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        g.canActivate(context("POST", "/api/auth/two-factor/enable", DEMO_ORG, "application/json")),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("refuses the Better Auth routes that would break the reset or the workspace", async () => {
+      const { guard: g } = guard();
+      const refused: [string, string][] = [
+        ["POST", "/api/auth/organization/update"],
+        ["POST", "/api/auth/organization/create"],
+        ["POST", "/api/auth/organization/invite-member"],
+        ["POST", "/api/auth/organization/delete"],
+        ["POST", "/api/auth/change-email"],
+        ["POST", "/api/auth/change-password"],
+      ];
+      for (const [method, url] of refused) {
+        await expect(
+          g.canActivate(context(method, url, DEMO_ORG, "application/json")),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+
+    it("refuses a route nobody has thought of yet", async () => {
+      const { guard: g } = guard();
+      await expect(
+        g.canActivate(context("POST", "/api/some-feature-shipped-next-year", DEMO_ORG)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("still allows every read", async () => {
+      const { guard: g } = guard();
+      for (const url of ["/api/settings", "/api/billing", "/api/two-factor", "/api/anything"]) {
+        expect(await g.canActivate(context("GET", url, DEMO_ORG))).toBe(true);
+      }
+    });
+
+    it("tells a visitor why an upload specifically was refused", async () => {
+      const { guard: g } = guard();
+      await expect(
+        g.canActivate(context("POST", "/api/documents", DEMO_ORG, "multipart/form-data")),
+      ).rejects.toThrow(/Uploads are turned off in the demo/);
+    });
+
+    it("names billing and invites, the two refusals a visitor is most likely to hit", async () => {
+      const { guard: g } = guard();
+      await expect(
+        g.canActivate(context("POST", "/api/billing/checkout", DEMO_ORG, "application/json")),
+      ).rejects.toThrow(/[Bb]illing/);
+      await expect(
+        g.canActivate(
+          context("POST", "/api/auth/organization/invite-member", DEMO_ORG, "application/json"),
+        ),
+      ).rejects.toThrow(/[Ii]nviting/);
+    });
+  });
 });

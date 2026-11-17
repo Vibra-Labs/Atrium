@@ -1,6 +1,7 @@
 import { Controller, ForbiddenException, Get, UseGuards } from "@nestjs/common";
 import { AuthGuard, CurrentMember, CurrentOrg } from "../common";
 import type { FullOrganization, OrgMember } from "../common";
+import { DemoService } from "../demo/demo.service";
 
 export interface CurrentOrganization {
   id: string;
@@ -8,6 +9,16 @@ export interface CurrentOrganization {
   slug: string;
   logo: string | null;
   role: string;
+  /**
+   * Whether this workspace is the public demo.
+   *
+   * Decided here rather than from a build-time flag in the web app, because
+   * DEMO_MODE is instance-wide while the fence (DemoGuard) is organization-
+   * scoped. With the flag alone, any other workspace on the demo host — and
+   * every workspace in the e2e suite — saw the demo banner over their own data
+   * and an upload button disabled for no reason.
+   */
+  isDemo: boolean;
 }
 
 /**
@@ -17,11 +28,13 @@ export interface CurrentOrganization {
 @Controller("organization")
 @UseGuards(AuthGuard)
 export class OrganizationController {
+  constructor(private demo: DemoService) {}
+
   @Get("current")
-  current(
+  async current(
     @CurrentOrg() org: FullOrganization,
     @CurrentMember() member: OrgMember | undefined,
-  ): CurrentOrganization {
+  ): Promise<CurrentOrganization> {
     if (!member) throw new ForbiddenException("Not a member of this workspace");
     return {
       id: org.id,
@@ -29,6 +42,7 @@ export class OrganizationController {
       slug: org.slug ?? "",
       logo: org.logo,
       role: member.role,
+      isDemo: await this.demo.isDemoOrg(org.id),
     };
   }
 }

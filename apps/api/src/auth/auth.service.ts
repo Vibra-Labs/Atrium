@@ -1025,6 +1025,19 @@ export class AuthService {
     const email: string | null = demoAddressFor(settings, kind);
     if (!email) throw new NotFoundException("Not found");
 
+    // The magic-link plugin signs up unknown addresses on verify, so without
+    // this the first entry before `db:seed:demo` has run would create a User
+    // with the demo address and no membership: a visitor on a broken dashboard
+    // that DemoGuard cannot fence (no resolved organization), and every later
+    // reset colliding with that row on User.email. Fail closed instead — the
+    // entry page sends a 404 to /demo/unavailable.
+    if (!(await this.hasAccount(email))) {
+      this.logger.warn(
+        `Demo sign-in refused: no account for ${email}. Has \`bun run db:seed:demo\` been run?`,
+      );
+      throw new NotFoundException("Not found");
+    }
+
     const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
     const landing: string = kind === "owner" ? "/dashboard" : "/portal";
     const target = `${webUrl}${landing}`;

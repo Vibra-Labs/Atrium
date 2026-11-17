@@ -37,6 +37,7 @@ import { TimeEntriesModule } from "./time-entries/time-entries.module";
 import { CalendarModule } from "./calendar/calendar.module";
 import { ApiKeysModule } from "./api-keys/api-keys.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
+import { DemoCoreModule } from "./demo/demo-core.module";
 import { DemoModule } from "./demo/demo.module";
 import { DemoGuard } from "./demo/demo.guard";
 import { McpModule } from "./mcp/mcp.module";
@@ -111,6 +112,7 @@ import { PlanGuard } from "./common/guards/plan.guard";
     ApiKeysModule,
     IntegrationsModule,
     McpModule,
+    DemoCoreModule,
     DemoModule,
     McpAuthModule,
     OrganizationModule,

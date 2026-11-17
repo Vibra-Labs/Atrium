@@ -143,4 +143,19 @@ describe("AuthService.startDemoSignIn", () => {
     expect(body.errorCallbackURL).not.toBe(body.callbackURL);
     expect(body.errorCallbackURL).toContain("/demo/unavailable");
   });
+
+  it("refuses when the demo account does not exist yet, instead of creating an orphan", async () => {
+    // The magic-link plugin signs up unknown addresses on verify. Without this
+    // gate, entering before `db:seed:demo` has run creates a User with the demo
+    // address and no Member row: the visitor lands on a broken dashboard that
+    // DemoGuard cannot fence (no resolved organization), and every later reset
+    // then collides with that row on User.email.
+    mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve(null));
+    const signIn = stubSignInMagicLink();
+
+    await expect(service.startDemoSignIn("owner")).rejects.toBeInstanceOf(NotFoundException);
+    expect(signIn).not.toHaveBeenCalled();
+
+    mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-demo" }));
+  });
 });

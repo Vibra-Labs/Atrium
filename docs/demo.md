@@ -23,11 +23,11 @@ Two reasons, both learned the hard way rather than guessed:
 
 | Variable | Example | Meaning |
 |---|---|---|
-| `DEMO_MODE` | `true` | Off unless exactly `true`. Everything below is ignored while it is off. |
+| `DEMO_MODE` | `true` | Off unless exactly `true`. Everything below is ignored while it is off. Needed by the **API**. |
 | `DEMO_ORG_SLUG` | `demo` | The demo workspace's slug. The reset refuses any other target. |
 | `DEMO_OWNER_EMAIL` | `owner@demo.invalid` | The account `/demo` signs visitors in as. |
 | `DEMO_CLIENT_EMAIL` | `client@demo.invalid` | The account `/demo/client` signs visitors in as. |
-| `DEMO_APP_URL` | `https://atrium.example.com` | The real app, for the banner's "Start free" link. |
+| `DEMO_APP_URL` | `https://atrium.example.com` | The real app, for the banner's "Start free" link. Needed by the **web** service. |
 
 Both addresses **must** end in `@demo.invalid`. A demo address pointing at a
 real account would make that account anonymously signable, so the code refuses
@@ -57,17 +57,33 @@ anything else rather than trusting the operator to get it right.
 
 ## What the demo refuses
 
-`DemoGuard` fences the demo workspace, and only that workspace: uploads,
-invites, API keys, MCP grants, integrations, billing, payments, custom domains,
-workspace settings, account deletion and workspace deletion. Each refusal
-carries a message written to be shown to the visitor.
+`DemoGuard` fences the demo workspace, and only that workspace. It works as an
+**allowlist**: reads are always fine, and writes are refused unless the path is
+one the demo exists to show — projects, tasks, updates, comments, notes,
+invoices, contacts, companies, labels, time entries, statuses, pipelines,
+branding, a portal client's own profile, and signing out.
 
-Uploads are refused by **capability, not by route**: any request to the demo
-workspace carrying a `multipart/form-data` body is turned away. A list of
-upload paths would silently fail to cover the next one somebody adds — and did:
-the demo's own "Upload file" button posts to `POST /documents`, not
-`/files/upload`. Uploads are off because anything a stranger uploads would sit
-on your infrastructure, and the seeded files already show how files look.
+It started as a blocklist. Two independent reviews found the same class of hole
+in it, because a blocklist has to enumerate an API surface the guard does not
+own — and Better Auth's routes cannot be enumerated at all. Each miss was an
+open door: uploads reached through `POST /documents` rather than
+`/files/upload`; `PUT /two-factor/requirement` let one visitor put every later
+visitor behind a 2FA enrollment gate that no reset clears; and
+`POST /auth/organization/update` let a visitor rename the workspace, after
+which every reset failed forever. Inverted, a route nobody thought of simply
+does not work in the demo — visible and harmless — instead of being a hole.
+
+**If you add a feature and it does not work in the demo, that is this
+allowlist.** Add its path to `ALLOWED_WRITES` in
+`apps/api/src/demo/demo.guard.ts` — but only if a reset can undo it. Anything
+that writes to rows a reset deliberately preserves (`User`, `SystemSettings`,
+`Organization`) must stay out, because a visitor's change there would outlive
+the workspace it was made in.
+
+Uploads are refused by **capability** on top of that: any request carrying a
+`multipart/form-data` body is turned away, whatever its path, because anything
+a stranger uploads would sit on your infrastructure. The seeded files already
+show how files look.
 
 Outbound email is dropped in `MailService` for any recipient on
 `@demo.invalid`. The rule is on the address rather than the workspace because
@@ -87,6 +103,15 @@ reputation.
   workspace fails closed instead of wiping it. Same contract as the
   integration-test guard refusing a database not named `*_test`.
 - The `Organization` and `User` rows survive a reset, so sessions do too.
+
+## The banner is per workspace, not per host
+
+Whether a page shows the demo banner comes from `/api/organization/current`,
+which reports `isDemo` for the workspace being viewed — not from `DEMO_MODE` in
+the web app. `DEMO_MODE` is instance-wide, while the fence is
+organization-scoped, so reading the flag directly meant any other workspace on
+the host saw the banner over its own data and an upload button disabled for no
+reason. The e2e suite was a live demonstration of that drift.
 
 ## Measurement
 

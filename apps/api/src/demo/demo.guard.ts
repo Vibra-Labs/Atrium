@@ -2,47 +2,99 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@
 import type { AuthenticatedRequest } from "../common";
 import { DemoService } from "./demo.service";
 
-const UPLOADS_OFF = "Uploads are turned off in the demo.";
+const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 
-interface BlockedAction {
-  methods: readonly string[];
-  /** Matched as a prefix of the path, with /api and any query string removed. */
-  path: string;
-  message: string;
-}
+const UPLOADS_OFF = "Uploads are turned off in the demo.";
+const GENERIC_OFF = "That's turned off in the demo.";
 
 /**
- * What the demo refuses. The messages are shown to the visitor verbatim, so
- * they explain rather than scold.
+ * Write paths the demo permits, as prefixes of the path with /api stripped.
  *
- * Uploads are the main abuse vector — anything a stranger uploads would sit on
- * our infrastructure — and the least interesting thing to demo, since the
- * seeded files already show how files look.
+ * An allowlist, not a blocklist. Two independent reviews found the same defect
+ * in the blocklist this replaced: it tried to enumerate a surface this guard
+ * does not own. Every route it missed was a hole — uploads reached through
+ * `POST /documents` rather than `/files/upload`, 2FA enforcement that no reset
+ * clears, an organization rename that bricked every later reset — and Better
+ * Auth's own routes cannot be enumerated at all.
+ *
+ * Inverted, the failure mode changes sides: a route nobody thought of simply
+ * does not work in the demo, which is visible and harmless, instead of being
+ * an open door onto a workspace strangers can write to.
+ *
+ * Anything added here must be something a reset can undo. Rows that survive a
+ * reset on purpose — `User`, `SystemSettings`, `Organization` — are exactly
+ * what must stay out.
  */
-const BLOCKED: readonly BlockedAction[] = [
-  // Belt and braces alongside the multipart check: these are uploads whatever
-  // content type they arrive with.
-  { methods: ["POST", "PUT", "PATCH"], path: "/files/upload", message: UPLOADS_OFF },
-  { methods: ["POST"], path: "/branding/logo", message: UPLOADS_OFF },
-  { methods: ["POST"], path: "/account", message: "Deleting the account is turned off in the demo." },
-  { methods: ["DELETE"], path: "/account", message: "Deleting the account is turned off in the demo." },
-  { methods: ["PUT", "PATCH"], path: "/settings", message: "Workspace settings are turned off in the demo." },
-  { methods: ["POST", "DELETE"], path: "/api-keys", message: "API keys are turned off in the demo." },
-  { methods: ["POST", "DELETE"], path: "/mcp-grants", message: "Connecting AI assistants is turned off in the demo." },
-  { methods: ["POST"], path: "/billing", message: "Billing is turned off in the demo." },
-  { methods: ["POST"], path: "/payments", message: "Payments are turned off in the demo." },
-  // No destination can be created, so nothing reaches IntegrationDispatcher.
-  { methods: ["POST", "PUT", "PATCH", "DELETE"], path: "/integrations", message: "Integrations are turned off in the demo." },
-  { methods: ["PUT", "DELETE", "POST"], path: "/settings/custom-domain", message: "Custom domains are turned off in the demo." },
-  { methods: ["POST"], path: "/auth/organization/invite-member", message: "Inviting people is turned off in the demo." },
-  { methods: ["POST"], path: "/auth/organization/delete", message: "Deleting the workspace is turned off in the demo." },
-  { methods: ["POST"], path: "/clients/invite", message: "Inviting people is turned off in the demo." },
+const ALLOWED_WRITES: readonly string[] = [
+  "/projects",
+  "/tasks",
+  "/updates",
+  "/comments",
+  "/notes",
+  "/invoices",
+  "/contacts",
+  "/companies",
+  "/lead-sources",
+  "/labels",
+  "/time-entries",
+  "/project-statuses",
+  "/pursuit-pipelines",
+  "/pursuit-stages",
+  "/dashboard-layout",
+  "/notifications",
+  "/email-preferences",
+  "/push",
+  "/files",
+  "/documents",
+  "/embeds",
+  "/branding",
+  "/activity",
+  "/search",
+  "/calendar",
+  // A portal client editing their own contact details. The rest of /clients
+  // manages real people and stays out.
+  "/clients/me/profile",
+  // The demo's own controls.
+  "/demo",
+  // So a visitor can leave. Every other /auth route is refused: the
+  // organization routes can rename or delete the workspace, and change-email
+  // would strand the seeded user behind an address the reset no longer knows.
+  "/auth/sign-out",
 ];
 
 /**
- * Fences the demo workspace. Runs for every request, but only ever refuses one
+ * Refused even though they sit beneath an allowed prefix. These are the upload
+ * endpoints: the multipart check already stops a real upload, and this stops
+ * the route being reachable at all, whatever body it is handed.
+ */
+const DENIED_WITHIN_ALLOWED: readonly string[] = [
+  "/files/upload",
+  "/branding/logo",
+  "/invoices/upload",
+  "/documents/sign-via-token",
+];
+
+/** Refusals a visitor is likely to hit, worded for them rather than for a log. */
+const EXPLAINED: readonly { path: string; message: string }[] = [
+  { path: "/billing", message: "Billing is turned off in the demo." },
+  { path: "/payments", message: "Payments are turned off in the demo." },
+  { path: "/auth/organization/invite-member", message: "Inviting people is turned off in the demo." },
+  { path: "/invitations", message: "Inviting people is turned off in the demo." },
+  { path: "/api-keys", message: "API keys are turned off in the demo." },
+  { path: "/mcp-grants", message: "Connecting AI assistants is turned off in the demo." },
+  { path: "/integrations", message: "Integrations are turned off in the demo." },
+  { path: "/settings/custom-domain", message: "Custom domains are turned off in the demo." },
+  { path: "/settings", message: "Workspace settings are turned off in the demo." },
+  { path: "/two-factor", message: "Two-factor settings are turned off in the demo." },
+  { path: "/auth/two-factor", message: "Two-factor settings are turned off in the demo." },
+  { path: "/account", message: "Account changes are turned off in the demo." },
+  { path: "/auth/organization", message: "Changing the workspace is turned off in the demo." },
+];
+
+/**
+ * Fences the demo workspace. Runs on every request but only ever refuses one
  * whose resolved organization is the demo workspace, so an ordinary install —
- * and every other workspace on the demo instance — is untouched.
+ * and any other workspace on the demo host — is untouched.
  */
 @Injectable()
 export class DemoGuard implements CanActivate {
@@ -57,41 +109,48 @@ export class DemoGuard implements CanActivate {
     if (!organizationId) return true;
     if (!(await this.demo.isDemoOrg(organizationId))) return true;
 
-    const path: string = this.pathOf(request);
-    const method: string = request.method.toUpperCase();
-
-    // Entry and reset are the demo's own controls, never fenced by it.
-    if (path.startsWith("/demo/")) return true;
-
     // Anyone in the demo counts as activity, reads included: a visitor reading
     // the dashboard for six minutes must not be reseeded under.
     this.demo.touch();
 
-    // Uploads are fenced by capability, not by route. The demo's own "Upload
-    // file" button posts to /documents, and /updates, /invoices/upload and the
-    // document signing routes all take files; a path list silently fails to
-    // cover the next one somebody adds.
+    const method: string = request.method.toUpperCase();
+    if (SAFE_METHODS.has(method)) return true;
+
+    const path: string = this.pathOf(request);
+
+    // Uploads are refused by capability rather than by route, so this covers
+    // every endpoint that takes a file — including ones added later.
     if (this.isMultipart(request)) throw new ForbiddenException(UPLOADS_OFF);
 
-    const blocked: BlockedAction | undefined = BLOCKED.find(
-      (action: BlockedAction) =>
-        action.methods.includes(method) && path.startsWith(action.path),
-    );
-    if (blocked) throw new ForbiddenException(blocked.message);
+    if (DENIED_WITHIN_ALLOWED.some((denied: string) => this.matches(path, denied))) {
+      throw new ForbiddenException(UPLOADS_OFF);
+    }
 
-    return true;
+    if (ALLOWED_WRITES.some((allowed: string) => this.matches(path, allowed))) return true;
+
+    const explained = EXPLAINED.find((entry) => this.matches(path, entry.path));
+    throw new ForbiddenException(explained?.message ?? GENERIC_OFF);
   }
 
-  private isMultipart(request: AuthenticatedRequest): boolean {
-    const header: unknown = request.headers?.["content-type"];
-    const contentType: string = Array.isArray(header) ? (header[0] ?? "") : String(header ?? "");
-    return contentType.toLowerCase().includes("multipart/form-data");
+  /** True when `path` is the prefix itself or a path beneath it. */
+  private matches(path: string, prefix: string): boolean {
+    return path === prefix || path.startsWith(`${prefix}/`);
   }
 
   /** The request path without the global /api prefix or a query string. */
   private pathOf(request: AuthenticatedRequest): string {
     const url: string = request.originalUrl || request.url || "";
     const path: string = url.split("?")[0];
-    return path.startsWith("/api") ? path.slice("/api".length) : path;
+    const withoutPrefix: string = path.startsWith("/api") ? path.slice("/api".length) : path;
+    // Normalise a trailing slash so "/projects/" matches "/projects".
+    return withoutPrefix.length > 1 && withoutPrefix.endsWith("/")
+      ? withoutPrefix.slice(0, -1)
+      : withoutPrefix;
+  }
+
+  private isMultipart(request: AuthenticatedRequest): boolean {
+    const header: unknown = request.headers?.["content-type"];
+    const contentType: string = Array.isArray(header) ? (header[0] ?? "") : String(header ?? "");
+    return contentType.toLowerCase().includes("multipart/form-data");
   }
 }

@@ -90,7 +90,10 @@ export default defineConfig({
       cwd: "../",
       env: {
         ATRIUM_TRACKERS: TRACKERS,
-        DEMO_MODE: "true",
+        // DEMO_MODE is deliberately NOT set for the web server. Whether a page
+        // shows the demo banner now comes from /api/organization/current, which
+        // is organization-scoped, so every other test's workspace is unaffected
+        // and only demo.e2e.ts sees the banner.
         DEMO_APP_URL: "http://localhost:3000",
       },
     },

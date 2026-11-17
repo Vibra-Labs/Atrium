@@ -50,7 +50,17 @@ describe("seedDemo", () => {
       calls.filter((c) => c.op === "create" || c.op === "upsert" || c.op === "createMany").map((c) => c.model),
     );
     // Models that are deliberately only cleared (no demo content of their own).
-    const clearOnly = new Set(["label", "pursuitStage", "pursuitPipeline", "notification", "clientProfile", "leadSource"]);
+    const clearOnly = new Set([
+      "label",
+      "pursuitStage",
+      "pursuitPipeline",
+      "notification",
+      "clientProfile",
+      "leadSource",
+      // Credentials a visitor added to the demo accounts. Cleared, never seeded.
+      "twoFactor",
+      "passkey",
+    ]);
     const missing = [...deleted].filter((model) => !written.has(model) && !clearOnly.has(model));
     expect(missing).toEqual([]);
   });
@@ -83,5 +93,36 @@ describe("seedDemo", () => {
 
     expect(calls.some((c) => c.model === "organization" && c.op.startsWith("delete"))).toBe(false);
     expect(calls.some((c) => c.model === "user" && c.op.startsWith("delete"))).toBe(false);
+  });
+
+  it("clears the workspace-level 2FA requirement, which survives everything else", async () => {
+    // SystemSettings is deliberately not cascaded by the reset, so if the
+    // requirement were ever set it would gate every later visitor forever.
+    const { client, calls } = recordingPrisma();
+
+    await seedDemo(client as never, "demo-writer-test");
+
+    expect(calls.some((c) => c.model === "systemSettings" && c.op === "upsert")).toBe(true);
+  });
+
+  it("clears any second factor the demo users picked up", async () => {
+    const { client, calls } = recordingPrisma();
+
+    await seedDemo(client as never, "demo-writer-test");
+
+    expect(calls.some((c) => c.model === "twoFactor" && c.op === "deleteMany")).toBe(true);
+    expect(calls.some((c) => c.model === "passkey" && c.op === "deleteMany")).toBe(true);
+  });
+
+  it("finds the workspace by its stable id, not only by slug", async () => {
+    // A renamed slug would otherwise make the lookup miss and the upsert take
+    // the create branch with an id the renamed row still holds -- a unique
+    // violation that breaks every reset from then on.
+    const { client, calls } = recordingPrisma();
+
+    await seedDemo(client as never, "demo-writer-test");
+
+    const orgOps = calls.filter((c) => c.model === "organization");
+    expect(orgOps.length).toBeGreaterThan(0);
   });
 });

@@ -84,4 +84,21 @@ describe("demoSeedPlan", () => {
   it("refuses an address outside the demo domain", () => {
     expect(() => demoSeedPlan(SLUG, "edgar@vibralabs.co", CLIENT)).toThrow();
   });
+
+  it("links the portal client's contact to whatever address is configured", () => {
+    // The contact used to hardcode client@demo.invalid, so a configured
+    // DEMO_CLIENT_EMAIL left the one client with a portal login showing
+    // access=none -- the feature the seed exists to demonstrate.
+    const configured = demoSeedPlan(SLUG, OWNER, "demo-client@demo.invalid");
+    const clientUser = configured.users.find((u) => u.role === "member");
+
+    expect(configured.contacts.some((c) => c.email === clientUser!.email)).toBe(true);
+  });
+
+  it("seeds one owner and staff who are not owners, so roles are distinguishable", () => {
+    // Two owners also weakens the reset's owner-domain assertion, which has to
+    // hold for every owner row.
+    expect(plan.users.filter((u) => u.role === "owner")).toHaveLength(1);
+    expect(plan.users.filter((u) => u.role === "admin").length).toBeGreaterThan(0);
+  });
 });

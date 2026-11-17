@@ -13,7 +13,7 @@ export interface DemoUser {
   key: string;
   name: string;
   email: string;
-  role: "owner" | "member";
+  role: "owner" | "admin" | "member";
 }
 
 export interface DemoProject {
@@ -120,11 +120,14 @@ export function demoSeedPlan(slug: string, ownerEmail: string, clientEmail: stri
     email: assertDemoAddress(clientEmail),
     role: "member",
   };
+  // admin, not owner: "member" is how a portal client is modelled, so staff who
+  // are not the owner have to be admins. A second owner would also weaken the
+  // reset's assertion that every owner sits on the demo domain.
   const designer: DemoUser = {
     key: "designer",
     name: "Marcus Hale",
     email: `marcus${DEMO_EMAIL_DOMAIN}`,
-    role: "owner",
+    role: "admin",
   };
 
   return {
@@ -273,8 +276,11 @@ export function demoSeedPlan(slug: string, ownerEmail: string, clientEmail: stri
     ],
     contacts: [
       {
-        name: "Priya Raman",
-        email: `client${DEMO_EMAIL_DOMAIN}`,
+        // The configured address, not a literal: otherwise a custom
+        // DEMO_CLIENT_EMAIL leaves the one client who has a portal login
+        // showing access=none, which is the thing the seed exists to show.
+        name: client.name,
+        email: client.email,
         status: "client",
         jobTitle: "Operations lead",
         company: "Lumen Coffee",

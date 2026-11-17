@@ -32,6 +32,14 @@ async function clearWorkspace(prisma: PrismaClient, organizationId: string): Pro
   // Notification and ClientProfile carry an organizationId but no FK relation,
   // so nothing cascades them: left out, they accumulate visitor-typed text and
   // links to deleted projects forever — the opposite of what the reset is for.
+  // SystemSettings is not deleted (the workspace needs one) but is reset: the
+  // 2FA requirement lives there, and left on it would gate every later
+  // visitor behind an enrollment screen that no reset clears.
+  await prisma.systemSettings.upsert({
+    where: { organizationId },
+    update: { requireTwoFactor: false },
+    create: { organizationId, requireTwoFactor: false },
+  });
   await prisma.notification.deleteMany({ where: { organizationId } });
   await prisma.clientProfile.deleteMany({ where: { organizationId } });
   await prisma.timeEntry.deleteMany({ where: { organizationId } });
@@ -58,9 +66,19 @@ async function upsertUsers(
     const id: string = userId(slug, user.key);
     await prisma.user.upsert({
       where: { id },
-      update: { name: user.name, email: user.email, emailVerified: true },
+      // twoFactorEnabled is reset explicitly: User rows survive a reset on
+      // purpose (so do live sessions), so anything a visitor enabled on the
+      // account would otherwise outlive the workspace it was enabled in.
+      update: {
+        name: user.name,
+        email: user.email,
+        emailVerified: true,
+        twoFactorEnabled: false,
+      },
       create: { id, name: user.name, email: user.email, emailVerified: true },
     });
+    await prisma.twoFactor.deleteMany({ where: { userId: id } });
+    await prisma.passkey.deleteMany({ where: { userId: id } });
     await prisma.member.upsert({
       where: { id: `${id}-member` },
       update: { role: user.role },
@@ -101,9 +119,14 @@ export async function seedDemo(
     options.clientEmail ?? "client@demo.invalid",
   );
 
+  // Keyed on the stable id, not the slug. A slug that drifted (a rename, a
+  // half-finished seed) would make a slug-keyed upsert miss and take the
+  // create branch with an id the existing row still holds — a unique
+  // violation that breaks every reset from then on. Upserting by id instead
+  // puts the slug back where it belongs.
   const organization = await prisma.organization.upsert({
-    where: { slug },
-    update: { name: plan.organization.name, setupCompleted: true },
+    where: { id: orgId(slug) },
+    update: { name: plan.organization.name, slug, setupCompleted: true },
     create: {
       id: orgId(slug),
       name: plan.organization.name,

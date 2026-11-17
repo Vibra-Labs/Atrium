@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { uploadDisabledReason } from "@/lib/demo";
+import { useSession } from "@/lib/session-context";
 import { apiFetch } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -163,7 +164,7 @@ export function FilesSection({
   const [docsPage, setDocsPage] = useState(1);
   const [docsTotalPages, setDocsTotalPages] = useState(1);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
-  const uploadDisabled: string | null = uploadDisabledReason();
+  const uploadDisabled: string | null = uploadDisabledReason(useSession().isDemo);
   const [showDocUpload, setShowDocUpload] = useState(false);
   const [versionDoc, setVersionDoc] = useState<DocumentRecord | null>(null);
   const [docUploading, setDocUploading] = useState(false);

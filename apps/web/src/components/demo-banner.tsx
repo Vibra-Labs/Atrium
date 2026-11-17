@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { FlaskConical, RotateCcw, Users } from "lucide-react";
-import { isDemoMode } from "@/lib/demo";
 import { apiFetch } from "@/lib/api";
 
 /**
@@ -12,15 +11,19 @@ import { apiFetch } from "@/lib/api";
  */
 export function DemoBanner({
   surface,
+  isDemo,
+  appUrl = "",
 }: {
   surface: "dashboard" | "portal";
+  isDemo: boolean;
+  /** The real app's origin; the demo runs on its own host. */
+  appUrl?: string;
 }): React.ReactElement | null {
   const [resetting, setResetting] = useState(false);
-  if (!isDemoMode()) return null;
+  if (!isDemo) return null;
 
-  // The demo runs on its own host, so "Start free" is an absolute link back to
-  // the real app, tagged so the demo's own conversions are attributable.
-  const appUrl: string = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  // "Start free" links back to the real app, tagged so the demo's own
+  // conversions are attributable across the two hosts.
   const signupHref = `${appUrl}/signup?ref=demo`;
 
   async function reset(): Promise<void> {

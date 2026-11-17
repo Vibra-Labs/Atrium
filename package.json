@@ -62,7 +62,8 @@
     "@playwright/test": "^1.65.0",
     "otplib": "^13.4.0",
     "turbo": "^2.11.10",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@atrium/database": "workspace:*"
   },
   "dependencies": {
     "@sentry/nestjs": "^10.78.0",

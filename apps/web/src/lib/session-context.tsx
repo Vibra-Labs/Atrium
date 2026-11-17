@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { isDemoMode } from "./demo";
 
 export interface SessionValue {
   userId: string;
@@ -23,7 +22,7 @@ export function SessionProvider({
   role,
   orgId,
   onCustomDomain = false,
-  isDemo = isDemoMode(),
+  isDemo = false,
   children,
 }: SessionValue & { children: ReactNode }) {
   const value = useMemo<SessionValue>(

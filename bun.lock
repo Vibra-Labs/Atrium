@@ -9,6 +9,7 @@
         "@sentry/nextjs": "^10.78.0",
       },
       "devDependencies": {
+        "@atrium/database": "workspace:*",
         "@playwright/test": "^1.65.0",
         "otplib": "^13.4.0",
         "turbo": "^2.11.10",

@@ -30,6 +30,9 @@ const TRACKERS: string =
   '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]';
 process.env.ATRIUM_TRACKERS = TRACKERS;
 
+/** Shared with global-setup.ts, which seeds this workspace. */
+export const DEMO_SLUG = "demo-e2e";
+
 export default defineConfig({
   testDir: "./tests",
   testMatch: "*.e2e.ts",
@@ -61,7 +64,16 @@ export default defineConfig({
       // integrations.e2e.ts points a webhook at a capture server on 127.0.0.1.
       // Blank STRIPE_CONNECT_CLIENT_ID so a developer's root .env can't flip the
       // payments tests into Connect mode.
-      env: { INTEGRATIONS_ALLOW_PRIVATE_URLS: "true", STRIPE_CONNECT_CLIENT_ID: "" },
+      env: {
+        INTEGRATIONS_ALLOW_PRIVATE_URLS: "true",
+        STRIPE_CONNECT_CLIENT_ID: "",
+        // demo.e2e.ts needs demo mode on. The slug is its own, so the reset can
+        // never target a workspace another test — or a developer — cares about.
+        DEMO_MODE: "true",
+        DEMO_ORG_SLUG: DEMO_SLUG,
+        DEMO_OWNER_EMAIL: "owner@demo.invalid",
+        DEMO_CLIENT_EMAIL: "client@demo.invalid",
+      },
     },
     {
       command: process.env.CI
@@ -70,7 +82,11 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
-      env: { ATRIUM_TRACKERS: TRACKERS },
+      env: {
+        ATRIUM_TRACKERS: TRACKERS,
+        DEMO_MODE: "true",
+        DEMO_APP_URL: "http://localhost:3000",
+      },
     },
   ],
 });

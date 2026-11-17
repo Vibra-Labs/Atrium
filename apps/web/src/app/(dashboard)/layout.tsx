@@ -113,6 +113,14 @@ async function getSetupStatus() {
   }
 }
 
+/** Read per request, not at build time, so one build serves the demo and the app alike. */
+function demoRuntime(): { isDemo: boolean; appUrl: string } {
+  return {
+    isDemo: process.env.DEMO_MODE === "true",
+    appUrl: process.env.DEMO_APP_URL ?? "",
+  };
+}
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -157,6 +165,8 @@ export default async function DashboardLayout({
 
   const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");
 
+  const { isDemo, appUrl } = demoRuntime();
+
   return (
     <SessionProvider
       userId={session.user?.id ?? ""}
@@ -164,6 +174,7 @@ export default async function DashboardLayout({
       role={role}
       orgId={activeOrg?.id ?? ""}
       onCustomDomain={Boolean((await headers()).get("x-custom-host"))}
+      isDemo={isDemo}
     >
     <NotificationProvider>
     <div
@@ -238,7 +249,7 @@ export default async function DashboardLayout({
           {!session.user?.emailVerified && (
             <EmailVerificationBanner email={session.user?.email} />
           )}
-          <DemoBanner surface="dashboard" />
+          <DemoBanner surface="dashboard" isDemo={isDemo} appUrl={appUrl} />
           {role === "owner" && <TrialBanner />}
           <PasskeyPromptBanner />
           {role === "owner" && <PlanOfferHost />}

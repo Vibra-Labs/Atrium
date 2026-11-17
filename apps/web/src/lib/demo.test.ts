@@ -1,37 +1,14 @@
-import { describe, expect, it, afterEach } from "bun:test";
-import { isDemoMode, uploadDisabledReason } from "./demo";
-
-const original: string | undefined = process.env.NEXT_PUBLIC_DEMO_MODE;
-
-afterEach(() => {
-  if (original === undefined) delete process.env.NEXT_PUBLIC_DEMO_MODE;
-  else process.env.NEXT_PUBLIC_DEMO_MODE = original;
-});
-
-describe("isDemoMode", () => {
-  it("is false unless the flag is exactly 'true'", () => {
-    delete process.env.NEXT_PUBLIC_DEMO_MODE;
-    expect(isDemoMode()).toBe(false);
-    process.env.NEXT_PUBLIC_DEMO_MODE = "1";
-    expect(isDemoMode()).toBe(false);
-    process.env.NEXT_PUBLIC_DEMO_MODE = "false";
-    expect(isDemoMode()).toBe(false);
-  });
-
-  it("is true when the flag is set", () => {
-    process.env.NEXT_PUBLIC_DEMO_MODE = "true";
-    expect(isDemoMode()).toBe(true);
-  });
-});
+import { describe, expect, it } from "bun:test";
+import { uploadDisabledReason, DEMO_UPLOADS_OFF } from "./demo";
 
 describe("uploadDisabledReason", () => {
   it("is null outside the demo, so uploads work normally", () => {
-    delete process.env.NEXT_PUBLIC_DEMO_MODE;
-    expect(uploadDisabledReason()).toBeNull();
+    expect(uploadDisabledReason(false)).toBeNull();
+    expect(uploadDisabledReason(undefined)).toBeNull();
   });
 
   it("explains why uploads are off in the demo, in the API's own words", () => {
-    process.env.NEXT_PUBLIC_DEMO_MODE = "true";
-    expect(uploadDisabledReason()).toBe("Uploads are turned off in the demo.");
+    expect(uploadDisabledReason(true)).toBe(DEMO_UPLOADS_OFF);
+    expect(uploadDisabledReason(true)).toBe("Uploads are turned off in the demo.");
   });
 });

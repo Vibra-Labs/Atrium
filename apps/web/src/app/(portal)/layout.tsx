@@ -44,6 +44,14 @@ async function getOrg(): Promise<{ id: string; name: string; role: string } | nu
   }
 }
 
+/** Read per request, not at build time, so one build serves the demo and the app alike. */
+function demoRuntime(): { isDemo: boolean; appUrl: string } {
+  return {
+    isDemo: process.env.DEMO_MODE === "true",
+    appUrl: process.env.DEMO_APP_URL ?? "",
+  };
+}
+
 export default async function PortalLayout({
   children,
 }: {
@@ -64,6 +72,8 @@ export default async function PortalLayout({
   const orgName: string | null = org?.name || null;
   const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");
 
+  const { isDemo, appUrl } = demoRuntime();
+
   return (
     <Suspense fallback={null}>
       <SessionProvider
@@ -72,6 +82,7 @@ export default async function PortalLayout({
         role={org?.role ?? ""}
         orgId={org?.id ?? ""}
         onCustomDomain={Boolean((await headers()).get("x-custom-host"))}
+        isDemo={isDemo}
       >
       <NotificationProvider>
       <PreviewModeProvider>
@@ -107,7 +118,7 @@ export default async function PortalLayout({
             <SignOutButton />
           </header>
           <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
-            <DemoBanner surface="portal" />
+            <DemoBanner surface="portal" isDemo={isDemo} appUrl={appUrl} />
             {children}
           </main>
           {branding?.poweredBy && (

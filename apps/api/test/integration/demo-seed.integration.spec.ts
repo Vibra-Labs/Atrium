@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import { assertDisposableDatabase } from "./guard";
 import { PrismaClient } from "@prisma/client";
-import { seedDemo } from "../../../../scripts/seed-demo";
+import { seedDemo } from "@atrium/database";
 
 const SLUG = "demo-seed-test";
 

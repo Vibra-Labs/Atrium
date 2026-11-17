@@ -43,7 +43,6 @@ const ALLOWED_WRITES: readonly string[] = [
   "/dashboard-layout",
   "/notifications",
   "/email-preferences",
-  "/push",
   "/files",
   "/documents",
   "/embeds",
@@ -88,6 +87,10 @@ const EXPLAINED: readonly { path: string; message: string }[] = [
   { path: "/two-factor", message: "Two-factor settings are turned off in the demo." },
   { path: "/auth/two-factor", message: "Two-factor settings are turned off in the demo." },
   { path: "/account", message: "Account changes are turned off in the demo." },
+  // A PushSubscription is keyed to the browser, not the workspace, and no reset
+  // clears it — a visitor who allowed notifications would go on receiving push
+  // about later visitors' activity in the shared demo.
+  { path: "/push", message: "Notifications are turned off in the demo." },
   { path: "/auth/organization", message: "Changing the workspace is turned off in the demo." },
 ];
 

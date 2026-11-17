@@ -273,5 +273,35 @@ describe("DemoGuard", () => {
         ),
       ).rejects.toThrow(/[Ii]nviting/);
     });
+
+    it("refuses web push, which would outlive the workspace it was allowed in", async () => {
+      // PushSubscription is keyed to the browser, not the workspace, and the
+      // reset does not clear it. A visitor who allowed notifications would keep
+      // receiving push about LATER visitors' activity in the shared demo.
+      const { guard: g } = guard();
+      await expect(
+        g.canActivate(context("POST", "/api/push/subscribe", DEMO_ORG, "application/json")),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("only permits writes a reset can undo", async () => {
+      // The invariant behind the allowlist. Rows the reset deliberately
+      // preserves -- User, Member, SystemSettings, Organization -- must not be
+      // writable, or a visitor's change outlives the workspace it was made in.
+      const { guard: g } = guard();
+      const mustRefuse: [string, string][] = [
+        ["POST", "/api/push/subscribe"],
+        ["PUT", "/api/settings"],
+        ["PUT", "/api/two-factor/requirement"],
+        ["POST", "/api/auth/organization/update"],
+        ["POST", "/api/auth/change-email"],
+        ["DELETE", "/api/account"],
+      ];
+      for (const [method, url] of mustRefuse) {
+        await expect(
+          g.canActivate(context(method, url, DEMO_ORG, "application/json")),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
   });
 });

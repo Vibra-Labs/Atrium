@@ -81,7 +81,16 @@ async function upsertUsers(
     await prisma.passkey.deleteMany({ where: { userId: id } });
     await prisma.member.upsert({
       where: { id: `${id}-member` },
-      update: { role: user.role },
+      // The per-member preferences are reset too. The Member row itself has to
+      // survive (deleting it would drop the membership and the session with
+      // it), so anything a visitor changed here — a hidden dashboard card, a
+      // digest toggle — would otherwise persist for everyone who came after.
+      update: {
+        role: user.role,
+        dashboardHidden: [],
+        weeklyUpdateReminders: true,
+        mondayDigest: true,
+      },
       create: { id: `${id}-member`, organizationId, userId: id, role: user.role },
     });
     ids.set(user.key, id);

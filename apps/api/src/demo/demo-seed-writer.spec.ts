@@ -125,4 +125,15 @@ describe("seedDemo", () => {
     const orgOps = calls.filter((c) => c.model === "organization");
     expect(orgOps.length).toBeGreaterThan(0);
   });
+
+  it("resets the per-member preferences that survive on the Member row", async () => {
+    // dashboardHidden and the email-digest flags live on Member, which the
+    // reset keeps (deleting it would drop the membership). A visitor hiding
+    // every dashboard card would otherwise leave it hidden for everyone after.
+    const { client, calls } = recordingPrisma();
+
+    await seedDemo(client as never, "demo-writer-test");
+
+    expect(calls.some((c) => c.model === "member" && c.op === "upsert")).toBe(true);
+  });
 });

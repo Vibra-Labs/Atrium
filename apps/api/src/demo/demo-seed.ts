@@ -1,12 +1,18 @@
 /**
  * Writes the demo workspace described by demoSeedPlan.
  *
+ * Lives in the API rather than in @atrium/database because the API is its only
+ * runtime consumer, and a relative re-export from that package's TypeScript
+ * source cannot be resolved by Node once the API is compiled. Here it is built
+ * as part of the API; the CLI wrapper and the e2e setup run under Bun, which
+ * imports it from this path directly.
+ *
  * Idempotent, and deliberately non-destructive about identity: the
  * Organization and User rows are upserted and never deleted, so a reset that
  * runs while someone is clicking around does not invalidate their session.
  * Everything inside the workspace is replaced.
  */
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@atrium/database";
 import { DEFAULT_STATUSES } from "@atrium/shared";
 import { demoSeedPlan, type DemoSeedPlan, type DemoUser } from "./demo-seed-plan";
 

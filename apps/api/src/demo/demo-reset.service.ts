@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs
 import { PrismaService } from "../prisma/prisma.service";
 import { DemoService } from "./demo.service";
 import { DEMO_EMAIL_DOMAIN } from "./demo-config";
-import { seedDemo } from "@atrium/database";
+import { seedDemo } from "./demo-seed";
 
 /** How long after someone used the demo a scheduled reset holds off. */
 export const DEMO_QUIET_PERIOD_MS = 5 * 60 * 1000;

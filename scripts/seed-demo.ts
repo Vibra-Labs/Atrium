@@ -1,5 +1,6 @@
 /** CLI wrapper: bun run db:seed:demo */
-import { PrismaClient, seedDemo } from "@atrium/database";
+import { PrismaClient } from "@atrium/database";
+import { seedDemo } from "../apps/api/src/demo/demo-seed";
 
 const slug: string = process.env.DEMO_ORG_SLUG ?? "demo";
 const prisma = new PrismaClient();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { demoSeedPlan } from "@atrium/database";
+import { demoSeedPlan } from "./demo-seed-plan";
 
 const SLUG = "demo";
 const OWNER = "owner@demo.invalid";

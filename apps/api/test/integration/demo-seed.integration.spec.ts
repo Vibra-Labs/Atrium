@@ -7,8 +7,8 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test";
 import { assertDisposableDatabase } from "./guard";
-import { PrismaClient } from "@prisma/client";
-import { seedDemo } from "@atrium/database";
+import { PrismaClient } from "@atrium/database";
+import { seedDemo } from "../../src/demo/demo-seed";
 
 const SLUG = "demo-seed-test";
 
@@ -34,6 +34,13 @@ describe("seedDemo", () => {
 
   beforeEach(async () => {
     await wipe();
+    // The demo is pinned to the pro plan and seedDemo refuses without it. These
+    // tests truncate, and plans come from the main seed, so provide one here.
+    await prisma.subscriptionPlan.upsert({
+      where: { slug: "pro" },
+      update: {},
+      create: { name: "Pro", slug: "pro", priceMonthly: 2900, isRecurring: true },
+    });
   });
 
   it("creates the demo org on the configured slug", async () => {

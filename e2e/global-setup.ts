@@ -1,5 +1,6 @@
 import { chromium } from "@playwright/test";
-import { PrismaClient, seedDemo } from "@atrium/database";
+import { PrismaClient } from "@atrium/database";
+import { seedDemo } from "../apps/api/src/demo/demo-seed";
 import { DEMO_SLUG } from "./playwright.config";
 
 /**

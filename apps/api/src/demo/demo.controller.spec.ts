@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { IS_PUBLIC_KEY } from "../common/decorators/public.decorator";
 import { DemoController } from "./demo.controller";
@@ -44,24 +44,37 @@ describe("DemoController", () => {
   it("302s to the captured verify URL", async () => {
     const { controller, res, auth } = build();
 
-    await controller.enter({ kind: "owner" }, res as never);
+    await controller.enter("owner", res as never);
 
     expect(auth.startDemoSignIn).toHaveBeenCalledWith("owner");
-    expect(res.redirect).toHaveBeenCalledWith(302, "http://api.test/verify?token=t");
+    // 303, not 302: it is the only redirect that *requires* every client to
+    // switch the follow-up to GET. The verify endpoint is GET-only, and curl
+    // re-POSTs a 302 and gets a 404.
+    expect(res.redirect).toHaveBeenCalledWith(303, "http://api.test/verify?token=t");
   });
 
   it("records activity on entry, so a reset does not land on a new visitor", async () => {
     const { controller, res, demo } = build();
 
-    await controller.enter({ kind: "client" }, res as never);
+    await controller.enter("client", res as never);
 
     expect(demo.touch).toHaveBeenCalled();
+  });
+
+  it("rejects a kind it does not recognise", async () => {
+    const { controller, res, auth } = build();
+
+    await expect(controller.enter("admin" as never, res as never)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(auth.startDemoSignIn).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 
   it("404s on enter when demo mode is off", async () => {
     const { controller, res, auth } = build({ enabled: false });
 
-    await expect(controller.enter({ kind: "owner" }, res as never)).rejects.toBeInstanceOf(
+    await expect(controller.enter("owner", res as never)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(auth.startDemoSignIn).not.toHaveBeenCalled();

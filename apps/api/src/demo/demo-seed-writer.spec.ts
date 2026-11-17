@@ -7,7 +7,7 @@
  * Proven against a recording fake, because the real thing needs a database.
  */
 import { describe, expect, it } from "bun:test";
-import { seedDemo } from "@atrium/database";
+import { seedDemo } from "./demo-seed";
 
 interface Call {
   model: string;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { track, trackThenNavigate } from "./track";
+import { track, trackThenNavigate, setDemoAnalytics } from "./track";
 
 type TrackedData = Record<string, string | number | boolean>;
 
@@ -262,5 +262,54 @@ describe("trackThenNavigate", () => {
     expect(pushed.event).toBe("signup_completed");
     expect(pushed.plan).toBe("lifetime");
     expect(pushed.eventTimeout).toBe(1500);
+  });
+});
+
+describe("track in the public demo", () => {
+  // The demo lets a stranger create a project, and project_created is one of
+  // the four Google Ads conversions. Left alone, every demo visitor who made a
+  // project would be counted as an ad conversion -- inflating the exact number
+  // the demo was built to improve, and spending real money on it.
+  afterEach(() => {
+    setDemoAnalytics(false);
+  });
+
+  it("keeps conversion events out of the dataLayer", () => {
+    const pushed: unknown[] = [];
+    (globalThis as { window?: unknown }).window = {
+      dataLayer: { push: (entry: unknown) => pushed.push(entry) },
+      google_tag_manager: {},
+    };
+
+    setDemoAnalytics(true);
+    track("project_created", { source: "dashboard" });
+
+    expect(pushed).toEqual([]);
+  });
+
+  it("still sends them to Umami, which is where demo telemetry belongs", () => {
+    const umamiEvents: string[] = [];
+    (globalThis as { window?: unknown }).window = {
+      umami: { track: (event: string) => umamiEvents.push(event) },
+      google_tag_manager: {},
+    };
+
+    setDemoAnalytics(true);
+    track("project_created", { source: "dashboard" });
+
+    expect(umamiEvents).toEqual(["project_created"]);
+  });
+
+  it("pushes again once the flag is off, so the real app is unaffected", () => {
+    const pushed: unknown[] = [];
+    (globalThis as { window?: unknown }).window = {
+      dataLayer: { push: (entry: unknown) => pushed.push(entry) },
+      google_tag_manager: {},
+    };
+
+    setDemoAnalytics(false);
+    track("project_created", { source: "dashboard" });
+
+    expect(pushed).toHaveLength(1);
   });
 });

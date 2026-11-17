@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { setDemoAnalytics } from "./track";
 
 export interface SessionValue {
   userId: string;
@@ -25,6 +26,13 @@ export function SessionProvider({
   isDemo = false,
   children,
 }: SessionValue & { children: ReactNode }) {
+  // Told to the analytics module as soon as the tree renders, before any page
+  // can fire an event. The demo permits creating a project, and
+  // `project_created` is a Google Ads conversion — so without this a demo
+  // visitor would be counted as one, spending real ad budget against the
+  // number the demo exists to improve.
+  setDemoAnalytics(isDemo === true);
+
   const value = useMemo<SessionValue>(
     () => ({ userId, userName, role, orgId, onCustomDomain, isDemo }),
     [userId, userName, role, orgId, onCustomDomain, isDemo],

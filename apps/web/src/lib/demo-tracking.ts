@@ -7,8 +7,12 @@
  */
 export const DEMO_ENTERED_EVENT = "atrium_demo_entered";
 
-/** The funnel's conversion event (configured in GTM). The demo never emits it. */
-export const SIGNUP_COMPLETED_EVENT = "atrium_signup_completed";
+/**
+ * The funnel's signup conversion, as `track.ts` names it in its GTM allowlist.
+ * The demo never emits it — and `setDemoAnalytics` keeps the demo from reaching
+ * the dataLayer with any of the other conversions either.
+ */
+export const SIGNUP_COMPLETED_EVENT = "signup_completed";
 
 const ONCE_KEY = "atrium.demo.entered";
 

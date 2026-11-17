@@ -71,6 +71,25 @@ function sendToUmami(event: string, data?: TrackData): void {
 }
 
 /**
+ * True while this page is the public demo workspace.
+ *
+ * The demo lets a stranger create a project, and `project_created` is one of
+ * the four Ads conversions below. Without this, every demo visitor who made a
+ * project would be counted as a Google Ads conversion — inflating the number
+ * the demo exists to improve, and spending real ad budget against it.
+ *
+ * Module-level rather than threaded through every call site, because the
+ * answer is a property of the page, not of the event. Umami still receives
+ * everything: demo telemetry is worth having, it just isn't an ad conversion.
+ */
+let demoAnalytics = false;
+
+/** Set from the session provider, which knows whether this workspace is the demo. */
+export function setDemoAnalytics(isDemo: boolean): void {
+  demoAnalytics = isDemo;
+}
+
+/**
  * The entry to push for `event`, or null when the event isn't one Google is
  * told about.
  */
@@ -106,6 +125,8 @@ export function track(event: string, data?: TrackData): void {
   if (typeof window === "undefined") return;
 
   sendToUmami(event, data);
+
+  if (demoAnalytics) return;
 
   const entry: GtmEntry | null = gtmEntry(event, data);
   if (entry && gtmLoaded()) pushToDataLayer(entry);

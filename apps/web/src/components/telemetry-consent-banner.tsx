@@ -4,8 +4,17 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { enableSentry } from "@/lib/sentry";
 
-export function TelemetryConsentBanner() {
+/**
+ * Asks the workspace owner whether to send crash reports.
+ *
+ * Never shown in the demo. The consent is not a visitor's to give — it is
+ * someone else's workspace — and both buttons PATCH /settings, which the demo
+ * refuses, so clicking either would return 403 and leave the banner stuck.
+ */
+export function TelemetryConsentBanner({ isDemo = false }: { isDemo?: boolean }) {
   const [dismissed, setDismissed] = useState(false);
+
+  if (isDemo) return null;
 
   async function handleAccept() {
     await apiFetch("/settings", {

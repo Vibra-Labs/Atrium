@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FlaskConical, RotateCcw, Users } from "lucide-react";
+import { Building2, FlaskConical, RotateCcw, Users } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { trackDemoCta } from "@/lib/demo-tracking";
 
@@ -51,13 +51,24 @@ export function DemoBanner({
         </span>
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        {surface === "dashboard" && (
+        {/* The flip works both ways. Landing in the portal with no way back to
+            the agency side made the client view a dead end you had to know how
+            to leave. */}
+        {surface === "dashboard" ? (
           <a
             href="/demo/client"
             onClick={() => trackDemoCta("client_view")}
             className="inline-flex items-center gap-1 hover:underline"
           >
             <Users size={13} /> See the client view
+          </a>
+        ) : (
+          <a
+            href="/demo"
+            onClick={() => trackDemoCta("agency_view")}
+            className="inline-flex items-center gap-1 hover:underline"
+          >
+            <Building2 size={13} /> Back to the agency view
           </a>
         )}
         <button

@@ -261,14 +261,18 @@ export default async function DashboardLayout({
           )}
           <DemoBanner surface="dashboard" isDemo={isDemo} appUrl={appUrl} />
           {role === "owner" && <TrialBanner />}
-          <PasskeyPromptBanner />
-          {role === "owner" && <PlanOfferHost />}
+          {/* Not in the demo: it would attach a stranger's device credential to
+              a shared account, and /auth/passkey is refused there anyway. */}
+          {!isDemo && <PasskeyPromptBanner />}
+          {/* Nor an upsell: the demo workspace is already Pro, and its call to
+              action goes to billing, which the demo refuses. */}
+          {role === "owner" && !isDemo && <PlanOfferHost />}
           {role === "owner" && settings?.insecureCookies && !settings.plainHttpNoticeDismissed && (
             <PlainHttpNotice />
           )}
           {timezoneMissing && <TimezoneSync />}
           {role === "owner" && telemetryEnabled === null && (
-            <TelemetryConsentBanner />
+            <TelemetryConsentBanner isDemo={isDemo} />
           )}
           {children}
         </main>

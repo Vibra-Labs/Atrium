@@ -1,9 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import { demoAddressFor, demoSettings, type DemoKind, type DemoSettings } from "./demo-config";
 
-/** The two accounts a visitor can enter the demo as. */
-export type DemoKind = "owner" | "client";
+export type { DemoKind } from "./demo-config";
 
 /**
  * Demo mode lets anonymous visitors sign in to one seeded workspace, so it is
@@ -14,6 +14,7 @@ export type DemoKind = "owner" | "client";
 @Injectable()
 export class DemoService {
   readonly enabled: boolean;
+  private readonly settings: DemoSettings;
   private orgId: string | null = null;
   private activityAt: Date | null = null;
 
@@ -21,30 +22,25 @@ export class DemoService {
     private config: ConfigService,
     private prisma: PrismaService,
   ) {
-    this.enabled = this.config.get("DEMO_MODE") === "true";
-  }
-
-  private setting(key: string): string | null {
-    if (!this.enabled) return null;
-    const value: string | undefined = this.config.get<string>(key);
-    return value && value.length > 0 ? value : null;
+    this.settings = demoSettings(this.config);
+    this.enabled = this.settings.enabled;
   }
 
   get orgSlug(): string | null {
-    return this.setting("DEMO_ORG_SLUG");
+    return this.settings.orgSlug;
   }
 
   get ownerEmail(): string | null {
-    return this.setting("DEMO_OWNER_EMAIL");
+    return this.settings.ownerEmail;
   }
 
   get clientEmail(): string | null {
-    return this.setting("DEMO_CLIENT_EMAIL");
+    return this.settings.clientEmail;
   }
 
   /** The address for one entry kind, or null when it isn't configured. */
   addressFor(kind: DemoKind): string | null {
-    return kind === "owner" ? this.ownerEmail : this.clientEmail;
+    return demoAddressFor(this.settings, kind);
   }
 
   /**

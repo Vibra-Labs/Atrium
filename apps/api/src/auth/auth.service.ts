@@ -19,6 +19,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
+import { demoAddressFor, demoSettings, type DemoKind, type DemoSettings } from "../demo/demo-config";
 import { applyConsentOutcome } from "../mcp-auth/consent-hooks";
 import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials";
 import { ProjectsService } from "../projects/projects.service";
@@ -1002,6 +1003,40 @@ export class AuthService {
       signInMagicLink({ body: { ...body, name }, headers: new Headers() }),
     );
     if (!capture.url) throw new InternalServerErrorException("Sign-in link was not captured");
+    return { url: capture.url };
+  }
+
+  /**
+   * Signs a visitor in to the public demo workspace with no account and no
+   * email. Deliberately skips the invitation and `hasAccount` rules that
+   * startInviteSignIn applies, so it is fenced instead by what it cannot do:
+   * the caller picks a `kind`, never an address; the address comes from
+   * configuration and must sit on the @demo.invalid domain; and the whole
+   * method is unreachable unless DEMO_MODE is on. 404, not 403, so an install
+   * without demo mode does not advertise that this exists.
+   *
+   * No mail is sent — the capture hands the link back to this request — so the
+   * per-address send limiter is deliberately not consulted: it must not be able
+   * to lock visitors out of the demo.
+   */
+  async startDemoSignIn(kind: DemoKind): Promise<{ url: string }> {
+    const settings: DemoSettings = demoSettings(this.config);
+    if (!settings.enabled) throw new NotFoundException("Not found");
+    const email: string | null = demoAddressFor(settings, kind);
+    if (!email) throw new NotFoundException("Not found");
+
+    const webUrl: string = this.config.get("WEB_URL", "http://localhost:3000");
+    const landing: string = kind === "owner" ? "/dashboard" : "/portal";
+    const target = `${webUrl}${landing}`;
+    const body = { email, callbackURL: target, errorCallbackURL: target };
+
+    const signInMagicLink = (this.auth.api as unknown as { signInMagicLink: SignInMagicLink })
+      .signInMagicLink;
+    const capture: MagicLinkCapture = { url: null };
+    await this.magicLinkCapture.run(capture, () =>
+      signInMagicLink({ body, headers: new Headers() }),
+    );
+    if (!capture.url) throw new InternalServerErrorException("Demo sign-in link was not captured");
     return { url: capture.url };
   }
 

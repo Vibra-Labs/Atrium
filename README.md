@@ -56,6 +56,7 @@ Most agencies juggle shared drives, spreadsheets, and scattered emails to keep c
 - **Authentication** -- Email/password and magic link via Better Auth; admins can issue password reset links
 - **Dark mode** -- Per-user toggle, follows the system by default
 - **Email** -- Resend or any SMTP server, configurable per organization
+- **Public demo mode** -- Let visitors try a seeded workspace with no signup, on a throwaway deployment ([docs](docs/demo.md))
 - **Self-hosted** -- Single Docker image with bundled Postgres option, Unraid template, ARM support; optional anonymous crash reporting ([Telemetry](docs/telemetry.md))
 
 ## Tech Stack

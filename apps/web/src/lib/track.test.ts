@@ -313,3 +313,55 @@ describe("track in the public demo", () => {
     expect(pushed).toHaveLength(1);
   });
 });
+
+describe("track on the demo deployment", () => {
+  // setDemoAnalytics is called by the session provider, which only the
+  // dashboard and portal layouts mount. Signup and the setup wizard live in
+  // their own route groups with no provider -- so three of the four Ads
+  // conversions (signup_completed, setup_completed, client_invited) were
+  // ungated on exactly the path a visitor takes after pressing "Start free"
+  // with DEMO_APP_URL unset: they sign up on the demo host and book four real
+  // conversions from a throwaway instance. The deployment is the honest unit
+  // here, not the session: this host is the demo on every route.
+  const original: string | undefined = process.env.NEXT_PUBLIC_DEMO_MODE;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.NEXT_PUBLIC_DEMO_MODE;
+    else process.env.NEXT_PUBLIC_DEMO_MODE = original;
+    setDemoAnalytics(false);
+  });
+
+  it("keeps conversions out of the dataLayer with no session provider mounted", () => {
+    const pushed: unknown[] = [];
+    (globalThis as { window?: unknown }).window = {
+      dataLayer: { push: (entry: unknown) => pushed.push(entry) },
+      google_tag_manager: {},
+    };
+    process.env.NEXT_PUBLIC_DEMO_MODE = "true";
+
+    // No setDemoAnalytics call: this is the signup page's situation exactly.
+    track("signup_completed", { plan: "pro" });
+    track("setup_completed");
+    track("client_invited");
+
+    expect(pushed).toEqual([]);
+  });
+
+  it("does not stall trackThenNavigate waiting on a tag it never pushed", () => {
+    let href: string | null = null;
+    (globalThis as { window?: unknown }).window = {
+      dataLayer: { push: () => {} },
+      google_tag_manager: {},
+      location: {
+        set href(value: string) {
+          href = value;
+        },
+      },
+    };
+    process.env.NEXT_PUBLIC_DEMO_MODE = "true";
+
+    trackThenNavigate("signup_completed", { plan: "pro" }, "/setup");
+
+    expect(href).toBe("/setup");
+  });
+});

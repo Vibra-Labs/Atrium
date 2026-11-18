@@ -90,10 +90,36 @@ export function setDemoAnalytics(isDemo: boolean): void {
 }
 
 /**
+ * Whether this whole deployment is the public demo.
+ *
+ * The flag above comes from the session provider, which only the dashboard and
+ * portal layouts mount. Signup and the setup wizard are in their own route
+ * groups with no provider — so `signup_completed`, `setup_completed` and
+ * `client_invited` were ungated on precisely the path a visitor takes from the
+ * demo's own "Start free" button when `DEMO_APP_URL` is unset and it resolves
+ * to the demo host: they sign up there and book four real Ads conversions
+ * against a throwaway instance.
+ *
+ * The deployment is the honest unit for that question, so the demo instance
+ * sets `NEXT_PUBLIC_DEMO_MODE=true` and every route is covered, provider or
+ * not. Read inside a function so tests can set it; Next.js still inlines the
+ * value at build time.
+ */
+function onDemoInstance(): boolean {
+  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+}
+
+/**
  * The entry to push for `event`, or null when the event isn't one Google is
  * told about.
  */
 function gtmEntry(event: string, data?: TrackData): GtmEntry | null {
+  // Both demo gates live here, so every path that reaches the dataLayer —
+  // `track` and `trackThenNavigate` alike — is covered by one check. In
+  // particular trackThenNavigate then treats a demo conversion like any event
+  // Google isn't told about and navigates at once, rather than waiting out the
+  // timeout for a callback that will never come.
+  if (demoAnalytics || onDemoInstance()) return null;
   if (!GTM_EVENTS.has(event)) return null;
 
   const entry: GtmEntry = {};
@@ -125,8 +151,6 @@ export function track(event: string, data?: TrackData): void {
   if (typeof window === "undefined") return;
 
   sendToUmami(event, data);
-
-  if (demoAnalytics) return;
 
   const entry: GtmEntry | null = gtmEntry(event, data);
   if (entry && gtmLoaded()) pushToDataLayer(entry);

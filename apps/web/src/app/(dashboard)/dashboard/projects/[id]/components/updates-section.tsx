@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { trackDemoActed } from "@/lib/demo-tracking";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { updateBody } from "@/lib/update-body";
 import { formatRelativeTime } from "@/lib/utils";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
@@ -204,16 +206,12 @@ export function UpdatesSection({
     if (!newContent.trim()) return;
     setPosting(true);
     try {
-      const formData = new FormData();
-      formData.append("content", newContent);
-      if (newAttachment) {
-        formData.append("attachment", newAttachment);
-      }
       await apiFetch(`/updates?projectId=${projectId}`, {
         method: "POST",
-        body: formData,
+        body: updateBody(newContent, newAttachment),
       });
       track("update_posted", { has_attachment: !!newAttachment });
+      trackDemoActed("update_posted");
       setNewContent("");
       setDraftStats(null);
       setNewAttachment(null);

@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { DemoBanner } from "@/components/demo-banner";
 import { Suspense } from "react";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { loginRedirectPath } from "@/lib/login-redirect";
@@ -28,19 +29,38 @@ async function getBranding() {
   }
 }
 
-async function getOrg(): Promise<{ id: string; name: string; role: string } | null> {
+async function getOrg(): Promise<{
+  id: string;
+  name: string;
+  role: string;
+  isDemo: boolean;
+} | null> {
   try {
     const res: Response = await serverFetch("/api/organization/current");
     if (!res.ok) return null;
-    const org: { id?: string; name?: string; role?: string } = await res.json();
+    const org: { id?: string; name?: string; role?: string; isDemo?: boolean } = await res.json();
     if (!org?.id) return null;
-    return { id: org.id, name: org.name ?? "", role: org.role ?? "" };
+    return {
+      id: org.id,
+      name: org.name ?? "",
+      role: org.role ?? "",
+      isDemo: org.isDemo === true,
+    };
   } catch (err) {
     // cookies() throws a control-flow signal during static render; let it through.
     unstable_rethrow(err);
     console.error("Failed to load organization", err);
     return null;
   }
+}
+
+/**
+ * Where the real app lives, for the demo banner's "Start free" link. Whether
+ * this is the demo comes from /api/organization/current, not the environment:
+ * DEMO_MODE is instance-wide, the API's fence is organization-scoped.
+ */
+function demoAppUrl(): string {
+  return process.env.DEMO_APP_URL ?? "";
 }
 
 export default async function PortalLayout({
@@ -63,6 +83,9 @@ export default async function PortalLayout({
   const orgName: string | null = org?.name || null;
   const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");
 
+  const appUrl: string = demoAppUrl();
+  const isDemo: boolean = org?.isDemo === true;
+
   return (
     <Suspense fallback={null}>
       <SessionProvider
@@ -71,6 +94,7 @@ export default async function PortalLayout({
         role={org?.role ?? ""}
         orgId={org?.id ?? ""}
         onCustomDomain={Boolean((await headers()).get("x-custom-host"))}
+        isDemo={isDemo}
       >
       <NotificationProvider>
       <PreviewModeProvider>
@@ -105,7 +129,10 @@ export default async function PortalLayout({
             <ThemeToggle />
             <SignOutButton />
           </header>
-          <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">{children}</main>
+          <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+            <DemoBanner surface="portal" isDemo={isDemo} appUrl={appUrl} />
+            {children}
+          </main>
           {branding?.poweredBy && (
             <footer className="py-6 text-center">
               <a

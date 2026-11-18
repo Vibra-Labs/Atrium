@@ -6,6 +6,7 @@ import { SignOutButton } from "./sign-out-button";
 import { SidebarNav } from "./sidebar-nav";
 import { EmailVerificationBanner } from "./email-verification-banner";
 import { TrialBanner } from "./trial-banner";
+import { DemoBanner } from "@/components/demo-banner";
 import { PasskeyPromptBanner } from "./passkey-prompt-banner";
 import { PlanOfferHost } from "@/components/plan-offers/plan-offer-host";
 import { PlainHttpNotice } from "./plain-http-notice";
@@ -69,13 +70,18 @@ async function getSettings(): Promise<{
   }
 }
 
-async function getActiveOrg(): Promise<{ id: string; name: string; role: string } | null> {
+async function getActiveOrg(): Promise<{
+  id: string;
+  name: string;
+  role: string;
+  isDemo: boolean;
+} | null> {
   try {
     const res: Response = await serverFetch("/api/organization/current");
     if (!res.ok) return null;
-    const org: { id?: string; name: string; role?: string } = await res.json();
+    const org: { id?: string; name: string; role?: string; isDemo?: boolean } = await res.json();
     if (!org?.id) return null;
-    return { id: org.id, name: org.name, role: org.role ?? "" };
+    return { id: org.id, name: org.name, role: org.role ?? "", isDemo: org.isDemo === true };
   } catch (err) {
     // cookies() throws a control-flow signal during Next's static render
     // pass; that must propagate, not be logged as a failure.
@@ -110,6 +116,18 @@ async function getSetupStatus() {
     console.error("Failed to load setup status", err);
     return null;
   }
+}
+
+/**
+ * Where the real app lives, for the demo banner's "Start free" link. Read per
+ * request rather than at build time, so one build serves both hosts.
+ *
+ * Whether this *is* the demo is not read from the environment: DEMO_MODE is
+ * instance-wide while the API's fence is organization-scoped, so the answer
+ * comes from /api/organization/current, which knows which workspace this is.
+ */
+function demoAppUrl(): string {
+  return process.env.DEMO_APP_URL ?? "";
 }
 
 export default async function DashboardLayout({
@@ -156,6 +174,9 @@ export default async function DashboardLayout({
 
   const logoSrc: string | null = buildLogoSrc(branding, process.env.NEXT_PUBLIC_API_URL || "");
 
+  const appUrl: string = demoAppUrl();
+  const isDemo: boolean = activeOrg?.isDemo === true;
+
   return (
     <SessionProvider
       userId={session.user?.id ?? ""}
@@ -163,6 +184,7 @@ export default async function DashboardLayout({
       role={role}
       orgId={activeOrg?.id ?? ""}
       onCustomDomain={Boolean((await headers()).get("x-custom-host"))}
+      isDemo={isDemo}
     >
     <NotificationProvider>
     <div
@@ -237,15 +259,23 @@ export default async function DashboardLayout({
           {!session.user?.emailVerified && (
             <EmailVerificationBanner email={session.user?.email} />
           )}
+          <DemoBanner surface="dashboard" isDemo={isDemo} appUrl={appUrl} />
           {role === "owner" && <TrialBanner />}
-          <PasskeyPromptBanner />
-          {role === "owner" && <PlanOfferHost />}
+          {/* Not in the demo: it would attach a stranger's device credential to
+              a shared account, and /auth/passkey is refused there anyway. */}
+          {!isDemo && <PasskeyPromptBanner />}
+          {/* Nor an upsell: the demo workspace is already Pro, and its call to
+              action goes to billing, which the demo refuses. */}
+          {role === "owner" && !isDemo && <PlanOfferHost />}
           {role === "owner" && settings?.insecureCookies && !settings.plainHttpNoticeDismissed && (
             <PlainHttpNotice />
           )}
-          {timezoneMissing && <TimezoneSync />}
+          {/* Belt and braces with the seeded timezone: this writes to /settings,
+              which the demo refuses, and a visitor's zone must not stick to a
+              workspace everyone shares. */}
+          {timezoneMissing && !isDemo && <TimezoneSync />}
           {role === "owner" && telemetryEnabled === null && (
-            <TelemetryConsentBanner />
+            <TelemetryConsentBanner isDemo={isDemo} />
           )}
           {children}
         </main>

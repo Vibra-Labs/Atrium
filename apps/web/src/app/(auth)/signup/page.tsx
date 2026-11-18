@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { track } from "@/lib/track";
+import { track, trackThenNavigate } from "@/lib/track";
 import { useAppConfig } from "@/lib/app-config";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -44,6 +44,10 @@ export default function SignupPage() {
   const [orgName, setOrgName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Signup succeeded and a redirect is pending. `loading` is cleared by the
+  // finally block before the browser actually leaves, so without this the
+  // button re-enables and the account can be submitted twice.
+  const [navigating, setNavigating] = useState<boolean>(false);
 
   const signupStartedRef = useRef<boolean>(false);
 
@@ -124,13 +128,13 @@ export default function SignupPage() {
 
       // Redirect to Stripe Checkout if a checkout URL was returned
       if (data.checkoutUrl) {
-        track("signup_completed", { plan: selectedPlan });
-        window.location.href = data.checkoutUrl;
+        setNavigating(true);
+        trackThenNavigate("signup_completed", { plan: selectedPlan }, data.checkoutUrl);
         return;
       }
 
-      track("signup_completed", { plan: selectedPlan });
-      window.location.href = "/setup";
+      setNavigating(true);
+      trackThenNavigate("signup_completed", { plan: selectedPlan }, "/setup");
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Signup failed";
       track("signup_failed", { reason, plan: selectedPlan });
@@ -327,10 +331,10 @@ export default function SignupPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || navigating}
             className="w-full py-2 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {loading ? "Creating account..." : "Create Account"}
+            {loading || navigating ? "Creating account..." : "Create Account"}
           </button>
         </form>
 

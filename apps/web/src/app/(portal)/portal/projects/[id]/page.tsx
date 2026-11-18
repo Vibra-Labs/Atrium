@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { updateBody } from "@/lib/update-body";
 import { useSession } from "@/lib/session-context";
 import { useProjectStatuses } from "@/lib/project-status";
 import type { ProjectStatus } from "@/lib/project-status";
@@ -455,14 +456,9 @@ export default function PortalProjectDetailPage() {
     if (!newContent.trim()) return;
     setPostingUpdate(true);
     try {
-      const formData = new FormData();
-      formData.append("content", newContent);
-      if (newAttachment) {
-        formData.append("attachment", newAttachment);
-      }
       await apiFetch(`/updates?projectId=${id}`, {
         method: "POST",
-        body: formData,
+        body: updateBody(newContent, newAttachment),
       });
       setNewContent("");
       setNewAttachment(null);

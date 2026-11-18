@@ -51,11 +51,18 @@ test.describe("Invoice Payments", () => {
       expect(res.ok()).toBeTruthy();
       const body = await res.json();
       expect(body.enabled).toBe(false);
-      // Same rule as PaymentsService.isConnectMode(): a platform Connect client
-      // id switches the workspace to Connect. playwright.config.ts loads the
-      // root .env the API also reads, so both sides see the same value.
-      const expectedMode: "connect" | "direct" = process.env.STRIPE_CONNECT_CLIENT_ID ? "connect" : "direct";
-      expect(body.mode).toBe(expectedMode);
+      // Direct, because playwright.config.ts blanks STRIPE_CONNECT_CLIENT_ID in
+      // the API's own environment on purpose, so a developer's root .env cannot
+      // flip these tests into Connect mode.
+      //
+      // This used to derive the expectation from the *runner's* env instead,
+      // on the since-outdated reasoning that both sides read the same .env.
+      // They do not: the config overrides it for the server and not for the
+      // runner, so the test failed for anyone who had Connect configured
+      // locally — expecting "connect" from an API deliberately pinned to
+      // "direct". It passed only while the suite was reusing a dev server that
+      // the override never reached.
+      expect(body.mode).toBe("direct");
     });
 
     test("GET /payments/enabled returns enabled: false by default", async ({

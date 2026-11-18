@@ -61,26 +61,6 @@ test.describe("public demo", () => {
     await expect(page.getByText(/Lumen Coffee/)).toBeVisible();
   });
 
-  test("reset puts the workspace back", async ({ page }) => {
-    await page.goto("/demo");
-    await page.waitForURL("**/dashboard", { timeout: 20000 });
-
-    const name = `Throwaway ${Date.now()}`;
-    await page.request.post(`${API}/api/projects`, {
-      data: { name },
-      headers: { "x-csrf-token": await csrfToken(page) },
-    });
-
-    const reset = await page.request.post(`${API}/api/demo/reset`, {
-      headers: { "x-csrf-token": await csrfToken(page) },
-    });
-    expect(reset.ok()).toBe(true);
-
-    await page.reload();
-    await expect(page.getByText(name)).toHaveCount(0);
-    await expect(page.getByText("Lumen Coffee — Brand refresh")).toBeVisible();
-  });
-
   test("the entry endpoint is not a GET, so link previews cannot spend sessions", async ({
     request,
   }) => {

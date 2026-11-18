@@ -1,21 +1,18 @@
 import {
   BadRequestException,
   Controller,
-  ForbiddenException,
   HttpCode,
   NotFoundException,
   Post,
   Query,
-  Req,
   Res,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
-import { Public, type AuthenticatedRequest } from "../common";
+import { Public } from "../common";
 import { AuthService } from "../auth/auth.service";
 import { DemoService } from "./demo.service";
 import type { DemoKind } from "./demo-config";
-import { DemoResetService } from "./demo-reset.service";
 
 /**
  * Entry into the public demo workspace. Public because a demo visitor has no
@@ -40,7 +37,6 @@ export class DemoController {
   constructor(
     private authService: AuthService,
     private demo: DemoService,
-    private resetService: DemoResetService,
   ) {}
 
   private assertEnabled(): void {
@@ -62,24 +58,5 @@ export class DemoController {
     // downgrade a 302 after POST anyway, but curl does not — and neither do
     // some HTTP clients, which would turn entry into a silent 404.
     res.redirect(303, url);
-  }
-
-  /**
-   * The banner's "Reset demo" button.
-   *
-   * Scoped to someone already inside the demo workspace, not @Public() in
-   * spirit: a stranger must not be able to wipe the demo on a loop. Forced
-   * past the quiet period, because the visitor pressing the button is itself
-   * the recent activity that would otherwise hold the reset off.
-   */
-  @Post("reset")
-  @HttpCode(200)
-  @Throttle({ default: { limit: 3, ttl: 60000 } })
-  async reset(@Req() req: AuthenticatedRequest): Promise<{ reset: boolean }> {
-    this.assertEnabled();
-    if (!(await this.demo.isDemoOrg(req.organization?.id))) {
-      throw new ForbiddenException("Only the demo workspace can be reset.");
-    }
-    return this.resetService.reset({ force: true });
   }
 }

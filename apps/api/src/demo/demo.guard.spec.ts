@@ -120,7 +120,6 @@ describe("DemoGuard", () => {
   it("does not refuse demo entry itself", async () => {
     const { guard: g } = guard();
     expect(await g.canActivate(context("POST", "/api/demo/enter", DEMO_ORG))).toBe(true);
-    expect(await g.canActivate(context("POST", "/api/demo/reset", DEMO_ORG))).toBe(true);
   });
 
   it("refuses any multipart body in the demo org, whatever the route", async () => {

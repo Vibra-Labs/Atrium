@@ -7,8 +7,19 @@ describe("DemoBanner", () => {
     expect(renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo={false} />)).toBe("");
   });
 
-  it("names the reset cadence, so nobody is surprised when their work vanishes", () => {
-    expect(renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo />)).toContain("30 minutes");
+  it("counts down to the next reset, so nobody is surprised when their work vanishes", () => {
+    const html: string = renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo />);
+    expect(html).toMatch(/resets in (\d+ minutes?|under a minute)/);
+  });
+
+  it("offers no reset button", () => {
+    // Several strangers share this workspace at once. A manual reset lets any
+    // one of them wipe it out from under the others mid-click, and the
+    // countdown already says when it happens on its own.
+    const dashboard: string = renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo />);
+    const portal: string = renderToStaticMarkup(<DemoBanner surface="portal" isDemo />);
+    expect(dashboard).not.toContain("Reset");
+    expect(portal).not.toContain("Reset");
   });
 
   it("links Start free with ref=demo, so the demo's own conversions are attributable", () => {
@@ -37,7 +48,5 @@ describe("DemoBanner", () => {
     expect(html).not.toContain("/demo/client");
   });
 
-  it("offers a reset", () => {
-    expect(renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo />)).toContain("Reset");
-  });
+
 });

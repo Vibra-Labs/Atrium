@@ -95,7 +95,11 @@ reputation.
 
 - A scheduled reset runs every 30 minutes. It holds off for five minutes after
   anyone used the demo, so nobody watches their work vanish mid-click.
-- The banner's "Reset demo" button resets on demand, forcing past that wait.
+- There is no reset button in the UI. Several visitors share the workspace at
+  once, so a manual reset would let any one of them wipe it out from under the
+  others; the banner shows a live countdown to the next scheduled reset
+  instead. `POST /api/demo/reset` remains for operators who want a clean
+  workspace before showing the demo to someone.
 - Both refuse unless every owner of the target workspace is on
   `@demo.invalid`. Checking the slug would prove nothing, since the workspace
   is looked up *by* slug; the owner's address is something the seed guarantees

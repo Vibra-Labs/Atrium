@@ -13,7 +13,12 @@
  * Everything inside the workspace is replaced.
  */
 import type { PrismaClient } from "@atrium/database";
-import { DEFAULT_STATUSES } from "@atrium/shared";
+import {
+  DEFAULT_PURSUIT_PIPELINES,
+  DEFAULT_PURSUIT_STAGES,
+  DEFAULT_STATUSES,
+} from "@atrium/shared";
+import { DEMO_EMAIL_DOMAIN } from "./demo-config";
 import { demoSeedPlan, type DemoSeedPlan, type DemoUser } from "./demo-seed-plan";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,6 +37,70 @@ function userId(slug: string, key: string): string {
 
 function orgId(slug: string): string {
   return `demo-${slug}-org`;
+}
+
+/**
+ * Refuses to touch a workspace that is not the demo's.
+ *
+ * This runs before anything is deleted, and it lives here rather than in the
+ * caller because this function is what does the deleting: the scheduled reset
+ * had the check, `bun run db:seed:demo` did not, and that script defaults to
+ * slug "demo" against whatever `DATABASE_URL` is set. Anyone whose real
+ * workspace happened to be on that slug lost every project, invoice and
+ * contact in it.
+ *
+ * The assertion is about the workspace's OWNER, not its slug — checking the
+ * slug would be vacuous, since the row is looked up by slug. An owner on
+ * `@demo.invalid` is something this seed guarantees and a real workspace
+ * cannot have. Same contract as test/integration/guard.ts refusing a database
+ * whose name does not end in `_test`. A workspace that does not exist yet is
+ * fine: first boot has nothing to lose.
+ */
+async function assertDemoWorkspace(prisma: PrismaClient, slug: string): Promise<void> {
+  const id: string = orgId(slug);
+
+  // Another workspace on the demo's slug is checked separately, and first: the
+  // upsert below would otherwise die on the slug's unique constraint, and
+  // saying which workspace is in the way beats a raw Prisma error.
+  const slugHolder = await prisma.organization.findUnique({
+    where: { slug },
+    select: { id: true },
+  });
+  if (slugHolder && slugHolder.id !== id) {
+    throw new Error(
+      `Refusing to seed the demo: the slug "${slug}" already belongs to ` +
+        `workspace ${slugHolder.id}. Point DEMO_ORG_SLUG at a slug of its own.`,
+    );
+  }
+
+  // By id, and only by id, because that is the row the seed upserts and
+  // clearWorkspace empties. Looking it up with findFirst on
+  // `OR: [{ id }, { slug }]` meant an unordered OR could return one row while
+  // a different one got emptied — the check and the deletion have to be about
+  // the same workspace or the check is decoration.
+  const organization = await prisma.organization.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      members: {
+        where: { role: "owner" },
+        select: { user: { select: { email: true } } },
+      },
+    },
+  });
+  if (!organization) return;
+
+  const owners: string[] = organization.members.map((member) => member.user.email);
+  const allDemoOwners: boolean =
+    owners.length > 0 &&
+    owners.every((email: string) => email.trim().toLowerCase().endsWith(DEMO_EMAIL_DOMAIN));
+  if (allDemoOwners) return;
+
+  throw new Error(
+    `Refusing to seed the demo over "${slug}" (${organization.id}): its owners are ` +
+      `${owners.join(", ") || "(none)"}, which is not a demo account. ` +
+      `DEMO_ORG_SLUG looks like it is pointing at a real workspace.`,
+  );
 }
 
 async function clearWorkspace(prisma: PrismaClient, organizationId: string): Promise<void> {
@@ -135,6 +204,8 @@ export async function seedDemo(
   slug: string,
   options: { ownerEmail?: string; clientEmail?: string } = {},
 ): Promise<{ organizationId: string }> {
+  await assertDemoWorkspace(prisma, slug);
+
   const plan: DemoSeedPlan = demoSeedPlan(
     slug,
     options.ownerEmail ?? "owner@demo.invalid",
@@ -174,10 +245,41 @@ export async function seedDemo(
     skipDuplicates: true,
   });
 
+  // Every field `PUT /branding` accepts, not just the ones the seed sets: a
+  // logo URL a visitor typed outlives the reset otherwise, and
+  // `GET /branding/:slug` is @Public — so one visitor's URL is fetched by the
+  // browser of every later one, collecting their IP and user agent.
+  const branding = {
+    logoUrl: null,
+    logoKey: null,
+    hideLogo: false,
+    primaryColor: "#1f6feb",
+    accentColor: "#f0883e",
+  } as const;
   await prisma.branding.upsert({
     where: { organizationId },
-    update: { primaryColor: "#1f6feb", accentColor: "#f0883e" },
-    create: { organizationId, primaryColor: "#1f6feb", accentColor: "#f0883e" },
+    update: branding,
+    create: { organizationId, ...branding },
+  });
+
+  // Recreated for the same reason as the project statuses: a visitor can
+  // delete these, and only `pipelineFor` heals a workspace with no pipelines.
+  // The contracts board lists through `findAll`, which does not — so without
+  // this the board stays empty until the API restarts.
+  await prisma.pursuitPipeline.create({
+    data: {
+      organizationId,
+      name: DEFAULT_PURSUIT_PIPELINES[0]!,
+      order: 0,
+      stages: {
+        create: DEFAULT_PURSUIT_STAGES.map((stage, order) => ({
+          organizationId,
+          name: stage.name,
+          slug: stage.slug,
+          order,
+        })),
+      },
+    },
   });
 
   const companies = new Map<string, string>();

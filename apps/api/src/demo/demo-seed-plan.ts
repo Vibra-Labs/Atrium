@@ -270,7 +270,11 @@ export function demoSeedPlan(slug: string, ownerEmail: string, clientEmail: stri
         type: "quote",
         title: "Online store — phase 2 quote",
         status: "pending",
-        requiresSignature: true,
+        // Deliberately not a signature: signing embeds into the document's
+        // PDF, and these File rows have no storageKey because uploads are off.
+        // A "Sign" button that 400s is worse than no button; approving or
+        // declining a quote is a real action the demo can honour.
+        requiresSignature: false,
         filename: "harbour-phase-2.pdf",
       },
     ],

@@ -49,9 +49,20 @@ describe("demoSeedPlan", () => {
     expect(plan.invoices.filter((i) => i.status === "sent")).toHaveLength(1);
   });
 
-  it("seeds a signed document and one awaiting signature", () => {
+  it("seeds a signed document and one awaiting a response", () => {
     expect(plan.documents.some((d) => d.status === "signed")).toBe(true);
     expect(plan.documents.some((d) => d.status === "pending")).toBe(true);
+  });
+
+  it("asks for no signature the demo cannot take", () => {
+    // Signing embeds the drawn signature into the document's PDF, and these
+    // File rows carry no storageKey — uploads are off, so there are no bytes
+    // to embed into. A pending document with a signature field would show the
+    // portal client a "Sign" button that cannot succeed. The pending one is a
+    // quote instead: approving or declining it is a real action that works.
+    const pending = plan.documents.filter((d) => d.status === "pending");
+    expect(pending.length).toBeGreaterThan(0);
+    expect(pending.every((d) => !d.requiresSignature)).toBe(true);
   });
 
   it("seeds tasks, contacts, updates and time entries", () => {

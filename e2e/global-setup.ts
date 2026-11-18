@@ -5,8 +5,10 @@ import { DEMO_SLUG } from "./playwright.config";
 
 /**
  * demo.e2e.ts drives the public demo, which needs its workspace to exist before
- * anyone enters it. Seeded under its own slug so the demo reset can never touch
- * the account this setup creates, or anything in a developer's database.
+ * anyone enters it. Seeded under the slug the API is configured with, which is
+ * what DEMO_SLUG resolves — a database holds at most one demo workspace, and
+ * the server and this setup have to be looking at the same one. The seed
+ * refuses outright if that workspace turns out not to be a demo's.
  */
 async function seedDemoWorkspace(): Promise<void> {
   if (process.env.DEMO_MODE !== "true") return;

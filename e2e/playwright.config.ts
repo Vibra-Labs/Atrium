@@ -30,8 +30,24 @@ const TRACKERS: string =
   '[{"src":"http://localhost:3000/__e2e-tracker.js","data-website-id":"e2e"}]';
 process.env.ATRIUM_TRACKERS = TRACKERS;
 
-/** Shared with global-setup.ts, which seeds this workspace. */
-export const DEMO_SLUG = "demo-e2e";
+/**
+ * The demo workspace these tests drive. Shared with global-setup.ts, which
+ * seeds it.
+ *
+ * It follows the configured slug when there is one, because a database holds
+ * at most one demo workspace: the demo accounts' addresses are fixed, and a
+ * User row is unique by email, so seeding a second workspace under a different
+ * slug fails on that constraint. Pinning a separate slug here also disagreed
+ * with the server — `reuseExistingServer` means a local run talks to a dev API
+ * already configured for its own slug, so the suite would have been driving a
+ * workspace the server knew nothing about.
+ *
+ * Locally that means a run reseeds the developer's demo workspace. That is
+ * demo data: it is disposable by definition and resets itself twice an hour.
+ * In CI nothing is configured, so this value is what Playwright starts the
+ * API with.
+ */
+export const DEMO_SLUG: string = process.env.DEMO_ORG_SLUG ?? "demo-e2e";
 
 // Set on the runner process too, not only in the webServer child envs: global
 // setup reads it to decide whether to seed the demo workspace, and without the
@@ -73,8 +89,8 @@ export default defineConfig({
       env: {
         INTEGRATIONS_ALLOW_PRIVATE_URLS: "true",
         STRIPE_CONNECT_CLIENT_ID: "",
-        // demo.e2e.ts needs demo mode on. The slug is its own, so the reset can
-        // never target a workspace another test — or a developer — cares about.
+        // demo.e2e.ts needs demo mode on, against the same workspace global
+        // setup seeds — see DEMO_SLUG for why the two must agree.
         DEMO_MODE: "true",
         DEMO_ORG_SLUG: DEMO_SLUG,
         DEMO_OWNER_EMAIL: "owner@demo.invalid",

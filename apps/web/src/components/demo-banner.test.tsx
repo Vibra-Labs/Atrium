@@ -7,9 +7,15 @@ describe("DemoBanner", () => {
     expect(renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo={false} />)).toBe("");
   });
 
-  it("counts down to the next reset, so nobody is surprised when their work vanishes", () => {
+  it("says the cadence before the clock is read, so the two renders agree", () => {
+    // The countdown depends on the current time, so computing it as initial
+    // state renders one value on the server and another at hydration, and
+    // React logs a mismatch warning on every demo page. This phrase is true at
+    // any time; the live countdown replaces it on mount, and demo.e2e.ts
+    // asserts that it does.
     const html: string = renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo />);
-    expect(html).toMatch(/resets in (\d+ minutes?|under a minute)/);
+    expect(html).toContain("resets every 30 minutes");
+    expect(html).not.toMatch(/resets in /);
   });
 
   it("offers no reset button", () => {
@@ -23,7 +29,20 @@ describe("DemoBanner", () => {
   });
 
   it("links Start free with ref=demo, so the demo's own conversions are attributable", () => {
-    expect(renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo />)).toContain("ref=demo");
+    const html: string = renderToStaticMarkup(
+      <DemoBanner surface="dashboard" isDemo appUrl="https://atrium.vibralabs.co" />,
+    );
+    expect(html).toContain("ref=demo");
+  });
+
+  it("offers no Start free at all when it has no real app to point at", () => {
+    // With DEMO_APP_URL unset the href resolved to /signup on the demo host
+    // itself: the visitor signs up on a throwaway instance, runs the setup
+    // wizard, and books real Google Ads conversions from it. No button is
+    // better than a button that sends people to the wrong place.
+    const html: string = renderToStaticMarkup(<DemoBanner surface="dashboard" isDemo />);
+    expect(html).not.toContain("Start free");
+    expect(html).not.toContain("/signup");
   });
 
   it("points Start free at the real app, since the demo runs on its own host", () => {

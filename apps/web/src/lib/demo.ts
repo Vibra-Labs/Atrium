@@ -38,6 +38,17 @@ const RESET_INTERVAL_MINUTES = 30;
  * so no round trip is needed, and if a reset is held off because someone is
  * active the countdown simply rolls to the next slot.
  */
+/**
+ * What to say before the clock has been read.
+ *
+ * `resetCountdown` depends on the current time, so using it as a React initial
+ * state renders one value on the server and a different one at hydration —
+ * React patches the text and logs a mismatch warning. This phrase is true
+ * whatever the time, so both renders agree and the live countdown takes over on
+ * mount.
+ */
+export const RESET_CADENCE = `every ${RESET_INTERVAL_MINUTES} minutes`;
+
 export function resetCountdown(now: Date = new Date()): string {
   const minutesPast: number = now.getMinutes() % RESET_INTERVAL_MINUTES;
   const secondsPast: number = minutesPast * 60 + now.getSeconds();

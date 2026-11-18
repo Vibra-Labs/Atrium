@@ -95,11 +95,19 @@ reputation.
 
 - A scheduled reset runs every 30 minutes. It holds off for five minutes after
   anyone used the demo, so nobody watches their work vanish mid-click.
+- That hold-off defers a reset; it never cancels one. Past an hour since the
+  last reset the next cycle lands regardless of traffic. Without that cap a
+  single visitor refreshing once a minute — or any crawler — would hold the
+  workspace open forever, because every request counts as activity, reads
+  included: visitor content would accumulate without bound while the banner
+  counted down to a reset that never came.
 - There is no way to reset on demand, by design. Several visitors share the
   workspace at once, so a manual reset would let any one of them wipe it out
   from under the others. The banner shows a live countdown to the next
-  scheduled reset instead. To force one, restart the demo instance or run
-  `bun run db:seed:demo` against it.
+  scheduled reset instead. To force one, run `bun run db:seed:demo` against the
+  instance. Restarting does **not** reset: there is no boot-time seed, and the
+  staleness clock starts at process start, so a restart delays the next reset
+  rather than bringing one forward.
 - Both refuse unless every owner of the target workspace is on
   `@demo.invalid`. Checking the slug would prove nothing, since the workspace
   is looked up *by* slug; the owner's address is something the seed guarantees
@@ -136,3 +144,9 @@ None of these is a signup. The
 banner's "Start free" link carries `?ref=demo`, so conversions from the demo are
 attributable across the two hosts. A demo counted as a signup would inflate the
 exact number it was built to improve.
+
+Nothing from the demo reaches Google Ads. Two gates do that, because one was not
+enough: `setDemoAnalytics`, set from the session provider, covers the dashboard
+and portal; `NEXT_PUBLIC_DEMO_MODE` covers the whole deployment, including the
+signup and setup routes, which mount no provider and so had three of the four
+Ads conversions ungated. Set `NEXT_PUBLIC_DEMO_MODE=true` on the demo instance.

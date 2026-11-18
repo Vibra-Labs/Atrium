@@ -68,6 +68,21 @@ describe("DemoController", () => {
     expect(res.redirect).not.toHaveBeenCalled();
   });
 
+  it("lets a visitor in more than ten times a minute", async () => {
+    // Entry is one POST per visitor, and a public demo's visitors arrive in
+    // bursts and share egress IPs — one office, one conference, one school
+    // behind a single NAT. At ten a minute the eleventh of them met a raw 429
+    // on the only door into the product. The limit is still here to stop a
+    // crawler spending sign-in links; it just isn't tuned to reject a crowd.
+    // @nestjs/throttler keys its metadata per named limiter: "THROTTLER:LIMIT"
+    // plus the limiter's name.
+    const limit = Reflect.getMetadata(
+      "THROTTLER:LIMITdefault",
+      DemoController.prototype.enter,
+    ) as number | undefined;
+    expect(limit).toBeGreaterThanOrEqual(30);
+  });
+
   it("404s on enter when demo mode is off", async () => {
     const { controller, res, auth } = build({ enabled: false });
 

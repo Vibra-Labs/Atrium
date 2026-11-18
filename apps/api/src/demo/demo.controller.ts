@@ -6,11 +6,13 @@ import {
   Post,
   Query,
   Res,
+  UseFilters,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
 import { Public } from "../common";
 import { AuthService } from "../auth/auth.service";
+import { DemoEntryFilter } from "./demo-entry.filter";
 import { DemoService } from "./demo.service";
 import type { DemoKind } from "./demo-config";
 
@@ -33,6 +35,7 @@ import type { DemoKind } from "./demo-config";
  */
 @Controller("demo")
 @Public()
+@UseFilters(DemoEntryFilter)
 export class DemoController {
   constructor(
     private authService: AuthService,
@@ -45,7 +48,13 @@ export class DemoController {
 
   @Post("enter")
   @HttpCode(303)
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // Rate limited, but not tightly: a public demo's visitors arrive in bursts
+  // and share egress IPs — one office, one conference, one school behind a
+  // single NAT. At ten a minute the eleventh of them met a bare 429 on the
+  // only door into the product. The limit is still here to stop a crawler
+  // spending sign-in links in a loop; entry mints one and signs in to one
+  // throwaway workspace, so a generous ceiling costs nothing.
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   async enter(@Query("kind") kind: DemoKind, @Res() res: Response): Promise<void> {
     this.assertEnabled();
     if (kind !== "owner" && kind !== "client") {

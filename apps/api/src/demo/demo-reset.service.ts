@@ -7,6 +7,18 @@ import { seedDemo } from "./demo-seed";
 /** How long after someone used the demo a scheduled reset holds off. */
 export const DEMO_QUIET_PERIOD_MS = 5 * 60 * 1000;
 
+/**
+ * The longest the workspace may go unreset while people keep using it.
+ *
+ * The quiet period defers a reset; this stops it cancelling one. Every request
+ * touches the demo, reads included, so without a cap a single visitor
+ * refreshing once a minute — or any crawler — holds the workspace open
+ * indefinitely: visitor content accumulates without bound and the banner
+ * counts down to a reset that never arrives. One skipped cycle is a courtesy
+ * to whoever is mid-sentence; two is a broken promise.
+ */
+export const DEMO_MAX_STALENESS_MS = 60 * 60 * 1000;
+
 export type DemoSeeder = typeof seedDemo;
 
 @Injectable()
@@ -28,7 +40,7 @@ export class DemoResetService {
    * and for the same reason: the operation is destructive and a
    * misconfiguration must fail closed rather than delete a real workspace.
    */
-  async reset(options: { force?: boolean } = {}): Promise<{ reset: boolean }> {
+  async reset(): Promise<{ reset: boolean }> {
     if (!this.demo.enabled) throw new NotFoundException("Not found");
 
     const slug: string | null = this.demo.orgSlug;
@@ -36,12 +48,14 @@ export class DemoResetService {
       throw new Error("Refusing to reset the demo: DEMO_ORG_SLUG is not set.");
     }
 
-    if (!options.force) {
-      const lastActivity: Date | null = this.demo.lastActivityAt;
-      if (lastActivity && Date.now() - lastActivity.getTime() < DEMO_QUIET_PERIOD_MS) {
-        this.logger.log("Demo reset skipped: someone is using it.");
-        return { reset: false };
-      }
+    const now: number = Date.now();
+    const lastActivity: Date | null = this.demo.lastActivityAt;
+    const inQuietPeriod: boolean =
+      lastActivity !== null && now - lastActivity.getTime() < DEMO_QUIET_PERIOD_MS;
+    const overdue: boolean = now - this.demo.lastResetAt.getTime() >= DEMO_MAX_STALENESS_MS;
+    if (inQuietPeriod && !overdue) {
+      this.logger.log("Demo reset deferred: someone is using it.");
+      return { reset: false };
     }
 
     // Re-read rather than trust the memoised id: the row is what gets deleted.
@@ -83,6 +97,7 @@ export class DemoResetService {
       ownerEmail: this.demo.ownerEmail ?? undefined,
       clientEmail: this.demo.clientEmail ?? undefined,
     });
+    this.demo.markReset();
     this.logger.log(`Demo workspace "${slug}" reset.`);
     return { reset: true };
   }

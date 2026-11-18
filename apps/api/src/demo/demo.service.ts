@@ -17,6 +17,13 @@ export class DemoService {
   private readonly settings: DemoSettings;
   private orgId: string | null = null;
   private activityAt: Date | null = null;
+  /**
+   * Seeded with the process start rather than null: the staleness cap measures
+   * from here, and a workspace whose age this process cannot know is best
+   * treated as fresh — otherwise a deploy would reset on top of whoever is
+   * mid-flow. Continuous traffic from boot still forces a reset one cap later.
+   */
+  private resetAt: Date = new Date();
 
   constructor(
     private config: ConfigService,
@@ -85,5 +92,14 @@ export class DemoService {
 
   touch(): void {
     this.activityAt = new Date();
+  }
+
+  /** When the workspace was last put back, for the reset's staleness cap. */
+  get lastResetAt(): Date {
+    return this.resetAt;
+  }
+
+  markReset(): void {
+    this.resetAt = new Date();
   }
 }

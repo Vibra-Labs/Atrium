@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, mock } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
-import { DemoResetService } from "./demo-reset.service";
+import { DEMO_MAX_STALENESS_MS, DemoResetService } from "./demo-reset.service";
 import type { DemoService } from "./demo.service";
 import type { PrismaService } from "../prisma/prisma.service";
 
@@ -17,6 +17,7 @@ function build(options: {
   slug?: string | null;
   storedSlug?: string | null;
   lastActivityAt?: Date | null;
+  lastResetAt?: Date;
   ownerEmail?: string | null;
 } = {}) {
   const enabled: boolean = options.enabled ?? true;
@@ -30,7 +31,9 @@ function build(options: {
     ownerEmail: "owner@demo.invalid",
     clientEmail: "client@demo.invalid",
     lastActivityAt: options.lastActivityAt ?? null,
+    lastResetAt: options.lastResetAt ?? new Date(),
     touch: mock(() => {}),
+    markReset: mock(() => {}),
   };
   const ownerEmail: string | null =
     options.ownerEmail === undefined ? "owner@demo.invalid" : options.ownerEmail;
@@ -124,13 +127,45 @@ describe("DemoResetService", () => {
     expect(seeder).toHaveBeenCalled();
   });
 
-  it("forces through the quiet period when a visitor presses Reset demo", async () => {
-    // The visitor pressing the button IS the recent activity, so the quiet
-    // period must not swallow their own request.
-    const { service, seeder } = build({ lastActivityAt: new Date() });
+  it("resets a workspace that is overdue even though someone is using it", async () => {
+    // The quiet period defers a reset; it must not cancel one. Every request
+    // touches the demo, reads included, so a single page poll once a minute
+    // would otherwise hold the workspace open forever — visitor content
+    // accumulating without bound while the banner promises a reset that never
+    // comes. Past the staleness cap the reset lands regardless of traffic.
+    const { service, seeder } = build({
+      lastActivityAt: new Date(),
+      lastResetAt: new Date(Date.now() - (DEMO_MAX_STALENESS_MS + 60_000)),
+    });
 
-    expect(await service.reset({ force: true })).toEqual({ reset: true });
+    expect(await service.reset()).toEqual({ reset: true });
     expect(seeder).toHaveBeenCalled();
+  });
+
+  it("still defers while the workspace is within the staleness cap", async () => {
+    const { service, seeder } = build({
+      lastActivityAt: new Date(),
+      lastResetAt: new Date(Date.now() - 60_000),
+    });
+
+    expect(await service.reset()).toEqual({ reset: false });
+    expect(seeder).not.toHaveBeenCalled();
+  });
+
+  it("records the reset, so the staleness cap measures from the last one", async () => {
+    const { service, demo } = build();
+
+    await service.reset();
+
+    expect(demo.markReset).toHaveBeenCalled();
+  });
+
+  it("does not record a reset it skipped", async () => {
+    const { service, demo } = build({ lastActivityAt: new Date(Date.now() - 60_000) });
+
+    await service.reset();
+
+    expect(demo.markReset).not.toHaveBeenCalled();
   });
 
   it("passes the configured demo addresses to the seeder", async () => {

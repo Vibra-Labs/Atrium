@@ -18,8 +18,11 @@ import {
   DEFAULT_PURSUIT_STAGES,
   DEFAULT_STATUSES,
 } from "@atrium/shared";
-import { DEMO_EMAIL_DOMAIN } from "./demo-config";
-import { DEMO_DEFAULT_CLIENT_EMAIL, DEMO_DEFAULT_OWNER_EMAIL } from "./demo-config";
+import {
+  DEMO_DEFAULT_CLIENT_EMAIL,
+  DEMO_DEFAULT_OWNER_EMAIL,
+  DEMO_EMAIL_DOMAIN,
+} from "./demo-config";
 import { demoSeedPlan, type DemoSeedPlan, type DemoUser } from "./demo-seed-plan";
 
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -69,6 +69,10 @@ describe("AuthService.startDemoSignIn", () => {
     ownerEmail = "owner@demo.invalid";
     clientEmail = "client@demo.invalid";
     mockMail.send.mockClear();
+    // The demo account exists by default. Reset here rather than at the end of
+    // the one test that overrides it: an assertion that throws before an inline
+    // restore would leave every later test seeing no demo account.
+    mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-demo" }));
     service = makeService();
   });
 
@@ -161,7 +165,5 @@ describe("AuthService.startDemoSignIn", () => {
 
     await expect(service.startDemoSignIn("owner")).rejects.toBeInstanceOf(NotFoundException);
     expect(signIn).not.toHaveBeenCalled();
-
-    mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-demo" }));
   });
 });

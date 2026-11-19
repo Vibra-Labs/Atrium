@@ -16,8 +16,17 @@ let prisma: PrismaClient;
 
 async function wipe(): Promise<void> {
   const org = await prisma.organization.findUnique({ where: { slug: SLUG }, select: { id: true } });
-  if (!org) return;
-  await prisma.organization.delete({ where: { id: org.id } });
+  if (org) await prisma.organization.delete({ where: { id: org.id } });
+
+  // The users too. Deleting the organization does not take them: demo User
+  // rows deliberately survive a reset, so they also survive this wipe, and
+  // they hold the demo addresses. Those addresses are the same whatever slug
+  // seeded them, while the row id carries the slug -- so one left behind here
+  // makes every later seed under a different slug fail on User.email. That is
+  // what broke e2e: this spec and e2e/global-setup.ts share one database in
+  // CI, and global setup seeds "demo-e2e" after this has seeded
+  // "demo-seed-test".
+  await prisma.user.deleteMany({ where: { id: { startsWith: `demo-${SLUG}-user-` } } });
 }
 
 describe("seedDemo", () => {

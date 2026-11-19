@@ -1050,13 +1050,20 @@ export class AuthService {
     // visitor on a dashboard DemoGuard cannot fence and every later reset
     // colliding on User.email. Fail closed — the entry page sends a 404 to
     // /demo/unavailable.
+    // Narrowed rather than asserted: DemoSettings still types orgSlug as
+    // nullable, and while demoSettings never returns null for it once enabled,
+    // a `!` here would be a claim the type does not make. Fails closed if that
+    // ever changes.
+    const demoSlug: string | null = settings.orgSlug;
+    if (demoSlug === null) throw new NotFoundException("Not found");
+
     const demoOrg = await this.prisma.organization.findUnique({
-      where: { slug: settings.orgSlug },
+      where: { slug: demoSlug },
       select: { id: true },
     });
     if (!demoOrg) {
       this.logger.warn(
-        `Demo sign-in refused: no workspace with slug "${settings.orgSlug}". ` +
+        `Demo sign-in refused: no workspace with slug "${demoSlug}". ` +
           "Has `bun run db:seed:demo` been run?",
       );
       throw new NotFoundException("Not found");

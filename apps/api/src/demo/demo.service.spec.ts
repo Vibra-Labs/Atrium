@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { ConfigService } from "@nestjs/config";
 import type { PrismaService } from "../prisma/prisma.service";
 import { DemoService } from "./demo.service";
+import { demoEnvValue } from "./demo-config";
 
 const ENV = {
   DEMO_MODE: "true",
@@ -199,5 +200,33 @@ describe("DemoService", () => {
       prisma().service,
     );
     expect(service.ownerEmail).toBe("a@evil.com@demo.invalid");
+  });
+
+  it("treats an empty-string variable as unset, which `??` did not", () => {
+    // An env var declared with no value in Docker or Coolify arrives as "".
+    // The seed used `??`, so it wrote a workspace whose slug was "" while the
+    // API resolved "demo" -- the fence then matched nothing and every reset
+    // collided on User.email forever.
+    const service = new DemoService(
+      config({ DEMO_ORG_SLUG: "", DEMO_OWNER_EMAIL: "", DEMO_CLIENT_EMAIL: "" }),
+      prisma().service,
+    );
+    expect(service.orgSlug).toBe("demo");
+    expect(service.ownerEmail).toBe("owner@demo.invalid");
+    expect(service.clientEmail).toBe("client@demo.invalid");
+  });
+});
+
+describe("demoEnvValue", () => {
+  it("reports a value only when one is really there", () => {
+    expect(demoEnvValue(undefined)).toBeUndefined();
+    expect(demoEnvValue("")).toBeUndefined();
+    expect(demoEnvValue("   ")).toBeUndefined();
+    expect(demoEnvValue("\t\n")).toBeUndefined();
+  });
+
+  it("trims what it returns, so both sides agree on the value", () => {
+    expect(demoEnvValue(" owner@demo.invalid ")).toBe("owner@demo.invalid");
+    expect(demoEnvValue("northwind")).toBe("northwind");
   });
 });

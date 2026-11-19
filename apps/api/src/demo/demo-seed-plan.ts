@@ -96,7 +96,11 @@ export interface DemoSeedPlan {
   companies: string[];
 }
 
-function assertDemoAddress(email: string): string {
+function assertDemoAddress(raw: string): string {
+  // Trimmed before anything else, matching demoEnvValue on the API side: a
+  // pasted address with a leading space would otherwise be seeded verbatim and
+  // never match the address the API signs in.
+  const email: string = raw.trim();
   if (!email.toLowerCase().endsWith(DEMO_EMAIL_DOMAIN)) {
     throw new Error(
       `Refusing to seed the demo with "${email}": demo accounts must be on ${DEMO_EMAIL_DOMAIN}, ` +

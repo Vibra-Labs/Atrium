@@ -10,6 +10,16 @@ export type DemoKind = "owner" | "client";
  */
 export const DEMO_EMAIL_DOMAIN = "@demo.invalid";
 
+/**
+ * What the demo is configured as when only `DEMO_MODE=true` is set. These are
+ * the values `bun run db:seed:demo` writes, so the one variable whose name says
+ * "demo mode on" is the whole configuration. The overrides exist for an
+ * operator running two demos off one database, which is nobody so far.
+ */
+export const DEMO_DEFAULT_ORG_SLUG = "demo";
+export const DEMO_DEFAULT_OWNER_EMAIL = "owner@demo.invalid";
+export const DEMO_DEFAULT_CLIENT_EMAIL = "client@demo.invalid";
+
 export interface DemoSettings {
   enabled: boolean;
   orgSlug: string | null;
@@ -17,19 +27,37 @@ export interface DemoSettings {
   clientEmail: string | null;
 }
 
-function address(config: ConfigService, key: string): string | null {
+/**
+ * An explicitly configured demo address, or `fallback` when it is unset.
+ *
+ * Unset defaults; set and outside `@demo.invalid` throws. The asymmetry is the
+ * point: silently returning null for a bad address produced a 404 identical to
+ * demo mode being switched off, so a typo and a deliberate "off" were
+ * indistinguishable from the outside and from the logs.
+ */
+function address(config: ConfigService, key: string, fallback: string): string {
   const value: string | undefined = config.get<string>(key);
-  if (!value || value.length === 0) return null;
+  if (!value || value.trim().length === 0) return fallback;
   // Lowercased, because the seed stores addresses lowercased: returning the raw
   // value would sign in an address the seeded user does not have.
   const normalized: string = value.trim().toLowerCase();
-  return normalized.endsWith(DEMO_EMAIL_DOMAIN) ? normalized : null;
+  if (!normalized.endsWith(DEMO_EMAIL_DOMAIN)) {
+    throw new Error(
+      `${key} must end in ${DEMO_EMAIL_DOMAIN}, but is "${value}". Demo mode signs ` +
+        `visitors in to this address with no password, so it must not be an address ` +
+        `anyone really uses. Leave ${key} unset to use ${fallback}.`,
+    );
+  }
+  return normalized;
 }
 
 /**
  * Reads demo mode from configuration. Shared by DemoService and AuthService so
  * the rules about which addresses may be signed in to anonymously have one
  * definition, without AuthService taking a new dependency.
+ *
+ * While demo mode is off every field is null and nothing is validated, so an
+ * ordinary install boots with a leftover DEMO_* variable in its environment.
  */
 export function demoSettings(config: ConfigService): DemoSettings {
   const enabled: boolean = config.get("DEMO_MODE") === "true";
@@ -39,9 +67,9 @@ export function demoSettings(config: ConfigService): DemoSettings {
   const slug: string | undefined = config.get<string>("DEMO_ORG_SLUG");
   return {
     enabled: true,
-    orgSlug: slug && slug.length > 0 ? slug : null,
-    ownerEmail: address(config, "DEMO_OWNER_EMAIL"),
-    clientEmail: address(config, "DEMO_CLIENT_EMAIL"),
+    orgSlug: slug && slug.trim().length > 0 ? slug.trim() : DEMO_DEFAULT_ORG_SLUG,
+    ownerEmail: address(config, "DEMO_OWNER_EMAIL", DEMO_DEFAULT_OWNER_EMAIL),
+    clientEmail: address(config, "DEMO_CLIENT_EMAIL", DEMO_DEFAULT_CLIENT_EMAIL),
   };
 }
 

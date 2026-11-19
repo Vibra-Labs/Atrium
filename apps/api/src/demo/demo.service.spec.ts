@@ -59,9 +59,11 @@ describe("DemoService", () => {
     expect(service.clientEmail).toBeNull();
   });
 
-  it("isDemoOrg is false when DEMO_ORG_SLUG is unset", async () => {
+  it("isDemoOrg resolves against the default slug when DEMO_ORG_SLUG is unset", async () => {
+    // DEMO_MODE=true is the whole configuration: the slug defaults to the one
+    // the seed writes, so turning the demo on cannot leave it half-enabled.
     const service = new DemoService(config({ DEMO_ORG_SLUG: undefined }), prisma().service);
-    expect(await service.isDemoOrg("org_1")).toBe(false);
+    expect(await service.isDemoOrg("org_1")).toBe(true);
   });
 
   it("isDemoOrg is false for an undefined organization", async () => {
@@ -107,5 +109,45 @@ describe("DemoService", () => {
       prisma().service,
     );
     expect(service.ownerEmail).toBe("owner@demo.invalid");
+  });
+
+  it("defaults the slug and both addresses to what the seed writes", () => {
+    // The seed already defaults all three (scripts/seed-demo.ts, demo-seed.ts).
+    // The API refusing to do the same is what made DEMO_MODE=true alone look
+    // like a broken demo: a silent 404, three variables away from working.
+    const service = new DemoService(
+      config({
+        DEMO_ORG_SLUG: undefined,
+        DEMO_OWNER_EMAIL: undefined,
+        DEMO_CLIENT_EMAIL: undefined,
+      }),
+      prisma().service,
+    );
+    expect(service.orgSlug).toBe("demo");
+    expect(service.ownerEmail).toBe("owner@demo.invalid");
+    expect(service.clientEmail).toBe("client@demo.invalid");
+  });
+
+  it("refuses to start when a configured demo address is not @demo.invalid", () => {
+    // Anonymous sign-in: an address pointing at a real administrator would let
+    // anyone in as them with no password. Unset is fine and defaults; set and
+    // wrong must stop the process, naming the variable, rather than return null
+    // and serve a 404 that looks exactly like demo mode being switched off.
+    expect(
+      () => new DemoService(config({ DEMO_OWNER_EMAIL: "edgar@vibralabs.co" }), prisma().service),
+    ).toThrow(/DEMO_OWNER_EMAIL/);
+    expect(
+      () => new DemoService(config({ DEMO_CLIENT_EMAIL: "someone@gmail.com" }), prisma().service),
+    ).toThrow(/DEMO_CLIENT_EMAIL/);
+  });
+
+  it("ignores a stray bad demo address while demo mode is off", () => {
+    // An ordinary install with a leftover variable must boot, not crash.
+    const service = new DemoService(
+      config({ DEMO_MODE: undefined, DEMO_OWNER_EMAIL: "edgar@vibralabs.co" }),
+      prisma().service,
+    );
+    expect(service.enabled).toBe(false);
+    expect(service.ownerEmail).toBeNull();
   });
 });

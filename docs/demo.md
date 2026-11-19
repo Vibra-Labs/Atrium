@@ -21,17 +21,27 @@ Two reasons, both learned the hard way rather than guessed:
 
 ## Configuration
 
-| Variable | Example | Meaning |
+`DEMO_MODE=true` is the whole configuration. The slug and the two addresses
+default to what `bun run db:seed:demo` writes, so there is no half-enabled
+state to land in.
+
+| Variable | Default | Meaning |
 |---|---|---|
-| `DEMO_MODE` | `true` | Off unless exactly `true`. Everything below is ignored while it is off. Needed by the **API**. |
+| `DEMO_MODE` | `false` | Off unless exactly `true`. Everything below is ignored while it is off. Needed by the **API**. |
 | `DEMO_ORG_SLUG` | `demo` | The demo workspace's slug. The reset refuses any other target. |
 | `DEMO_OWNER_EMAIL` | `owner@demo.invalid` | The account `/demo` signs visitors in as. |
 | `DEMO_CLIENT_EMAIL` | `client@demo.invalid` | The account `/demo/client` signs visitors in as. |
-| `DEMO_APP_URL` | `https://atrium.example.com` | The real app, for the banner's "Start free" link. Needed by the **web** service. |
+| `DEMO_APP_URL` | — | The real app, for the banner's "Start free" link. Needed by the **web** service. Without it the banner renders no button, because on the demo host a bare `/signup` is the demo's own. |
+| `NEXT_PUBLIC_DEMO_MODE` | `false` | Set to `true` on the demo instance so Google Ads conversions stay gated on the signup and setup routes, which mount no session provider. Needed by the **web** service. |
 
-Both addresses **must** end in `@demo.invalid`. A demo address pointing at a
-real account would make that account anonymously signable, so the code refuses
-anything else rather than trusting the operator to get it right.
+Only `DEMO_APP_URL` and `NEXT_PUBLIC_DEMO_MODE` have to be set by hand, and
+both belong to the web service.
+
+If you do override an address, it **must** end in `@demo.invalid`. Demo mode
+signs visitors in to that address with no password, so one pointing at a real
+administrator would let anyone in as them. A value outside the domain stops the
+API at startup, naming the variable — it is not silently ignored, because a
+typo and a deliberate "off" used to produce the same 404.
 
 ## Deploying it (Coolify)
 

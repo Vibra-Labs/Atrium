@@ -45,3 +45,11 @@ jobs:
             vibralabs/atrium:${{ github.sha }}
             vibralabs/atrium:latest
           no-cache: true
+
+      # The description drifted for eight months because this was only ever run
+      # by hand. The image and its Docker Hub page now ship together.
+      - name: Sync Docker Hub description
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: ./scripts/update-dockerhub-readme.sh

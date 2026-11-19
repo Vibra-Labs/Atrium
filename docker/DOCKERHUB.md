@@ -10,12 +10,41 @@ Atrium replaces shared drives, spreadsheets, and scattered emails with a single 
 
 ## Features
 
-- **Project management** — Customizable status pipeline per organization
-- **File sharing** — Upload and deliver files via S3, MinIO, Cloudflare R2, or local storage
-- **White-label branding** — Custom colors and logo applied to the client portal
-- **Role-based access** — Owner/admin roles for your team, member role for clients
-- **Email notifications** — Transactional email via Resend
-- **Built-in database** — PostgreSQL included, no separate container needed
+### Client portal
+- **Branded portal** — Your logo, colors, and branded login page; optionally your own domain with automatic SSL
+- **Projects & updates** — Post progress updates with images and embeds (YouTube, Loom, Figma, Google Docs, Canva); clients see a clear current status
+- **Files & links** — Upload deliverables or link external content; stored on local disk, S3, MinIO, or Cloudflare R2
+- **Tasks & client requests** — Task board with statuses, assignees, labels, and drag-and-drop; clients can submit requests from the portal
+- **Comments & notifications** — Threaded discussion on updates and tasks, with in-app, email, and web push
+- **View as customer** — Preview the portal exactly as a client sees it, with changes blocked
+
+### Get paid
+- **Invoicing** — Draft, send, and track invoices with PDF generation and in-app preview
+- **Online payments** — Clients pay invoices via Stripe Checkout (Direct Keys or Connect)
+- **Time tracking** — Timers and manual entries per project and task, hourly rates, one-click invoices from un-invoiced time
+- **Reports** — Time by project, user, and task, with CSV export
+
+### Contracts & approvals
+- **Documents** — Send quotes, contracts, and NDAs for client acknowledgement or approval
+- **E-signatures** — Signature fields, signing order, reminders, expiry, and a signed certificate with audit trail
+- **Decisions** — Ask clients to vote on options directly in the portal
+
+### Run the agency
+- **Potential contracts** — Track work before it's signed, with stage, value, expected close, and cost/margin; mark Won to turn it into active work
+- **Contacts** — People and companies, lead sources, follow-up reminders, CSV import and export
+- **Calendar** — Tasks, project dates, and invoice due dates on a month grid or agenda
+- **Team & roles** — Owners and admins on your team; clients join as members with access to their own projects only
+- **Multiple organizations** — Run several companies from one install; close public signups with `ALLOW_SIGNUPS=false`
+- **Global search** — Full-text search across projects, files, tasks, clients, and updates
+- **Data export** — CSV for projects, invoices, people, tasks, and time entries
+
+### Platform
+- **MCP server** — Connect Claude or other AI clients to manage your workspace via OAuth sign-in or API keys
+- **Integrations** — Slack, Discord, and signed webhooks for workspace events
+- **Authentication** — Email/password, magic link, and passwordless client sign-in; two-factor via authenticator app, passkeys, and optional "require 2FA for staff"
+- **Email** — Resend or any SMTP server, configurable per organization
+- **Dark mode** — Per-user toggle, follows the system by default
+- **Self-hosted** — Single image with bundled Postgres option, Unraid template, ARM support
 
 ## Quick Start
 
@@ -93,13 +122,16 @@ environment:
 | `WEB_URL` | **Yes** | — | The public URL users open Atrium at, e.g. `https://atrium.example.com`. Sign-in fails after the first login when this does not match. |
 | `USE_BUILT_IN_DB` | No | `true` | Set to `false` to use an external database |
 | `DATABASE_URL` | No | auto | PostgreSQL connection string (required when built-in DB is disabled) |
+| `DIRECT_URL` | No | — | Non-pooled connection used for schema sync, when `DATABASE_URL` points at a pooler such as PgBouncer |
+| `ALLOW_SIGNUPS` | No | `true` | Set to `false` to close public signup; invited users can still join |
 | `STORAGE_PROVIDER` | No | `local` | File storage: `local`, `s3`, `minio`, or `r2` |
+| `UPLOAD_DIR` | No | `./uploads` | Directory for local file storage |
 | `S3_ENDPOINT` | No | — | S3-compatible endpoint URL |
 | `S3_REGION` | No | `us-east-1` | S3 region |
 | `S3_BUCKET` | No | `atrium` | S3 bucket name |
 | `S3_ACCESS_KEY` | No | — | S3 access key |
 | `S3_SECRET_KEY` | No | — | S3 secret key |
-| `RESEND_API_KEY` | No | — | Resend API key for email |
+| `RESEND_API_KEY` | No | — | Resend API key for email. SMTP is configured per organization in the app. |
 | `EMAIL_FROM` | No | `noreply@yourdomain.com` | Sender address |
 | `MAX_FILE_SIZE_MB` | No | `50` | Max upload size in MB |
 | `SECURE_COOKIES` | No | from `WEB_URL` | Cookies are `Secure` unless `WEB_URL` starts with `http://`. Set this to force either way. **A reverse proxy with HTTPS (Caddy, nginx, Traefik) is strongly recommended.** |

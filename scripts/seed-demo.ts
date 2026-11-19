@@ -1,8 +1,13 @@
 /** CLI wrapper: bun run db:seed:demo */
 import { PrismaClient } from "@atrium/database";
 import { seedDemo } from "../apps/api/src/demo/demo-seed";
+import { DEMO_DEFAULT_ORG_SLUG } from "../apps/api/src/demo/demo-config";
 
-const slug: string = process.env.DEMO_ORG_SLUG ?? "demo";
+// The default comes from the API's own definition: the seed writing one
+// workspace while the API looks for another is the single failure that makes
+// a correctly configured demo serve a 404, and no unit test on either side
+// can see it.
+const slug: string = process.env.DEMO_ORG_SLUG ?? DEMO_DEFAULT_ORG_SLUG;
 const prisma = new PrismaClient();
 
 seedDemo(prisma, slug, {

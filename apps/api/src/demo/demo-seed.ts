@@ -19,6 +19,7 @@ import {
   DEFAULT_STATUSES,
 } from "@atrium/shared";
 import { DEMO_EMAIL_DOMAIN } from "./demo-config";
+import { DEMO_DEFAULT_CLIENT_EMAIL, DEMO_DEFAULT_OWNER_EMAIL } from "./demo-config";
 import { demoSeedPlan, type DemoSeedPlan, type DemoUser } from "./demo-seed-plan";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -208,8 +209,8 @@ export async function seedDemo(
 
   const plan: DemoSeedPlan = demoSeedPlan(
     slug,
-    options.ownerEmail ?? "owner@demo.invalid",
-    options.clientEmail ?? "client@demo.invalid",
+    options.ownerEmail ?? DEMO_DEFAULT_OWNER_EMAIL,
+    options.clientEmail ?? DEMO_DEFAULT_CLIENT_EMAIL,
   );
 
   // Keyed on the stable id, not the slug. A slug that drifted (a rename, a

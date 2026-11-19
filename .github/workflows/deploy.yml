@@ -48,7 +48,15 @@ jobs:
 
       # The description drifted for eight months because this was only ever run
       # by hand. The image and its Docker Hub page now ship together.
+      #
+      # Non-fatal on purpose: the image is the deliverable and it has already
+      # been pushed by the time this runs. A Docker Hub outage, a rate limit or
+      # a token that may push images but not edit repository metadata would
+      # otherwise mark a good release as a failed deploy, and the run list would
+      # stop distinguishing "the image did not publish" from "the marketing copy
+      # did not sync". Check the step, not the run, to see whether it synced.
       - name: Sync Docker Hub description
+        continue-on-error: true
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

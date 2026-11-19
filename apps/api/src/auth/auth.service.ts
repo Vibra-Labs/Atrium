@@ -1037,15 +1037,42 @@ export class AuthService {
     const email: string | null = demoAddressFor(settings, kind);
     if (!email) throw new NotFoundException("Not found");
 
-    // The magic-link plugin signs up unknown addresses on verify, so without
-    // this the first entry before `db:seed:demo` has run would create a User
-    // with the demo address and no membership: a visitor on a broken dashboard
-    // that DemoGuard cannot fence (no resolved organization), and every later
-    // reset colliding with that row on User.email. Fail closed instead — the
-    // entry page sends a 404 to /demo/unavailable.
-    if (!(await this.hasAccount(email))) {
+    // Entry requires the demo workspace to exist and this address to be a
+    // member of it. Holding the address is not enough, and that difference is
+    // the whole point: DemoGuard fences only the organization whose slug is
+    // DEMO_ORG_SLUG and returns true for every other one, so signing someone
+    // in to an account outside it would hand them an unfenced workspace that
+    // no reset restores — on the one page strangers are invited to visit.
+    //
+    // It also covers what `hasAccount` covered: the magic-link plugin signs up
+    // unknown addresses on verify, so before `db:seed:demo` has run this would
+    // otherwise mint a User with the demo address and no membership, leaving a
+    // visitor on a dashboard DemoGuard cannot fence and every later reset
+    // colliding on User.email. Fail closed — the entry page sends a 404 to
+    // /demo/unavailable.
+    const demoOrg = await this.prisma.organization.findUnique({
+      where: { slug: settings.orgSlug },
+      select: { id: true },
+    });
+    if (!demoOrg) {
       this.logger.warn(
-        `Demo sign-in refused: no account for ${email}. Has \`bun run db:seed:demo\` been run?`,
+        `Demo sign-in refused: no workspace with slug "${settings.orgSlug}". ` +
+          "Has `bun run db:seed:demo` been run?",
+      );
+      throw new NotFoundException("Not found");
+    }
+
+    const membership = await this.prisma.member.findFirst({
+      where: {
+        organizationId: demoOrg.id,
+        user: { email: { equals: email, mode: "insensitive" } },
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      this.logger.warn(
+        `Demo sign-in refused: ${email} is not a member of the demo workspace. ` +
+          "Has `bun run db:seed:demo` been run?",
       );
       throw new NotFoundException("Not found");
     }

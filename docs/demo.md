@@ -37,6 +37,13 @@ state to land in.
 Only `DEMO_APP_URL` and `NEXT_PUBLIC_DEMO_MODE` have to be set by hand, and
 both belong to the web service.
 
+Entry requires the demo workspace to exist and the demo address to be a member
+of it — holding the address is not enough. `@demo.invalid` is also refused at
+signup across the whole instance, so no account can come to occupy a demo
+address: `DemoGuard` fences only the workspace whose slug is `DEMO_ORG_SLUG`,
+so signing a visitor in to an account outside it would hand them a workspace
+nothing fences and no reset restores.
+
 If you do override an address, it **must** end in `@demo.invalid`. Demo mode
 signs visitors in to that address with no password, so one pointing at a real
 administrator would let anyone in as them. A value outside the domain stops the

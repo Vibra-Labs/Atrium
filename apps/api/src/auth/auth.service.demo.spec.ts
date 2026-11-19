@@ -73,6 +73,12 @@ describe("AuthService.startDemoSignIn", () => {
     // the one test that overrides it: an assertion that throws before an inline
     // restore would leave every later test seeing no demo account.
     mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve({ id: "u-demo" }));
+    // The seeded demo workspace, with the demo account in it. Entry requires
+    // both: an account merely holding the address is not enough.
+    mockPrisma.organization.findUnique.mockImplementation(() =>
+      Promise.resolve({ id: "org-demo" }),
+    );
+    mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve({ id: "m-demo" }));
     service = makeService();
   });
 
@@ -160,7 +166,33 @@ describe("AuthService.startDemoSignIn", () => {
     // address and no Member row: the visitor lands on a broken dashboard that
     // DemoGuard cannot fence (no resolved organization), and every later reset
     // then collides with that row on User.email.
+    // No user at all means no membership either, which is what entry now
+    // checks: the workspace exists but nothing joins this address to it.
     mockPrisma.user.findFirst.mockImplementation(() => Promise.resolve(null));
+    mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve(null));
+    const signIn = stubSignInMagicLink();
+
+    await expect(service.startDemoSignIn("owner")).rejects.toBeInstanceOf(NotFoundException);
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the configured demo workspace does not exist", async () => {
+    // DEMO_ORG_SLUG changed without reseeding, or the seed never ran. Without
+    // this, entry signs the visitor in anyway and DemoGuard fences nothing,
+    // because the organisation it resolves is not the demo organisation.
+    mockPrisma.organization.findUnique.mockImplementation(() => Promise.resolve(null));
+    const signIn = stubSignInMagicLink();
+
+    await expect(service.startDemoSignIn("owner")).rejects.toBeInstanceOf(NotFoundException);
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("refuses an account that holds the demo address but is not in the demo workspace", async () => {
+    // The attack this closes: an account registered on owner@demo.invalid
+    // before the seed ran would otherwise collect every demo visitor into its
+    // own workspace -- unfenced, because DemoGuard only fences the configured
+    // one, and never restored, because the reset only touches that one.
+    mockPrisma.member.findFirst.mockImplementation(() => Promise.resolve(null));
     const signIn = stubSignInMagicLink();
 
     await expect(service.startDemoSignIn("owner")).rejects.toBeInstanceOf(NotFoundException);

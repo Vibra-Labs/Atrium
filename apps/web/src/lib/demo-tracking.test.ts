@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import {
   DEMO_ACTED_EVENT,
   DEMO_CTA_EVENT,
@@ -16,6 +16,26 @@ interface Sent {
   event: string;
   data?: Record<string, string | number | boolean>;
 }
+
+const REAL_WINDOW = (globalThis as { window?: unknown }).window;
+const REAL_SESSION_STORAGE = (globalThis as { sessionStorage?: unknown }).sessionStorage;
+
+// Bun runs every test file in one process, so a global this file installs
+// outlives it. The stub window deliberately has no `location`, which is enough
+// to break any later file whose code guards with `typeof window === "undefined"`
+// and then reads `window.location` -- api.test.ts, through preview-mode. File
+// order differs between macOS and Linux, so leaving these behind passes locally
+// and fails in CI.
+afterAll(() => {
+  if (REAL_WINDOW === undefined) delete (globalThis as { window?: unknown }).window;
+  else (globalThis as { window?: unknown }).window = REAL_WINDOW;
+
+  if (REAL_SESSION_STORAGE === undefined) {
+    delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
+  } else {
+    (globalThis as { sessionStorage?: unknown }).sessionStorage = REAL_SESSION_STORAGE;
+  }
+});
 
 /** A window with working sessionStorage and a recording Umami. */
 function browser(): Sent[] {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { ConfigService } from "@nestjs/config";
 import type { PrismaService } from "../prisma/prisma.service";
 import { DemoService } from "./demo.service";
+import { demoEnvValue } from "./demo-config";
 
 const ENV = {
   DEMO_MODE: "true",
@@ -149,5 +150,83 @@ describe("DemoService", () => {
     );
     expect(service.enabled).toBe(false);
     expect(service.ownerEmail).toBeNull();
+  });
+
+  it("treats a whitespace-only slug or address as unset", () => {
+    const service = new DemoService(
+      config({ DEMO_ORG_SLUG: "   ", DEMO_OWNER_EMAIL: "  ", DEMO_CLIENT_EMAIL: "\t" }),
+      prisma().service,
+    );
+    expect(service.orgSlug).toBe("demo");
+    expect(service.ownerEmail).toBe("owner@demo.invalid");
+    expect(service.clientEmail).toBe("client@demo.invalid");
+  });
+
+  it("trims a configured slug", () => {
+    const service = new DemoService(config({ DEMO_ORG_SLUG: "  northwind  " }), prisma().service);
+    expect(service.orgSlug).toBe("northwind");
+  });
+
+  it("is disabled for DEMO_MODE values that merely look true", () => {
+    for (const value of ["TRUE", "True", "yes", "on", " true"]) {
+      expect(new DemoService(config({ DEMO_MODE: value }), prisma().service).enabled).toBe(false);
+    }
+  });
+
+  it("refuses addresses that only resemble the demo domain", () => {
+    // The domain is matched as an exact tail, so a lookalike that merely
+    // contains it, or sits one label below it, is not a demo address. Each of
+    // these would be a real deliverable mailbox somebody could own.
+    for (const bad of [
+      "owner@demo.invalid.com",
+      "owner@sub.demo.invalid",
+      "owner@notdemo.invalid",
+      "demo.invalid",
+    ]) {
+      expect(() => new DemoService(config({ DEMO_OWNER_EMAIL: bad }), prisma().service)).toThrow(
+        /DEMO_OWNER_EMAIL/,
+      );
+    }
+  });
+
+  it("accepts an address whose tail is the demo domain even with an earlier @", () => {
+    // Pinning current behaviour rather than endorsing it: endsWith is what
+    // decides, so this passes. It is not a way in -- @demo.invalid is an
+    // undeliverable reserved TLD and entry additionally requires the account
+    // to already exist -- but if the rule is ever tightened, this test is the
+    // one that should change, deliberately.
+    const service = new DemoService(
+      config({ DEMO_OWNER_EMAIL: "a@evil.com@demo.invalid" }),
+      prisma().service,
+    );
+    expect(service.ownerEmail).toBe("a@evil.com@demo.invalid");
+  });
+
+  it("treats an empty-string variable as unset, which `??` did not", () => {
+    // An env var declared with no value in Docker or Coolify arrives as "".
+    // The seed used `??`, so it wrote a workspace whose slug was "" while the
+    // API resolved "demo" -- the fence then matched nothing and every reset
+    // collided on User.email forever.
+    const service = new DemoService(
+      config({ DEMO_ORG_SLUG: "", DEMO_OWNER_EMAIL: "", DEMO_CLIENT_EMAIL: "" }),
+      prisma().service,
+    );
+    expect(service.orgSlug).toBe("demo");
+    expect(service.ownerEmail).toBe("owner@demo.invalid");
+    expect(service.clientEmail).toBe("client@demo.invalid");
+  });
+});
+
+describe("demoEnvValue", () => {
+  it("reports a value only when one is really there", () => {
+    expect(demoEnvValue(undefined)).toBeUndefined();
+    expect(demoEnvValue("")).toBeUndefined();
+    expect(demoEnvValue("   ")).toBeUndefined();
+    expect(demoEnvValue("\t\n")).toBeUndefined();
+  });
+
+  it("trims what it returns, so both sides agree on the value", () => {
+    expect(demoEnvValue(" owner@demo.invalid ")).toBe("owner@demo.invalid");
+    expect(demoEnvValue("northwind")).toBe("northwind");
   });
 });

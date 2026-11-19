@@ -16,6 +16,7 @@ All notable changes to Atrium will be documented in this file.
 
 ### Security
 
+- **Demo entry requires membership of the demo workspace, and `@demo.invalid` cannot be registered.** Signing a visitor in used to need only that *some* account held the configured demo address, while the fence that restricts what a demo visitor can do applies only to the workspace whose slug is `DEMO_ORG_SLUG`. An account registered on that address before the workspace was seeded would therefore have received every demo visitor into a workspace nothing fenced and no reset restored. Entry now requires the demo workspace to exist and the address to be a member of it, and the whole `@demo.invalid` domain is refused at signup on every instance, whether or not public signup is open and whether or not demo mode is on.
 - **A demo address must be one nobody really uses.** Demo mode signs visitors in to the configured addresses with no password, so an address pointing at a real administrator would let anyone in as them. Both must end in `@demo.invalid`. An override outside that domain now stops the API at startup, naming the variable, rather than being quietly ignored.
 - **Never turn demo mode on for an instance holding real workspaces.** It permits anonymous sign-in, and its reset truncates a workspace every 30 minutes. Session cookies are per host, so on a shared host a signed-in customer who entered the demo would have their own session replaced. It needs its own deployment and its own database.
 

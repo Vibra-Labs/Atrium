@@ -133,6 +133,32 @@ describe("AuthService", () => {
       expect(mockPrisma.invitation.findFirst).not.toHaveBeenCalled();
     });
 
+    it("refuses a demo address even when signups are wide open", async () => {
+      // Demo mode signs visitors in to a @demo.invalid address with no
+      // password, and DemoGuard only fences the workspace whose slug is the
+      // configured one. So an account registered at owner@demo.invalid before
+      // the seed ran would receive every demo visitor into a workspace the
+      // guard does not fence and the reset never restores.
+      allowSignups = "true";
+
+      expect(await service.maySignUp("owner@demo.invalid")).toBe(false);
+      expect(await service.maySignUp("anything@demo.invalid")).toBe(false);
+      expect(mockPrisma.invitation.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("refuses a demo address whatever its case or padding", async () => {
+      expect(await service.maySignUp("Owner@Demo.Invalid")).toBe(false);
+      expect(await service.maySignUp("  owner@demo.invalid  ")).toBe(false);
+    });
+
+    it("still allows an address that merely resembles the demo domain", async () => {
+      // Only the exact tail is reserved. These are real deliverable mailboxes
+      // and refusing them would lock out legitimate users.
+      expect(await service.maySignUp("owner@demo.invalid.com")).toBe(true);
+      expect(await service.maySignUp("owner@sub.demo.invalid")).toBe(true);
+      expect(await service.maySignUp("owner@notdemo.invalid")).toBe(true);
+    });
+
     it("allows anyone when ALLOW_SIGNUPS is explicitly true", async () => {
       allowSignups = "true";
 

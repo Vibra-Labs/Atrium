@@ -19,7 +19,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
-import { demoAddressFor, demoSettings, type DemoKind, type DemoSettings } from "../demo/demo-config";
+import { type DemoKind, type DemoSettings, demoAddressFor, demoSettings, isDemoDomainAddress } from "../demo/demo-config";
 import { applyConsentOutcome } from "../mcp-auth/consent-hooks";
 import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials";
 import { ProjectsService } from "../projects/projects.service";
@@ -360,9 +360,13 @@ export class AuthService {
             // onboarding endpoint, and social sign-in. See maySignUp.
             before: async (user) => {
               if (!(await this.maySignUp(user.email))) {
+                // Two reasons land here, and telling an operator "signups are
+                // disabled" while signups are open would send them to the
+                // wrong setting entirely.
                 throw new APIError("FORBIDDEN", {
-                  message:
-                    "Signups are disabled on this instance. Ask the workspace owner for an invitation.",
+                  message: isDemoDomainAddress(user.email)
+                    ? "That address is reserved for the public demo and cannot be registered."
+                    : "Signups are disabled on this instance. Ask the workspace owner for an invitation.",
                 });
               }
               return { data: user };
@@ -817,6 +821,14 @@ export class AuthService {
    * outage turn a locked-down deploy into an open one.
    */
   async maySignUp(email: string): Promise<boolean> {
+    // Refused unconditionally, before ALLOW_SIGNUPS is even consulted. Demo
+    // entry signs visitors in to a @demo.invalid address with no password, and
+    // DemoGuard fences only the workspace whose slug is the configured one, so
+    // an account pre-registered on that address would collect every demo
+    // visitor into a workspace nothing fences and no reset restores. The seed
+    // writes its users through Prisma, not Better Auth, so it is unaffected.
+    if (isDemoDomainAddress(email)) return false;
+
     if (this.config.get("ALLOW_SIGNUPS") !== "false") return true;
 
     try {
@@ -1025,15 +1037,42 @@ export class AuthService {
     const email: string | null = demoAddressFor(settings, kind);
     if (!email) throw new NotFoundException("Not found");
 
-    // The magic-link plugin signs up unknown addresses on verify, so without
-    // this the first entry before `db:seed:demo` has run would create a User
-    // with the demo address and no membership: a visitor on a broken dashboard
-    // that DemoGuard cannot fence (no resolved organization), and every later
-    // reset colliding with that row on User.email. Fail closed instead — the
-    // entry page sends a 404 to /demo/unavailable.
-    if (!(await this.hasAccount(email))) {
+    // Entry requires the demo workspace to exist and this address to be a
+    // member of it. Holding the address is not enough, and that difference is
+    // the whole point: DemoGuard fences only the organization whose slug is
+    // DEMO_ORG_SLUG and returns true for every other one, so signing someone
+    // in to an account outside it would hand them an unfenced workspace that
+    // no reset restores — on the one page strangers are invited to visit.
+    //
+    // It also covers what `hasAccount` covered: the magic-link plugin signs up
+    // unknown addresses on verify, so before `db:seed:demo` has run this would
+    // otherwise mint a User with the demo address and no membership, leaving a
+    // visitor on a dashboard DemoGuard cannot fence and every later reset
+    // colliding on User.email. Fail closed — the entry page sends a 404 to
+    // /demo/unavailable.
+    const demoOrg = await this.prisma.organization.findUnique({
+      where: { slug: settings.orgSlug },
+      select: { id: true },
+    });
+    if (!demoOrg) {
       this.logger.warn(
-        `Demo sign-in refused: no account for ${email}. Has \`bun run db:seed:demo\` been run?`,
+        `Demo sign-in refused: no workspace with slug "${settings.orgSlug}". ` +
+          "Has `bun run db:seed:demo` been run?",
+      );
+      throw new NotFoundException("Not found");
+    }
+
+    const membership = await this.prisma.member.findFirst({
+      where: {
+        organizationId: demoOrg.id,
+        user: { email: { equals: email, mode: "insensitive" } },
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      this.logger.warn(
+        `Demo sign-in refused: ${email} is not a member of the demo workspace. ` +
+          "Has `bun run db:seed:demo` been run?",
       );
       throw new NotFoundException("Not found");
     }

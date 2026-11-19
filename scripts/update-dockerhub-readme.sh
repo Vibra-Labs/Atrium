@@ -15,9 +15,15 @@ if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
 fi
 
 # Get JWT token
+# Built with jq rather than string interpolation: a credential containing a
+# quote or a backslash would otherwise produce malformed JSON and report itself
+# as "Failed to authenticate", which is the wrong thing to go looking for.
+LOGIN_BODY=$(jq -n --arg user "$DOCKERHUB_USERNAME" --arg pass "$DOCKERHUB_TOKEN" \
+  '{username: $user, password: $pass}')
+
 TOKEN=$(curl -s -X POST "https://hub.docker.com/v2/users/login/" \
   -H "Content-Type: application/json" \
-  -d "{\"username\": \"$DOCKERHUB_USERNAME\", \"password\": \"$DOCKERHUB_TOKEN\"}" \
+  --data-binary "$LOGIN_BODY" \
   | jq -r '.token')
 
 if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
@@ -42,5 +48,10 @@ if [ "$STATUS" = "200" ]; then
   echo "Docker Hub description updated successfully"
 else
   echo "Failed to update Docker Hub description (HTTP $STATUS)"
+  if [ "$STATUS" = "403" ]; then
+    echo "403 means the credential authenticated but may not edit this repository."
+    echo "Editing a description needs a token with read/write/delete scope, on an"
+    echo "account that owns the namespace. Check https://hub.docker.com/settings/security"
+  fi
   exit 1
 fi

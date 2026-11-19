@@ -2,6 +2,27 @@
 
 All notable changes to Atrium will be documented in this file.
 
+## [1.16.0] — 2026-11-19
+
+### Added
+
+- **Public demo workspace** — Anyone can click into a working Atrium with no account, as the agency owner or as one of their portal clients. The demo is a seeded workspace (Northwind Studio) with projects, updates, tasks, contacts, one paid and one outstanding invoice, a signed contract and a pending quote already in it, pinned to the Pro plan so nothing in it is hidden behind a limit. It restores itself every 30 minutes, skipping a window after someone has been using it so a reset never lands mid-click. Off unless `DEMO_MODE=true`, and intended only for a throwaway deployment with its own database — see [docs/demo.md](docs/demo.md).
+- **The demo refuses what it cannot undo** — Inside the demo workspace, and only there, writes are allowed on an explicit list of the paths the demo exists to show; anything else is refused with an explanation rather than failing oddly. Uploads are turned away by shape — any `multipart/form-data` request, whatever its path — because what a stranger uploads would sit on your infrastructure. Outbound email to any `@demo.invalid` address is dropped in the mail service, so scheduled tasks nobody sees cannot spend your domain's sending reputation on addresses that bounce.
+- **A banner on every demo page** — Says this is a demo, counts down to the next reset, and links back to the real app. A failed entry lands on a page that explains itself and offers another try, instead of the raw error that a top-level form navigation would otherwise paint across the first thing a visitor sees.
+
+### Changed
+
+- **Turning the demo on takes one variable.** `DEMO_MODE=true` is the whole configuration. The workspace slug and the two demo addresses now default to exactly what `bun run db:seed:demo` writes, so there is no half-enabled state: previously three further variables were required, and getting them wrong produced a 404 identical to leaving the demo off, with nothing in the logs to tell the two apart. They remain available as overrides.
+
+### Security
+
+- **A demo address must be one nobody really uses.** Demo mode signs visitors in to the configured addresses with no password, so an address pointing at a real administrator would let anyone in as them. Both must end in `@demo.invalid`. An override outside that domain now stops the API at startup, naming the variable, rather than being quietly ignored.
+- **Never turn demo mode on for an instance holding real workspaces.** It permits anonymous sign-in, and its reset truncates a workspace every 30 minutes. Session cookies are per host, so on a shared host a signed-in customer who entered the demo would have their own session replaced. It needs its own deployment and its own database.
+
+### Upgrading
+
+No schema changes. `DEMO_MODE` defaults to off, so an existing install is unaffected and every demo route answers 404 exactly as if it did not exist.
+
 ## [1.15.0] — 2026-11-12
 
 ### Added

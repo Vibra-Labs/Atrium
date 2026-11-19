@@ -98,13 +98,17 @@ describe("AuthService.startDemoSignIn", () => {
     expect(mockMail.send).not.toHaveBeenCalled();
   });
 
-  it("throws when the configured address for the kind is missing", async () => {
+  it("falls back to the default address when the kind's address is unset", async () => {
+    // DEMO_MODE=true is the whole configuration. An unset DEMO_CLIENT_EMAIL used
+    // to mean a 404 indistinguishable from demo mode being off; it now means the
+    // address the seed writes.
     clientEmail = undefined;
     service = makeService();
     const signIn = stubSignInMagicLink();
 
-    await expect(service.startDemoSignIn("client")).rejects.toThrow(NotFoundException);
-    expect(signIn).not.toHaveBeenCalled();
+    await service.startDemoSignIn("client");
+
+    expect((signIn.mock.calls[0][0] as SignInCall).body.email).toBe("client@demo.invalid");
   });
 
   it("requests a callbackURL of /dashboard for owner and /portal for client", async () => {
@@ -123,11 +127,13 @@ describe("AuthService.startDemoSignIn", () => {
 
   it("refuses an address that is not a configured demo address", async () => {
     // Guards the one real risk of this method: it must never become sign-in-as-anyone.
+    // The refusal now names the variable instead of returning a bare 404, so a
+    // typo is distinguishable from demo mode being switched off.
     ownerEmail = "edgar@vibralabs.co";
     service = makeService();
     const signIn = stubSignInMagicLink();
 
-    await expect(service.startDemoSignIn("owner")).rejects.toThrow(NotFoundException);
+    await expect(service.startDemoSignIn("owner")).rejects.toThrow(/DEMO_OWNER_EMAIL/);
     expect(signIn).not.toHaveBeenCalled();
   });
 

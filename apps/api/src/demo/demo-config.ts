@@ -20,6 +20,19 @@ export const DEMO_DEFAULT_ORG_SLUG = "demo";
 export const DEMO_DEFAULT_OWNER_EMAIL = "owner@demo.invalid";
 export const DEMO_DEFAULT_CLIENT_EMAIL = "client@demo.invalid";
 
+/**
+ * Whether an address sits on the reserved demo domain.
+ *
+ * Independent of whether demo mode is on, and of which addresses are
+ * configured: the whole domain is refused at signup everywhere. `.invalid` is
+ * reserved by RFC 2606 and can never receive mail, so no real person owns one,
+ * while an account sitting on the address demo entry signs in to would receive
+ * every visitor into a workspace DemoGuard does not fence.
+ */
+export function isDemoDomainAddress(email: string): boolean {
+  return email.trim().toLowerCase().endsWith(DEMO_EMAIL_DOMAIN);
+}
+
 export interface DemoSettings {
   enabled: boolean;
   orgSlug: string | null;

@@ -19,7 +19,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { seedDefaultPipelines } from "../projects/pursuit-stages.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { isAllowedRedirectUri } from "./oauth-redirect";
-import { demoAddressFor, demoSettings, type DemoKind, type DemoSettings } from "../demo/demo-config";
+import { type DemoKind, type DemoSettings, demoAddressFor, demoSettings, isDemoDomainAddress } from "../demo/demo-config";
 import { applyConsentOutcome } from "../mcp-auth/consent-hooks";
 import { revokeCredentialsIfDemoted } from "../common/helpers/member-credentials";
 import { ProjectsService } from "../projects/projects.service";
@@ -360,9 +360,13 @@ export class AuthService {
             // onboarding endpoint, and social sign-in. See maySignUp.
             before: async (user) => {
               if (!(await this.maySignUp(user.email))) {
+                // Two reasons land here, and telling an operator "signups are
+                // disabled" while signups are open would send them to the
+                // wrong setting entirely.
                 throw new APIError("FORBIDDEN", {
-                  message:
-                    "Signups are disabled on this instance. Ask the workspace owner for an invitation.",
+                  message: isDemoDomainAddress(user.email)
+                    ? "That address is reserved for the public demo and cannot be registered."
+                    : "Signups are disabled on this instance. Ask the workspace owner for an invitation.",
                 });
               }
               return { data: user };
@@ -817,6 +821,14 @@ export class AuthService {
    * outage turn a locked-down deploy into an open one.
    */
   async maySignUp(email: string): Promise<boolean> {
+    // Refused unconditionally, before ALLOW_SIGNUPS is even consulted. Demo
+    // entry signs visitors in to a @demo.invalid address with no password, and
+    // DemoGuard fences only the workspace whose slug is the configured one, so
+    // an account pre-registered on that address would collect every demo
+    // visitor into a workspace nothing fences and no reset restores. The seed
+    // writes its users through Prisma, not Better Auth, so it is unaffected.
+    if (isDemoDomainAddress(email)) return false;
+
     if (this.config.get("ALLOW_SIGNUPS") !== "false") return true;
 
     try {

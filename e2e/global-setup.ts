@@ -1,6 +1,7 @@
 import { chromium } from "@playwright/test";
 import { PrismaClient } from "@atrium/database";
 import { seedDemo } from "../apps/api/src/demo/demo-seed";
+import { DEMO_EMAIL_DOMAIN } from "../apps/api/src/demo/demo-config";
 import { DEMO_SLUG } from "./playwright.config";
 
 /**
@@ -10,10 +11,57 @@ import { DEMO_SLUG } from "./playwright.config";
  * the server and this setup have to be looking at the same one. The seed
  * refuses outright if that workspace turns out not to be a demo's.
  */
+/**
+ * Clears a demo workspace left behind under a different slug.
+ *
+ * The demo addresses are the same whatever slug seeded them, while the row id
+ * carries the slug (`demo-${slug}-user-${key}`), and `User.email` is unique --
+ * so a database holds at most one demo workspace, and a leftover from another
+ * slug makes the seed below fail on a duplicate email. In CI this whole job
+ * shares one database (`test.yml`), so the integration suite's demo workspace
+ * is exactly such a leftover if it ever stops cleaning up after itself.
+ *
+ * This belongs here rather than in that suite's `wipe()`: a spec should only
+ * delete rows it created, whereas global setup owns the demo workspace for the
+ * run and is the one blocked by a foreign copy.
+ *
+ * Two details matter. Rows under this slug are left alone -- `seedDemo` upserts
+ * its own users by id, and deleting them would discard the live sessions those
+ * rows exist to preserve. And a foreign workspace goes whole: deleting a user
+ * cascades its `Member` row, and an organization left with no owners is one
+ * `seedDemo` refuses outright, which would strand it for good.
+ */
+async function clearForeignDemoWorkspaces(prisma: PrismaClient): Promise<void> {
+  const ownIdPrefix = `demo-${DEMO_SLUG}-user-`;
+  const foreign = await prisma.user.findMany({
+    where: {
+      email: { endsWith: DEMO_EMAIL_DOMAIN },
+      id: { not: { startsWith: ownIdPrefix } },
+    },
+    select: { id: true, members: { select: { organizationId: true } } },
+  });
+  if (foreign.length === 0) return;
+
+  const ownOrgId = `demo-${DEMO_SLUG}-org`;
+  const orgIds: string[] = [
+    ...new Set(foreign.flatMap((user) => user.members.map((member) => member.organizationId))),
+  ].filter((id: string) => id !== ownOrgId);
+
+  if (orgIds.length > 0) {
+    await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
+  }
+  await prisma.user.deleteMany({ where: { id: { in: foreign.map((user) => user.id) } } });
+  console.log(
+    `Cleared ${foreign.length} demo user(s) and ${orgIds.length} demo workspace(s) ` +
+      `left behind under another slug, which would collide with "${DEMO_SLUG}".`,
+  );
+}
+
 async function seedDemoWorkspace(): Promise<void> {
   if (process.env.DEMO_MODE !== "true") return;
   const prisma = new PrismaClient();
   try {
+    await clearForeignDemoWorkspaces(prisma);
     await seedDemo(prisma, DEMO_SLUG, {
       ownerEmail: "owner@demo.invalid",
       clientEmail: "client@demo.invalid",

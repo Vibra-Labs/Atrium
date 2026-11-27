@@ -348,13 +348,13 @@ describe("track on the demo deployment", () => {
   });
 
   it("does not stall trackThenNavigate waiting on a tag it never pushed", () => {
-    let href: string | null = null;
+    const hrefs: string[] = [];
     (globalThis as { window?: unknown }).window = {
       dataLayer: { push: () => {} },
       google_tag_manager: {},
       location: {
         set href(value: string) {
-          href = value;
+          hrefs.push(value);
         },
       },
     };
@@ -362,6 +362,6 @@ describe("track on the demo deployment", () => {
 
     trackThenNavigate("signup_completed", { plan: "pro" }, "/setup");
 
-    expect(href).toBe("/setup");
+    expect(hrefs).toEqual(["/setup"]);
   });
 });

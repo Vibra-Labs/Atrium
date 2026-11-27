@@ -57,6 +57,10 @@ jobs:
 
       - run: bun run build
 
+      # Type-checks what the app builds do not: the e2e suite, the repo-level
+      # scripts, and the web app's test files, which Next's own check skips.
+      - run: bun run typecheck
+
       - run: bun run test
 
       # Integration tests live in apps/api/test/integration and need a real

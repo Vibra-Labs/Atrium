@@ -15,9 +15,11 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
-    "noImplicitAny": true,
-    "strictBindCallApply": true,
+    "strict": true,
+    // NestJS DTO/param classes declare their fields without initialisers and
+    // let class-validator populate them, which strictPropertyInitialization
+    // cannot see. Every other strict check is on.
+    "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "types": ["bun-types"],

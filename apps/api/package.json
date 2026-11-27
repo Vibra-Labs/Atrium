@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev": "NODE_ENV=development nest start --watch",
     "start": "node dist/main",
     "start:prod": "node dist/main",

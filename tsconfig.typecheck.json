@@ -1,0 +1,15 @@
+{
+  // The e2e suite and the repo-level scripts are not workspace packages, so no
+  // package's build ever looked at them. This config exists purely so
+  // `bun run typecheck` covers them too.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "lib": ["ES2022", "DOM"],
+    "types": ["bun-types", "node"]
+  },
+  "include": ["e2e/**/*.ts", "scripts/**/*.ts", "packages/database/scripts/**/*.ts"]
+}

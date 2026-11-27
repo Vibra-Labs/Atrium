@@ -4,7 +4,7 @@ import { apiFetch } from "@/lib/api";
 
 export type PlanFeatures = Record<PlanFeature, boolean>;
 
-interface PlanState {
+export interface PlanState {
   features: PlanFeatures;
   /** ISO date the Pro trial ends, or null when not trialing. */
   trialEndsAt: string | null;

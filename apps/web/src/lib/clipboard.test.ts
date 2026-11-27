@@ -70,11 +70,11 @@ afterEach(() => {
 
 describe("copyToClipboard", () => {
   it("uses the async clipboard API in a secure context", async () => {
-    let written: string | null = null;
+    const written: string[] = [];
     setGlobal("navigator", {
       clipboard: {
         writeText: async (text: string): Promise<void> => {
-          written = text;
+          written.push(text);
         },
       },
     });
@@ -82,7 +82,7 @@ describe("copyToClipboard", () => {
     const result = await copyToClipboard("https://atrium.test/invite/abc");
 
     expect(result).toBe(true);
-    expect(written).toBe("https://atrium.test/invite/abc");
+    expect(written).toEqual(["https://atrium.test/invite/abc"]);
   });
 
   it("falls back to execCommand when navigator.clipboard is undefined over plain HTTP", async () => {

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { PLAN_FEATURES } from "@atrium/shared";
+import type { PlanFeatures, PlanState } from "./plan-features";
 import { getPlanSnapshot, loadPlanState, resetPlanState, subscribePlanState, trialDaysLeft } from "./plan-features";
 
 const originalFetch = globalThis.fetch;
@@ -24,8 +26,13 @@ function deferredFetch(): { resolve: (call: number, body: unknown) => void; call
   };
 }
 
-const PRO = { features: { custom_domain: true }, trialEndsAt: "2026-10-22T00:00:00.000Z" };
-const FREE = { features: { custom_domain: false }, trialEndsAt: null };
+/** Every gate set the same way, as the API always sends the full set. */
+function allFeatures(on: boolean): PlanFeatures {
+  return Object.fromEntries(PLAN_FEATURES.map((f) => [f, on])) as PlanFeatures;
+}
+
+const PRO: PlanState = { features: allFeatures(true), trialEndsAt: "2026-10-22T00:00:00.000Z" };
+const FREE: PlanState = { features: allFeatures(false), trialEndsAt: null };
 
 describe("plan state store", () => {
   it("shares one request between components that load at the same time", async () => {

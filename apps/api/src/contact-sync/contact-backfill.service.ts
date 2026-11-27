@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
+import type { OnApplicationBootstrap } from "@nestjs/common";
 import type { Contact } from "@atrium/database";
 import { DEFAULT_LEAD_SOURCES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";

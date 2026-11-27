@@ -3,8 +3,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnApplicationBootstrap,
 } from "@nestjs/common";
+import type { OnApplicationBootstrap } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import * as Sentry from "@sentry/nestjs";
 import { DEFAULT_STATUSES, MAX_PROJECT_STATUSES, PROJECT_STATUSES } from "@atrium/shared";

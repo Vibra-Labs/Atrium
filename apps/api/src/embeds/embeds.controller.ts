@@ -7,9 +7,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { AuthGuard } from "../common";
-import { EmbedsService, OEmbedResult } from "./embeds.service";
+import { EmbedsService } from "./embeds.service";
+import type { OEmbedResult } from "./embeds.service";
 import { findProvider } from "./providers";
-import { UnfurlCard, UnfurlService } from "./unfurl.service";
+import { UnfurlService } from "./unfurl.service";
+import type { UnfurlCard } from "./unfurl.service";
 
 @Controller("embeds")
 @UseGuards(AuthGuard)

@@ -1,13 +1,13 @@
 import {
-  CanActivate,
-  ExecutionContext,
   ForbiddenException,
   Injectable,
 } from "@nestjs/common";
+import type { CanActivate, ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import type { PlanFeature } from "@atrium/shared";
-import { PLAN_LIMIT_KEY, PlanLimitResource } from "../decorators/plan-limit.decorator";
+import { PLAN_LIMIT_KEY } from "../decorators/plan-limit.decorator";
+import type { PlanLimitResource } from "../decorators/plan-limit.decorator";
 import { PLAN_FEATURE_KEY } from "../decorators/requires-feature.decorator";
 import { BillingService } from "../../billing/billing.service";
 import { planLimitMessage } from "../helpers/plan-limit";

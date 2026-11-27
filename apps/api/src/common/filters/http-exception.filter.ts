@@ -1,11 +1,10 @@
 import {
-  ExceptionFilter,
   Catch,
-  ArgumentsHost,
   HttpException,
   HttpStatus,
   Logger,
 } from "@nestjs/common";
+import type { ExceptionFilter, ArgumentsHost } from "@nestjs/common";
 import type { Response } from "express";
 
 /** "PAYLOAD_TOO_LARGE" -> "Payload Too Large", matching HttpException responses. */

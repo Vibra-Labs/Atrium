@@ -18,7 +18,8 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
 import { DocumentsService, type PendingApproval } from "./documents.service";
 import { DocumentAuditService } from "./document-audit.service";
-import { FilesService, UploadedFile as UploadedFileType, DOCUMENT_ALLOWED_MIMES, MAX_UPLOAD_BYTES, type TempUploadedFile } from "../files/files.service";
+import { FilesService, DOCUMENT_ALLOWED_MIMES, MAX_UPLOAD_BYTES, type TempUploadedFile } from "../files/files.service";
+import type { UploadedFile as UploadedFileType } from "../files/files.service";
 import { TempFileInterceptor } from "../files/temp-file.interceptor";
 import {
   CreateDocumentDto,

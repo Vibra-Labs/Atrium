@@ -160,7 +160,8 @@ export function PipelineStagesSection(): React.ReactElement {
 
   /** Rename / Move earlier / Move later / Delete, under whatever was clicked. */
   function actionMenu(target: Target, name: string, index: number, count: number, align: string): React.ReactNode {
-    const pick = (action: () => void) => () => {
+    // The actions are async and surface their own failures through run().
+    const pick = (action: () => unknown) => () => {
       setMenu(null);
       action();
     };

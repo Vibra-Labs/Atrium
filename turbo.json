@@ -37,9 +37,6 @@
       "cache": false,
       "passThroughEnv": ["ALLOW_DESTRUCTIVE_TESTS"]
     },
-    "lint": {
-      "dependsOn": ["^build"]
-    },
     "db:generate": {
       "cache": false
     },

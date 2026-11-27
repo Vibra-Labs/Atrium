@@ -145,7 +145,8 @@ export function ProjectStatusesSection(): React.ReactElement {
 
   function chipMenu(status: ProjectStatus, index: number): React.ReactNode {
     const builtIn: boolean = isBuiltInStatus(status.slug);
-    const pick = (action: () => void) => () => {
+    // The actions are async and surface their own failures through run().
+    const pick = (action: () => unknown) => () => {
       setMenuFor(null);
       action();
     };

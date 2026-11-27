@@ -61,6 +61,8 @@ jobs:
       # scripts, and the web app's test files, which Next's own check skips.
       - run: bun run typecheck
 
+      - run: bun run lint
+
       - run: bun run test
 
       # Integration tests live in apps/api/test/integration and need a real

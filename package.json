@@ -14,7 +14,7 @@
     "test:integration:ci": "turbo run test:integration",
     "test:e2e": "bunx playwright test --config=e2e/playwright.config.ts",
     "test:all": "bun run test && bun run test:integration && bun run test:e2e",
-    "lint": "turbo run lint",
+    "lint": "eslint apps packages e2e scripts",
     "db:generate": "turbo run db:generate",
     "db:push": "turbo run db:push",
     "db:migrate": "bun run --filter @atrium/database db:migrate",
@@ -30,7 +30,6 @@
   "overrides": {
     "minimatch": "^11.0.5",
     "serialize-javascript": ">=7.0.3",
-    "ajv": ">=8.18.0",
     "kysely": "^0.28.17",
     "fast-xml-parser": ">=5.5.7",
     "brace-expansion": "^5.0.12",
@@ -60,14 +59,18 @@
     "@hono/node-server": "^2.1.6"
   },
   "devDependencies": {
+    "@atrium/database": "workspace:*",
+    "@next/eslint-plugin-next": "15.5.29",
     "@playwright/test": "^1.65.0",
+    "@prisma/client": "^6.19.3",
+    "@types/node": "^22.20.5",
+    "bun-types": "^1.4.4",
+    "eslint": "10.15.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "otplib": "^13.4.0",
     "turbo": "^2.11.10",
     "typescript": "^5.9.3",
-    "@atrium/database": "workspace:*",
-    "@prisma/client": "^6.19.3",
-    "bun-types": "^1.4.4",
-    "@types/node": "^22.20.5"
+    "typescript-eslint": "8.74.0"
   },
   "dependencies": {
     "@sentry/nestjs": "^10.78.0",

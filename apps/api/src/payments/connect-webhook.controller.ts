@@ -3,10 +3,10 @@ import {
   Post,
   Param,
   Req,
-  RawBodyRequest,
   BadRequestException,
   Logger,
 } from "@nestjs/common";
+import type { RawBodyRequest } from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
 import type { Request } from "express";
 import { Public } from "../common";

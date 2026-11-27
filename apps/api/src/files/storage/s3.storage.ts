@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { StorageProvider } from "./storage.interface";
+import type { StorageProvider } from "./storage.interface";
 import { Readable } from "stream";
 import {
   S3Client,

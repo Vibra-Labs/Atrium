@@ -1,4 +1,5 @@
-import { Injectable, Logger, NestMiddleware } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
+import type { NestMiddleware } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Request, Response, NextFunction } from "express";
 import { AuthService } from "./auth.service";

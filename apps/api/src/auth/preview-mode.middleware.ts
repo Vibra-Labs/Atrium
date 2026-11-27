@@ -1,8 +1,8 @@
 import {
   Injectable,
-  NestMiddleware,
   UnauthorizedException,
 } from "@nestjs/common";
+import type { NestMiddleware } from "@nestjs/common";
 import type { Request, Response, NextFunction } from "express";
 import { ROLES } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";

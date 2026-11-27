@@ -54,6 +54,8 @@ export class HealthController {
     res.status(entitled ? 200 : 404).send();
   }
 
+  // The container healthcheck and any uptime monitor hit this unauthenticated.
+  @Public()
   @Get()
   async check() {
     try {

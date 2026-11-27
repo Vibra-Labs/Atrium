@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import sanitizeHtml from "sanitize-html";
-import { findProvider, OEmbedProvider } from "./providers";
+import { findProvider } from "./providers";
+import type { OEmbedProvider } from "./providers";
 
 export interface OEmbedResult {
   html: string;

@@ -1,9 +1,8 @@
 import {
-  CanActivate,
-  ExecutionContext,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+import type { CanActivate, ExecutionContext } from "@nestjs/common";
 
 /**
  * A guard that only requires the user to be authenticated.

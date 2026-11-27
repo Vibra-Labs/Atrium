@@ -813,7 +813,7 @@ describe("ContactsService", () => {
         const a = args as { select?: unknown; where: { id?: { in: string[] } } };
         if (a.select) return Promise.resolve(["a", "b", "c", "d"].map((id) => ({ id })));
         // Out of order on purpose: the page must follow the SQL ranking.
-        return Promise.resolve((a.where.id?.in ?? []).toReversed().map((id) => row(id, id)));
+        return Promise.resolve([...(a.where.id?.in ?? [])].reverse().map((id) => row(id, id)));
       });
       queryRaw.mockImplementation(() => Promise.resolve([{ id: "c" }, { id: "a" }]));
       revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map([["c", 900]])));

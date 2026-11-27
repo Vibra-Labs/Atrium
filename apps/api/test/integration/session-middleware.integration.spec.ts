@@ -89,7 +89,7 @@ beforeAll(async () => {
   assertDisposableDatabase();
   prisma = new PrismaService();
   await prisma.$connect();
-  const auth: AuthService = new AuthService(config, prisma, {} as never, {} as never, {} as never);
+  const auth: AuthService = new AuthService(config, prisma, {} as never, {} as never, {} as never, {} as never, {} as never);
   middleware = new SessionMiddleware(
     auth,
     {} as never,

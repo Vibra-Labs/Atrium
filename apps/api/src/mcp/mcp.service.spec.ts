@@ -12,7 +12,19 @@ function buildConfig(oauthEnabled = "true", apiUrl = "https://portal.test") {
 
 function buildService(oauthEnabled = "true", apiUrl?: string): McpService {
   const stub = {} as never;
-  return new McpService(stub, stub, stub, stub, stub, stub, stub, stub, buildConfig(oauthEnabled, apiUrl) as never);
+  return new McpService(
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    buildConfig(oauthEnabled, apiUrl) as never,
+    stub,
+    stub,
+  );
 }
 
 /**
@@ -30,7 +42,19 @@ class TestMcpService extends McpService {
 
 function buildTestService(): TestMcpService {
   const stub = {} as never;
-  return new TestMcpService(stub, stub, stub, stub, stub, stub, stub, buildConfig() as never);
+  return new TestMcpService(
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    stub,
+    buildConfig() as never,
+    stub,
+    stub,
+  );
 }
 
 function ownerReq(apiKeyId?: string, userId = "u1"): Request {

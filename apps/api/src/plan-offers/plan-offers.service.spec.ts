@@ -85,7 +85,7 @@ function build(options: BuildOptions = {}) {
       ),
     ),
   };
-  const config = { get: (_k: string, fallback?: string) => (options.billing === false ? "false" : "true") ?? fallback };
+  const config = { get: (): string => (options.billing === false ? "false" : "true") };
   const service = new PlanOffersService(
     prisma as unknown as PrismaService,
     billing as unknown as BillingService,

@@ -72,7 +72,7 @@ describe("CompaniesService", () => {
       if (a.select) return Promise.resolve(["co-1", "co-2", "co-3"].map((id) => ({ id })));
       // Out of order on purpose: the page must follow the SQL ranking.
       const ids = a.where.id?.in ?? [];
-      return Promise.resolve(ids.toReversed().map((id) => ({ id, name: id, _count: { contacts: 0 } })));
+      return Promise.resolve([...ids].reverse().map((id) => ({ id, name: id, _count: { contacts: 0 } })));
     });
     queryRaw.mockImplementation(() => Promise.resolve([{ id: "co-3" }, { id: "co-1" }]));
     revenue.paidTotalsForCompanies.mockImplementation(() =>

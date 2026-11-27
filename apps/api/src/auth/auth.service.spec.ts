@@ -74,6 +74,8 @@ function makeService(): AuthService {
     mockMail as unknown as MailService,
     mockBilling as unknown as BillingService,
     {} as never,
+    {} as never,
+    {} as never,
   );
 }
 
@@ -444,6 +446,8 @@ describe("AuthService", () => {
         mockMail as unknown as MailService,
         mockBilling as unknown as BillingService,
         {} as never,
+        {} as never,
+        {} as never,
       );
     }
 
@@ -631,6 +635,8 @@ describe("AuthService", () => {
         mockMail as unknown as MailService,
         mockBilling as unknown as BillingService,
         sync as never,
+        {} as never,
+        {} as never,
       );
       const plugins = (svc.auth as unknown as { options: { plugins: OrgPlugin[] } }).options.plugins;
       const fn = plugins.find((p) => p.id === "organization")?.options?.organizationHooks?.[name];

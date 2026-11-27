@@ -29,6 +29,7 @@ function build(resolveResult: unknown = resolved, oauthResult: unknown = null, o
     mcpAuth as never,
     config(oauthEnabled) as never,
     tracker as never,
+    {} as never,
   );
   return { mw, getSession, apiKeys, mcpAuth, tracker };
 }
@@ -259,6 +260,7 @@ describe("SessionMiddleware bearer cache isolation", () => {
       { resolve: mock(() => Promise.resolve(null)) } as never,
       config() as never,
       lastSeen() as never,
+      {} as never,
     );
     const r = req({ authorization: "Bearer atr_abc" }) as Request & Record<string, any>;
     const next = mock(() => {}) as unknown as NextFunction;
@@ -389,6 +391,7 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
       { resolve: mock(() => Promise.resolve(null)) } as never,
       config() as never,
       lastSeen() as never,
+      {} as never,
     );
     // 30 expected rejections would otherwise fill the test output with warnings.
     (mw as unknown as { logger: { warn: () => void } }).logger = { warn: mock(() => {}) };

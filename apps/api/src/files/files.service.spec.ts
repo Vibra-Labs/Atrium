@@ -18,6 +18,7 @@ import type { SettingsService } from "../settings/settings.service";
 
 interface PrismaArgs {
   data?: Record<string, unknown>;
+  where?: Record<string, unknown>;
 }
 
 interface MockFile {

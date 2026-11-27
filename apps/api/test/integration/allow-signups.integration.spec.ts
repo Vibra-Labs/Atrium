@@ -41,7 +41,7 @@ const billing = {
 } as unknown as BillingService;
 
 function makeAuth(): AuthService {
-  return new AuthService(config, prisma, mail, billing, {} as never);
+  return new AuthService(config, prisma, mail, billing, {} as never, {} as never, {} as never);
 }
 
 /** Posts to the real Better Auth email signup route. */

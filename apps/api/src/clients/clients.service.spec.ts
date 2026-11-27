@@ -84,6 +84,7 @@ describe("ClientsService", () => {
       mockPrisma as unknown as PrismaService,
       mockAuthService as unknown as AuthService,
       mockContactSync as never,
+      {} as never,
     );
     mockContactSync.detachMember.mockClear();
     mockContactSync.syncRoleChange.mockClear();

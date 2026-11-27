@@ -39,7 +39,7 @@ function buildPrisma(members: unknown[], total: number) {
 describe("ClientsService.list", () => {
   it("returns members enriched with the profile from their contact, scoped to the org", async () => {
     const prisma = buildPrisma([{ id: "m2", userId: "u2", role: "member" }], 1);
-    const service = new ClientsService(prisma as never, {} as never, {} as never);
+    const service = new ClientsService(prisma as never, {} as never, {} as never, {} as never);
 
     const result = await service.list("org1", 1, 20);
 
@@ -63,7 +63,7 @@ describe("ClientsService.list", () => {
       ],
       2,
     );
-    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20);
+    const result = await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20);
 
     expect(prisma.contact.findMany.mock.calls[0][0].where).toEqual({
       organizationId: "org1",
@@ -82,7 +82,7 @@ describe("ClientsService.list", () => {
       ],
       2,
     );
-    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20);
+    const result = await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20);
 
     const select = prisma.member.findMany.mock.calls[0][0].select;
     expect(select.labels).toEqual({
@@ -98,7 +98,7 @@ describe("ClientsService.list", () => {
 
   it("says whether each member has 2FA, for the team page's reset action", async () => {
     const prisma = buildPrisma([{ id: "m1", userId: "u1", role: "owner", labels: [] }], 1);
-    await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
+    await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
     const select = prisma.member.findMany.mock.calls[0][0].select;
     expect(select.user).toEqual({
       select: { id: true, name: true, email: true, twoFactorEnabled: true, _count: { select: { passkeys: true } } },
@@ -118,14 +118,14 @@ describe("ClientsService.list", () => {
       ],
       1,
     );
-    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
+    const result = await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
     const user = (result as unknown as { data: { user: Record<string, unknown> }[] }).data[0].user;
     expect(user).toEqual({ id: "u1", name: "A", email: "a@x.co", twoFactorEnabled: true, passkeyCount: 1 });
   });
 
   it("filters by name or email when search is given", async () => {
     const prisma = buildPrisma([], 0);
-    await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, "glo");
+    await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20, "glo");
     expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({
       organizationId: "org1",
       user: { OR: [
@@ -137,7 +137,7 @@ describe("ClientsService.list", () => {
 
   it("role=staff lists owners and admins only; role=client lists portal clients only", async () => {
     const prisma = buildPrisma([], 0);
-    const service = new ClientsService(prisma as never, {} as never, {} as never);
+    const service = new ClientsService(prisma as never, {} as never, {} as never, {} as never);
     await service.list("org1", 1, 100, undefined, "staff");
     await service.list("org1", 1, 100, undefined, "client");
     expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({ organizationId: "org1", role: { not: "member" } });
@@ -154,7 +154,7 @@ describe("ClientsService.list", () => {
   });
 
   it("findMember throws NotFound when the user is not in the org", async () => {
-    const service = new ClientsService(buildPrisma([], 0) as never, {} as never, {} as never);
+    const service = new ClientsService(buildPrisma([], 0) as never, {} as never, {} as never, {} as never);
     await expect(service.findMember("nope", "org1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

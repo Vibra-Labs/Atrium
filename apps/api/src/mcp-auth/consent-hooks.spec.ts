@@ -25,12 +25,12 @@ function grantPrisma(opts: GrantPrismaOpts = {}) {
   const prisma = {
     mcpPendingGrant: {
       findUnique: mock(() => Promise.resolve(opts.pending ?? null)),
-      delete: mock(() => Promise.resolve({})),
+      delete: mock((): Promise<unknown> => Promise.resolve({})),
       deleteMany: mock(() => Promise.resolve({ count: 1 })),
     },
     mcpGrant: {
       findUnique: mock(() => Promise.resolve(opts.grant ?? null)),
-      upsert: mock(() => Promise.resolve({})),
+      upsert: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
     },
     oauthAccessToken: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
     oauthRefreshToken: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },

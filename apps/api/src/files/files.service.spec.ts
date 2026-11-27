@@ -18,6 +18,13 @@ import type { SettingsService } from "../settings/settings.service";
 
 interface PrismaArgs {
   data?: Record<string, unknown>;
+  where?: Record<string, unknown>;
+}
+
+/** A create call, where the spec knows `data` was supplied. */
+interface PrismaCreateArgs {
+  data: Record<string, unknown>;
+  where?: Record<string, unknown>;
 }
 
 interface MockFile {
@@ -37,46 +44,42 @@ const mockStorage = {
       // drain, as a real provider would
     }
   }),
-  download: mock(() =>
-    Promise.resolve({
+  download: mock((): Promise<unknown> => Promise.resolve({
       body: Readable.from(Buffer.from("data")),
       contentType: "text/plain",
     }),
   ),
-  getSignedUrl: mock(() => Promise.resolve("https://example.com/signed")),
-  delete: mock(() => Promise.resolve()),
+  getSignedUrl: mock((): Promise<unknown> => Promise.resolve("https://example.com/signed")),
+  delete: mock((_args: unknown): Promise<unknown> => Promise.resolve()),
 };
 
 const mockPrisma = {
   project: {
-    findFirst: mock(() =>
-      Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
     ),
   },
   file: {
-    create: mock((args: PrismaArgs) =>
-      Promise.resolve({ id: "file-1", ...args.data }),
+    create: mock((args: PrismaArgs): Promise<unknown> => Promise.resolve({ id: "file-1", ...args.data }),
     ),
-    findMany: mock(() => Promise.resolve([])),
-    findFirst: mock(() => Promise.resolve(null)),
-    update: mock((args: PrismaArgs) =>
-      Promise.resolve({ id: (args.where as Record<string, string>)?.id ?? "file-1", ...args.data }),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
+    update: mock((args: PrismaArgs): Promise<unknown> => Promise.resolve({ id: (args.where as Record<string, string>)?.id ?? "file-1", ...args.data }),
     ),
-    delete: mock(() => Promise.resolve()),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
-    count: mock(() => Promise.resolve(0)),
+    delete: mock((_args: unknown): Promise<unknown> => Promise.resolve()),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
   },
   projectClient: {
-    findFirst: mock(() => Promise.resolve(null)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
   },
   invoice: {
-    findFirst: mock(() => Promise.resolve(null)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
   },
   document: {
-    count: mock(() => Promise.resolve(0)),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
   },
   documentVersion: {
-    count: mock(() => Promise.resolve(0)),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
   },
   $transaction: mock((fn: (prisma: typeof mockPrisma) => unknown) => fn(mockPrisma)),
 };
@@ -90,7 +93,7 @@ const mockConfig = {
 
 // Default: max size = 50 MB
 const mockSettingsService = {
-  getEffectiveMaxFileSize: mock(() => Promise.resolve(50)),
+  getEffectiveMaxFileSize: mock((): Promise<unknown> => Promise.resolve(50)),
 };
 
 describe("FilesService", () => {
@@ -588,7 +591,7 @@ describe("FilesService", () => {
 
       await service.uploadAsClient(clientFile, "proj-2", "org-2", "user-client");
 
-      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaArgs;
+      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaCreateArgs;
       expect(createCall.data.projectId).toBe("proj-2");
       expect(createCall.data.organizationId).toBe("org-2");
     });
@@ -603,7 +606,7 @@ describe("FilesService", () => {
 
       await service.uploadAsClient(clientFile, "proj-1", "org-1", "user-client");
 
-      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaArgs;
+      const createCall = mockPrisma.file.create.mock.calls.at(-1)![0] as PrismaCreateArgs;
       expect(createCall.data.uploadedById).toBe("user-client");
     });
 

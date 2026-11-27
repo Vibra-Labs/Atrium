@@ -5,7 +5,7 @@ import type { CodeApi } from "./verify-own-code";
 
 function api(ok: boolean) {
   const verifyTOTP = mock((): Promise<unknown> => (ok ? Promise.resolve({}) : Promise.reject(new Error("INVALID_CODE"))));
-  const verifyBackupCode = mock((): Promise<unknown> => (ok ? Promise.resolve({}) : Promise.reject(new Error("INVALID"))));
+  const verifyBackupCode = mock((_args: unknown): Promise<unknown> => (ok ? Promise.resolve({}) : Promise.reject(new Error("INVALID"))));
   return { api: { verifyTOTP, verifyBackupCode } as CodeApi, verifyTOTP, verifyBackupCode };
 }
 

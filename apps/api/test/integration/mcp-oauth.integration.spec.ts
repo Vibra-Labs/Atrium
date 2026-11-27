@@ -255,7 +255,7 @@ beforeAll(async () => {
   assertDisposableDatabase();
   prisma = new PrismaService();
   await prisma.$connect();
-  auth = new AuthService(config, prisma, mail, billing, {} as never);
+  auth = new AuthService(config, prisma, mail, billing, {} as never, {} as never, {} as never);
 
   sessionCookie = await signUp("OAuth Tester", email);
   otherSessionCookie = await signUp("Other Tester", otherEmail);
@@ -517,7 +517,7 @@ describe("redirect URI validation at authorization", () => {
 
 describe("MCP sign-in switched off", () => {
   async function statuses(overrides: Record<string, string>): Promise<number[]> {
-    const off = new AuthService(configWith(overrides), prisma, mail, billing, {} as never);
+    const off = new AuthService(configWith(overrides), prisma, mail, billing, {} as never, {} as never, {} as never);
     const hit = async (path: string, init: RequestInit = {}): Promise<number> => {
       const headers = new Headers(init.headers);
       headers.set("Origin", API);
@@ -732,7 +732,7 @@ describe("OAuth token → MCP actor", () => {
 
   it("stays dead after the user is removed and re-added, and after demote then re-promote", async () => {
     const mcpAuth = mcpAuthService();
-    const clients = new ClientsService(prisma, {} as never, {} as never);
+    const clients = new ClientsService(prisma, {} as never, {} as never, {} as never);
     const clientId = await registerClient("IT Client Revive");
     const tokens = await authorizeAndExchange(clientId);
     const revive = await addWorkspace("revive", "admin");

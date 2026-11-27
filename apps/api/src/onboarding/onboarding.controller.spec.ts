@@ -34,6 +34,7 @@ describe("OnboardingController signup gate", () => {
       makeConfig({ ALLOW_SIGNUPS: "false" }),
       {} as MailService,
       makeLogger(),
+      {} as never,
     );
 
     await expect(controller.signup(body, makeRes())).rejects.toBeInstanceOf(
@@ -58,6 +59,7 @@ describe("OnboardingController signup gate", () => {
       makeConfig(), // ALLOW_SIGNUPS unset -> defaults to enabled
       {} as MailService,
       makeLogger(),
+      {} as never,
     );
 
     await expect(controller.signup(body, makeRes())).rejects.toBeInstanceOf(

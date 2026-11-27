@@ -3,7 +3,7 @@ import { ActivityController } from "./activity.controller";
 import type { ActivityService } from "./activity.service";
 
 function build() {
-  const service = { findByOrg: mock(() => Promise.resolve([])) };
+  const service = { findByOrg: mock((): Promise<unknown[]> => Promise.resolve([])) };
   return { service, controller: new ActivityController(service as unknown as ActivityService) };
 }
 

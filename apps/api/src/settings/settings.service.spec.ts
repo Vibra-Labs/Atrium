@@ -22,8 +22,8 @@ function makePrisma(overrides: Partial<typeof basePrisma> = {}) {
 
 const basePrisma = {
   systemSettings: {
-    upsert: mock(() => Promise.resolve(baseSettings())),
-    findUnique: mock(() => Promise.resolve(null)),
+    upsert: mock((_args: unknown): Promise<unknown> => Promise.resolve(baseSettings())),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
   },
 };
 
@@ -74,8 +74,8 @@ describe("SettingsService", () => {
   beforeEach(() => {
     prisma = {
       systemSettings: {
-        upsert: mock(() => Promise.resolve(baseSettings())),
-        findUnique: mock(() => Promise.resolve(null)),
+        upsert: mock((_args: unknown): Promise<unknown> => Promise.resolve(baseSettings())),
+        findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
       },
     };
     config = makeConfig();
@@ -88,9 +88,10 @@ describe("SettingsService", () => {
     let storedResendKey: string | null = null;
 
     // Capture what was stored in the DB
-    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+    prisma.systemSettings.upsert.mockImplementation((raw: unknown) => {
+      const args = raw as UpsertArgs;
       const data = args.update ?? args.create ?? {};
-      if (data.resendApiKey !== undefined) storedResendKey = data.resendApiKey;
+      if (data.resendApiKey !== undefined) storedResendKey = data.resendApiKey as string | null;
       return Promise.resolve(
         baseSettings({ resendApiKey: storedResendKey }),
       );
@@ -115,9 +116,10 @@ describe("SettingsService", () => {
   test("smtpPass is encrypted on save and decrypted in getEffectiveEmailConfig", async () => {
     let storedSmtpPass: string | null = null;
 
-    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+    prisma.systemSettings.upsert.mockImplementation((raw: unknown) => {
+      const args = raw as UpsertArgs;
       const data = args.update ?? args.create ?? {};
-      if (data.smtpPass !== undefined) storedSmtpPass = data.smtpPass;
+      if (data.smtpPass !== undefined) storedSmtpPass = data.smtpPass as string | null;
       return Promise.resolve(
         baseSettings({
           emailProvider: "smtp",
@@ -203,7 +205,8 @@ describe("SettingsService", () => {
   });
 
   test("updateSettings masks resendApiKey in returned value", async () => {
-    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+    prisma.systemSettings.upsert.mockImplementation((raw: unknown) => {
+      const args = raw as UpsertArgs;
       const data = args.update ?? args.create ?? {};
       return Promise.resolve(
         baseSettings({ resendApiKey: data.resendApiKey ?? null }),
@@ -219,7 +222,8 @@ describe("SettingsService", () => {
 
   test("updateSettings saves plainHttpNoticeDismissed", async () => {
     let saved: Record<string, unknown> = {};
-    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+    prisma.systemSettings.upsert.mockImplementation((raw: unknown) => {
+      const args = raw as UpsertArgs;
       saved = args.update ?? {};
       return Promise.resolve(baseSettings({}));
     });
@@ -424,9 +428,10 @@ describe("SettingsService", () => {
   test("updateSettings stores null when resendApiKey is cleared", async () => {
     let storedKey: string | null = "previous-value";
 
-    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+    prisma.systemSettings.upsert.mockImplementation((raw: unknown) => {
+      const args = raw as UpsertArgs;
       const data = args.update ?? args.create ?? {};
-      if ("resendApiKey" in data) storedKey = data.resendApiKey;
+      if ("resendApiKey" in data) storedKey = data.resendApiKey as string | null;
       return Promise.resolve(baseSettings({ resendApiKey: storedKey }));
     });
 
@@ -438,31 +443,33 @@ describe("SettingsService", () => {
   // --- telemetryEnabled ---
 
   test("updateSettings stores telemetryEnabled: true", async () => {
-    let stored: boolean | null = null;
+    const captured: { stored: boolean | null } = { stored: null };
 
-    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+    prisma.systemSettings.upsert.mockImplementation((raw: unknown) => {
+      const args = raw as UpsertArgs;
       const data = args.update ?? args.create ?? {};
-      if ("telemetryEnabled" in data) stored = data.telemetryEnabled as boolean | null;
-      return Promise.resolve(baseSettings({ telemetryEnabled: stored }));
+      if ("telemetryEnabled" in data) captured.stored = data.telemetryEnabled as boolean | null;
+      return Promise.resolve(baseSettings({ telemetryEnabled: captured.stored }));
     });
 
     await service.updateSettings("org-1", { telemetryEnabled: true });
 
-    expect(stored).toBe(true);
+    expect(captured.stored).toBe(true);
   });
 
   test("updateSettings stores telemetryEnabled: false", async () => {
-    let stored: boolean | null = null;
+    const captured: { stored: boolean | null } = { stored: null };
 
-    prisma.systemSettings.upsert.mockImplementation((args: UpsertArgs) => {
+    prisma.systemSettings.upsert.mockImplementation((raw: unknown) => {
+      const args = raw as UpsertArgs;
       const data = args.update ?? args.create ?? {};
-      if ("telemetryEnabled" in data) stored = data.telemetryEnabled as boolean | null;
-      return Promise.resolve(baseSettings({ telemetryEnabled: stored }));
+      if ("telemetryEnabled" in data) captured.stored = data.telemetryEnabled as boolean | null;
+      return Promise.resolve(baseSettings({ telemetryEnabled: captured.stored }));
     });
 
     await service.updateSettings("org-1", { telemetryEnabled: false });
 
-    expect(stored).toBe(false);
+    expect(captured.stored).toBe(false);
   });
 
   test("getSettings returns telemetryEnabled value from DB", async () => {

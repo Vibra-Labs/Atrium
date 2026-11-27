@@ -17,7 +17,7 @@ function build(env: Record<string, string> = {}) {
     subscription: {
       create: mock((args: unknown) => Promise.resolve(args)),
       findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
-      updateMany: mock((): Promise<{ count: number }> => Promise.resolve({ count: 1 })),
+      updateMany: mock((_args: unknown): Promise<{ count: number }> => Promise.resolve({ count: 1 })),
     },
   };
   // No Stripe key: initializeFreePlan skips customer creation.

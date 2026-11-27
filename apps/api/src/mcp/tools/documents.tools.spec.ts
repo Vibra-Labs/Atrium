@@ -7,7 +7,7 @@ const admin = { user: { id: "u1" }, organization: { id: "org1" }, member: { role
 
 describe("document tools", () => {
   it("list_pending_approvals is org-scoped and passes the optional project filter", async () => {
-    const documents = { findPendingApprovals: mock(() => Promise.resolve([])) };
+    const documents = { findPendingApprovals: mock((): Promise<unknown[]> => Promise.resolve([])) };
     const tool = documentTools({ documents: documents as never }).find((t) => t.name === "list_pending_approvals")!;
 
     await runTool(tool, tool.inputSchema.parse({}), admin);

@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
 import { ClientsService } from "./clients.service";
+import type { PrismaCall } from "../common/testing/prisma-args";
 
 /** Real rows always carry their user; fixtures that don't care get a plain one. */
 function withUser(member: unknown): unknown {
@@ -13,13 +14,12 @@ function withUser(member: unknown): unknown {
 function buildPrisma(members: unknown[], total: number) {
   return {
     member: {
-      findMany: mock(() => Promise.resolve(members.map(withUser))),
-      count: mock((_a: { where: unknown }) => Promise.resolve(total)),
-      findFirst: mock(() => Promise.resolve(members[0] ?? null)),
+      findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve(members.map(withUser))),
+      count: mock((_a: { where: unknown }): Promise<unknown> => Promise.resolve(total)),
+      findFirst: mock((): Promise<unknown> => Promise.resolve(members[0] ?? null)),
     },
     contact: {
-      findMany: mock(() =>
-        Promise.resolve([
+      findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([
           {
             id: "c2",
             userId: "u2",
@@ -39,7 +39,7 @@ function buildPrisma(members: unknown[], total: number) {
 describe("ClientsService.list", () => {
   it("returns members enriched with the profile from their contact, scoped to the org", async () => {
     const prisma = buildPrisma([{ id: "m2", userId: "u2", role: "member" }], 1);
-    const service = new ClientsService(prisma as never, {} as never, {} as never);
+    const service = new ClientsService(prisma as never, {} as never, {} as never, {} as never);
 
     const result = await service.list("org1", 1, 20);
 
@@ -52,7 +52,7 @@ describe("ClientsService.list", () => {
     });
     expect(result.data[0].contactId).toBe("c2");
     expect(result.meta.total).toBe(1);
-    expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({ organizationId: "org1" });
+    expect((prisma.member.findMany.mock.calls[0][0] as PrismaCall).where).toEqual({ organizationId: "org1" });
   });
 
   it("returns labels from the member's contact in the { label } shape", async () => {
@@ -63,9 +63,9 @@ describe("ClientsService.list", () => {
       ],
       2,
     );
-    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20);
+    const result = await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20);
 
-    expect(prisma.contact.findMany.mock.calls[0][0].where).toEqual({
+    expect((prisma.contact.findMany.mock.calls[0][0] as PrismaCall).where).toEqual({
       organizationId: "org1",
       userId: { in: ["u2", "u3"] },
     });
@@ -82,13 +82,13 @@ describe("ClientsService.list", () => {
       ],
       2,
     );
-    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20);
+    const result = await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20);
 
-    const select = prisma.member.findMany.mock.calls[0][0].select;
+    const select = (prisma.member.findMany.mock.calls[0][0] as PrismaCall).select;
     expect(select.labels).toEqual({
       select: { label: { select: { id: true, name: true, color: true } } },
     });
-    expect(prisma.contact.findMany.mock.calls[0][0].where).toEqual({
+    expect((prisma.contact.findMany.mock.calls[0][0] as PrismaCall).where).toEqual({
       organizationId: "org1",
       userId: { in: ["u2"] },
     });
@@ -98,8 +98,8 @@ describe("ClientsService.list", () => {
 
   it("says whether each member has 2FA, for the team page's reset action", async () => {
     const prisma = buildPrisma([{ id: "m1", userId: "u1", role: "owner", labels: [] }], 1);
-    await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
-    const select = prisma.member.findMany.mock.calls[0][0].select;
+    await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
+    const select = (prisma.member.findMany.mock.calls[0][0] as PrismaCall).select;
     expect(select.user).toEqual({
       select: { id: true, name: true, email: true, twoFactorEnabled: true, _count: { select: { passkeys: true } } },
     });
@@ -118,15 +118,15 @@ describe("ClientsService.list", () => {
       ],
       1,
     );
-    const result = await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
+    const result = await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20, undefined, "staff");
     const user = (result as unknown as { data: { user: Record<string, unknown> }[] }).data[0].user;
     expect(user).toEqual({ id: "u1", name: "A", email: "a@x.co", twoFactorEnabled: true, passkeyCount: 1 });
   });
 
   it("filters by name or email when search is given", async () => {
     const prisma = buildPrisma([], 0);
-    await new ClientsService(prisma as never, {} as never, {} as never).list("org1", 1, 20, "glo");
-    expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({
+    await new ClientsService(prisma as never, {} as never, {} as never, {} as never).list("org1", 1, 20, "glo");
+    expect((prisma.member.findMany.mock.calls[0][0] as PrismaCall).where).toEqual({
       organizationId: "org1",
       user: { OR: [
         { name: { contains: "glo", mode: "insensitive" } },
@@ -137,12 +137,12 @@ describe("ClientsService.list", () => {
 
   it("role=staff lists owners and admins only; role=client lists portal clients only", async () => {
     const prisma = buildPrisma([], 0);
-    const service = new ClientsService(prisma as never, {} as never, {} as never);
+    const service = new ClientsService(prisma as never, {} as never, {} as never, {} as never);
     await service.list("org1", 1, 100, undefined, "staff");
     await service.list("org1", 1, 100, undefined, "client");
-    expect(prisma.member.findMany.mock.calls[0][0].where).toEqual({ organizationId: "org1", role: { not: "member" } });
-    expect(prisma.member.findMany.mock.calls[1][0].where).toEqual({ organizationId: "org1", role: "member" });
-    expect(prisma.member.count.mock.calls[0][0].where).toEqual({ organizationId: "org1", role: { not: "member" } });
+    expect((prisma.member.findMany.mock.calls[0][0] as PrismaCall).where).toEqual({ organizationId: "org1", role: { not: "member" } });
+    expect((prisma.member.findMany.mock.calls[1][0] as PrismaCall).where).toEqual({ organizationId: "org1", role: "member" });
+    expect((prisma.member.count.mock.calls[0][0] as PrismaCall).where).toEqual({ organizationId: "org1", role: { not: "member" } });
   });
 
   it("ListMembersQueryDto accepts only staff / client", async () => {
@@ -154,7 +154,7 @@ describe("ClientsService.list", () => {
   });
 
   it("findMember throws NotFound when the user is not in the org", async () => {
-    const service = new ClientsService(buildPrisma([], 0) as never, {} as never, {} as never);
+    const service = new ClientsService(buildPrisma([], 0) as never, {} as never, {} as never, {} as never);
     await expect(service.findMember("nope", "org1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

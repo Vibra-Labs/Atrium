@@ -11,11 +11,11 @@ import { ListCompaniesQueryDto, UpdateCompanyDto } from "./contacts.dto";
 const prisma = {
   company: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
-    findMany: mock(() => Promise.resolve([] as unknown[])),
+    findMany: mock((_args: unknown) => Promise.resolve([] as unknown[])),
     count: mock(() => Promise.resolve(0)),
     create: mock(() => Promise.resolve({ id: "co-1" })),
-    update: mock(() => Promise.resolve({ id: "co-1" })),
-    delete: mock(() => Promise.resolve({})),
+    update: mock((_args: unknown) => Promise.resolve({ id: "co-1" })),
+    delete: mock((): Promise<unknown> => Promise.resolve({})),
   },
   contact: { updateMany: mock(() => Promise.resolve({ count: 2 })) },
   $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
@@ -72,7 +72,7 @@ describe("CompaniesService", () => {
       if (a.select) return Promise.resolve(["co-1", "co-2", "co-3"].map((id) => ({ id })));
       // Out of order on purpose: the page must follow the SQL ranking.
       const ids = a.where.id?.in ?? [];
-      return Promise.resolve(ids.toReversed().map((id) => ({ id, name: id, _count: { contacts: 0 } })));
+      return Promise.resolve([...ids].reverse().map((id) => ({ id, name: id, _count: { contacts: 0 } })));
     });
     queryRaw.mockImplementation(() => Promise.resolve([{ id: "co-3" }, { id: "co-1" }]));
     revenue.paidTotalsForCompanies.mockImplementation(() =>

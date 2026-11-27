@@ -45,6 +45,8 @@ function makeService(): AuthService {
     mockMail as unknown as MailService,
     {} as unknown as BillingService,
     {} as never,
+    {} as never,
+    {} as never,
   );
 }
 

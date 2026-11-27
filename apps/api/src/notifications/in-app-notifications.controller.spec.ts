@@ -12,17 +12,16 @@ import type { InAppNotificationsService } from "./in-app-notifications.service";
  */
 describe("InAppNotificationsController without an active organization", () => {
   const service = {
-    findByUser: mock(() =>
-      Promise.resolve({ data: [], meta: { total: 0, page: 1, limit: 10, totalPages: 0 } }),
+    findByUser: mock((): Promise<unknown> => Promise.resolve({ data: [], meta: { total: 0, page: 1, limit: 10, totalPages: 0 } }),
     ),
-    unreadCount: mock(() => Promise.resolve(3)),
-    markAllRead: mock(() => Promise.resolve({ count: 1 })),
-    markRead: mock(() => Promise.resolve({ id: "n1" })),
+    unreadCount: mock((): Promise<unknown> => Promise.resolve(3)),
+    markAllRead: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
+    markRead: mock((): Promise<unknown> => Promise.resolve({ id: "n1" })),
   };
   const controller = new InAppNotificationsController(
     service as unknown as InAppNotificationsService,
   );
-  const noOrgReq = { user: { id: "u1" } };
+  const noOrgReq = { user: { id: "u1" } } as never;
 
   beforeEach(() => {
     service.findByUser.mockClear();
@@ -58,7 +57,7 @@ describe("InAppNotificationsController without an active organization", () => {
   });
 
   it("still delegates normally when an organization is present", async () => {
-    const req = { user: { id: "u1" }, organization: { id: "org-1" } };
+    const req = { user: { id: "u1" }, organization: { id: "org-1" } } as never;
 
     expect(await controller.unreadCount(req)).toEqual({ count: 3 });
     expect(service.unreadCount).toHaveBeenCalledWith("u1", "org-1");

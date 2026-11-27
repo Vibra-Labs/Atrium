@@ -23,22 +23,22 @@ interface PrismaArgs {
 
 const mockPrisma = {
   project: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
   task: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
   file: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
   member: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
   contact: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
   company: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
 };
 
@@ -244,7 +244,7 @@ describe("SearchService", () => {
 
       const result = await service.search(ORG, QUERY);
 
-      expect(result.projects).toEqual(projects);
+      expect<unknown>(result.projects).toEqual(projects);
     });
   });
 

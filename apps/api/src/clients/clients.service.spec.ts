@@ -18,7 +18,7 @@ interface PrismaArgs {
 // ---------------------------------------------------------------------------
 const mockPrisma = {
   member: {
-    findFirst: mock(() => Promise.resolve(null)),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
     count: mock(() => Promise.resolve(0)),
     delete: mock((args: PrismaArgs) => Promise.resolve({ id: args.where?.id })),
     update: mock((args: PrismaArgs) =>
@@ -26,7 +26,7 @@ const mockPrisma = {
     ),
   },
   project: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
   },
   projectClient: {
     deleteMany: mock(() => Promise.resolve({ count: 0 })),
@@ -84,6 +84,7 @@ describe("ClientsService", () => {
       mockPrisma as unknown as PrismaService,
       mockAuthService as unknown as AuthService,
       mockContactSync as never,
+      {} as never,
     );
     mockContactSync.detachMember.mockClear();
     mockContactSync.syncRoleChange.mockClear();

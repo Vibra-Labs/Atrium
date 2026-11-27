@@ -24,71 +24,71 @@ import {
 
 const prisma = {
   contact: {
-    findFirst: mock(() => Promise.resolve(null as unknown)),
-    findMany: mock(() => Promise.resolve([] as unknown[])),
-    count: mock(() => Promise.resolve(0)),
-    create: mock((a: { data: Record<string, unknown> }) => Promise.resolve({ id: "c-1", ...a.data })),
-    update: mock(() => Promise.resolve({ id: "c-1" })),
-    updateMany: mock(() => Promise.resolve({ count: 1 })),
-    delete: mock(() => Promise.resolve({})),
-    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)),
+    findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([] as unknown[])),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
+    create: mock((a: { data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: "c-1", ...a.data })),
+    update: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: "c-1" })),
+    updateMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
+    delete: mock((): Promise<unknown> => Promise.resolve({})),
+    createMany: mock((a: { data: unknown[] }): Promise<unknown> => Promise.resolve({ count: a.data.length })),
   },
   company: {
-    findFirst: mock(() => Promise.resolve(null as unknown)),
-    findMany: mock((_a: unknown) => Promise.resolve([] as unknown[])),
-    create: mock(() => Promise.resolve({ id: "co-new" })),
-    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
-    updateMany: mock(() => Promise.resolve({ count: 1 })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)),
+    findMany: mock((_a: unknown): Promise<unknown> => Promise.resolve([] as unknown[])),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: "co-new" })),
+    createMany: mock((a: { data: unknown[] }): Promise<unknown> => Promise.resolve({ count: a.data.length })),
+    updateMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   leadSource: {
-    findFirst: mock(() => Promise.resolve(null as unknown)),
-    findMany: mock((_a: unknown) => Promise.resolve([] as unknown[])),
-    create: mock(() => Promise.resolve({ id: "ls-new" })),
-    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)),
+    findMany: mock((_a: unknown): Promise<unknown> => Promise.resolve([] as unknown[])),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: "ls-new" })),
+    createMany: mock((a: { data: unknown[] }): Promise<unknown> => Promise.resolve({ count: a.data.length })),
   },
-  project: { findFirst: mock(() => Promise.resolve(null as unknown)) },
-  projectClient: { findFirst: mock(() => Promise.resolve(null as unknown)) },
+  project: { findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)) },
+  projectClient: { findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)) },
   projectContact: {
-    findUnique: mock(() => Promise.resolve(null as unknown)),
-    create: mock(() => Promise.resolve({})),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null as unknown)),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   contactNote: {
-    findMany: mock(() => Promise.resolve([] as unknown[])),
-    count: mock(() => Promise.resolve(0)),
-    create: mock(() => Promise.resolve({ id: "n-1" })),
-    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
-    findFirst: mock(() => Promise.resolve(null as unknown)),
-    delete: mock(() => Promise.resolve({})),
+    findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([] as unknown[])),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: "n-1" })),
+    createMany: mock((a: { data: unknown[] }): Promise<unknown> => Promise.resolve({ count: a.data.length })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)),
+    delete: mock((): Promise<unknown> => Promise.resolve({})),
   },
   contactEvent: {
-    findMany: mock(() => Promise.resolve([] as unknown[])),
-    count: mock(() => Promise.resolve(0)),
-    create: mock(() => Promise.resolve({})),
-    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
+    findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([] as unknown[])),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
+    createMany: mock((a: { data: unknown[] }): Promise<unknown> => Promise.resolve({ count: a.data.length })),
   },
   label: {
-    findFirst: mock(() => Promise.resolve(null as unknown)),
-    findMany: mock((_a: unknown) => Promise.resolve([] as unknown[])),
-    create: mock((a: { data: { name: string } }) => Promise.resolve({ id: `l-${a.data.name}` })),
-    createMany: mock((a: { data: unknown[] }) => Promise.resolve({ count: a.data.length })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)),
+    findMany: mock((_a: unknown): Promise<unknown> => Promise.resolve([] as unknown[])),
+    create: mock((a: { data: { name: string } }): Promise<unknown> => Promise.resolve({ id: `l-${a.data.name}` })),
+    createMany: mock((a: { data: unknown[] }): Promise<unknown> => Promise.resolve({ count: a.data.length })),
   },
-  contactLabel: { createMany: mock((_a: unknown) => Promise.resolve({ count: 0 })) },
-  user: { findMany: mock(() => Promise.resolve([] as unknown[])) },
-  invitation: { findMany: mock(() => Promise.resolve([] as unknown[])) },
-  member: { findFirst: mock(() => Promise.resolve(null as unknown)) },
-  projectPursuit: { findFirst: mock(() => Promise.resolve(null as unknown)) },
-  projectPursuitEvent: { create: mock(() => Promise.resolve({})) },
+  contactLabel: { createMany: mock((_a: unknown): Promise<unknown> => Promise.resolve({ count: 0 })) },
+  user: { findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([] as unknown[])) },
+  invitation: { findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([] as unknown[])) },
+  member: { findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)) },
+  projectPursuit: { findFirst: mock((): Promise<unknown> => Promise.resolve(null as unknown)) },
+  projectPursuitEvent: { create: mock((_args: unknown): Promise<unknown> => Promise.resolve({})) },
 };
 
 const revenue = {
-  forContact: mock(() => Promise.resolve({ paidCents: 0, outstandingCents: 0, monthly: [] })),
-  paidTotals: mock(() => Promise.resolve(new Map<string, number>())),
+  forContact: mock((): Promise<unknown> => Promise.resolve({ paidCents: 0, outstandingCents: 0, monthly: [] })),
+  paidTotals: mock((): Promise<unknown> => Promise.resolve(new Map<string, number>())),
   paidPerContactSql: mock(() => Prisma.sql`SELECT 1`),
 };
 
 /** The company-size UPDATEs of an import (a tagged template call). */
-const executeRaw = mock((..._args: unknown[]) => Promise.resolve(1));
+const executeRaw = mock((..._args: unknown[]): Promise<unknown> => Promise.resolve(1));
 
 function sqlOf(call: unknown[]): { text: string; values: unknown[] } {
   const [strings, ...values] = call as [TemplateStringsArray, ...Prisma.Sql[]];
@@ -101,7 +101,7 @@ function createdRows(): Record<string, unknown>[] {
 }
 
 /** The SQL ranking's result: one page of ids (the ordering itself is covered by integration tests). */
-const queryRaw = mock((..._args: unknown[]) => Promise.resolve([] as Array<{ id: string }>));
+const queryRaw = mock((..._args: unknown[]): Promise<unknown> => Promise.resolve([] as Array<{ id: string }>));
 
 function resetAll(): void {
   for (const model of Object.values(prisma)) {
@@ -287,8 +287,8 @@ describe("ContactsService", () => {
   it("a note keeps mentions of this workspace's contacts and tells each mentioned contact", async () => {
     prisma.contact.findFirst.mockImplementation(() => Promise.resolve({ id: "c-1", name: "Ann Lee" }));
     prisma.contact.findMany.mockImplementation(() => Promise.resolve([{ id: "c-2" }, { id: "c-1" }]));
-    prisma.contactNote.create.mockImplementation((a: { data: Record<string, unknown> }) =>
-      Promise.resolve({ id: "n-1", ...a.data }),
+    prisma.contactNote.create.mockImplementation((args: unknown) =>
+      Promise.resolve({ id: "n-1", ...(args as { data: Record<string, unknown> }).data }),
     );
     const content =
       "Call @[Bo](contact:c-2), not @[Ghost](contact:c-9); cc @[Ann Lee](contact:c-1) @[Bo](contact:c-2)";
@@ -813,7 +813,7 @@ describe("ContactsService", () => {
         const a = args as { select?: unknown; where: { id?: { in: string[] } } };
         if (a.select) return Promise.resolve(["a", "b", "c", "d"].map((id) => ({ id })));
         // Out of order on purpose: the page must follow the SQL ranking.
-        return Promise.resolve((a.where.id?.in ?? []).toReversed().map((id) => row(id, id)));
+        return Promise.resolve([...(a.where.id?.in ?? [])].reverse().map((id) => row(id, id)));
       });
       queryRaw.mockImplementation(() => Promise.resolve([{ id: "c" }, { id: "a" }]));
       revenue.paidTotals.mockImplementation(() => Promise.resolve(new Map([["c", 900]])));

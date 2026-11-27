@@ -45,7 +45,7 @@ function build(
     },
   };
   const mail = {
-    send: mock(() =>
+    send: mock((_args: unknown) =>
       opts.sendFails ? Promise.reject(new Error("smtp down")) : Promise.resolve({ sent: true, viaOrgConfig: false }),
     ),
   };

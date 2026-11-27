@@ -7,7 +7,7 @@ const updatedAt = new Date("2026-01-01T00:00:00Z");
 const prisma = {
   contact: {
     findMany: mock((_args: { where: Record<string, unknown> }) => Promise.resolve([] as unknown[])),
-    update: mock(() => Promise.resolve({})),
+    update: mock((): Promise<unknown> => Promise.resolve({})),
   },
 };
 
@@ -65,7 +65,7 @@ describe("ContactBackfillService.backfillContactFields", () => {
   });
 
   it("copying a client profile writes phones with the phone, independent of step order", async () => {
-    const txUpdate = mock((_args: { data: Record<string, unknown> }) => Promise.resolve({}));
+    const txUpdate = mock((_args: { data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({}));
     const withProfile = {
       ...prisma,
       clientProfile: {
@@ -111,8 +111,8 @@ describe("ContactBackfillService.backfillContactFields", () => {
   });
 
   it("copying a client profile puts its description in About, not in a note", async () => {
-    const noteCreate = mock(() => Promise.resolve({}));
-    const txUpdate = mock((_args: { data: Record<string, unknown> }) => Promise.resolve({}));
+    const noteCreate = mock((): Promise<unknown> => Promise.resolve({}));
+    const txUpdate = mock((_args: { data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({}));
     const withProfile = {
       ...prisma,
       clientProfile: {
@@ -157,7 +157,7 @@ describe("ContactBackfillService.backfillInvitees", () => {
     const prismaMock = {
       organization: {
         findUnique: mock(() => Promise.resolve({ inviteesBackfilledAt: marker })),
-        update: mock((_a: unknown) => Promise.resolve({})),
+        update: mock((_a: unknown): Promise<unknown> => Promise.resolve({})),
       },
       invitation: {
         findMany: mock((_args: unknown) =>
@@ -210,11 +210,11 @@ describe("ContactBackfillService.backfillDescriptions", () => {
     const contactFindMany = mock((_args: { where: Record<string, unknown> }) =>
       Promise.resolve([{ id: "c-1", userId: "u-1", updatedAt }]),
     );
-    const update = mock((_args: unknown) => Promise.resolve({}));
+    const update = mock((_args: unknown): Promise<unknown> => Promise.resolve({}));
     const svc = new ContactBackfillService(
       {
         clientProfile: {
-          findMany: mock(() =>
+          findMany: mock((_args: unknown) =>
             Promise.resolve([
               { userId: "u-1", description: " About Ann " },
               { userId: "u-2", description: "   " },
@@ -241,10 +241,10 @@ describe("ContactBackfillService.backfillDescriptions", () => {
   });
 
   it("skips the contact query when no profile has a description", async () => {
-    const contactFindMany = mock(() => Promise.resolve([]));
+    const contactFindMany = mock((_args: unknown): Promise<unknown[]> => Promise.resolve([]));
     const svc = new ContactBackfillService(
       {
-        clientProfile: { findMany: mock(() => Promise.resolve([])) },
+        clientProfile: { findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])) },
         contact: { findMany: contactFindMany },
       } as unknown as PrismaService,
       {} as ContactSyncService,
@@ -260,7 +260,7 @@ describe("ContactBackfillService.run", () => {
     const db = {
       organization: {
         findMany: mock((_a: unknown) => Promise.resolve(orgs)),
-        update: mock((_a: unknown) => Promise.resolve({})),
+        update: mock((_a: unknown): Promise<unknown> => Promise.resolve({})),
         updateMany: mock((_a: unknown) => Promise.resolve({ count: claimed })),
       },
     };

@@ -6,51 +6,51 @@ import { DEFAULT_LABEL_COLOR } from "@atrium/shared";
 
 const mockPrisma = {
   label: {
-    findMany: mock(() => Promise.resolve([])),
-    findFirst: mock(() => Promise.resolve(null)),
-    create: mock(() => Promise.resolve({ id: "lbl-1", name: "Bug", color: "#ef4444", organizationId: "org-1" })),
-    update: mock(() => Promise.resolve({ id: "lbl-1", name: "Updated", color: "#ef4444" })),
-    delete: mock(() => Promise.resolve()),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    create: mock((): Promise<unknown> => Promise.resolve({ id: "lbl-1", name: "Bug", color: "#ef4444", organizationId: "org-1" })),
+    update: mock((): Promise<unknown> => Promise.resolve({ id: "lbl-1", name: "Updated", color: "#ef4444" })),
+    delete: mock((): Promise<unknown> => Promise.resolve()),
   },
   project: {
-    findFirst: mock(() => Promise.resolve({ id: "proj-1" })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ id: "proj-1" })),
   },
   task: {
-    findFirst: mock(() => Promise.resolve({ id: "task-1" })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ id: "task-1" })),
   },
   file: {
-    findFirst: mock(() => Promise.resolve({ id: "file-1" })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ id: "file-1" })),
   },
   member: {
-    findFirst: mock(() => Promise.resolve({ id: "member-1", userId: "user-1", role: "member" } as unknown)),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ id: "member-1", userId: "user-1", role: "member" } as unknown)),
   },
   projectLabel: {
-    create: mock(() => Promise.resolve({ id: "pl-1" })),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
+    create: mock((): Promise<unknown> => Promise.resolve({ id: "pl-1" })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   taskLabel: {
-    create: mock(() => Promise.resolve({ id: "tl-1" })),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
+    create: mock((): Promise<unknown> => Promise.resolve({ id: "tl-1" })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   fileLabel: {
-    create: mock(() => Promise.resolve({ id: "fl-1" })),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
+    create: mock((): Promise<unknown> => Promise.resolve({ id: "fl-1" })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   contact: {
-    findFirst: mock(() => Promise.resolve({ id: "contact-1" })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ id: "contact-1" })),
   },
   contactLabel: {
-    create: mock(() => Promise.resolve({ id: "cl-1" })),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
+    create: mock((): Promise<unknown> => Promise.resolve({ id: "cl-1" })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   memberLabel: {
-    create: mock(() => Promise.resolve({ id: "ml-1" })),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
+    create: mock((): Promise<unknown> => Promise.resolve({ id: "ml-1" })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
 };
 
 const mockSync = {
-  ensureForMember: mock(() => Promise.resolve({ id: "contact-m" })),
+  ensureForMember: mock((): Promise<unknown> => Promise.resolve({ id: "contact-m" })),
 };
 
 function clearMocks() {
@@ -83,7 +83,7 @@ describe("LabelsService", () => {
       mockPrisma.label.findMany.mockImplementation(() => Promise.resolve(labels));
 
       const result = await service.findAll("org-1");
-      expect(result).toEqual(labels);
+      expect<unknown>(result).toEqual(labels);
       expect(mockPrisma.label.findMany).toHaveBeenCalledWith({
         where: { organizationId: "org-1" },
         orderBy: { name: "asc" },

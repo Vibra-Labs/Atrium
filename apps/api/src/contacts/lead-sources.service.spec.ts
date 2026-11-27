@@ -4,10 +4,10 @@ import { LeadSourcesService } from "./lead-sources.service";
 
 const mockPrisma = {
   leadSource: {
-    findMany: mock(() => Promise.resolve([])),
-    findFirst: mock(() => Promise.resolve(null)),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
     update: mock(() => Promise.resolve({ id: "ls-1", name: "Podcast" })),
-    delete: mock(() => Promise.resolve({})),
+    delete: mock((): Promise<unknown> => Promise.resolve({})),
   },
 };
 const mockContacts = {

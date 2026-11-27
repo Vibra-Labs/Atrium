@@ -47,8 +47,8 @@ function build(options: BuildOptions = {}) {
   const row: Row = options.row ?? emptyRow();
   const prisma = {
     planOffer: {
-      upsert: mock(() => Promise.resolve(row)),
-      updateMany: mock(() => Promise.resolve({ count: 1 })),
+      upsert: mock((_args: unknown) => Promise.resolve(row)),
+      updateMany: mock((_args: unknown) => Promise.resolve({ count: 1 })),
       findUniqueOrThrow: mock(() => Promise.resolve(row)),
     },
     organization: {
@@ -85,7 +85,7 @@ function build(options: BuildOptions = {}) {
       ),
     ),
   };
-  const config = { get: (_k: string, fallback?: string) => (options.billing === false ? "false" : "true") ?? fallback };
+  const config = { get: (): string => (options.billing === false ? "false" : "true") };
   const service = new PlanOffersService(
     prisma as unknown as PrismaService,
     billing as unknown as BillingService,

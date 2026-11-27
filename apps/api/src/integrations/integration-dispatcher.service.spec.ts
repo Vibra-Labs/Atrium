@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { IntegrationDispatcher } from "./integration-dispatcher.service";
 import type { SendResult } from "./delivery-policy";
+import type { PrismaCall } from "../common/testing/prisma-args";
 
 type Row = Record<string, unknown>;
 
@@ -18,14 +19,14 @@ function buildDeps(opts: {
 } = {}) {
   const prisma = {
     integrationDestination: {
-      findMany: mock(async () => opts.destinations ?? [destination()]),
+      findMany: mock(async (_args: unknown) => opts.destinations ?? [destination()]),
       update: mock(async (args: { data: Row }) => ({ ...destination(), ...args.data, consecutiveFailures: opts.failures ?? 1 })),
-      updateMany: mock(async () => ({ count: opts.disableCount ?? 1 })),
+      updateMany: mock(async (_args: unknown) => ({ count: opts.disableCount ?? 1 })),
     },
     integrationDelivery: {
       create: mock(async (args: { data: Row }) => ({ id: `del_${Math.random()}`, ...args.data })),
       findUnique: mock(async () => opts.delivery ?? null),
-      update: mock(async () => ({})),
+      update: mock(async (_args: unknown) => ({})),
       deleteMany: mock(async () => ({ count: 0 })),
     },
     organization: { findUnique: mock(async () => ({ name: "Acme" })) },
@@ -34,10 +35,10 @@ function buildDeps(opts: {
       findUnique: mock(async () => (opts.pursuitOutcome ? { outcome: opts.pursuitOutcome } : null)),
     },
     user: { findUnique: mock(async () => ({ name: "Jane" })) },
-    member: { findMany: mock(async () => [{ userId: "owner1" }]) },
-    notification: { createMany: mock(async () => ({ count: 1 })) },
+    member: { findMany: mock(async (_args: unknown) => [{ userId: "owner1" }]) },
+    notification: { createMany: mock(async (_args: unknown) => ({ count: 1 })) },
     $transaction: mock(async (ops: Promise<unknown>[]) => Promise.all(ops)),
-    $queryRaw: mock(async () => []),
+    $queryRaw: mock(async (): Promise<unknown[]> => []),
   };
   const config = {
     get: (key: string, fallback?: string) =>
@@ -48,7 +49,7 @@ function buildDeps(opts: {
     decrypt: (v: string) => v.replace(/^enc:/, ""),
   };
   const billing = { hasFeature: mock(async () => opts.hasFeature ?? true) };
-  const send = mock(async (): Promise<SendResult> => ({ ok: true, statusCode: 200, error: null, retryAfterMs: null }));
+  const send = mock(async (_args: unknown): Promise<SendResult> => ({ ok: true, statusCode: 200, error: null, retryAfterMs: null }));
   const dispatcher = new IntegrationDispatcher(prisma as never, config as never, settings as never, billing as never);
   dispatcher.send = send;
   return { prisma, billing, send, dispatcher };
@@ -161,7 +162,7 @@ describe("IntegrationDispatcher.attempt", () => {
     await deps.dispatcher.attempt("del_1");
     const call = deps.send.mock.calls[0] as unknown as [Row];
     expect(call[0]).toEqual({ type: "webhook", url: "https://hooks.example.com/x", secret: "whsec" });
-    const data = deps.prisma.integrationDelivery.update.mock.calls[0][0].data;
+    const data = (deps.prisma.integrationDelivery.update.mock.calls[0][0] as PrismaCall).data;
     expect(data).toMatchObject({ status: "success", attempts: 1, lastStatusCode: 200, nextAttemptAt: null });
     expect(data.deliveredAt).toBeInstanceOf(Date);
   });
@@ -170,7 +171,7 @@ describe("IntegrationDispatcher.attempt", () => {
     deps.send.mockImplementation(async () => ({ ok: false, statusCode: 500, error: "down", retryAfterMs: null }));
     const before = Date.now();
     await deps.dispatcher.attempt("del_1");
-    const data = deps.prisma.integrationDelivery.update.mock.calls[0][0].data;
+    const data = (deps.prisma.integrationDelivery.update.mock.calls[0][0] as PrismaCall).data;
     expect(data.status).toBe("pending");
     expect(data.lastError).toBe("down");
     expect((data.nextAttemptAt as Date).getTime()).toBeGreaterThanOrEqual(before + 60_000);
@@ -181,8 +182,8 @@ describe("IntegrationDispatcher.attempt", () => {
     deps = buildDeps({ delivery: pending({ attempts: 5 }), failures: 3 });
     deps.send.mockImplementation(async () => ({ ok: false, statusCode: 500, error: "down", retryAfterMs: null }));
     await deps.dispatcher.attempt("del_1");
-    expect(deps.prisma.integrationDelivery.update.mock.calls[0][0].data.status).toBe("failed");
-    expect(deps.prisma.integrationDestination.update.mock.calls[0][0].data).toEqual({
+    expect((deps.prisma.integrationDelivery.update.mock.calls[0][0] as PrismaCall).data.status).toBe("failed");
+    expect((deps.prisma.integrationDestination.update.mock.calls[0][0] as PrismaCall).data).toEqual({
       consecutiveFailures: { increment: 1 },
     });
     expect(deps.prisma.notification.createMany).not.toHaveBeenCalled();
@@ -192,11 +193,11 @@ describe("IntegrationDispatcher.attempt", () => {
     deps = buildDeps({ delivery: pending({ attempts: 5 }), failures: 10 });
     deps.send.mockImplementation(async () => ({ ok: false, statusCode: 500, error: "down", retryAfterMs: null }));
     await deps.dispatcher.attempt("del_1");
-    const disable = deps.prisma.integrationDestination.updateMany.mock.calls[0][0];
+    const disable = deps.prisma.integrationDestination.updateMany.mock.calls[0][0] as PrismaCall;
     expect(disable.where).toEqual({ id: "d1", enabled: true });
     expect(disable.data.enabled).toBe(false);
     expect(disable.data.disabledReason).toContain("10");
-    const notes = deps.prisma.notification.createMany.mock.calls[0][0].data as Row[];
+    const notes = (deps.prisma.notification.createMany.mock.calls[0][0] as PrismaCall).data as unknown as Row[];
     expect(notes[0]).toMatchObject({ userId: "owner1", organizationId: "org1", type: "integration_disabled" });
   });
 
@@ -210,21 +211,21 @@ describe("IntegrationDispatcher.attempt", () => {
   it("records a failed attempt when the request can't be prepared", async () => {
     deps.send.mockImplementation(async () => { throw new Error("bad decrypt"); });
     await deps.dispatcher.attempt("del_1");
-    const data = deps.prisma.integrationDelivery.update.mock.calls[0][0].data;
+    const data = (deps.prisma.integrationDelivery.update.mock.calls[0][0] as PrismaCall).data;
     expect(data).toMatchObject({ status: "pending", attempts: 1, lastError: "Could not prepare the request" });
   });
 
   it("resets the failure streak on success", async () => {
     deps = buildDeps({ delivery: pending({ destination: destination({ consecutiveFailures: 4 }) }) });
     await deps.dispatcher.attempt("del_1");
-    expect(deps.prisma.integrationDestination.update.mock.calls[0][0].data).toEqual({ consecutiveFailures: 0 });
+    expect((deps.prisma.integrationDestination.update.mock.calls[0][0] as PrismaCall).data).toEqual({ consecutiveFailures: 0 });
   });
 
   it("fails without sending when the destination was disabled", async () => {
     deps = buildDeps({ delivery: pending({ destination: destination({ enabled: false }) }) });
     await deps.dispatcher.attempt("del_1");
     expect(deps.send).not.toHaveBeenCalled();
-    expect(deps.prisma.integrationDelivery.update.mock.calls[0][0].data.status).toBe("failed");
+    expect((deps.prisma.integrationDelivery.update.mock.calls[0][0] as PrismaCall).data.status).toBe("failed");
   });
 
   it("ignores deliveries that are no longer pending", async () => {
@@ -238,7 +239,7 @@ describe("IntegrationDispatcher.processDue", () => {
   it("attempts every claimed delivery", async () => {
     const { prisma, dispatcher } = buildDeps();
     prisma.$queryRaw.mockImplementation(async () => [{ id: "a" }, { id: "b" }]);
-    const attempt = mock(async () => {});
+    const attempt = mock(async (_args: unknown) => {});
     dispatcher.attempt = attempt;
     await dispatcher.processDue();
     expect(attempt.mock.calls.map((c) => (c as unknown as string[])[0])).toEqual(["a", "b"]);

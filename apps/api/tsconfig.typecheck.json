@@ -1,0 +1,19 @@
+{
+  // The build config excludes specs so they stay out of dist, which also left
+  // them unchecked. This config checks everything instead: src including its
+  // *.spec.ts, plus the integration specs under test/. Emit settings are
+  // dropped because nothing is emitted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    "incremental": false,
+    // Nothing is emitted, so rootDir only has to be wide enough to cover the
+    // files in the program: test/ sits beside src/, and one integration spec
+    // imports a helper from apps/web.
+    "rootDir": "../.."
+  },
+  "include": ["src", "test"],
+  "exclude": ["node_modules", "dist"]
+}

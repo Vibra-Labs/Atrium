@@ -23,8 +23,8 @@ const mockNotifications = {
 function makeBasePrisma() {
   return {
     invoice: {
-      findFirst: mock(() => Promise.resolve(null)),
-      findMany: mock(() => Promise.resolve([])),
+      findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+      findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
       count: mock(() => Promise.resolve(0)),
       create: mock((args: PrismaArgs) =>
         Promise.resolve({ id: "inv-1", ...args.data }),
@@ -33,7 +33,7 @@ function makeBasePrisma() {
         Promise.resolve({ id: args.where?.id, ...args.data, lineItems: [] }),
       ),
       delete: mock(() => Promise.resolve()),
-      groupBy: mock(() => Promise.resolve([])),
+      groupBy: mock((): Promise<unknown[]> => Promise.resolve([])),
     },
     invoiceLineItem: {
       deleteMany: mock(() => Promise.resolve({ count: 0 })),
@@ -42,17 +42,17 @@ function makeBasePrisma() {
       findFirst: mock(() =>
         Promise.resolve({ id: "proj-1", organizationId: "org-1" }),
       ),
-      findMany: mock(() => Promise.resolve([] as { id: string }[])),
+      findMany: mock((_args: unknown) => Promise.resolve([] as { id: string }[])),
     },
     projectClient: {
-      findMany: mock(() => Promise.resolve([])),
-      findFirst: mock(() => Promise.resolve(null)),
+      findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
+      findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
     },
     $transaction: mock((fn: (tx: Record<string, unknown>) => unknown) => {
       // Provide a minimal tx that proxies to the outer mock
       return fn({
         invoice: {
-          findFirst: mock(() => Promise.resolve(null)),
+          findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
           create: mock((args: PrismaArgs) =>
             Promise.resolve({ id: "inv-1", ...args.data, lineItems: [] }),
           ),
@@ -69,7 +69,7 @@ function makeBasePrisma() {
         },
       });
     }),
-    $queryRaw: mock(() => Promise.resolve([])),
+    $queryRaw: mock((): Promise<unknown[]> => Promise.resolve([])),
   };
 }
 
@@ -117,7 +117,7 @@ describe("InvoicesService", () => {
     prisma.$transaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => unknown) => {
       const tx = {
         invoice: {
-          findFirst: mock(() => Promise.resolve(null)),
+          findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
           create: mock((args: PrismaArgs) => {
             capturedInvoiceNumber = args.data?.invoiceNumber as string;
             return Promise.resolve({ id: "inv-1", ...args.data, lineItems: [] });
@@ -192,7 +192,7 @@ describe("InvoicesService", () => {
       // Second attempt succeeds
       const tx = {
         invoice: {
-          findFirst: mock(() => Promise.resolve(null)),
+          findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
           create: mock((args: PrismaArgs) =>
             Promise.resolve({ id: "inv-retry", ...args.data, lineItems: [] }),
           ),

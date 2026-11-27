@@ -29,12 +29,12 @@ import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
  */
 const AUTHENTICATING_GUARDS: unknown[] = [AuthGuard, UserOnlyAuthGuard];
 
-const SRC = join(import.meta.dir, "..", "..");
+const SRC = join(__dirname, "..", "..");
 
 // The API compiles to CommonJS, so load the controllers the way it does. An
 // ESM import would reject the handful of modules that name a type in a value
 // import clause -- harmless once tsc erases it, fatal to an ESM loader.
-const requireController = createRequire(import.meta.url);
+const requireController = createRequire(__filename);
 
 function controllerFiles(dir: string): string[] {
   const found: string[] = [];

@@ -67,12 +67,11 @@ const LIFETIME_PLAN = {
 
 const mockPrisma = {
   subscriptionPlan: {
-    findMany: mock(() => Promise.resolve([FREE_PLAN, PRO_PLAN, LIFETIME_PLAN])),
-    findUnique: mock(() => Promise.resolve(FREE_PLAN)),
+    findMany: mock((): Promise<unknown> => Promise.resolve([FREE_PLAN, PRO_PLAN, LIFETIME_PLAN])),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(FREE_PLAN)),
   },
   subscription: {
-    findUnique: mock(() =>
-      Promise.resolve({
+    findUnique: mock((): Promise<unknown> => Promise.resolve({
         id: "sub-1",
         organizationId: "org-1",
         planId: FREE_PLAN.id,
@@ -81,24 +80,24 @@ const mockPrisma = {
         plan: FREE_PLAN,
       }),
     ),
-    create: mock(() => Promise.resolve({ id: "sub-new" })),
-    update: mock(() => Promise.resolve({ id: "sub-1" })),
-    count: mock(() => Promise.resolve(0)),
+    create: mock((): Promise<unknown> => Promise.resolve({ id: "sub-new" })),
+    update: mock((): Promise<unknown> => Promise.resolve({ id: "sub-1" })),
+    count: mock((_args: unknown): Promise<unknown> => Promise.resolve(0)),
   },
   project: {
-    count: mock(() => Promise.resolve(1)),
+    count: mock((_args: unknown): Promise<unknown> => Promise.resolve(1)),
   },
   file: {
-    aggregate: mock(() => Promise.resolve({ _sum: { sizeBytes: 5242880 } })),
+    aggregate: mock((): Promise<unknown> => Promise.resolve({ _sum: { sizeBytes: 5242880 } })),
   },
   invitation: {
-    count: mock((_args?: unknown) => Promise.resolve(0)),
+    count: mock((_args?: unknown): Promise<unknown> => Promise.resolve(0)),
   },
   member: {
-    count: mock(() => Promise.resolve(1)),
+    count: mock((_args: unknown): Promise<unknown> => Promise.resolve(1)),
   },
   organization: {
-    findUnique: mock(() => Promise.resolve({ id: "org-1", name: "Test Org" })),
+    findUnique: mock((): Promise<unknown> => Promise.resolve({ id: "org-1", name: "Test Org" })),
   },
 };
 
@@ -106,29 +105,29 @@ const mockStripeService = {
   resolveKey: mock((suffix: string) => suffix === "SECRET_KEY" ? "sk_test_123" : ""),
   stripe: {
     customers: {
-      create: mock(() => Promise.resolve({ id: "cus_new" })),
+      create: mock((): Promise<unknown> => Promise.resolve({ id: "cus_new" })),
     },
     checkout: {
       sessions: {
-        create: mock(() => Promise.resolve({ url: "https://checkout.stripe.com/pay/test" })),
+        create: mock((): Promise<unknown> => Promise.resolve({ url: "https://checkout.stripe.com/pay/test" })),
       },
     },
     billingPortal: {
       sessions: {
-        create: mock(() => Promise.resolve({ url: "https://billing.stripe.com/session/test" })),
+        create: mock((): Promise<unknown> => Promise.resolve({ url: "https://billing.stripe.com/session/test" })),
       },
     },
   },
 };
 
 const mockConfig = {
-  get: mock((key: string, defaultValue?: string) => {
+  get: mock((key: unknown, defaultValue?: unknown): string | undefined => {
     const values: Record<string, string> = {
       BILLING_ENABLED: "true",
       DEFAULT_PLAN_SLUG: "free",
       STRIPE_SECRET_KEY: "sk_test_123",
     };
-    return values[key] ?? defaultValue;
+    return values[key as string] ?? (defaultValue as string | undefined);
   }),
 };
 
@@ -183,13 +182,13 @@ describe("BillingService", () => {
 
   it("getUsage does not charge a seat for the workspace creator", async () => {
     // Only the owner who created the workspace: no team members used.
-    mockPrisma.member.count.mockImplementation(({ where }: { where: { role: unknown } }) =>
-      Promise.resolve(where.role === "member" ? 0 : 1),
+    mockPrisma.member.count.mockImplementation((args: unknown) =>
+      Promise.resolve((args as { where: { role: unknown } }).where.role === "member" ? 0 : 1),
     );
     expect((await service.getUsage("org-1")).members).toBe(0);
     // The creator plus one invited owner and one admin: two seats used.
-    mockPrisma.member.count.mockImplementation(({ where }: { where: { role: unknown } }) =>
-      Promise.resolve(where.role === "member" ? 0 : 3),
+    mockPrisma.member.count.mockImplementation((args: unknown) =>
+      Promise.resolve((args as { where: { role: unknown } }).where.role === "member" ? 0 : 3),
     );
     expect((await service.getUsage("org-1")).members).toBe(2);
     mockPrisma.member.count.mockImplementation(() => Promise.resolve(1));
@@ -223,9 +222,9 @@ describe("BillingService", () => {
   });
 
   it("initializeFreePlan skips when billing disabled", async () => {
-    mockConfig.get.mockImplementation((key: string, defaultValue?: string) => {
+    mockConfig.get.mockImplementation((key: unknown, defaultValue?: unknown): string | undefined => {
       if (key === "BILLING_ENABLED") return "false";
-      return defaultValue;
+      return defaultValue as string | undefined;
     });
     await service.initializeFreePlan("org-1");
     expect(mockPrisma.subscription.create).not.toHaveBeenCalled();

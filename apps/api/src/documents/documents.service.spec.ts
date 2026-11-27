@@ -21,7 +21,7 @@ import { tmpdir } from "os";
 const TEMP_PDF = join(tmpdir(), `atrium-documents-spec-${process.pid}.pdf`);
 writeFileSync(TEMP_PDF, "%PDF-fake");
 
-const mockBilling = { hasFeature: mock(() => Promise.resolve(true)) };
+const mockBilling = { hasFeature: mock((): Promise<unknown> => Promise.resolve(true)) };
 
 // ---------------------------------------------------------------------------
 // Minimal shared fixtures
@@ -91,70 +91,62 @@ function makeField(overrides: Record<string, unknown> = {}) {
 
 const mockPrisma = {
   project: {
-    findFirst: mock(() => Promise.resolve({ id: PROJECT_ID, organizationId: ORG })),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: PROJECT_ID, organizationId: ORG })),
   },
   document: {
-    findFirst: mock(() => Promise.resolve(makeDoc())),
-    findUnique: mock(() => Promise.resolve(makeDoc())),
-    create: mock((args: { data: Record<string, unknown>; include?: unknown }) =>
-      Promise.resolve({ id: DOC_ID, ...args.data, signatureFields: [], responses: [], file: {}, signedFile: null }),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(makeDoc())),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(makeDoc())),
+    create: mock((args: { data: Record<string, unknown>; include?: unknown }): Promise<unknown> => Promise.resolve({ id: DOC_ID, ...args.data, signatureFields: [], responses: [], file: {}, signedFile: null }),
     ),
-    update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown>; include?: unknown }) =>
-      Promise.resolve({ id: args.where.id, ...args.data, signatureFields: [], responses: [], file: {}, signedFile: null }),
+    update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown>; include?: unknown }): Promise<unknown> => Promise.resolve({ id: args.where.id, ...args.data, signatureFields: [], responses: [], file: {}, signedFile: null }),
     ),
-    count: mock(() => Promise.resolve(0)),
-    findMany: mock(() => Promise.resolve([])),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
   documentResponse: {
-    findFirst: mock(() => Promise.resolve(null)),
-    findMany: mock(() => Promise.resolve([])),
-    create: mock((args: { data: Record<string, unknown> }) =>
-      Promise.resolve({ id: "resp-1", ...args.data }),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
+    create: mock((args: { data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: "resp-1", ...args.data }),
     ),
-    update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown> }) =>
-      Promise.resolve({ id: args.where.id, ...args.data }),
+    update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: args.where.id, ...args.data }),
     ),
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   documentAuditEvent: {
-    findFirst: mock(() => Promise.resolve(null)),
-    create: mock(() => Promise.resolve({ id: "audit-1" })),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: "audit-1" })),
   },
   documentAccessToken: {
-    findUnique: mock(() => Promise.resolve(null)),
-    findFirst: mock(() => Promise.resolve(null)),
-    findMany: mock(() => Promise.resolve([])),
-    create: mock((args: { data: Record<string, unknown> }) =>
-      Promise.resolve({ id: "token-1", ...args.data }),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
+    create: mock((args: { data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: "token-1", ...args.data }),
     ),
-    update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown> }) =>
-      Promise.resolve({ id: args.where.id, ...args.data }),
+    update: mock((args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: args.where.id, ...args.data }),
     ),
   },
   documentVersion: {
-    create: mock((args: { data: Record<string, unknown> }) =>
-      Promise.resolve({ id: "ver-1", ...args.data }),
+    create: mock((args: { data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: "ver-1", ...args.data }),
     ),
-    findFirst: mock(() => Promise.resolve(null)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
   },
   projectClient: {
-    findFirst: mock(() => Promise.resolve(null)),
-    count: mock(() => Promise.resolve(1)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
+    count: mock((): Promise<unknown> => Promise.resolve(1)),
   },
   signatureField: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
-    createMany: mock(() => Promise.resolve({ count: 1 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   user: {
-    findUnique: mock(() => Promise.resolve({ id: CLIENT_USER, name: "Test Client" })),
-    findMany: mock(() => Promise.resolve([])),
+    findUnique: mock((): Promise<unknown> => Promise.resolve({ id: CLIENT_USER, name: "Test Client" })),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
   file: {
-    create: mock((args: { data: Record<string, unknown> }) =>
-      Promise.resolve({ id: "signed-file-1", ...args.data }),
+    create: mock((args: { data: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: "signed-file-1", ...args.data }),
     ),
-    delete: mock(() => Promise.resolve()),
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    delete: mock((): Promise<unknown> => Promise.resolve()),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   // $transaction executes the callback immediately with the same mock prisma object
   $transaction: mock(
@@ -165,12 +157,12 @@ const mockPrisma = {
       return Promise.all(fnOrArray as Promise<unknown>[]);
     },
   ),
-  $queryRawUnsafe: mock(() => Promise.resolve([])),
+  $queryRawUnsafe: mock((): Promise<unknown[]> => Promise.resolve([])),
 };
 
 const mockStorage: Partial<StorageProvider> = {
-  upload: mock(() => Promise.resolve()),
-  delete: mock(() => Promise.resolve()),
+  upload: mock((): Promise<void> => Promise.resolve()),
+  delete: mock((): Promise<void> => Promise.resolve()),
 };
 
 const mockNotifications = {
@@ -180,7 +172,7 @@ const mockNotifications = {
 };
 
 const mockActivityService = {
-  create: mock(() => Promise.resolve()),
+  create: mock((_args: unknown): Promise<unknown> => Promise.resolve()),
 };
 
 const mockAuditService = {
@@ -1100,7 +1092,7 @@ describe("DocumentsService", () => {
 
       // $transaction calls the callback with mockPrisma as tx
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(doc));
@@ -1115,7 +1107,7 @@ describe("DocumentsService", () => {
 
     it("throws NotFoundException when document not found in transaction", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));
@@ -1651,7 +1643,7 @@ describe("DocumentsService", () => {
      *  override specific mocks to trigger error paths. */
     function setupUploadVersion(docOverrides: Record<string, unknown> = {}) {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(
@@ -1672,7 +1664,7 @@ describe("DocumentsService", () => {
 
     it("throws NotFoundException if document not found", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));
@@ -1688,7 +1680,7 @@ describe("DocumentsService", () => {
 
     it("throws BadRequestException for voided documents", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(
@@ -1706,7 +1698,7 @@ describe("DocumentsService", () => {
 
     it("throws BadRequestException for expired documents", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(
@@ -1724,7 +1716,7 @@ describe("DocumentsService", () => {
 
     it("throws BadRequestException for non-PDF file on signature-required documents", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(
@@ -1828,7 +1820,8 @@ describe("DocumentsService", () => {
         order.push("upload");
         return Promise.resolve();
       });
-      mockPrisma.$transaction.mockImplementation((fn: (tx: typeof mockPrisma) => unknown) => {
+      mockPrisma.$transaction.mockImplementation((fnOrArray: unknown) => {
+        const fn = fnOrArray as (tx: typeof mockPrisma) => unknown;
         order.push("transaction");
         return fn(mockPrisma);
       });
@@ -1881,7 +1874,7 @@ describe("DocumentsService", () => {
   describe("linkVersion()", () => {
     function setupLinkDoc(overrides: Record<string, unknown> = {}) {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(makeDoc({
@@ -1946,7 +1939,7 @@ describe("DocumentsService", () => {
 
     function setupRestoreVersion(docOverrides: Record<string, unknown> = {}) {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(
@@ -1967,7 +1960,7 @@ describe("DocumentsService", () => {
 
     it("throws NotFoundException if document not found", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(Promise.resolve(null));
@@ -1983,7 +1976,7 @@ describe("DocumentsService", () => {
 
     it("throws NotFoundException if version not found", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(
@@ -2002,7 +1995,7 @@ describe("DocumentsService", () => {
 
     it("throws BadRequestException for voided documents", async () => {
       mockPrisma.$transaction.mockImplementation(
-        (fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma),
+        (fnOrArray: unknown) => (fnOrArray as (tx: typeof mockPrisma) => unknown)(mockPrisma),
       );
       mockPrisma.$queryRawUnsafe.mockReturnValue(Promise.resolve([]));
       mockPrisma.document.findFirst.mockReturnValue(

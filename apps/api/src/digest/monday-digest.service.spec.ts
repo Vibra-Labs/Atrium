@@ -8,16 +8,16 @@ const NEXT_WEEK = new Date("2026-10-19T08:00:00Z");
 function build(data: { tasks?: unknown[]; taskCount?: number; notes?: unknown[]; noteCount?: number; invoices?: unknown[]; contacts?: unknown[]; contactCount?: number } = {}) {
   const prisma = {
     task: {
-      findMany: mock(() => Promise.resolve(data.tasks ?? [])),
+      findMany: mock((_args: unknown) => Promise.resolve(data.tasks ?? [])),
       count: mock(() => Promise.resolve(data.taskCount ?? (data.tasks ?? []).length)),
     },
     notification: {
-      findMany: mock(() => Promise.resolve(data.notes ?? [])),
+      findMany: mock((_args: unknown) => Promise.resolve(data.notes ?? [])),
       count: mock(() => Promise.resolve(data.noteCount ?? (data.notes ?? []).length)),
     },
-    invoice: { findMany: mock(() => Promise.resolve(data.invoices ?? [])) },
+    invoice: { findMany: mock((_args: unknown) => Promise.resolve(data.invoices ?? [])) },
     contact: {
-      findMany: mock(() => Promise.resolve(data.contacts ?? [])),
+      findMany: mock((_args: unknown) => Promise.resolve(data.contacts ?? [])),
       count: mock(() => Promise.resolve(data.contactCount ?? (data.contacts ?? []).length)),
     },
   };

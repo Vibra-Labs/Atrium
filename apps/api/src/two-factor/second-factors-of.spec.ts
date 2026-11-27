@@ -14,7 +14,7 @@ describe("secondFactorsOf", () => {
 
   it("treats a missing user as having nothing", async () => {
     const prisma = {
-      user: { findUnique: mock(() => Promise.resolve(null)) },
+      user: { findUnique: mock((): Promise<unknown> => Promise.resolve(null)) },
       passkey: { count: mock(() => Promise.resolve(0)) },
     } as unknown as PrismaService;
     expect(await secondFactorsOf(prisma, "u1")).toEqual({ totp: false, passkeys: 0 });

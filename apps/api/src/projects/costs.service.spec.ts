@@ -45,8 +45,8 @@ const prisma = {
     update: mock((args: Args) => Promise.resolve({ ...line, ...args.data })),
     delete: mock(() => Promise.resolve(line)),
   },
-  timeEntry: { aggregate: mock(() => Promise.resolve({ _sum: { durationSec: 5400 } })) },
-  $queryRaw: mock(() => Promise.resolve([])),
+  timeEntry: { aggregate: mock((_args: unknown) => Promise.resolve({ _sum: { durationSec: 5400 } })) },
+  $queryRaw: mock((): Promise<unknown[]> => Promise.resolve([])),
   $transaction: mock((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
 };
 

@@ -16,11 +16,11 @@ interface Fakes {
 
 function fakes(): Fakes {
   const failures = new Map<string, number>();
-  const sessionUpdate = mock(() => Promise.resolve({}));
-  const sessionDelete = mock(() => Promise.resolve({}));
+  const sessionUpdate = mock((): Promise<unknown> => Promise.resolve({}));
+  const sessionDelete = mock((): Promise<unknown> => Promise.resolve({}));
   const forgetSession = mock(() => undefined);
   const forgetUser = mock(() => undefined);
-  const sendAlert = mock(() => Promise.resolve());
+  const sendAlert = mock((_userId: string, _alert: unknown): Promise<void> => Promise.resolve());
   const deps: TwoFactorHookDeps = {
     prisma: {
       session: { update: sessionUpdate, deleteMany: sessionDelete },
@@ -66,7 +66,7 @@ function ctx(
       session: withSession
         ? { session: { id: "s1", token: "t1", secondFactor }, user: { id: "u1", twoFactorEnabled: hasTotp } }
         : null,
-      newSession: newSession ? { session: { token: "t2" }, user: { id: "u1" } } : null,
+      newSession: newSession ? ({ session: { token: "t2" }, user: { id: "u1" } } as never) : null,
     },
   };
 }

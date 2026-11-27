@@ -5,7 +5,7 @@ import type { PrismaService } from "../prisma/prisma.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 
 const mockNotifications = {
-  notifyComment: mock(() => Promise.resolve()),
+  notifyComment: mock((): Promise<unknown> => Promise.resolve()),
 } as unknown as NotificationsService;
 
 // ---------------------------------------------------------------------------
@@ -54,25 +54,24 @@ interface PrismaArgs {
 
 const mockPrisma = {
   projectUpdate: {
-    findFirst: mock(() => Promise.resolve({ projectId: PROJECT_ID })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ projectId: PROJECT_ID })),
   },
   task: {
-    findFirst: mock(() => Promise.resolve({ projectId: PROJECT_ID })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ projectId: PROJECT_ID })),
   },
   projectClient: {
-    findFirst: mock(() => Promise.resolve({ projectId: PROJECT_ID, userId: USER })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ projectId: PROJECT_ID, userId: USER })),
   },
   comment: {
-    create: mock((args: PrismaArgs) =>
-      Promise.resolve({ id: COMMENT_ID, ...args.data }),
+    create: mock((args: PrismaArgs): Promise<unknown> => Promise.resolve({ id: COMMENT_ID, ...args.data }),
     ),
-    findMany: mock(() => Promise.resolve([])),
-    count: mock(() => Promise.resolve(0)),
-    findFirst: mock(() => Promise.resolve(null)),
-    delete: mock(() => Promise.resolve({ id: COMMENT_ID })),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
+    count: mock((): Promise<unknown> => Promise.resolve(0)),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    delete: mock((): Promise<unknown> => Promise.resolve({ id: COMMENT_ID })),
   },
   user: {
-    findMany: mock(() => Promise.resolve([])),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
   },
 };
 
@@ -951,7 +950,7 @@ describeCtrl("CommentsController", () => {
       role,
     );
 
-    expectCtrl(result).toEqual(created);
+    expectCtrl<unknown>(result).toEqual(created);
   });
 
   itCtrl("createOnTask returns the created comment from CommentsService", async () => {
@@ -966,7 +965,7 @@ describeCtrl("CommentsController", () => {
       role,
     );
 
-    expectCtrl(result).toEqual(created);
+    expectCtrl<unknown>(result).toEqual(created);
   });
 
   itCtrl("findByUpdate returns the paginated result from CommentsService", async () => {

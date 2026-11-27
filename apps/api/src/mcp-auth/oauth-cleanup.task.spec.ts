@@ -1,15 +1,18 @@
 import { describe, expect, it, mock } from "bun:test";
 import { OAuthCleanupTask } from "./oauth-cleanup.task";
+import type { ClientPruneWhere, ExpiresAtWhere } from "../common/testing/prisma-args";
 
-function build(overrides: { appDelete?: () => Promise<unknown> } = {}) {
+function build(overrides: { appDelete?: (args: unknown) => Promise<unknown> } = {}) {
   const prisma = {
-    mcpGrant: { findMany: mock(() => Promise.resolve([{ clientId: "kept-by-grant" }])) },
+    mcpGrant: { findMany: mock((): Promise<unknown> => Promise.resolve([{ clientId: "kept-by-grant" }])) },
     oauthClient: {
-      deleteMany: mock(overrides.appDelete ?? (() => Promise.resolve({ count: 2 }))),
+      deleteMany: mock(
+        overrides.appDelete ?? ((_args: unknown): Promise<unknown> => Promise.resolve({ count: 2 })),
+      ),
     },
-    oauthAccessToken: { deleteMany: mock(() => Promise.resolve({ count: 3 })) },
-    oauthRefreshToken: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
-    mcpPendingGrant: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
+    oauthAccessToken: { deleteMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 3 })) },
+    oauthRefreshToken: { deleteMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 1 })) },
+    mcpPendingGrant: { deleteMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 1 })) },
   };
   const task = new OAuthCleanupTask(prisma as never);
   // The failure case logs an error on purpose; keep the output pristine.
@@ -25,7 +28,7 @@ describe("OAuthCleanupTask.pruneUnusedClients", () => {
     const { prisma, task } = build();
     await task.pruneUnusedClients();
 
-    const where = prisma.oauthClient.deleteMany.mock.calls[0][0].where;
+    const where = (prisma.oauthClient.deleteMany.mock.calls[0][0] as ClientPruneWhere).where;
     expect(where.accessTokens).toEqual({ none: {} });
     expect(where.refreshTokens).toEqual({ none: {} });
     // A registration the user once approved is never pruned: a client that
@@ -45,7 +48,7 @@ describe("OAuthCleanupTask.pruneExpiredTokens", () => {
     await task.pruneExpiredTokens();
 
     for (const table of [prisma.oauthAccessToken, prisma.oauthRefreshToken]) {
-      const where = table.deleteMany.mock.calls[0][0].where;
+      const where = (table.deleteMany.mock.calls[0][0] as ExpiresAtWhere).where;
       const skewMs: number = Date.now() - where.expiresAt.lt.getTime();
       expect(skewMs).toBeGreaterThanOrEqual(0);
       expect(skewMs).toBeLessThan(5_000);
@@ -58,7 +61,7 @@ describe("OAuthCleanupTask.pruneExpiredPendingGrants", () => {
     const { prisma, task } = build();
     await task.pruneExpiredPendingGrants();
 
-    const where = prisma.mcpPendingGrant.deleteMany.mock.calls[0][0].where;
+    const where = (prisma.mcpPendingGrant.deleteMany.mock.calls[0][0] as ExpiresAtWhere).where;
     const skewMs: number = Date.now() - where.expiresAt.lt.getTime();
     expect(skewMs).toBeGreaterThanOrEqual(0);
     expect(skewMs).toBeLessThan(5_000);

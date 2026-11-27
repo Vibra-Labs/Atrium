@@ -19,9 +19,9 @@ function inZone(timezone: string) {
 function build(opts: { due?: unknown[]; claimCount?: number; sent?: boolean; members?: unknown[] } = {}) {
   const prisma = {
     member: {
-      findMany: mock(() => Promise.resolve(opts.members ?? [OWNER])),
+      findMany: mock((_args: unknown) => Promise.resolve(opts.members ?? [OWNER])),
       updateMany: mock(() => Promise.resolve({ count: opts.claimCount ?? 1 })),
-      update: mock(() => Promise.resolve({})),
+      update: mock((): Promise<unknown> => Promise.resolve({})),
     },
   };
   const weekly = {
@@ -34,7 +34,7 @@ function build(opts: { due?: unknown[]; claimCount?: number; sent?: boolean; mem
       ),
     ),
   };
-  const mail = { send: mock(() => Promise.resolve({ sent: opts.sent ?? true, viaOrgConfig: false })) };
+  const mail = { send: mock((_args: unknown) => Promise.resolve({ sent: opts.sent ?? true, viaOrgConfig: false })) };
   const config = { get: (k: string, fallback?: string) => (k === "WEB_URL" ? "https://app.atrium.test" : fallback) };
   const task = new WeeklyReminderTask(prisma as never, weekly as never, mail as never, config as never, fakeEmailRenderer());
   return { task, prisma, weekly, mail };

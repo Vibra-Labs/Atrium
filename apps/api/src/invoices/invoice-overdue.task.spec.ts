@@ -13,7 +13,7 @@ interface UpdateManyArgs {
 function makeBasePrisma() {
   return {
     invoice: {
-      updateMany: mock(() => Promise.resolve({ count: 0 })),
+      updateMany: mock((_args: unknown) => Promise.resolve({ count: 0 })),
     },
   };
 }

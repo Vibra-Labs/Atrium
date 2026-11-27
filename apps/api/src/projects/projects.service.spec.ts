@@ -10,55 +10,52 @@ interface PrismaArgs {
 
 const mockPrisma = {
   project: {
-    findMany: mock(() => Promise.resolve([])),
-    findFirst: mock(() => Promise.resolve(null)),
-    count: mock(() => Promise.resolve(0)),
-    findUnique: mock((args: PrismaArgs) =>
-      Promise.resolve({ id: args.where?.id, name: "Test", organizationId: "org-1", clients: [] }),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
+    count: mock((_args: unknown): Promise<unknown> => Promise.resolve(0)),
+    findUnique: mock((args: PrismaArgs): Promise<unknown> => Promise.resolve({ id: args.where?.id, name: "Test", organizationId: "org-1", clients: [] }),
     ),
-    create: mock((args: PrismaArgs) =>
-      Promise.resolve({ id: "new-id", ...args.data, clients: [] }),
+    create: mock((args: PrismaArgs): Promise<unknown> => Promise.resolve({ id: "new-id", ...args.data, clients: [] }),
     ),
-    update: mock((args: PrismaArgs) =>
-      Promise.resolve({ id: args.where?.id, ...args.data, clients: [] }),
+    update: mock((args: PrismaArgs): Promise<unknown> => Promise.resolve({ id: args.where?.id, ...args.data, clients: [] }),
     ),
-    updateMany: mock(() => Promise.resolve({ count: 1 })),
-    delete: mock((args: PrismaArgs) => Promise.resolve({ id: args.where?.id })),
-    deleteMany: mock(() => Promise.resolve({ count: 1 })),
+    updateMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
+    delete: mock((args: PrismaArgs): Promise<unknown> => Promise.resolve({ id: args.where?.id })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   projectClient: {
-    findMany: mock(() => Promise.resolve([] as { userId: string }[])),
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
-    createMany: mock(() => Promise.resolve({ count: 0 })),
+    findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([] as { userId: string }[])),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   projectLabel: {
-    createMany: mock(() => Promise.resolve({ count: 0 })),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   document: {
-    count: mock(() => Promise.resolve(0)),
+    count: mock((_args: unknown): Promise<unknown> => Promise.resolve(0)),
   },
   task: {
-    groupBy: mock(() => Promise.resolve([])),
-    createMany: mock(() => Promise.resolve({ count: 0 })),
+    groupBy: mock((): Promise<unknown[]> => Promise.resolve([])),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   taskLabel: {
-    createMany: mock(() => Promise.resolve({ count: 0 })),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   decisionOption: {
-    createMany: mock(() => Promise.resolve({ count: 0 })),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   projectStatus: {
-    findMany: mock(() => Promise.resolve([])),
-    findFirst: mock(() => Promise.resolve(null)),
+    findMany: mock((_args: unknown): Promise<unknown[]> => Promise.resolve([])),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
   },
   member: {
-    count: mock(() => Promise.resolve(2)),
+    count: mock((_args: unknown): Promise<unknown> => Promise.resolve(2)),
   },
   organization: {
-    findUnique: mock(() => Promise.resolve({ name: "Acme", members: [] })),
+    findUnique: mock((_args: unknown): Promise<unknown> => Promise.resolve({ name: "Acme", members: [] })),
   },
-  $queryRaw: mock(() => Promise.resolve([] as unknown[])),
-  $executeRaw: mock((strings: TemplateStringsArray) => Promise.resolve(strings.length)),
+  $queryRaw: mock((): Promise<unknown> => Promise.resolve([] as unknown[])),
+  $executeRaw: mock((strings: TemplateStringsArray): Promise<unknown> => Promise.resolve(strings.length)),
   $transaction: mock((arg: unknown) => {
     if (typeof arg === "function") {
       return (arg as (tx: typeof mockPrisma) => Promise<unknown>)(mockPrisma);
@@ -68,13 +65,12 @@ const mockPrisma = {
 };
 
 const mockContactSync = {
-  linkProjectClients: mock(() => Promise.resolve()),
-  endProjectClients: mock(() => Promise.resolve()),
+  linkProjectClients: mock((): Promise<unknown> => Promise.resolve()),
+  endProjectClients: mock((): Promise<unknown> => Promise.resolve()),
 };
 
 const mockStages = {
-  pipelineFor: mock((_org: string, _id: string | null) =>
-    Promise.resolve({ id: "pl-1", name: "Commercial", stages: [{ slug: "intro", name: "Intro" }] }),
+  pipelineFor: mock((_org: string, _id: string | null): Promise<unknown> => Promise.resolve({ id: "pl-1", name: "Commercial", stages: [{ slug: "intro", name: "Intro" }] }),
   ),
 };
 
@@ -106,17 +102,17 @@ describe("ProjectsService", () => {
       { id: "1", name: "Test", organizationId: "org-1", clients: [] },
     ];
     mockPrisma.project.findMany.mockReturnValue(Promise.resolve(projects));
-    mockPrisma.project.count = mock(() => Promise.resolve(1));
+    mockPrisma.project.count = mock((): Promise<unknown> => Promise.resolve(1));
 
     const result = await service.findAll("org-1", {});
-    expect(result.data).toEqual([{ ...projects[0], taskCount: 0, completedTaskCount: 0 }]);
+    expect<unknown>(result.data).toEqual([{ ...projects[0], taskCount: 0, completedTaskCount: 0 }]);
     expect(result.meta.total).toBe(1);
     expect(result.meta.page).toBe(1);
   });
 
   it("findAll counts task progress in one query instead of loading every task", async () => {
     mockPrisma.project.findMany.mockReturnValue(Promise.resolve([{ id: "p1", clients: [] }]));
-    mockPrisma.project.count = mock(() => Promise.resolve(1));
+    mockPrisma.project.count = mock((): Promise<unknown> => Promise.resolve(1));
     mockPrisma.task.groupBy.mockReturnValueOnce(
       Promise.resolve([
         { projectId: "p1", status: "done", _count: { _all: 3 }, _max: { updatedAt: null } },
@@ -135,7 +131,7 @@ describe("ProjectsService", () => {
     mockPrisma.project.findMany.mockReturnValue(
       Promise.resolve([{ id: "p1", name: "Site", _count: { documents: 2 }, updates: [], files: [] }]),
     );
-    mockPrisma.project.count = mock(() => Promise.resolve(1));
+    mockPrisma.project.count = mock((): Promise<unknown> => Promise.resolve(1));
     const res = await service.findByClient("client-1", "org-1", {});
     expect(res.data[0]).toEqual(expect.objectContaining({ id: "p1", pendingApprovals: 2 }));
     expect(res.data[0]).not.toHaveProperty("_count");
@@ -143,7 +139,7 @@ describe("ProjectsService", () => {
 
   it("findByClient limits a client to their own projects", async () => {
     mockPrisma.project.findMany.mockReturnValue(Promise.resolve([]));
-    mockPrisma.project.count = mock(() => Promise.resolve(0));
+    mockPrisma.project.count = mock((): Promise<unknown> => Promise.resolve(0));
     await service.findByClient("client-1", "org-1", {});
     const args = mockPrisma.project.findMany.mock.calls.at(-1)?.[0] as { where: Record<string, unknown> };
     expect(args.where.clients).toEqual({ some: { userId: "client-1" } });
@@ -151,7 +147,7 @@ describe("ProjectsService", () => {
 
   it("findByClient shows an owner or admin every project in the workspace", async () => {
     mockPrisma.project.findMany.mockReturnValue(Promise.resolve([]));
-    mockPrisma.project.count = mock(() => Promise.resolve(0));
+    mockPrisma.project.count = mock((): Promise<unknown> => Promise.resolve(0));
     await service.findByClient("owner-1", "org-1", {}, true);
     const args = mockPrisma.project.findMany.mock.calls.at(-1)?.[0] as { where: Record<string, unknown> };
     expect(args.where).not.toHaveProperty("clients");
@@ -176,8 +172,7 @@ describe("ProjectsService", () => {
   });
 
   it("getStats adds deliverables to review and documents to sign into waitingOnClients", async () => {
-    mockPrisma.project.count = mock((args: { where: { status?: unknown } }) =>
-      Promise.resolve(args.where.status === "in_review" ? 2 : 7),
+    mockPrisma.project.count = mock((args: { where: { status?: unknown } }): Promise<unknown> => Promise.resolve(args.where.status === "in_review" ? 2 : 7),
     ) as never;
     mockPrisma.document.count.mockImplementation(((args: { where: { type?: unknown } }) =>
       Promise.resolve(args.where.type === "deliverable" ? 3 : 4)) as never);
@@ -191,7 +186,7 @@ describe("ProjectsService", () => {
   });
 
   it("getStats counts client-waiting documents in live projects, each document once", async () => {
-    mockPrisma.project.count = mock(() => Promise.resolve(0));
+    mockPrisma.project.count = mock((): Promise<unknown> => Promise.resolve(0));
     mockPrisma.document.count.mockClear();
     await service.getStats("org-1");
     const wheres = mockPrisma.document.count.mock.calls.map(
@@ -462,7 +457,7 @@ describe("ProjectsService", () => {
 
     const result = await service.findOneByClient("proj-active", "user-client", "org-1");
 
-    expect(result).toEqual({
+    expect<unknown>(result).toEqual({
       ...project,
       organization: { name: "Acme", members: [] },
       openVotes: 0,
@@ -491,7 +486,7 @@ describe("ProjectsService", () => {
 
     const result = await service.findOneByClient("p1", "user-client", "org-1");
 
-    expect(result).toEqual({
+    expect<unknown>(result).toEqual({
       id: "p1",
       files: [],
       organization: { name: "Acme", members: [] },
@@ -609,7 +604,7 @@ describe("ProjectsService", () => {
 
       // Tasks copied with status/assignment state reset
       expect(mockPrisma.task.createMany).toHaveBeenCalledTimes(1);
-      const taskRows = (mockPrisma.task.createMany.mock.calls[0][0] as PrismaArgs).data as Array<Record<string, unknown>>;
+      const taskRows = (mockPrisma.task.createMany.mock.calls[0][0] as PrismaArgs).data as unknown as Array<Record<string, unknown>>;
       expect(taskRows.length).toBe(2);
       const firstTaskData = taskRows[0];
       expect(firstTaskData.status).toBe("open");
@@ -629,14 +624,14 @@ describe("ProjectsService", () => {
       // Decision options copied for the second task
       expect(mockPrisma.decisionOption.createMany).toHaveBeenCalledTimes(1);
       const optCall = mockPrisma.decisionOption.createMany.mock.calls[0][0] as PrismaArgs;
-      const optData = optCall.data as Array<Record<string, unknown>>;
+      const optData = optCall.data as unknown as Array<Record<string, unknown>>;
       expect(optData.map((o) => o.label)).toEqual(["Option A", "Option B"]);
       expect(optData.every((o) => o.taskId === secondId)).toBe(true);
 
       // Task label copied for the first task only
       expect(mockPrisma.taskLabel.createMany).toHaveBeenCalledTimes(1);
 
-      expect(result).toEqual({ id: "new-1", name: "Copy", organizationId: "org-1", clients: [] });
+      expect<unknown>(result).toEqual({ id: "new-1", name: "Copy", organizationId: "org-1", clients: [] });
     });
 
     it("skips tasks when includeTasks is false", async () => {

@@ -5,7 +5,7 @@ import { resetSecondFactors } from "./reset-second-factors";
 function fakePrisma(hadTwoFactor: boolean) {
   const tx = {
     twoFactor: { deleteMany: mock(() => Promise.resolve({ count: hadTwoFactor ? 1 : 0 })) },
-    user: { update: mock(() => Promise.resolve({})) },
+    user: { update: mock((): Promise<unknown> => Promise.resolve({})) },
     session: { deleteMany: mock(() => Promise.resolve({ count: 2 })) },
     verification: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
     passkey: {

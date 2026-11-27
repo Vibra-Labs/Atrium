@@ -49,16 +49,14 @@ mock.module("pdfkit", () => {
 function makeBasePrisma() {
   return {
     invoice: {
-      findFirst: mock(() => Promise.resolve(null)),
+      findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
     },
     organization: {
-      findUnique: mock(() =>
-        Promise.resolve({ id: "org-1", name: "Acme Corp" }),
+      findUnique: mock((): Promise<unknown> => Promise.resolve({ id: "org-1", name: "Acme Corp" }),
       ),
     },
     branding: {
-      findUnique: mock(() =>
-        Promise.resolve({ primaryColor: "#006b68" }),
+      findUnique: mock((): Promise<unknown> => Promise.resolve({ primaryColor: "#006b68" }),
       ),
     },
   };

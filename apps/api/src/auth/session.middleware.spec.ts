@@ -18,7 +18,7 @@ function config(oauthEnabled = "true") {
 }
 
 function build(resolveResult: unknown = resolved, oauthResult: unknown = null, oauthEnabled = "true") {
-  const getSession = mock(() => Promise.resolve(null));
+  const getSession = mock((): Promise<unknown> => Promise.resolve(null));
   const authService = { auth: { api: { getSession } } };
   const apiKeys = { resolve: mock(() => Promise.resolve(resolveResult)) };
   const mcpAuth = { resolve: mock(() => Promise.resolve(oauthResult)) };
@@ -255,9 +255,9 @@ describe("SessionMiddleware bearer cache isolation", () => {
 
   it("leaves the request unauthenticated and calls next once when resolve rejects", async () => {
     const mw = new SessionMiddleware(
-      { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
+      { auth: { api: { getSession: mock((): Promise<unknown> => Promise.resolve(null)) } } } as never,
       { resolve: mock(() => Promise.reject(new Error("db down"))) } as never,
-      { resolve: mock(() => Promise.resolve(null)) } as never,
+      { resolve: mock((): Promise<unknown> => Promise.resolve(null)) } as never,
       config() as never,
       lastSeen() as never,
       {} as never,
@@ -386,9 +386,9 @@ describe("SessionMiddleware failed-key limiter at capacity", () => {
   it("records a failure when resolve rejects", async () => {
     const resolve = mock(() => Promise.reject(new Error("db down")));
     const mw = new SessionMiddleware(
-      { auth: { api: { getSession: mock(() => Promise.resolve(null)) } } } as never,
+      { auth: { api: { getSession: mock((): Promise<unknown> => Promise.resolve(null)) } } } as never,
       { resolve } as never,
-      { resolve: mock(() => Promise.resolve(null)) } as never,
+      { resolve: mock((): Promise<unknown> => Promise.resolve(null)) } as never,
       config() as never,
       lastSeen() as never,
       {} as never,
@@ -432,7 +432,7 @@ describe("SessionMiddleware cookie session", () => {
         session: { id: "s1", userId: "u1", activeOrganizationId: "org1", ...sessionExtra },
       }),
     );
-    const getFullOrganization = mock(() => Promise.resolve(null));
+    const getFullOrganization = mock((): Promise<unknown> => Promise.resolve(null));
     const prisma = {
       organization: { findUnique: mock(() => Promise.resolve(resolved.organization)) },
       member: { findFirst: mock(() => Promise.resolve(memberRow)) },
@@ -444,8 +444,8 @@ describe("SessionMiddleware cookie session", () => {
     const tracker = lastSeen();
     const mw = new SessionMiddleware(
       { auth: { api: { getSession, getFullOrganization } } } as never,
-      { resolve: mock(() => Promise.resolve(null)) } as never,
-      { resolve: mock(() => Promise.resolve(null)) } as never,
+      { resolve: mock((): Promise<unknown> => Promise.resolve(null)) } as never,
+      { resolve: mock((): Promise<unknown> => Promise.resolve(null)) } as never,
       config() as never,
       tracker as never,
       prisma as never,

@@ -22,7 +22,7 @@ describe("BillingService.assertPlanLimit", () => {
 
   it("passes when the org has no subscription", async () => {
     const service = build("true", 99, 1);
-    service.getSubscription = mock(() => Promise.resolve(null)) as never;
+    service.getSubscription = mock((): Promise<unknown> => Promise.resolve(null)) as never;
     await expect(service.assertPlanLimit("org1", "projects")).resolves.toBeUndefined();
   });
 

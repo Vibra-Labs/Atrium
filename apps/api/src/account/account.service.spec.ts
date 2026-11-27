@@ -6,7 +6,7 @@ import type { StorageProvider } from "../files/storage/storage.interface";
 // ---------------------------------------------------------------------------
 // Mock "better-auth/crypto" before importing the service
 // ---------------------------------------------------------------------------
-const mockVerifyPassword = mock(() => Promise.resolve(true));
+const mockVerifyPassword = mock((): Promise<unknown> => Promise.resolve(true));
 
 mock.module("better-auth/crypto", () => ({
   verifyPassword: mockVerifyPassword,
@@ -20,56 +20,56 @@ import { AccountService } from "./account.service";
 // ---------------------------------------------------------------------------
 const mockPrisma = {
   account: {
-    findFirst: mock(() => Promise.resolve({ password: "hashed-pw" })),
+    findFirst: mock((): Promise<unknown> => Promise.resolve({ password: "hashed-pw" })),
   },
   member: {
-    findMany: mock(() => Promise.resolve([])),
-    groupBy: mock(() => Promise.resolve([])),
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
+    groupBy: mock((): Promise<unknown[]> => Promise.resolve([])),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   file: {
-    findMany: mock(() => Promise.resolve([])),
-    updateMany: mock(() => Promise.resolve({ count: 0 })),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
+    updateMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   project: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   projectStatus: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   clientProfile: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   branding: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   invoice: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   subscription: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   notification: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   pushSubscription: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   invitation: {
-    deleteMany: mock(() => Promise.resolve({ count: 0 })),
+    deleteMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   projectUpdate: {
-    updateMany: mock(() => Promise.resolve({ count: 0 })),
+    updateMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   projectNote: {
-    updateMany: mock(() => Promise.resolve({ count: 0 })),
+    updateMany: mock((): Promise<unknown> => Promise.resolve({ count: 0 })),
   },
   organization: {
-    delete: mock(() => Promise.resolve()),
+    delete: mock((): Promise<unknown> => Promise.resolve()),
   },
   user: {
-    delete: mock(() => Promise.resolve()),
-    findUnique: mock(() => Promise.resolve({ email: "jane@acme.com" })),
+    delete: mock((): Promise<unknown> => Promise.resolve()),
+    findUnique: mock((): Promise<unknown> => Promise.resolve({ email: "jane@acme.com" })),
   },
   $transaction: mock((fn: (prisma: typeof mockPrisma) => unknown) => fn(mockPrisma)),
 };
@@ -78,10 +78,10 @@ const mockPrisma = {
 // Mock StorageProvider
 // ---------------------------------------------------------------------------
 const mockStorage = {
-  upload: mock(() => Promise.resolve()),
-  download: mock(() => Promise.resolve({ body: null, contentType: "" })),
-  getSignedUrl: mock(() => Promise.resolve("")),
-  delete: mock(() => Promise.resolve()),
+  upload: mock((): Promise<unknown> => Promise.resolve()),
+  download: mock((): Promise<unknown> => Promise.resolve({ body: null, contentType: "" })),
+  getSignedUrl: mock((): Promise<unknown> => Promise.resolve("")),
+  delete: mock((): Promise<unknown> => Promise.resolve()),
 };
 
 // ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ function clearAllMocks() {
 // Suite
 // ---------------------------------------------------------------------------
 const mockContactSync = {
-  detachUserEverywhere: mock(() => Promise.resolve()),
+  detachUserEverywhere: mock((): Promise<unknown> => Promise.resolve()),
 };
 
 describe("AccountService", () => {

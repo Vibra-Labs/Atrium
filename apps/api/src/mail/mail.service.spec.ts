@@ -13,7 +13,7 @@ interface MockTransporter {
 
 // Track transporter instances created by nodemailer
 const createdTransporters: MockTransporter[] = [];
-const mockSendMail = mock(() => Promise.resolve({ messageId: "test-id" }));
+const mockSendMail = mock((): Promise<unknown> => Promise.resolve({ messageId: "test-id" }));
 
 mock.module("nodemailer", () => ({
   createTransport: mock((config: Record<string, unknown>) => {
@@ -26,7 +26,7 @@ mock.module("nodemailer", () => ({
   }),
 }));
 
-const mockResendSend = mock(() => Promise.resolve({ data: { id: "resend-id" }, error: null }));
+const mockResendSend = mock((): Promise<unknown> => Promise.resolve({ data: { id: "resend-id" }, error: null }));
 
 mock.module("resend", () => ({
   Resend: class {
@@ -58,7 +58,7 @@ interface EmailConfig {
 
 function makeSettingsService(emailConfig: EmailConfig | null = null) {
   return {
-    getEffectiveEmailConfig: mock(() => Promise.resolve(emailConfig)),
+    getEffectiveEmailConfig: mock((): Promise<unknown> => Promise.resolve(emailConfig)),
   };
 }
 

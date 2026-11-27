@@ -6,38 +6,38 @@ import { ContactSyncService, normalizeEmail } from "./contact-sync.service";
 const CURRENT_CLIENTS: { userId: string }[] = [{ userId: "u-1" }, { userId: "u-2" }, { userId: "u-3" }];
 
 const mockPrisma = {
-  user: { findUnique: mock(() => Promise.resolve(null as unknown)) },
+  user: { findUnique: mock((): Promise<unknown> => Promise.resolve(null as unknown)) },
   member: {
-    findFirst: mock(() => Promise.resolve({ role: "member" } as unknown)),
-    findMany: mock(() => Promise.resolve([] as unknown[])),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve({ role: "member" } as unknown)),
+    findMany: mock((): Promise<unknown> => Promise.resolve([] as unknown[])),
   },
   contact: {
-    findFirst: mock(() => Promise.resolve(null as unknown)),
-    findMany: mock(() => Promise.resolve([] as unknown[])),
-    create: mock(() => Promise.resolve({ id: "c-new" } as unknown)),
-    update: mock(() => Promise.resolve({ id: "c-1" } as unknown)),
-    updateMany: mock(() => Promise.resolve({ count: 1 })),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null as unknown)),
+    findMany: mock((): Promise<unknown> => Promise.resolve([] as unknown[])),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({ id: "c-new" } as unknown)),
+    update: mock((): Promise<unknown> => Promise.resolve({ id: "c-1" } as unknown)),
+    updateMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 1 })),
   },
   contactEvent: {
-    create: mock(() => Promise.resolve({})),
-    createMany: mock(() => Promise.resolve({ count: 0 })),
-    findMany: mock(() => Promise.resolve([] as unknown[])),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 0 })),
+    findMany: mock((): Promise<unknown> => Promise.resolve([] as unknown[])),
   },
   projectContact: {
-    findMany: mock(() => Promise.resolve([] as unknown[])),
-    createMany: mock(() => Promise.resolve({ count: 0 })),
-    updateMany: mock((a: unknown) => Promise.resolve({ count: 0, a })),
+    findMany: mock((): Promise<unknown> => Promise.resolve([] as unknown[])),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 0 })),
+    updateMany: mock((a: unknown): Promise<unknown> => Promise.resolve({ count: 0, a })),
   },
-  projectContactGap: { createMany: mock((a: unknown) => Promise.resolve({ count: 0, a })) },
-  projectClient: { findMany: mock(() => Promise.resolve(CURRENT_CLIENTS as unknown[])) },
-  project: { findUnique: mock(() => Promise.resolve({ id: "p-1", name: "Site" } as unknown)) },
-  invoice: { findUnique: mock(() => Promise.resolve(null as unknown)) },
+  projectContactGap: { createMany: mock((a: unknown): Promise<unknown> => Promise.resolve({ count: 0, a })) },
+  projectClient: { findMany: mock((): Promise<unknown> => Promise.resolve(CURRENT_CLIENTS as unknown[])) },
+  project: { findUnique: mock((): Promise<unknown> => Promise.resolve({ id: "p-1", name: "Site" } as unknown)) },
+  invoice: { findUnique: mock((): Promise<unknown> => Promise.resolve(null as unknown)) },
   memberLabel: {
-    findMany: mock(() => Promise.resolve([] as unknown[])),
-    deleteMany: mock((a: unknown) => Promise.resolve({ count: 0, a })),
+    findMany: mock((): Promise<unknown> => Promise.resolve([] as unknown[])),
+    deleteMany: mock((a: unknown): Promise<unknown> => Promise.resolve({ count: 0, a })),
   },
-  contactLabel: { createMany: mock((a: unknown) => Promise.resolve({ count: 0, a })) },
-  $queryRaw: mock(() => Promise.resolve([] as unknown[])),
+  contactLabel: { createMany: mock((a: unknown): Promise<unknown> => Promise.resolve({ count: 0, a })) },
+  $queryRaw: mock((): Promise<unknown> => Promise.resolve([] as unknown[])),
   $transaction: mock((arg: unknown): Promise<unknown> =>
     typeof arg === "function" ? (arg as (tx: unknown) => Promise<unknown>)(mockPrisma) : Promise.all(arg as unknown[]),
   ),
@@ -141,7 +141,7 @@ describe("ContactSyncService", () => {
 
       const result = await service.ensureForMember("org-1", "u-1");
 
-      expect(result).toEqual({ id: "c-1", userId: "u-1", status: "client" });
+      expect<unknown>(result).toEqual({ id: "c-1", userId: "u-1", status: "client" });
       expect(mockPrisma.contact.update).not.toHaveBeenCalled();
       expect(mockPrisma.contact.create).not.toHaveBeenCalled();
       expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe("ContactSyncService", () => {
 
       const result = await service.ensureForMember("org-1", "u-1");
 
-      expect(result).toEqual(linked);
+      expect<unknown>(result).toEqual(linked);
       expect(mockPrisma.contact.update).not.toHaveBeenCalled();
       expect(mockPrisma.contactEvent.create).not.toHaveBeenCalled();
     });
@@ -185,7 +185,7 @@ describe("ContactSyncService", () => {
 
       const result = await service.ensureForMember("org-1", "u-1");
 
-      expect(result).toEqual(winner);
+      expect<unknown>(result).toEqual(winner);
       expect(mockPrisma.contact.findFirst.mock.calls[2][0]).toEqual({
         where: { organizationId: "org-1", userId: "u-1" },
       });
@@ -201,7 +201,7 @@ describe("ContactSyncService", () => {
         .mockImplementationOnce(() => Promise.resolve(null)) // refetch by userId
         .mockImplementationOnce(() => Promise.resolve(lead)); // refetch by email
       mockPrisma.contact.create.mockImplementationOnce(() => Promise.reject({ code: "P2002" }));
-      expect(await service.ensureForMember("org-1", "u-1")).toEqual(lead);
+      expect<unknown>(await service.ensureForMember("org-1", "u-1")).toEqual(lead);
       expect(mockPrisma.contact.findFirst.mock.calls[3][0]).toEqual({
         where: { organizationId: "org-1", email: "bob@x.com" },
       });

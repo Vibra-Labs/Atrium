@@ -32,7 +32,7 @@ const prisma = {
   },
   pursuitStage: { findFirst: mock((_args: Args) => Promise.resolve({ id: "st" }) as Promise<unknown>) },
   $executeRaw: mock((..._args: unknown[]) => Promise.resolve(1)),
-  projectPursuitEvent: { create: mock(() => Promise.resolve({})) },
+  projectPursuitEvent: { create: mock((_args: unknown): Promise<unknown> => Promise.resolve({})) },
   company: { findFirst: mock(() => Promise.resolve({ id: "co1", name: "Harbor County" })) },
   projectStatus: {
     findFirst: mock((args: Args) => Promise.resolve({ slug: (args.where as { slug: string }).slug })),
@@ -40,7 +40,7 @@ const prisma = {
   member: { findFirst: mock(() => Promise.resolve(member)) },
   contact: {
     findFirst: mock(() => Promise.resolve(contact)),
-    update: mock(() => Promise.resolve({})),
+    update: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
   },
   project: {
     update: mock((args: Args) => Promise.resolve({ id: "p1", ...args.data })),
@@ -53,7 +53,7 @@ const prisma = {
   activityLog: { updateMany: updateManyMock() },
   comment: { updateMany: updateManyMock() },
   projectClient: { createMany: mock(() => Promise.resolve({ count: 1 })) },
-  pendingProjectAccess: { upsert: mock(() => Promise.resolve({})) },
+  pendingProjectAccess: { upsert: mock((): Promise<unknown> => Promise.resolve({})) },
   $transaction: mock((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
 };
 

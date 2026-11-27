@@ -42,7 +42,7 @@ function build(opts: {
         return Promise.resolve(opts.expired ?? []);
       }),
       updateMany: mock(() => Promise.resolve({ count: opts.claimCount ?? 1 })),
-      update: mock(() => Promise.resolve({})),
+      update: mock((): Promise<unknown> => Promise.resolve({})),
     },
     member: {
       findMany: mock(() =>
@@ -57,14 +57,14 @@ function build(opts: {
     },
   };
   const billing = {
-    getSubscription: mock(() => Promise.resolve(null)),
+    getSubscription: mock((): Promise<unknown> => Promise.resolve(null)),
     getLifetimeSeatsRemaining: mock(() => Promise.resolve(opts.seatsRemaining === undefined ? 100 : opts.seatsRemaining)),
   };
-  const mail = { send: mock(() => Promise.resolve({ sent: opts.sent ?? true, viaOrgConfig: false })) };
+  const mail = { send: mock((_args: unknown) => Promise.resolve({ sent: opts.sent ?? true, viaOrgConfig: false })) };
   const values: Record<string, string> = { BILLING_ENABLED: opts.billing ?? "true", WEB_URL: "https://app.atrium.test" };
   const config = { get: (k: string, fallback?: string) => values[k] ?? fallback };
   const task = new TrialEmailsTask(prisma as never, billing as never, mail as never, config as never, fakeEmailRenderer());
-  const logger = { error: mock(() => {}), warn: mock(() => {}), log: mock(() => {}) };
+  const logger = { error: mock((_args: unknown) => {}), warn: mock(() => {}), log: mock(() => {}) };
   (task as unknown as { logger: typeof logger }).logger = logger;
   return { task, prisma, billing, mail, logger };
 }

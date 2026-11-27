@@ -11,11 +11,11 @@ import { ListCompaniesQueryDto, UpdateCompanyDto } from "./contacts.dto";
 const prisma = {
   company: {
     findFirst: mock(() => Promise.resolve(null as unknown)),
-    findMany: mock(() => Promise.resolve([] as unknown[])),
+    findMany: mock((_args: unknown) => Promise.resolve([] as unknown[])),
     count: mock(() => Promise.resolve(0)),
     create: mock(() => Promise.resolve({ id: "co-1" })),
-    update: mock(() => Promise.resolve({ id: "co-1" })),
-    delete: mock(() => Promise.resolve({})),
+    update: mock((_args: unknown) => Promise.resolve({ id: "co-1" })),
+    delete: mock((): Promise<unknown> => Promise.resolve({})),
   },
   contact: { updateMany: mock(() => Promise.resolve({ count: 2 })) },
   $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),

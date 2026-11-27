@@ -3,6 +3,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { makeSignature } from "better-auth/crypto";
 import { McpAuthService } from "./mcp-auth.service";
 import { hashOAuthToken, ORG_MEMBER_FIELDS } from "../common";
+import type { PrismaCall } from "../common/testing/prisma-args";
 
 const SECRET: string = "s".repeat(32);
 
@@ -31,21 +32,21 @@ function build(
     oauthConsent: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
     oauthClient: {
       findUnique: mock(() => Promise.resolve(opts.app ?? null)),
-      findMany: mock(() => Promise.resolve(opts.apps ?? [])),
+      findMany: mock((_args: unknown) => Promise.resolve(opts.apps ?? [])),
     },
     mcpGrant: {
       findUnique: mock(() => Promise.resolve(opts.grant ?? null)),
       findFirst: mock(() => Promise.resolve(opts.grant ?? null)),
-      findMany: mock(() => Promise.resolve(opts.grants ?? [])),
-      upsert: mock(() => Promise.resolve({})),
-      delete: mock(() => Promise.resolve({})),
+      findMany: mock((_args: unknown) => Promise.resolve(opts.grants ?? [])),
+      upsert: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
+      delete: mock((): Promise<unknown> => Promise.resolve({})),
     },
     mcpPendingGrant: {
-      upsert: mock(() => Promise.resolve({})),
+      upsert: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
     },
     member: {
       findFirst: mock(() => Promise.resolve(opts.member ?? null)),
-      findMany: mock(() => Promise.resolve(opts.members ?? [])),
+      findMany: mock((_args: unknown) => Promise.resolve(opts.members ?? [])),
     },
     $transaction: mock((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
@@ -122,7 +123,7 @@ describe("McpAuthService grants", () => {
     // connection must keep working exactly as it did.
     const { service, prisma } = build({ app: { clientId: "c1" }, member: owner });
     await service.savePendingGrant(request, "u1", "org1");
-    const args = prisma.mcpPendingGrant.upsert.mock.calls[0][0];
+    const args = prisma.mcpPendingGrant.upsert.mock.calls[0][0] as PrismaCall;
     expect(args.where).toEqual({ requestId_userId: { requestId: "sig1", userId: "u1" } });
     expect(args.create).toEqual({
       requestId: "sig1",
@@ -169,7 +170,7 @@ describe("McpAuthService.adminOrganizations", () => {
       { id: "org1", name: "Acme" },
       { id: "org2", name: "Beta" },
     ]);
-    const args = prisma.member.findMany.mock.calls[0][0];
+    const args = prisma.member.findMany.mock.calls[0][0] as PrismaCall;
     expect(args.where).toEqual({ userId: "u1", role: { in: ["owner", "admin"] } });
   });
 });
@@ -199,7 +200,7 @@ describe("McpAuthService.listGrants", () => {
         mine: true,
       },
     ]);
-    const args = prisma.mcpGrant.findMany.mock.calls[0][0];
+    const args = prisma.mcpGrant.findMany.mock.calls[0][0] as PrismaCall;
     expect(args.where).toEqual({ organizationId: "org1", userId: "u1" });
   });
 
@@ -208,7 +209,7 @@ describe("McpAuthService.listGrants", () => {
     const { service, prisma } = build({ grants: rows, apps: [{ clientId: "c1", name: "Tool" }] });
     const result = await service.listGrants("u1", "org1", "owner");
     expect(result.map((g) => g.mine)).toEqual([true, false]);
-    const args = prisma.mcpGrant.findMany.mock.calls[0][0];
+    const args = prisma.mcpGrant.findMany.mock.calls[0][0] as PrismaCall;
     expect(args.where).toEqual({ organizationId: "org1" });
   });
 

@@ -4,7 +4,7 @@ import { hookUserId, passkeyAfterHook, passkeyBeforeHook } from "./passkey-hooks
 import type { PasskeyAfterInput, PasskeyBeforeInput, PasskeyHookDeps } from "./passkey-hooks";
 
 function fakes(opts: { staff?: boolean; requiring?: boolean; deleteOutcome?: "deleted" | "not_found" | "last_factor" } = {}) {
-  const sessionUpdate = mock(() => Promise.resolve({}));
+  const sessionUpdate = mock((_args: unknown): Promise<unknown> => Promise.resolve({}));
   const sessionDelete = mock(() => Promise.resolve({ count: 1 }));
   const sessionFind = mock((): Promise<unknown> => Promise.resolve({ userId: "u1", activeOrganizationId: "orgB" }));
   const forgetSession = mock(() => undefined);

@@ -29,40 +29,40 @@ const mockConfig = {
 
 const mockPrisma = {
   member: {
-    findFirst: mock(() => Promise.resolve(null)),
-    findMany: mock(() => Promise.resolve([])),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
   },
   projectClient: {
-    count: mock(() => Promise.resolve(0)),
+    count: mock((_args: unknown): Promise<unknown> => Promise.resolve(0)),
   },
   user: {
-    findUnique: mock(() => Promise.resolve(null)),
-    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
   },
   invitation: {
-    findFirst: mock(() => Promise.resolve(null)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
     findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
   },
   contact: {
-    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
   },
   organization: {
     findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
   },
   systemSettings: {
-    count: mock((): Promise<number> => Promise.resolve(0)),
+    count: mock((_args: unknown): Promise<number> => Promise.resolve(0)),
   },
   verification: {
-    create: mock((): Promise<unknown> => Promise.resolve({})),
-    count: mock((): Promise<number> => Promise.resolve(1)),
-    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    create: mock((_args: unknown): Promise<unknown> => Promise.resolve({})),
+    count: mock((_args: unknown): Promise<number> => Promise.resolve(1)),
+    findFirst: mock((_args: unknown): Promise<unknown> => Promise.resolve(null)),
     update: mock((): Promise<unknown> => Promise.resolve({})),
   },
 };
 
-const mockMail = { send: mock(() => Promise.resolve()) };
+const mockMail = { send: mock((_args: unknown): Promise<unknown> => Promise.resolve()) };
 const mockBilling = {
-  initializeFreePlan: mock(() => Promise.resolve()),
+  initializeFreePlan: mock((): Promise<unknown> => Promise.resolve()),
   assertPlanLimit: mock((): Promise<void> => Promise.resolve()),
   hasFeature: mock((): Promise<boolean> => Promise.resolve(true)),
 };
@@ -347,7 +347,7 @@ describe("AuthService", () => {
       const expectedUrl =
         "http://localhost:3001/api/auth/reset-password/token-abc?callbackURL=http%3A%2F%2Flocalhost%3A3000%2Freset-password";
 
-      const requestPasswordReset = mock(async () => {
+      const requestPasswordReset = mock(async (_args: unknown) => {
         const store = (
           service as unknown as {
             adminResetStorage: {
@@ -385,7 +385,7 @@ describe("AuthService", () => {
     });
 
     it("returns emailSent=false when no provider sent the email", async () => {
-      const requestPasswordReset = mock(async () => {
+      const requestPasswordReset = mock(async (_args: unknown) => {
         const store = (
           service as unknown as {
             adminResetStorage: {
@@ -940,7 +940,7 @@ describe("AuthService", () => {
 
   describe("setPassword", () => {
     it("sets a first password through Better Auth with the caller's session", async () => {
-      const setPassword = mock(() => Promise.resolve({ status: true }));
+      const setPassword = mock((_args: unknown): Promise<unknown> => Promise.resolve({ status: true }));
       (service.auth as unknown as { api: { setPassword: typeof setPassword } }).api.setPassword = setPassword;
 
       await service.setPassword({ cookie: "session=abc" }, "correct horse");

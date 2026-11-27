@@ -6,7 +6,7 @@ function build() {
   const service = {
     getStatus: mock(() => Promise.resolve({ enabled: false })),
     setRequirement: mock(() => Promise.resolve({ required: true })),
-    resetForMember: mock(() => Promise.resolve({ success: true })),
+    resetForMember: mock((_args: unknown) => Promise.resolve({ success: true })),
   };
   const config = { get: (key: string): string | undefined => (key === "BILLING_ENABLED" ? "true" : undefined) };
   return { controller: new TwoFactorController(service as never, config as never), service };

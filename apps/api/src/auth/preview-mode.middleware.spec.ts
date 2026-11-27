@@ -3,7 +3,8 @@ import { PreviewModeMiddleware } from "./preview-mode.middleware";
 import type { Request, Response, NextFunction } from "express";
 
 interface MockReq extends Partial<Request> {
-  headers: Record<string, string>;
+  /** Express gives an array when a header is repeated. */
+  headers: Record<string, string | string[]>;
   user?: { id: string; name: string; email: string };
   member?: { role: string; organizationId: string };
   organization?: { id: string };
@@ -22,7 +23,7 @@ function buildReq(overrides: Partial<MockReq> = {}): MockReq {
 
 function buildPrismaMock(member: { userId: string; role: string; organizationId: string } | null) {
   return {
-    member: { findFirst: mock(() => Promise.resolve(member)) },
+    member: { findFirst: mock((): Promise<unknown> => Promise.resolve(member)) },
   };
 }
 

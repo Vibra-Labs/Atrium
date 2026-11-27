@@ -7,16 +7,15 @@ import type { SettingsService } from "../settings/settings.service";
 
 function makeSetupService() {
   return {
-    getSetupStatus: mock(() => Promise.resolve({ completed: false })),
-    markSetupComplete: mock(() => Promise.resolve({ completed: true })),
+    getSetupStatus: mock((): Promise<unknown> => Promise.resolve({ completed: false })),
+    markSetupComplete: mock((): Promise<unknown> => Promise.resolve({ completed: true })),
   };
 }
 
 function makeSettingsService() {
   return {
-    updateSettings: mock(() => Promise.resolve({ emailProvider: null })),
-    testEmailConfig: mock(() =>
-      Promise.resolve({ success: true, message: "Test email sent" }),
+    updateSettings: mock((): Promise<unknown> => Promise.resolve({ emailProvider: null })),
+    testEmailConfig: mock((): Promise<unknown> => Promise.resolve({ success: true, message: "Test email sent" }),
     ),
   };
 }
@@ -43,7 +42,7 @@ describe("SetupController", () => {
     const result = await controller.getSetupStatus(orgId);
 
     expect(setupService.getSetupStatus).toHaveBeenCalledWith(orgId);
-    expect(result).toEqual({ completed: false });
+    expect<unknown>(result).toEqual({ completed: false });
   });
 
   test("getSetupStatus returns completed:true when setup is done", async () => {
@@ -53,7 +52,7 @@ describe("SetupController", () => {
 
     const result = await controller.getSetupStatus(orgId);
 
-    expect(result).toEqual({ completed: true });
+    expect<unknown>(result).toEqual({ completed: true });
   });
 
   // --- POST /setup/complete ---

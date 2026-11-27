@@ -1,12 +1,12 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { InAppNotificationsService } from "./in-app-notifications.service";
 import type { PrismaService } from "../prisma/prisma.service";
+import type { PrismaCall } from "../common/testing/prisma-args";
 
 function makePrisma() {
   return {
     notification: {
-      create: mock(() =>
-        Promise.resolve({
+      create: mock((_args: unknown): Promise<unknown> => Promise.resolve({
           id: "notif-1",
           userId: "user-1",
           organizationId: "org-1",
@@ -18,9 +18,8 @@ function makePrisma() {
           createdAt: new Date(),
         }),
       ),
-      createMany: mock(() => Promise.resolve({ count: 2 })),
-      findMany: mock(() =>
-        Promise.resolve([
+      createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 2 })),
+      findMany: mock((_args: unknown): Promise<unknown> => Promise.resolve([
           {
             id: "notif-1",
             userId: "user-1",
@@ -34,8 +33,8 @@ function makePrisma() {
           },
         ]),
       ),
-      count: mock(() => Promise.resolve(1)),
-      updateMany: mock(() => Promise.resolve({ count: 1 })),
+      count: mock((_args: unknown): Promise<unknown> => Promise.resolve(1)),
+      updateMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 1 })),
     },
   };
 }
@@ -78,7 +77,7 @@ describe("InAppNotificationsService", () => {
   });
 
   test("createMany writes through a given transaction instead", async () => {
-    const tx = { notification: { createMany: mock(() => Promise.resolve({ count: 1 })) } };
+    const tx = { notification: { createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve({ count: 1 })) } };
     const notifications = [{ userId: "user-1", organizationId: "org-1", type: "test", title: "A", message: "a" }];
     await service.createMany(notifications, tx as never);
     expect(tx.notification.createMany.mock.calls[0]).toEqual([{ data: notifications }] as never);
@@ -102,7 +101,7 @@ describe("InAppNotificationsService", () => {
 
   test("findByUser queries with correct where, orderBy, and pagination", async () => {
     await service.findByUser("user-1", "org-1", 2, 5);
-    const findCall = prisma.notification.findMany.mock.calls[0][0];
+    const findCall = prisma.notification.findMany.mock.calls[0][0] as PrismaCall;
     expect(findCall.where).toEqual({ userId: "user-1", organizationId: "org-1" });
     expect(findCall.orderBy).toEqual({ createdAt: "desc" });
     expect(findCall.skip).toBe(5); // (page 2 - 1) * limit 5
@@ -111,7 +110,7 @@ describe("InAppNotificationsService", () => {
 
   test("findByUser uses default page=1 and limit=10", async () => {
     await service.findByUser("user-1", "org-1");
-    const findCall = prisma.notification.findMany.mock.calls[0][0];
+    const findCall = prisma.notification.findMany.mock.calls[0][0] as PrismaCall;
     expect(findCall.skip).toBe(0);
     expect(findCall.take).toBe(10);
   });
@@ -122,7 +121,7 @@ describe("InAppNotificationsService", () => {
     const count = await service.unreadCount("user-1", "org-1");
     expect(count).toBe(1);
     expect(prisma.notification.count).toHaveBeenCalledTimes(1);
-    const countCall = prisma.notification.count.mock.calls[0][0];
+    const countCall = prisma.notification.count.mock.calls[0][0] as PrismaCall;
     expect(countCall.where).toEqual({ userId: "user-1", organizationId: "org-1", read: false });
   });
 
@@ -131,7 +130,7 @@ describe("InAppNotificationsService", () => {
   test("markRead scopes by id, userId, and organizationId", async () => {
     await service.markRead("notif-1", "user-1", "org-1");
     expect(prisma.notification.updateMany).toHaveBeenCalledTimes(1);
-    const call = prisma.notification.updateMany.mock.calls[0][0];
+    const call = prisma.notification.updateMany.mock.calls[0][0] as PrismaCall;
     expect(call.where).toEqual({ id: "notif-1", userId: "user-1", organizationId: "org-1" });
     expect(call.data).toEqual({ read: true });
   });
@@ -139,7 +138,7 @@ describe("InAppNotificationsService", () => {
   test("markRead cannot mark another user's notification", async () => {
     // The where clause includes userId, so a different userId would match nothing
     await service.markRead("notif-1", "other-user", "org-1");
-    const call = prisma.notification.updateMany.mock.calls[0][0];
+    const call = prisma.notification.updateMany.mock.calls[0][0] as PrismaCall;
     expect(call.where.userId).toBe("other-user");
   });
 
@@ -148,7 +147,7 @@ describe("InAppNotificationsService", () => {
   test("markAllRead only targets unread notifications for the user+org", async () => {
     await service.markAllRead("user-1", "org-1");
     expect(prisma.notification.updateMany).toHaveBeenCalledTimes(1);
-    const call = prisma.notification.updateMany.mock.calls[0][0];
+    const call = prisma.notification.updateMany.mock.calls[0][0] as PrismaCall;
     expect(call.where).toEqual({ userId: "user-1", organizationId: "org-1", read: false });
     expect(call.data).toEqual({ read: true });
   });

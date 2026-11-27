@@ -28,8 +28,8 @@ function buildPrisma(opts: { key?: unknown; member?: unknown } = {}) {
         Promise.resolve({ id: "k1", createdAt: new Date(), ...args.data })),
       findUnique: mock(() => Promise.resolve(opts.key ?? null)),
       findFirst: mock(() => Promise.resolve(opts.key ?? null)),
-      findMany: mock(() => Promise.resolve([])),
-      update: mock(() => Promise.resolve({})),
+      findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
+      update: mock((): Promise<unknown> => Promise.resolve({})),
     },
     member: { findFirst: mock(() => Promise.resolve(opts.member ?? null)) },
   };

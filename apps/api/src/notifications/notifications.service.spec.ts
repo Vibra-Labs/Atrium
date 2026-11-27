@@ -20,7 +20,9 @@ const mockLogger = {
 
 function makeMailService() {
   return {
-    send: mock(() => Promise.resolve()),
+    send: mock((_to: string, _subject: string, _html: string, _orgId?: string): Promise<unknown> =>
+      Promise.resolve(),
+    ),
   };
 }
 
@@ -47,23 +49,25 @@ function emailProps<T>(): T {
 
 function makeInAppService() {
   return {
-    create: mock(() => Promise.resolve()),
-    createMany: mock(() => Promise.resolve()),
-    findByUser: mock(() => Promise.resolve({ data: [], total: 0, page: 1, limit: 10, totalPages: 0 })),
-    unreadCount: mock(() => Promise.resolve(0)),
-    markRead: mock(() => Promise.resolve()),
-    markAllRead: mock(() => Promise.resolve()),
+    create: mock((): Promise<unknown> => Promise.resolve()),
+    createMany: mock((_args: unknown): Promise<unknown> => Promise.resolve()),
+    findByUser: mock((): Promise<unknown> => Promise.resolve({ data: [], total: 0, page: 1, limit: 10, totalPages: 0 })),
+    unreadCount: mock((): Promise<unknown> => Promise.resolve(0)),
+    markRead: mock((): Promise<unknown> => Promise.resolve()),
+    markAllRead: mock((): Promise<unknown> => Promise.resolve()),
   };
 }
 
 function makePushService() {
   return {
-    sendToUser: mock(() => Promise.resolve()),
-    sendToMany: mock(() => Promise.resolve()),
-    isEnabled: mock(() => Promise.resolve(false)),
-    getPublicKey: mock(() => Promise.resolve("test-key")),
-    subscribe: mock(() => Promise.resolve()),
-    unsubscribe: mock(() => Promise.resolve()),
+    sendToUser: mock((): Promise<unknown> => Promise.resolve()),
+    sendToMany: mock((_userIds: string[], _orgId: string, _payload: unknown): Promise<unknown> =>
+      Promise.resolve(),
+    ),
+    isEnabled: mock((): Promise<unknown> => Promise.resolve(false)),
+    getPublicKey: mock((): Promise<unknown> => Promise.resolve("test-key")),
+    subscribe: mock((): Promise<unknown> => Promise.resolve()),
+    unsubscribe: mock((): Promise<unknown> => Promise.resolve()),
   };
 }
 
@@ -79,24 +83,21 @@ function dispatched(dispatcher: ReturnType<typeof makeDispatcher>, event: string
 function makePrisma(overrides: Record<string, unknown> = {}) {
   return {
     user: {
-      findUnique: mock(() => Promise.resolve({ name: "Mia" })),
+      findUnique: mock((): Promise<unknown> => Promise.resolve({ name: "Mia" })),
     },
     project: {
-      findUnique: mock(() =>
-        Promise.resolve({ name: "Test Project", organizationId: "org-1" }),
+      findUnique: mock((): Promise<unknown> => Promise.resolve({ name: "Test Project", organizationId: "org-1" }),
       ),
     },
     projectClient: {
-      findMany: mock(() =>
-        Promise.resolve([
+      findMany: mock((): Promise<unknown> => Promise.resolve([
           { user: { id: "user-1", name: "Alice", email: "alice@example.com" } },
           { user: { id: "user-2", name: "Bob", email: "bob@example.com" } },
         ]),
       ),
     },
     invoice: {
-      findUnique: mock(() =>
-        Promise.resolve({
+      findUnique: mock((): Promise<unknown> => Promise.resolve({
           id: "inv-1",
           invoiceNumber: "INV-0001",
           projectId: "proj-1",
@@ -359,7 +360,7 @@ describe("NotificationsService", () => {
 
     await done;
 
-    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+    expect((inApp.createMany.mock.calls[0][0] as Record<string, unknown>[])[0]).toMatchObject({
       link: "/portal/projects/proj-1?tab=invoices",
     });
   });
@@ -406,7 +407,7 @@ describe("NotificationsService", () => {
 
     await done;
 
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     expect(createCall).toHaveLength(2); // Two clients
     expect(createCall[0]).toMatchObject({
       userId: "user-1",
@@ -426,7 +427,7 @@ describe("NotificationsService", () => {
 
     await done;
 
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     expect(createCall[0].message).toBe("A".repeat(100) + "…");
   });
 
@@ -440,7 +441,7 @@ describe("NotificationsService", () => {
     expect(push.sendToMany).toHaveBeenCalledTimes(1);
     const [userIds, orgId, payload] = push.sendToMany.mock.calls[0];
     expect(userIds).toEqual(["user-1", "user-2"]);
-    expect(orgId).toBe("org-1");
+    expect<unknown>(orgId).toBe("org-1");
     expect(payload).toMatchObject({
       title: "New update on Test Project",
       message: "Push test",
@@ -456,7 +457,7 @@ describe("NotificationsService", () => {
     await done;
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     expect(createCall[0]).toMatchObject({
       type: "task_created",
       title: "New task on Test Project",
@@ -473,7 +474,7 @@ describe("NotificationsService", () => {
     await done;
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     expect(createCall[0]).toMatchObject({
       type: "invoice_sent",
       title: "Invoice INV-0001",
@@ -494,8 +495,7 @@ describe("NotificationsService", () => {
       }),
     );
     (prisma as any).member = {
-      findMany: mock(() =>
-        Promise.resolve([
+      findMany: mock((): Promise<unknown> => Promise.resolve([
           { userId: "admin-1", user: { name: "Ada", email: "ada@example.com" } },
         ]),
       ),
@@ -510,7 +510,7 @@ describe("NotificationsService", () => {
     expect(emailProps<{ dashboardUrl: string }>().dashboardUrl).toBe(
       "http://localhost:3000/dashboard/projects/proj-1?tab=invoices",
     );
-    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+    expect((inApp.createMany.mock.calls[0][0] as Record<string, unknown>[])[0]).toMatchObject({
       link: "/dashboard/projects/proj-1?tab=invoices",
     });
   });
@@ -522,7 +522,7 @@ describe("NotificationsService", () => {
 
     await done;
 
-    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+    expect((inApp.createMany.mock.calls[0][0] as Record<string, unknown>[])[0]).toMatchObject({
       userId: "member-1",
       link: "/dashboard/projects/proj-1?tab=tasks",
     });
@@ -530,7 +530,7 @@ describe("NotificationsService", () => {
 
   test("notifyClientRequestCreated points admins at the tasks tab", async () => {
     (prisma as any).member = {
-      findMany: mock(() => Promise.resolve([{ userId: "admin-1" }])),
+      findMany: mock((): Promise<unknown> => Promise.resolve([{ userId: "admin-1" }])),
     };
     const done = new Promise<void>((resolve) => setTimeout(resolve, 50));
 
@@ -538,7 +538,7 @@ describe("NotificationsService", () => {
 
     await done;
 
-    expect(inApp.createMany.mock.calls[0][0][0]).toMatchObject({
+    expect((inApp.createMany.mock.calls[0][0] as Record<string, unknown>[])[0]).toMatchObject({
       link: "/dashboard/projects/proj-1?tab=tasks",
     });
   });
@@ -548,8 +548,7 @@ describe("NotificationsService", () => {
   test("notifyComment from client notifies org owners/admins", async () => {
     // Mock member lookup for admins
     (prisma as any).member = {
-      findMany: mock(() =>
-        Promise.resolve([
+      findMany: mock((): Promise<unknown> => Promise.resolve([
           { userId: "admin-1" },
           { userId: "admin-2" },
         ]),
@@ -566,7 +565,7 @@ describe("NotificationsService", () => {
     );
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     expect(createCall).toHaveLength(2);
     expect(createCall[0]).toMatchObject({
       userId: "admin-1",
@@ -601,7 +600,7 @@ describe("NotificationsService", () => {
     );
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     // user-1 is excluded because they're the author, so only user-2
     expect(createCall).toHaveLength(1);
     expect(createCall[0]).toMatchObject({
@@ -613,8 +612,7 @@ describe("NotificationsService", () => {
 
   test("notifyComment from admin on a task notifies the task requester only", async () => {
     (prisma as any).member = {
-      findFirst: mock(() =>
-        Promise.resolve({ role: "member" }), // requester is a portal client
+      findFirst: mock((): Promise<unknown> => Promise.resolve({ role: "member" }), // requester is a portal client
       ),
     };
 
@@ -629,7 +627,7 @@ describe("NotificationsService", () => {
     );
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     expect(createCall).toHaveLength(1);
     expect(createCall[0]).toMatchObject({
       userId: "client-1",
@@ -650,8 +648,8 @@ describe("NotificationsService", () => {
     );
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
-    const createCall = inApp.createMany.mock.calls[0][0];
-    const recipientIds = createCall.map((n: { userId: string }) => n.userId).sort();
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
+    const recipientIds = createCall.map((n) => n.userId as string).sort();
     expect(recipientIds).toEqual(["user-1", "user-2"]);
     expect(createCall[0]).toMatchObject({
       type: "comment",
@@ -661,8 +659,7 @@ describe("NotificationsService", () => {
 
   test("notifyComment from client on a task notifies assignee + admins (dedup, exclude author)", async () => {
     (prisma as any).member = {
-      findMany: mock(() =>
-        Promise.resolve([{ userId: "admin-1" }, { userId: "admin-2" }]),
+      findMany: mock((): Promise<unknown> => Promise.resolve([{ userId: "admin-1" }, { userId: "admin-2" }]),
       ),
     };
 
@@ -677,8 +674,8 @@ describe("NotificationsService", () => {
     );
 
     expect(inApp.createMany).toHaveBeenCalledTimes(1);
-    const createCall = inApp.createMany.mock.calls[0][0];
-    const userIds = createCall.map((n: { userId: string }) => n.userId);
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
+    const userIds = createCall.map((n) => n.userId as string);
     // assignee + admins, deduplicated, author excluded
     expect(userIds.sort()).toEqual(["admin-1", "admin-2"]);
     expect(createCall[0]).toMatchObject({
@@ -714,7 +711,7 @@ describe("NotificationsService", () => {
       "update",
     );
 
-    const createCall = inApp.createMany.mock.calls[0][0];
+    const createCall = inApp.createMany.mock.calls[0][0] as Record<string, unknown>[];
     expect(createCall[0].message).toBe("B".repeat(100) + "…");
   });
 
@@ -786,7 +783,7 @@ describe("NotificationsService", () => {
   });
 
   test("notifyClientRequestCreated dispatches with the client as actor", () => {
-    (prisma as any).member = { findMany: mock(() => Promise.resolve([])) };
+    (prisma as any).member = { findMany: mock((): Promise<unknown[]> => Promise.resolve([])) };
 
     service.notifyClientRequestCreated("proj-1", "org-1", "Add a pricing page", "Alice");
 
@@ -809,7 +806,7 @@ describe("NotificationsService", () => {
   });
 
   test("notifyStripeDisconnected dispatches a workspace-level event", () => {
-    (prisma as any).member = { findMany: mock(() => Promise.resolve([])) };
+    (prisma as any).member = { findMany: mock((): Promise<unknown[]> => Promise.resolve([])) };
 
     service.notifyStripeDisconnected("org-1");
 
@@ -820,7 +817,7 @@ describe("NotificationsService", () => {
   });
 
   test("notifyComment dispatches the full comment with the author as actor", async () => {
-    (prisma as any).member = { findMany: mock(() => Promise.resolve([{ userId: "admin-1" }])) };
+    (prisma as any).member = { findMany: mock((): Promise<unknown> => Promise.resolve([{ userId: "admin-1" }])) };
     const long = "x".repeat(300);
 
     await service.notifyComment("proj-1", "org-1", "client-1", "member", long, "update");
@@ -852,8 +849,7 @@ describe("deliverable notifications", () => {
   test("approval request uses approval wording, the agency note and a doc deep link", async () => {
     const { mail, service } = build({
       document: {
-        findUnique: mock(() =>
-          Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1", requestNote: "First pass" }),
+        findUnique: mock((): Promise<unknown> => Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1", requestNote: "First pass" }),
         ),
       },
     });
@@ -874,15 +870,13 @@ describe("deliverable notifications", () => {
   test("changes requested is worded for the agency and carries the client's note", async () => {
     const { mail, service } = build({
       document: {
-        findUnique: mock(() =>
-          Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1" }),
+        findUnique: mock((): Promise<unknown> => Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1" }),
         ),
       },
-      user: { findUnique: mock(() => Promise.resolve({ name: "Elena" })) },
-      documentResponse: { findFirst: mock(() => Promise.resolve({ reason: "Bigger logo" })) },
+      user: { findUnique: mock((): Promise<unknown> => Promise.resolve({ name: "Elena" })) },
+      documentResponse: { findFirst: mock((): Promise<unknown> => Promise.resolve({ reason: "Bigger logo" })) },
       member: {
-        findMany: mock(() =>
-          Promise.resolve([{ userId: "admin-1", user: { name: "Ed", email: "ed@agency.com" } }]),
+        findMany: mock((): Promise<unknown> => Promise.resolve([{ userId: "admin-1", user: { name: "Ed", email: "ed@agency.com" } }]),
         ),
       },
     });
@@ -899,8 +893,7 @@ describe("deliverable notifications", () => {
   test("reminder uses approval wording and a doc deep link", async () => {
     const { mail, service } = build({
       document: {
-        findUnique: mock(() =>
-          Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1", expiresAt: null, responses: [] }),
+        findUnique: mock((): Promise<unknown> => Promise.resolve({ title: "Homepage", type: "deliverable", projectId: "proj-1", organizationId: "org-1", expiresAt: null, responses: [] }),
         ),
       },
     });
@@ -920,8 +913,7 @@ describe("deliverable notifications", () => {
   test("contracts keep the existing wording", async () => {
     const { mail, service } = build({
       document: {
-        findUnique: mock(() =>
-          Promise.resolve({ title: "MSA", type: "contract", projectId: "proj-1", organizationId: "org-1", requestNote: null }),
+        findUnique: mock((): Promise<unknown> => Promise.resolve({ title: "MSA", type: "contract", projectId: "proj-1", organizationId: "org-1", requestNote: null }),
         ),
       },
     });

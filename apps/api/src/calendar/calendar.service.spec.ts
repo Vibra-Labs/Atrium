@@ -3,9 +3,9 @@ import { CalendarService } from "./calendar.service";
 
 function build() {
   const prisma = {
-    task: { findMany: mock(() => Promise.resolve([])) },
-    project: { findMany: mock(() => Promise.resolve([])) },
-    invoice: { findMany: mock(() => Promise.resolve([])) },
+    task: { findMany: mock((): Promise<unknown[]> => Promise.resolve([])) },
+    project: { findMany: mock((): Promise<unknown[]> => Promise.resolve([])) },
+    invoice: { findMany: mock((): Promise<unknown[]> => Promise.resolve([])) },
   };
   return { prisma, service: new CalendarService(prisma as never) };
 }

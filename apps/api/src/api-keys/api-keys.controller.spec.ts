@@ -6,7 +6,7 @@ import type { AuthenticatedRequest } from "../common";
 function build() {
   const service = {
     create: mock(() => Promise.resolve({ id: "k1", name: "Agent", keyPrefix: "atr_abcdefgh", key: "atr_full", createdAt: new Date() })),
-    list: mock(() => Promise.resolve([])),
+    list: mock((): Promise<unknown[]> => Promise.resolve([])),
     revoke: mock(() => Promise.resolve()),
   };
   return { controller: new ApiKeysController(service as never), service };

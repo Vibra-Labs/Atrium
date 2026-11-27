@@ -18,7 +18,7 @@ function build(opts: { existing?: Row | null; projects?: Row[]; delivery?: Row |
   const prisma = {
     integrationDestination: {
       findMany: mock(async () => [row()]),
-      findFirst: mock(async () => (opts.existing === undefined ? row() : opts.existing)),
+      findFirst: mock(async (_args: unknown) => (opts.existing === undefined ? row() : opts.existing)),
       create: mock(async (args: { data: Row }) => row(args.data)),
       update: mock(async (args: { data: Row }) => row(args.data)),
       delete: mock(async () => row()),
@@ -26,7 +26,7 @@ function build(opts: { existing?: Row | null; projects?: Row[]; delivery?: Row |
     integrationDelivery: {
       findMany: mock(async () => []),
       count: mock(async () => 0),
-      findFirst: mock(async () => opts.delivery ?? null),
+      findFirst: mock(async (_args: unknown) => opts.delivery ?? null),
       create: mock(async (args: { data: Row }) => ({ id: "del_new", ...args.data })),
       findUnique: mock(async () => ({ id: "del_new", status: "success" })),
     },
@@ -38,7 +38,7 @@ function build(opts: { existing?: Row | null; projects?: Row[]; delivery?: Row |
     attempt: mock(async () => {}),
     buildPayload: mock(async (input: Row) => ({ ...input, id: "evt_test" })),
     targetFor: (d: Row) => ({ type: d.type, url: settings.decrypt(String(d.url)), secret: null }),
-    send: mock(async () => ({ ok: true, statusCode: 200, error: null, retryAfterMs: null })),
+    send: mock(async (_args: unknown) => ({ ok: true, statusCode: 200, error: null, retryAfterMs: null })),
   };
   const checkHost = mock(async () => {});
   const service = new IntegrationsService(prisma as never, settings as never, dispatcher as never);

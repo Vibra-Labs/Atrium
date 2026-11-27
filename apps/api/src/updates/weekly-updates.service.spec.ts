@@ -11,7 +11,7 @@ function build(overrides: { project?: unknown; projects?: unknown[] } = {}) {
       findFirst: mock(() =>
         Promise.resolve(overrides.project === undefined ? { id: "p1", name: "Living Unlimited" } : overrides.project),
       ),
-      findMany: mock(() => Promise.resolve(overrides.projects ?? [])),
+      findMany: mock((_args: unknown) => Promise.resolve(overrides.projects ?? [])),
     },
     task: {
       findMany: mock(({ where }: { where: { status: unknown } }) =>
@@ -22,7 +22,7 @@ function build(overrides: { project?: unknown; projects?: unknown[] } = {}) {
         ),
       ),
     },
-    file: { findMany: mock(() => Promise.resolve([{ filename: "homepage-v2.pdf" }])) },
+    file: { findMany: mock((_args: unknown) => Promise.resolve([{ filename: "homepage-v2.pdf" }])) },
     timeEntry: {
       aggregate: mock(() => Promise.resolve({ _sum: { durationSec: 5400 } })),
     },

@@ -45,11 +45,9 @@ const mockConfig = {
 };
 
 const mockBillingService = {
-  getSubscription: mock(() =>
-    Promise.resolve({ plan: FREE_PLAN }),
+  getSubscription: mock((): Promise<unknown> => Promise.resolve({ plan: FREE_PLAN }),
   ),
-  getUsage: mock(() =>
-    Promise.resolve({ projects: 1, storageMb: 50, members: 1, clients: 1 }),
+  getUsage: mock((): Promise<unknown> => Promise.resolve({ projects: 1, storageMb: 50, members: 1, clients: 1 }),
   ),
 };
 

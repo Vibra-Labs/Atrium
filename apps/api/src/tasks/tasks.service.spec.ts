@@ -1,6 +1,7 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { TasksService } from "./tasks.service";
 import { ForbiddenException, BadRequestException } from "@nestjs/common";
+import type { PrismaCall } from "../common/testing/prisma-args";
 
 describe("TasksService", () => {
   let service: TasksService;
@@ -11,7 +12,7 @@ describe("TasksService", () => {
     notifyTaskAssigned: mock(() => {}),
     notifyDecisionClosed: mock(() => {}),
   };
-  const mockActivity = { create: mock(() => Promise.resolve()) };
+  const mockActivity = { create: mock((): Promise<unknown> => Promise.resolve()) };
   const mockLogger = { warn: mock(() => {}), error: mock(() => {}) };
 
   describe("createForClient", () => {
@@ -104,12 +105,11 @@ describe("TasksService", () => {
     function makeService(tasks: object[], memberUserIds: string[]): TasksService {
       const mockPrisma = {
         task: {
-          findMany: mock(() => Promise.resolve(tasks)),
-          count: mock(() => Promise.resolve(tasks.length)),
+          findMany: mock((): Promise<unknown> => Promise.resolve(tasks)),
+          count: mock((): Promise<unknown> => Promise.resolve(tasks.length)),
         },
         member: {
-          findMany: mock(() =>
-            Promise.resolve(memberUserIds.map((userId) => ({ userId }))),
+          findMany: mock((): Promise<unknown> => Promise.resolve(memberUserIds.map((userId) => ({ userId }))),
           ),
         },
       };
@@ -204,8 +204,8 @@ describe("TasksService", () => {
     function makeService(): TasksService {
       const mockPrisma = {
         task: {
-          findFirst: mock(() => Promise.resolve(internalTask)),
-          update: mock(() => Promise.resolve({ ...internalTask, status: "done" })),
+          findFirst: mock((): Promise<unknown> => Promise.resolve(internalTask)),
+          update: mock((): Promise<unknown> => Promise.resolve({ ...internalTask, status: "done" })),
         },
       };
       return new TasksService(mockPrisma as never, mockNotifications as never, mockActivity as never, mockLogger as never);
@@ -247,12 +247,11 @@ describe("TasksService", () => {
     ): TasksService {
       const mockPrisma = {
         task: {
-          findFirst: mock(() => Promise.resolve(existingTask)),
-          update: mock(() => Promise.resolve(updatedTask)),
+          findFirst: mock((): Promise<unknown> => Promise.resolve(existingTask)),
+          update: mock((): Promise<unknown> => Promise.resolve(updatedTask)),
         },
         member: {
-          findFirst: mock(() =>
-            Promise.resolve(memberExists ? { userId: "user2" } : null),
+          findFirst: mock((): Promise<unknown> => Promise.resolve(memberExists ? { userId: "user2" } : null),
           ),
         },
       };
@@ -278,11 +277,11 @@ describe("TasksService", () => {
 
     it("restricts assigneeId to owner/admin roles (not member)", async () => {
       // Simulate a portal-client user: member.findFirst with the role filter returns null
-      const memberFindFirst = mock(() => Promise.resolve(null));
+      const memberFindFirst = mock((_args: unknown): Promise<unknown> => Promise.resolve(null));
       const mockPrisma = {
         task: {
-          findFirst: mock(() => Promise.resolve(baseTask)),
-          update: mock(() => Promise.resolve(baseTask)),
+          findFirst: mock((): Promise<unknown> => Promise.resolve(baseTask)),
+          update: mock((): Promise<unknown> => Promise.resolve(baseTask)),
         },
         member: { findFirst: memberFindFirst },
       };
@@ -298,7 +297,7 @@ describe("TasksService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       // Verify the query was role-restricted
-      const call = memberFindFirst.mock.calls[0][0];
+      const call = memberFindFirst.mock.calls[0][0] as PrismaCall;
       expect(call.where.role).toEqual({ in: ["owner", "admin"] });
     });
 
@@ -423,13 +422,13 @@ describe("TasksService", () => {
 describe("TasksService.findByProjectForClient access", () => {
   function build(assignment: unknown) {
     const prisma = {
-      projectClient: { findFirst: mock(() => Promise.resolve(assignment)), count: mock(() => Promise.resolve(0)) },
-      task: { findMany: mock(() => Promise.resolve([])), count: mock(() => Promise.resolve(0)) },
+      projectClient: { findFirst: mock((): Promise<unknown> => Promise.resolve(assignment)), count: mock((): Promise<unknown> => Promise.resolve(0)) },
+      task: { findMany: mock((): Promise<unknown[]> => Promise.resolve([])), count: mock((): Promise<unknown> => Promise.resolve(0)) },
     };
     const service = new TasksService(
       prisma as never,
       {} as never,
-      { create: mock(() => Promise.resolve()) } as never,
+      { create: mock((): Promise<unknown> => Promise.resolve()) } as never,
       { warn: mock(() => {}), error: mock(() => {}) } as never,
     );
     return { prisma, service };

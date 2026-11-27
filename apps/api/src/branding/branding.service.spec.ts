@@ -6,15 +6,14 @@ import type { ConfigService } from "@nestjs/config";
 
 const mockPrisma = {
   branding: {
-    findUnique: mock(() => Promise.resolve(null)),
-    upsert: mock((args: { create: Record<string, unknown>; update: Record<string, unknown> }) =>
-      Promise.resolve({ id: "b1", ...args.create, ...args.update }),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
+    upsert: mock((args: { create: Record<string, unknown>; update: Record<string, unknown> }): Promise<unknown> => Promise.resolve({ id: "b1", ...args.create, ...args.update }),
     ),
   },
   organization: {
-    findUnique: mock(() => Promise.resolve(null)),
-    findFirst: mock(() => Promise.resolve(null)),
-    findMany: mock(() => Promise.resolve([])),
+    findUnique: mock((): Promise<unknown> => Promise.resolve(null)),
+    findFirst: mock((): Promise<unknown> => Promise.resolve(null)),
+    findMany: mock((): Promise<unknown[]> => Promise.resolve([])),
   },
 };
 
@@ -53,7 +52,7 @@ describe("BrandingService", () => {
     );
 
     const result = await service.findByOrg("org-1");
-    expect(result).toEqual(branding);
+    expect<unknown>(result).toEqual(branding);
   });
 
   it("update upserts branding", async () => {

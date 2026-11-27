@@ -19,7 +19,7 @@ function build() {
     getClient: mock(() => Promise.resolve({ clientId: "c1", name: "Claude" })),
     adminOrganizations: mock(() => Promise.resolve([{ id: "org1", name: "Acme" }])),
     savePendingGrant: mock(() => Promise.resolve()),
-    listGrants: mock(() => Promise.resolve([])),
+    listGrants: mock((): Promise<unknown[]> => Promise.resolve([])),
     revokeGrant: mock(() => Promise.resolve()),
   };
   return {

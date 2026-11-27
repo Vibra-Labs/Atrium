@@ -3,7 +3,7 @@ import { revokeCredentialsIfDemoted, revokeMemberCredentials } from "./member-cr
 
 function buildPrisma() {
   return {
-    apiKey: { updateMany: mock(() => Promise.resolve({ count: 2 })) },
+    apiKey: { updateMany: mock((_args: unknown) => Promise.resolve({ count: 2 })) },
     mcpGrant: { deleteMany: mock(() => Promise.resolve({ count: 1 })) },
   };
 }

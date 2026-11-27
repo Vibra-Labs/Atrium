@@ -124,7 +124,7 @@ describe("items from before the win stay internal", () => {
     const itemIds: string[] = ids(res.data as { id: string }[]);
     expect(itemIds).toContain(d.visibleUpdateId);
     expect(itemIds).not.toContain(d.internalUpdateId);
-    expect(res.data.some((i: { type?: string }) => i.type === "decision_vote")).toBe(false);
+    expect((res.data as { type?: string }[]).some((i) => i.type === "decision_vote")).toBe(false);
   });
 
   it("client task list omits internal tasks", async () => {

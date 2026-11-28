@@ -75,6 +75,13 @@ jobs:
       # precondition they truncate tables under.
       - run: bun run test:integration:ci
 
+      # Plans, and only plans -- the seed upserts free, pro and lifetime and
+      # touches nothing else. The e2e suite asserts on them, and nothing else in
+      # CI creates them: `db:push` builds an empty schema, and the integration
+      # suite truncates, leaving behind only the single `pro` row its demo-seed
+      # spec needs. So this runs after that suite, not before it.
+      - run: bun run db:seed
+
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 

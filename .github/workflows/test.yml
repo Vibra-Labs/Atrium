@@ -2,7 +2,12 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main]
+    # `dev` is the staging branch: work lands there first, because a push to
+    # `main` rebuilds the published image. That only buys anything if `dev` is
+    # tested, so pull requests into it run the same suite as pull requests into
+    # `main`. GitHub tests the merge result, which is what catches a pair of
+    # branches that each pass alone and conflict together.
+    branches: [main, dev]
 
 jobs:
   test:

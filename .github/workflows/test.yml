@@ -2,7 +2,12 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main]
+    # `dev` is the staging branch: work lands there first, because a push to
+    # `main` rebuilds the published image. That only buys anything if `dev` is
+    # tested, so pull requests into it run the same suite as pull requests into
+    # `main`. GitHub tests the merge result, which is what catches a pair of
+    # branches that each pass alone and conflict together.
+    branches: [main, dev]
 
 jobs:
   test:
@@ -69,6 +74,13 @@ jobs:
       # database. CI's Postgres is a throwaway service container, which is the
       # precondition they truncate tables under.
       - run: bun run test:integration:ci
+
+      # Plans, and only plans -- the seed upserts free, pro and lifetime and
+      # touches nothing else. The e2e suite asserts on them, and nothing else in
+      # CI creates them: `db:push` builds an empty schema, and the integration
+      # suite truncates, leaving behind only the single `pro` row its demo-seed
+      # spec needs. So this runs after that suite, not before it.
+      - run: bun run db:seed
 
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium

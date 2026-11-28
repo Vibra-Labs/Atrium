@@ -9,11 +9,11 @@ test.describe("Billing", () => {
     const body = await res.json();
     expect(body.plans).toBeDefined();
     expect(Array.isArray(body.plans)).toBe(true);
-    // Should have at least free plan if seeded
-    if (body.plans.length > 0) {
-      const slugs = body.plans.map((p: { slug: string }) => p.slug);
-      expect(slugs).toContain("free");
-    }
+    // The seed runs before this suite, so the plans are a fact, not a maybe.
+    // Guarding this on `plans.length > 0` made it pass against an empty table,
+    // which is exactly the state that hid a real failure for ten days.
+    const slugs = body.plans.map((p: { slug: string }) => p.slug);
+    expect(slugs).toContain("free");
   });
 
   test("GET /billing/plans includes lifetimeSeatsRemaining", async ({
